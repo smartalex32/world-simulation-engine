@@ -20,6 +20,7 @@ function createContext(cells: GeographicCell[], occupants = ['test-person']): Ac
     cellById: new Map(cells.map((cell) => [cell.id, cell])),
     occupantsByCell: new Map([['1,1', occupants]]),
     occupantsByActivityLocation: new Map([['activity.home.household-test', occupants]]),
+    communityByCellId: new Map(),
   }
 }
 

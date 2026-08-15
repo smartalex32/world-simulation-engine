@@ -9,15 +9,17 @@ describe('canonical serialization', () => {
     )
   })
 
-  it('round-trips schema 7 households, activity locations, links, development, and named streams', async () => {
+  it('round-trips schema 8 households, communities, development, and named streams', async () => {
     const snapshot = await SimulationEngine.create('schema-6-round-trip').snapshot()
     const validated = await validateSnapshot(structuredClone(snapshot))
 
     expect(validated).toEqual(snapshot)
-    expect(validated.schemaVersion).toBe(7)
-    expect(validated.engineVersion).toBe('0.7.0')
+    expect(validated.schemaVersion).toBe(8)
+    expect(validated.engineVersion).toBe('0.8.0')
     expect(validated.state.households).toHaveLength(100)
     expect(validated.state.parentChildLinks).toHaveLength(100)
+    expect(validated.state.communities).toHaveLength(2)
+    expect(validated.state.dailyCommunityCounters).toHaveLength(2)
     expect(validated.state.randomStreams.map(({ name }) => name)).toEqual(expect.arrayContaining([
       'population.households.childAge',
       'population.ageRemainderHours',
@@ -25,7 +27,7 @@ describe('canonical serialization', () => {
     ]))
   })
 
-  it('rejects unsupported household, activity, and development registry versions', async () => {
+  it('rejects unsupported household, activity, development, and community registry versions', async () => {
     const base = await SimulationEngine.create('schema-6-registry-rejection').snapshot()
     const householdMismatch = structuredClone(base.state)
     householdMismatch.config.householdModelVersion += 1
@@ -38,6 +40,10 @@ describe('canonical serialization', () => {
     const developmentMismatch = structuredClone(base.state)
     developmentMismatch.config.developmentRegistryVersion += 1
     await expect(validateSnapshot(await createSnapshot(developmentMismatch))).rejects.toThrow('Unsupported development registry version')
+
+    const communityMismatch = structuredClone(base.state)
+    communityMismatch.config.communityRegistryVersion += 1
+    await expect(validateSnapshot(await createSnapshot(communityMismatch))).rejects.toThrow('Unsupported community registry version')
   })
 
   it('rejects malformed household membership, links, locations, and inheritance sources', async () => {

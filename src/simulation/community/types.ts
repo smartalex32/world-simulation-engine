@@ -59,6 +59,27 @@ export interface CommunityState {
   readonly structural: Record<CommunityStructuralId, number>
 }
 
+/** Serializable authoritative state retained by the engine for one geographic catchment. */
+export interface CommunitySimulationState extends CommunityState {
+  readonly lastUpdatedTick: number
+  /** Only the latest daily explanation is retained; this is not an unbounded history. */
+  readonly latestTraces: readonly CommunityAggregationTrace[]
+}
+
+export interface CommunityDailyCounterState {
+  readonly communityId: string
+  readonly counters: DailyCommunityCounters
+}
+
+export interface CommunityVariableDefinition {
+  readonly id: CommunityVariableId
+  readonly label: string
+  readonly layer: 'emergent' | 'structural'
+  readonly unit: 'permille'
+  readonly order: number
+  readonly description: string
+}
+
 export interface CommunityAggregationContributor {
   readonly sourceId: string
   readonly label: string
