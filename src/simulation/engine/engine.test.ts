@@ -28,9 +28,14 @@ describe('SimulationEngine', () => {
       'social.averageFamiliarity',
       'social.positiveEncounters',
       'social.tenseEncounters',
+      'activity.homePersonHours',
+      'activity.commonsPersonHours',
+      'activity.travelPersonHours',
     ])
     expect(result.statistics[2]?.value).toBe(1)
     expect(result.projection.people).toHaveLength(200)
+    expect(result.projection.households).toHaveLength(100)
+    expect(result.projection.parentChildLinks).toHaveLength(100)
     expect(result.projection.relationships.length).toBeGreaterThan(0)
     expect(result.events.some((event) => event.type === 'PERSON_ENCOUNTERED')).toBe(true)
     expect(result.statistics.find((sample) => sample.metricId === 'social.encounters')?.value).toBeGreaterThan(0)
@@ -60,13 +65,13 @@ describe('SimulationEngine', () => {
 
   it('rejects modified snapshots', async () => {
     const snapshot = await SimulationEngine.create('integrity').snapshot()
-    snapshot.state.tick = 5
+    snapshot.state.runId = `${snapshot.state.runId}-tampered`
     await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('digest')
   })
 
-  it('rejects schema 4 snapshots instead of silently migrating them', async () => {
+  it('rejects schema 5 snapshots instead of silently migrating them', async () => {
     const snapshot = await SimulationEngine.create('old-schema').snapshot()
-    snapshot.schemaVersion = 4
-    await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('Unsupported snapshot schema: 4')
+    snapshot.schemaVersion = 5
+    await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('Unsupported snapshot schema: 5')
   })
 })

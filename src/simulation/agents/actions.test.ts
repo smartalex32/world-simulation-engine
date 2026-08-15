@@ -18,6 +18,7 @@ function createContext(cells: GeographicCell[], occupants = ['test-person']): Ac
     tick: 12,
     cellById: new Map(cells.map((cell) => [cell.id, cell])),
     occupantsByCell: new Map([['1,1', occupants]]),
+    occupantsByActivityLocation: new Map([['activity.home.household-test', occupants]]),
   }
 }
 
@@ -25,8 +26,13 @@ function person(curiosity = 500): PersonState {
   return {
     id: 'test-person',
     ageYears: 30,
+    ageHoursIntoYear: 0,
     locationCellId: '1,1',
     homeCellId: '1,1',
+    householdId: 'household-test',
+    activityScheduleId: 'activity.schedule.adult.v1',
+    currentActivity: { kind: 'home', locationId: 'activity.home.household-test', sinceTick: 0 },
+    originTraces: [],
     variables: createDefaultPersonVariableValues({
       [PERSON_VARIABLE_ID.curiosity]: curiosity,
       [PERSON_VARIABLE_ID.riskTolerance]: 500,
@@ -118,7 +124,7 @@ describe('agent actions', () => {
     expect(candidates.find((candidate) => candidate.action === 'socialize')).toBeUndefined()
   })
 
-  it('offers socialize with named contributions when another occupant shares the cell', () => {
+  it('offers socialize with named contributions when another occupant shares the activity location', () => {
     const cells = createCells()
     const candidates = evaluateActions(person(), createContext(cells, ['test-person', 'other-person']))
     const socialize = candidates.find((candidate) => candidate.action === 'socialize')

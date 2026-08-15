@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ACTIVITY_REGISTRY_VERSION,
+  HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   SNAPSHOT_SCHEMA_VERSION,
   VARIABLE_REGISTRY_VERSION,
@@ -7,6 +9,7 @@ import {
   type WorldProjection,
 } from '../domain/types'
 import { SimulationEngine } from '../engine/engine'
+import { createCommonsActivity, createHouseholdHomeActivity } from '../activities/model'
 import { createSnapshot } from '../serialization/snapshot'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { getPersonVariable, setPersonVariable } from '../variables/storage'
@@ -45,7 +48,8 @@ async function controlledSnapshot(seed: string, personCount: number): Promise<Sn
   state.world.grid = { width: 1, height: 1, cells: [cell] }
   state.config.worldWidth = 1
   state.config.worldHeight = 1
-  state.people = state.people.slice(0, personCount).map((person) => ({
+  state.tick = 5
+  state.people = state.people.slice(150, 150 + personCount).map((person) => ({
     ...person,
     locationCellId: cell.id,
     homeCellId: cell.id,
@@ -53,10 +57,21 @@ async function controlledSnapshot(seed: string, personCount: number): Promise<Sn
     journey: undefined,
     lastDecision: undefined,
     lastEncounter: undefined,
+    currentActivity: { kind: 'home' as const, locationId: `activity.home.${person.householdId}`, sinceTick: 0 },
   }))
+  const householdIds = new Set(state.people.map(({ householdId }) => householdId))
+  state.households = state.households
+    .filter(({ id }) => householdIds.has(id))
+    .map((household) => ({ ...household, homeCellId: cell.id, memberIds: household.memberIds.filter((id) => state.people.some((person) => person.id === id)) }))
+  state.parentChildLinks = []
+  state.activityLocations = [
+    createCommonsActivity(cell.id),
+    ...state.households.map((household) => createHouseholdHomeActivity(household.id, cell.id)),
+  ].sort((first, second) => first.id.localeCompare(second.id))
   state.relationships = []
   state.dailySpatialCounters = { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 }
   state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
+  state.dailyActivityCounters = { homePersonHours: personCount * state.tick, commonsPersonHours: 0, travelPersonHours: 0 }
   return createSnapshot(state)
 }
 
@@ -91,6 +106,8 @@ describe('Milestone 4 deterministic state and persistence', () => {
     expect(snapshot.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION)
     expect(snapshot.state.config.variableRegistryVersion).toBe(VARIABLE_REGISTRY_VERSION)
     expect(snapshot.state.config.influenceRegistryVersion).toBe(INFLUENCE_REGISTRY_VERSION)
+    expect(snapshot.state.config.householdModelVersion).toBe(HOUSEHOLD_MODEL_VERSION)
+    expect(snapshot.state.config.activityRegistryVersion).toBe(ACTIVITY_REGISTRY_VERSION)
     expect(snapshot.state.randomStreams.map(({ name }) => name)).toEqual(expect.arrayContaining([
       'worldgen',
       'population',
@@ -101,6 +118,9 @@ describe('Milestone 4 deterministic state and persistence', () => {
       `population.variable.${PERSON_VARIABLE_ID.persistence}`,
       `population.variable.${PERSON_VARIABLE_ID.fatigue}`,
       `population.variable.${PERSON_VARIABLE_ID.socialConnection}`,
+      'population.households.childAge',
+      'population.ageRemainderHours',
+      'population.inheritance.person.trait.curiosity',
     ]))
 
     const restored = await SimulationEngine.restore(snapshot)
@@ -118,6 +138,7 @@ describe('Milestone 4 deterministic state and persistence', () => {
     setPersonVariable(traveler.variables, PERSON_VARIABLE_ID.fatigue, 100)
     setPersonVariable(traveler.variables, PERSON_VARIABLE_ID.socialConnection, 100)
     traveler.journey = { kind: 'move', destinationCellId: '0,0', totalCost: 5000, remainingCost: 5000 }
+    traveler.currentActivity = { kind: 'travel', locationId: null, sinceTick: snapshot.state.tick }
 
     const engine = await SimulationEngine.restore(await createSnapshot(snapshot.state))
     const result = engine.step(1)
@@ -146,7 +167,7 @@ describe('Milestone 4 deterministic state and persistence', () => {
     expect(result.events.some(({ type }) => type === 'PERSON_ENCOUNTERED')).toBe(true)
     expect(result.projection.people).toHaveLength(2)
     for (const participant of result.projection.people) {
-      expect(participant.lastEncounter?.tick).toBe(1)
+      expect(participant.lastEncounter?.tick).toBe(snapshot.state.tick + 1)
       expect(getPersonVariable(participant.variables, PERSON_VARIABLE_ID.socialConnection)).toBe(0)
     }
   })
@@ -162,7 +183,7 @@ describe('Milestone 4 deterministic state and persistence', () => {
     await expect(SimulationEngine.restore(influenceMismatch)).rejects.toThrow('Unsupported influence registry version')
   })
 
-  it('rejects malformed variable records in schema-5 snapshots', async () => {
+  it('rejects malformed variable records in schema-6 snapshots', async () => {
     const snapshot = await SimulationEngine.create('milestone-4-malformed-variables').snapshot()
 
     const missing = cloneSnapshot(snapshot)

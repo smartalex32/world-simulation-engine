@@ -10,8 +10,13 @@ function person(id: string, sociability: number, locationCellId: string): Person
   return {
     id,
     ageYears: 30,
+    ageHoursIntoYear: 0,
     locationCellId,
     homeCellId: locationCellId,
+    householdId: `household-${id}`,
+    activityScheduleId: 'activity.schedule.adult.v1',
+    currentActivity: { kind: 'commons', locationId: locationCellId, sinceTick: 0 },
+    originTraces: [],
     variables: createDefaultPersonVariableValues({
       [PERSON_VARIABLE_ID.sociability]: sociability,
       [PERSON_VARIABLE_ID.hunger]: 100,
@@ -20,10 +25,11 @@ function person(id: string, sociability: number, locationCellId: string): Person
   }
 }
 
-function encounterContext(people: PersonState[], occupantsByCell: ReadonlyMap<string, readonly string[]>): EncounterContext {
+function encounterContext(people: PersonState[], occupantsByActivityLocation: ReadonlyMap<string, readonly string[]>): EncounterContext {
   return {
     peopleById: new Map(people.map((entry) => [entry.id, entry])),
-    occupantsByCell,
+    occupantsByActivityLocation,
+    activityLocationsById: new Map([...occupantsByActivityLocation.keys()].map((id) => [id, { id, kind: 'commons' as const, cellId: id }])),
     socializerIds: new Set(people.map((entry) => entry.id)),
     relationshipsById: new Map<string, RelationshipState>(),
   }
