@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
-import type { GeographicCell, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, UtilityContribution, WorldProjection } from './simulation/domain/types'
+import type { GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, UtilityContribution, WorldProjection } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
 import { findPath } from './simulation/spatial/pathfinding'
 import { HexMap, type MapOverlay } from './ui/HexMap'
@@ -30,6 +30,8 @@ export default function App() {
   const [selected, setSelected] = useState<GeographicCell>()
   const [selectedPersonId, setSelectedPersonId] = useState<string>()
   const [overlay, setOverlay] = useState<MapOverlay>('terrain')
+  const [showActivityLocations, setShowActivityLocations] = useState(false)
+  const [showHouseholds, setShowHouseholds] = useState(false)
   const [snapshots, setSnapshots] = useState<SavedSnapshot[]>([])
   const [error, setError] = useState<string>()
   const [processingMs, setProcessingMs] = useState(0)
@@ -204,6 +206,10 @@ export default function App() {
               <button key={entry} className={overlay === entry ? 'active' : ''} onClick={() => setOverlay(entry)}><span className={`swatch ${entry}`} />{entry}</button>
             ))}
           </div>
+          {projection && <div className="map-annotation-toggles" aria-label="Map annotations">
+            <button aria-label="Activity locations" aria-pressed={showActivityLocations} className={showActivityLocations ? 'active' : ''} onClick={() => setShowActivityLocations((current) => !current)}>Activity locations</button>
+            <button aria-label="Households" aria-pressed={showHouseholds} className={showHouseholds ? 'active' : ''} onClick={() => setShowHouseholds((current) => !current)}>Households</button>
+          </div>}
           <PanelTitle title="Daily samples" subtitle="Latest aggregates" />
           <div className="metric-list">
             <Metric label="Cells" value={recentMetrics['world.cellCount'] ?? projection?.world.grid.cells.length ?? 0} />
@@ -230,13 +236,13 @@ export default function App() {
 
         <section className="map-panel panel">
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {overlay}</span></div>
-          {projection ? <HexMap grid={projection.world.grid} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selected?.id} people={projection.people} relationships={projection.relationships} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelected(cell); setSelectedPersonId(undefined) }} /> : <div className="loading">Starting simulation worker…</div>}
+          {projection ? <HexMap grid={projection.world.grid} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selected?.id} people={projection.people} relationships={projection.relationships} activityLocations={projection.activityLocations} households={projection.households} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelected(cell); setSelectedPersonId(undefined) }} /> : <div className="loading">Starting simulation worker…</div>}
         </section>
 
         <aside className="right-panel panel">
           <PanelTitle title={selectedPerson ? 'Person inspector' : 'Cell inspector'} subtitle={selectedPerson ? selectedPerson.id : selected ? `Cell ${selected.id}` : 'Select a cell'} />
           {selectedPerson
-            ? <PersonInspector person={selectedPerson} grid={projection?.world.grid} variableDefinitions={projection?.variableDefinitions ?? []} relationships={selectedRelationships} onHookPerson={inspectPerson} onRelease={() => {
+            ? <PersonInspector person={selectedPerson} grid={projection?.world.grid} variableDefinitions={projection?.variableDefinitions ?? []} relationships={selectedRelationships} households={projection?.households ?? []} parentChildLinks={projection?.parentChildLinks ?? []} people={projection?.people ?? []} onHookPerson={inspectPerson} onRelease={() => {
                 const currentCell = projection?.world.grid.cells.find((cell) => cell.id === selectedPerson.locationCellId)
                 setSelected(currentCell)
                 setSelectedPersonId(undefined)
@@ -287,9 +293,12 @@ function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell;
   </div>
 }
 
-function PersonInspector({ person, grid, variableDefinitions, relationships, onHookPerson, onRelease }: { person: PersonState; grid?: WorldProjection['world']['grid']; variableDefinitions: readonly VariableDefinitionView[]; relationships: RelationshipView[]; onHookPerson: (id: string) => void; onRelease: () => void }) {
+function PersonInspector({ person, grid, variableDefinitions, relationships, households, parentChildLinks, people, onHookPerson, onRelease }: { person: PersonState; grid?: WorldProjection['world']['grid']; variableDefinitions: readonly VariableDefinitionView[]; relationships: RelationshipView[]; households: readonly HouseholdState[]; parentChildLinks: readonly ParentChildLink[]; people: readonly PersonState[]; onHookPerson: (id: string) => void; onRelease: () => void }) {
   const decision = person.lastDecision
   const homePath = grid ? findPath(grid, person.locationCellId, person.homeCellId) : undefined
+  const household = households.find((candidate) => candidate.id === person.householdId)
+  const householdMembers = householdMemberViews(person, household, parentChildLinks, people)
+  const firstOriginTrace = person.originTraces[0]
   return <div className="person-inspector">
     <div className="tracking-row"><span><i />Person hooked</span><button className="back-button" onClick={onRelease}>Release to current cell</button></div>
     <div className="inspector-grid">
@@ -299,7 +308,26 @@ function PersonInspector({ person, grid, variableDefinitions, relationships, onH
       {person.journey && <><Metric label="Traveling to" value={person.journey.destinationCellId} /><Metric label="Travel remaining" value={`${person.journey.remainingCost} / ${person.journey.totalCost}`} /></>}
       <Metric label="Route home" value={homePath ? `${Math.max(0, homePath.cellIds.length - 1)} steps · ${homePath.totalCost} cost` : 'No route'} />
     </div>
-    <PersonVariableSections definitions={variableDefinitions} values={variableValues(person)} />
+    <section className="activity-panel" aria-labelledby="current-activity-heading">
+      <div className="section-heading"><h3 id="current-activity-heading">Current activity</h3><span>{scheduleLabel(person.activityScheduleId)}</span></div>
+      <div className="activity-details">
+        <Metric label="Kind" value={person.currentActivity.kind} />
+        <Metric label="Location" value={person.currentActivity.kind === 'travel' ? 'None while traveling' : person.currentActivity.locationId ?? 'None'} />
+        <Metric label="Cell" value={person.locationCellId} />
+        <Metric label="Since tick" value={person.currentActivity.sinceTick} />
+      </div>
+    </section>
+    <PersonVariableSections definitions={variableDefinitions} values={variableValues(person)} layers={['state', 'need']} />
+    <section className="household-panel" aria-labelledby="household-heading">
+      <div className="section-heading"><h3 id="household-heading">Household</h3><span>{household ? household.memberIds.length : 0} members</span></div>
+      {household ? <>
+        <div className="activity-details"><Metric label="Household ID" value={household.id} /><Metric label="Home" value={household.homeCellId} /></div>
+        <div className="household-members">
+          {householdMembers.map((member) => <button key={member.id} onClick={() => onHookPerson(member.id)} aria-label={`Hook ${member.id}`}><span><strong>{member.id}</strong><small>{member.role}</small></span><span>{member.ageYears} years</span></button>)}
+        </div>
+        {firstOriginTrace && <div className="inheritance-trace"><strong>Starting predisposition</strong><span>Curiosity {firstOriginTrace.finalValue / 10}%</span><small>Fictional, configurable parental-baseline-variation model; this is a starting tendency, not a fixed outcome.</small></div>}
+      </> : <p>Household data is unavailable for this person.</p>}
+    </section>
     <section className="encounter-panel" aria-labelledby="last-encounter-heading">
       <h3 id="last-encounter-heading">Last encounter</h3>
       {person.lastEncounter ? <>
@@ -319,6 +347,7 @@ function PersonInspector({ person, grid, variableDefinitions, relationships, onH
         </button>)}
       </div>}
     </section>
+    <PersonVariableSections definitions={variableDefinitions} values={variableValues(person)} layers={['trait']} />
     <ActionExplanation action={decision?.action} probabilityPermille={decision?.probabilityPermille} targetCellId={decision?.targetCellId} contributions={decision ? contributionViews(decision.contributions, variableDefinitions) : []} alternatives={decision?.alternatives ?? []} labelForSource={(sourceId, fallback) => sourceLabel(sourceId, fallback, variableDefinitions)} />
   </div>
 }
@@ -359,6 +388,37 @@ function relationshipViews(personId: string, relationships: RelationshipState[])
 }
 
 function normalizedPercent(value: number): string { return `${(value / 10).toFixed(1)}%` }
+
+function scheduleLabel(scheduleId: PersonState['activityScheduleId']): string {
+  if (scheduleId === 'activity.schedule.child.v1') return 'Child daily schedule'
+  if (scheduleId === 'activity.schedule.adult.v1') return 'Adult daily schedule'
+  return scheduleId
+}
+
+interface HouseholdMemberView {
+  id: string
+  ageYears: number
+  role: 'Parent' | 'Child' | 'Member'
+}
+
+function householdMemberViews(person: PersonState, household: HouseholdState | undefined, links: readonly ParentChildLink[], people: readonly PersonState[]): HouseholdMemberView[] {
+  if (!household) return []
+  const peopleById = new Map(people.map((candidate) => [candidate.id, candidate]))
+  const parentIds = new Set(links.filter((link) => link.householdId === household.id && link.childId === person.id).map((link) => link.parentId))
+  const childIds = new Set(links.filter((link) => link.householdId === household.id && link.parentId === person.id).map((link) => link.childId))
+  return household.memberIds
+    .map((id): HouseholdMemberView | undefined => {
+      const member = peopleById.get(id)
+      if (!member) return undefined
+      return { id, ageYears: member.ageYears, role: parentIds.has(id) ? 'Parent' : childIds.has(id) ? 'Child' : 'Member' }
+    })
+    .filter((member): member is HouseholdMemberView => member !== undefined)
+    .sort((first, second) => roleRank(first.role) - roleRank(second.role) || first.id.localeCompare(second.id))
+}
+
+function roleRank(role: HouseholdMemberView['role']): number {
+  return role === 'Parent' ? 0 : role === 'Child' ? 1 : 2
+}
 
 function networkDensityPermille(projection?: WorldProjection): number {
   const population = projection?.people.length ?? 0

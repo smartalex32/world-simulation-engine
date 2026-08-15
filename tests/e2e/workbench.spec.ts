@@ -1,10 +1,20 @@
 import { expect, test } from '@playwright/test'
+import { SimulationEngine } from '../../src/simulation/engine/engine'
+import { axialToPixel } from '../../src/simulation/spatial/hex'
 
 test('creates, steps, inspects, and saves a deterministic world', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('Seeded Valley')).toBeVisible()
   await page.getByRole('button', { name: 'food', exact: true }).click()
   await expect(page.getByRole('button', { name: 'food', exact: true })).toHaveClass(/active/)
+  const activityLayer = page.getByRole('button', { name: 'Activity locations', exact: true })
+  const householdLayer = page.getByRole('button', { name: 'Households', exact: true })
+  await expect(activityLayer).toHaveAttribute('aria-pressed', 'false')
+  await expect(householdLayer).toHaveAttribute('aria-pressed', 'false')
+  await activityLayer.click()
+  await householdLayer.click()
+  await expect(activityLayer).toHaveAttribute('aria-pressed', 'true')
+  await expect(householdLayer).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
   await page.getByTitle('Advance one hour').click()
   await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
@@ -15,6 +25,9 @@ test('creates, steps, inspects, and saves a deterministic world', async ({ page 
   await page.getByRole('button', { name: /Inspect person-/ }).first().click()
   await expect(page.getByText('Person inspector')).toBeVisible()
   await expect(page.getByText('Person hooked')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Current activity', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Household', exact: true })).toBeVisible()
+  await expect(page.getByText(/daily schedule/)).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Current condition', exact: true })).toBeVisible()
   await expect(page.locator('#need-variables-heading')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Core dispositions', exact: true })).toBeVisible()
@@ -49,7 +62,7 @@ test('the same seed and step count produce the same digest', async ({ page }) =>
   await page.getByTitle('Advance one hour').click()
   await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
   const firstDigest = await page.locator('.fact').filter({ hasText: 'STATE' }).locator('strong').textContent()
-  expect(firstDigest).toBe('456aceb484')
+  expect(firstDigest).toBe('32594d47d0')
   await page.getByRole('button', { name: 'Reset' }).click()
   await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
   await page.getByTitle('Advance one hour').click()
@@ -72,4 +85,47 @@ test('encounter events navigate between hooked people and their relationships', 
   const relationshipTarget = await page.locator('.relationship-list button').first().getAttribute('aria-label')
   await page.locator('.relationship-list button').first().click()
   await expect(page.locator('.right-panel .panel-title').first().locator('span')).toHaveText((relationshipTarget ?? '').replace('Hook ', ''))
+})
+
+test('hooks a fixed child, inspects household origins, and re-hooks a parent without camera follow', async ({ page }) => {
+  const expected = await SimulationEngine.create('valley-001')
+  const expectedProjection = expected.project()
+  const peopleByCell = new Map<string, number>()
+  for (const person of expectedProjection.people) peopleByCell.set(person.locationCellId, (peopleByCell.get(person.locationCellId) ?? 0) + 1)
+  const parentChild = expectedProjection.parentChildLinks.find((link) => (peopleByCell.get(expectedProjection.people.find((person) => person.id === link.childId)?.locationCellId ?? '') ?? 0) <= 12)
+  const child = expectedProjection.people.find((person) => person.id === parentChild?.childId)
+  expect(child).toBeDefined()
+  expect(parentChild).toBeDefined()
+
+  await page.goto('/')
+  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  const canvas = page.getByLabel('Hex world map')
+  const bounds = await canvas.boundingBox()
+  expect(bounds).not.toBeNull()
+  if (!bounds || !child || !parentChild) return
+  await expect.poll(async () => canvas.evaluate((element) => {
+    const transform = element.getAttribute('data-map-viewport')
+    return transform && element.clientWidth > 0 && element.clientHeight > 0 && transform !== '34.000,42.000,0.86000'
+  })).toBe(true)
+  const transform = await canvas.getAttribute('data-map-viewport')
+  expect(transform).not.toBeNull()
+  if (!transform) return
+  const [x = Number.NaN, y = Number.NaN, scale = Number.NaN] = transform.split(',').map(Number)
+  expect(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(scale)).toBe(true)
+  const comma = child.locationCellId.indexOf(',')
+  const center = axialToPixel({ q: Number(child.locationCellId.slice(0, comma)), r: Number(child.locationCellId.slice(comma + 1)) }, 18)
+  await page.mouse.click(bounds.x + x + center.x * scale, bounds.y + y + center.y * scale)
+  await page.locator('.occupant-list button').filter({ hasText: child.id }).click()
+
+  await expect(page.locator('.right-panel .panel-title').first().locator('span')).toHaveText(child.id)
+  await expect(page.getByText('Starting predisposition', { exact: true })).toBeVisible()
+  await expect(page.getByText(/Fictional, configurable parental-baseline-variation/)).toBeVisible()
+  await expect(page.locator('.household-members button').filter({ hasText: parentChild.parentId })).toContainText('Parent')
+  const cameraBefore = await canvas.getAttribute('data-map-viewport')
+  await page.locator('.household-members button').filter({ hasText: parentChild.parentId }).click()
+  await expect(page.locator('.right-panel .panel-title').first().locator('span')).toHaveText(parentChild.parentId)
+  await expect(canvas).toHaveAttribute('data-map-viewport', cameraBefore ?? '')
+  const dimensions = await canvas.evaluate((element) => ({ width: element.clientWidth, height: element.clientHeight }))
+  expect(dimensions.width).toBeGreaterThan(250)
+  expect(dimensions.height).toBeGreaterThan(250)
 })
