@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ACTIVITY_REGISTRY_VERSION,
+  COMMUNITY_REGISTRY_VERSION,
   DEVELOPMENT_REGISTRY_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
@@ -15,6 +16,7 @@ import { createSnapshot } from '../serialization/snapshot'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { getPersonVariable, setPersonVariable } from '../variables/storage'
 import { PERSON_VARIABLE_IDS } from '../variables/types'
+import { createCommunityState, createDailyCommunityCounters, createTwoCatchmentGeography } from '../community'
 
 function expectAllVariablesBounded(projection: WorldProjection): void {
   for (const person of projection.people) {
@@ -46,8 +48,9 @@ async function controlledSnapshot(seed: string, personCount: number): Promise<Sn
     foodAmount: 0,
     foodRegenerationPerDay: 0,
   }
-  state.world.grid = { width: 1, height: 1, cells: [cell] }
-  state.config.worldWidth = 1
+  const secondCell = { ...cell, id: '1,0', q: 1 }
+  state.world.grid = { width: 2, height: 1, cells: [cell, secondCell] }
+  state.config.worldWidth = 2
   state.config.worldHeight = 1
   state.tick = 5
   state.people = state.people.slice(150, 150 + personCount).map((person) => ({
@@ -67,12 +70,23 @@ async function controlledSnapshot(seed: string, personCount: number): Promise<Sn
   state.parentChildLinks = []
   state.activityLocations = [
     createCommonsActivity(cell.id),
+    createCommonsActivity(secondCell.id),
     ...state.households.map((household) => createHouseholdHomeActivity(household.id, cell.id)),
   ].sort((first, second) => first.id.localeCompare(second.id))
   state.relationships = []
   state.dailySpatialCounters = { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 }
   state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
   state.dailyActivityCounters = { homePersonHours: personCount * state.tick, commonsPersonHours: 0, travelPersonHours: 0 }
+  const catchments = createTwoCatchmentGeography({ cells: state.world.grid.cells, width: 2, height: 1 })
+  state.communities = catchments.map((catchment) => ({ ...createCommunityState(catchment, 500, 0), lastUpdatedTick: 0, latestTraces: [] }))
+  const exposedPersonIds = state.people.map(({ id }) => id).sort()
+  const curiosityPersonHourSum = state.people.reduce((sum, person) => sum + getPersonVariable(person.variables, PERSON_VARIABLE_ID.curiosity) * state.tick, 0)
+  state.dailyCommunityCounters = state.communities.map((community) => ({
+    communityId: community.catchment.id,
+    counters: community.catchment.cellIds.includes(cell.id)
+      ? { ...createDailyCommunityCounters(), windowStartTick: 1, windowEndTick: 24, exposedPersonIds, exposedPersonHours: personCount * state.tick, curiosityPersonHourSum }
+      : { ...createDailyCommunityCounters(), windowStartTick: 1, windowEndTick: 24 },
+  }))
   return createSnapshot(state)
 }
 
@@ -110,6 +124,7 @@ describe('Milestone 4 deterministic state and persistence', () => {
     expect(snapshot.state.config.householdModelVersion).toBe(HOUSEHOLD_MODEL_VERSION)
     expect(snapshot.state.config.activityRegistryVersion).toBe(ACTIVITY_REGISTRY_VERSION)
     expect(snapshot.state.config.developmentRegistryVersion).toBe(DEVELOPMENT_REGISTRY_VERSION)
+    expect(snapshot.state.config.communityRegistryVersion).toBe(COMMUNITY_REGISTRY_VERSION)
     expect(snapshot.state.randomStreams.map(({ name }) => name)).toEqual(expect.arrayContaining([
       'worldgen',
       'population',

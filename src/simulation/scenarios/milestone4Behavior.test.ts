@@ -58,6 +58,7 @@ function context(withCompany = false): ActionContext {
     cellById: new Map([[homeCell.id, { ...homeCell }], [unknownNeighbor.id, { ...unknownNeighbor }]]),
     occupantsByCell: new Map([[homeCell.id, withCompany ? ['person-a', 'person-b'] : ['person-a']]]),
     occupantsByActivityLocation: new Map([['activity.home.household-a', withCompany ? ['person-a', 'person-b'] : ['person-a']]]),
+    communityByCellId: new Map(),
   }
 }
 
@@ -123,6 +124,7 @@ describe('Milestone 4 influence behavior', () => {
       cellById: new Map([[isolatedCell.id, isolatedCell]]),
       occupantsByCell: new Map([[isolatedCell.id, ['person-a']]]),
       occupantsByActivityLocation: new Map([['activity.home.household-a', ['person-a']]]),
+      communityByCellId: new Map(),
     }
     const isolatedPerson = person()
 

@@ -1,13 +1,21 @@
 import type { PersonVariableDefinition, PersonVariableId, PersonVariableValues } from '../variables/types'
+import type {
+  CommunityDailyCounterState,
+  CommunityEmergentId,
+  CommunityFeedbackEdgeDefinition,
+  CommunitySimulationState,
+  CommunityVariableDefinition,
+} from '../community/types'
 
-export const ENGINE_VERSION = '0.7.0'
-export const SNAPSHOT_SCHEMA_VERSION = 7
+export const ENGINE_VERSION = '0.8.0'
+export const SNAPSHOT_SCHEMA_VERSION = 8
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
 export const HOUSEHOLD_MODEL_VERSION = 1
 export const ACTIVITY_REGISTRY_VERSION = 1
 export const DEVELOPMENT_REGISTRY_VERSION = 1
+export const COMMUNITY_REGISTRY_VERSION = 1
 
 export type Terrain = 'water' | 'plain' | 'hill'
 
@@ -199,7 +207,20 @@ export interface InfluenceUtilityContribution {
   weightPermille: number
 }
 
-export type UtilityContribution = UnattributedUtilityContribution | InfluenceUtilityContribution
+export interface CommunityInfluenceUtilityContribution {
+  kind: 'communityInfluence'
+  factor: string
+  value: number
+  edgeId: string
+  sourceId: CommunityEmergentId
+  targetId: 'decision.socialize.utility' | 'decision.explore.utility'
+  sourceValue: number
+  centeredSourceValue: number
+  weightPermille: number
+  communityId: string
+}
+
+export type UtilityContribution = UnattributedUtilityContribution | InfluenceUtilityContribution | CommunityInfluenceUtilityContribution
 
 export interface ActionAlternative {
   action: ActionName
@@ -280,6 +301,7 @@ export interface RunConfiguration {
   householdModelVersion: number
   activityRegistryVersion: number
   developmentRegistryVersion: number
+  communityRegistryVersion: number
 }
 
 export interface RandomStreamSnapshot {
@@ -298,6 +320,8 @@ export interface SimulationState {
   households: HouseholdState[]
   parentChildLinks: ParentChildLink[]
   activityLocations: ActivityLocationState[]
+  communities: CommunitySimulationState[]
+  dailyCommunityCounters: CommunityDailyCounterState[]
   relationships: RelationshipState[]
   dailySpatialCounters: DailySpatialCounters
   dailySocialCounters: DailySocialCounters
@@ -310,20 +334,27 @@ export interface SimulationEvent {
   id: string
   runId: string
   tick: number
-  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_VARIABLE_DEVELOPED' | 'ERROR'
+  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
   version: 1
   cellId?: string
   payload: Record<string, string | number | boolean | null>
 }
 
-export interface StatisticSample {
+export type WorldStatisticMetricId = 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.averageHunger' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodConsumed' | 'resources.failedMeals' | 'social.encounters' | 'social.encountersPer1000People' | 'social.relationshipCount' | 'social.networkDensityPermille' | 'social.averageFamiliarity' | 'social.positiveEncounters' | 'social.tenseEncounters' | 'activity.homePersonHours' | 'activity.commonsPersonHours' | 'activity.travelPersonHours' | 'household.parentChildCoExposureSourceHours' | 'development.experiences' | 'development.curiosityChanges' | 'development.absoluteCuriosityChange'
+
+export type CommunityStatisticMetricId = 'community.emergent.socialTrust' | 'community.emergent.cohesion' | 'community.emergent.cooperation' | 'community.emergent.conflict' | 'community.emergent.innovationClimate' | 'community.structural.foodSecurity' | 'community.exposedPersonHours' | 'community.encounters'
+
+interface StatisticSampleBase {
   runId: string
   tick: number
-  metricId: 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.averageHunger' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodConsumed' | 'resources.failedMeals' | 'social.encounters' | 'social.encountersPer1000People' | 'social.relationshipCount' | 'social.networkDensityPermille' | 'social.averageFamiliarity' | 'social.positiveEncounters' | 'social.tenseEncounters' | 'activity.homePersonHours' | 'activity.commonsPersonHours' | 'activity.travelPersonHours' | 'household.parentChildCoExposureSourceHours' | 'development.experiences' | 'development.curiosityChanges' | 'development.absoluteCuriosityChange'
   metricVersion: 1
-  scope: 'world'
   value: number
 }
+
+export type StatisticSample = StatisticSampleBase & (
+  | { metricId: WorldStatisticMetricId; scope: 'world'; scopeId?: never }
+  | { metricId: CommunityStatisticMetricId; scope: 'community'; scopeId: string }
+)
 
 export interface SnapshotEnvelope {
   schemaVersion: number
@@ -342,7 +373,10 @@ export interface WorldProjection {
   households: HouseholdState[]
   parentChildLinks: ParentChildLink[]
   activityLocations: ActivityLocationState[]
+  communities: CommunitySimulationState[]
   relationships: RelationshipState[]
   variableDefinitions: readonly PersonVariableDefinition[]
+  communityVariableDefinitions: readonly CommunityVariableDefinition[]
+  communityFeedbackDefinitions: readonly CommunityFeedbackEdgeDefinition[]
   digest?: string
 }

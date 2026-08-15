@@ -10,7 +10,7 @@ describe('SimulationEngine', () => {
     expect((await first.snapshot()).digest).toBe((await second.snapshot()).digest)
     const result = first.step(24)
     expect(result.projection.tick).toBe(24)
-    expect(result.statistics.map((sample) => sample.metricId)).toEqual([
+    expect(result.statistics.filter((sample) => sample.scope === 'world').map((sample) => sample.metricId)).toEqual([
       'world.cellCount',
       'world.habitableCells',
       'engine.simulatedDays',
@@ -36,6 +36,8 @@ describe('SimulationEngine', () => {
       'development.curiosityChanges',
       'development.absoluteCuriosityChange',
     ])
+    expect(result.statistics.filter((sample) => sample.scope === 'community')).toHaveLength(16)
+    expect(new Set(result.statistics.filter((sample) => sample.scope === 'community').map((sample) => sample.scopeId))).toEqual(new Set(['community-west-valley', 'community-east-valley']))
     expect(result.statistics[2]?.value).toBe(1)
     expect(result.projection.people).toHaveLength(200)
     expect(result.projection.households).toHaveLength(100)
@@ -73,9 +75,9 @@ describe('SimulationEngine', () => {
     await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('digest')
   })
 
-  it('rejects schema 6 snapshots instead of silently migrating them', async () => {
+  it('rejects schema 7 snapshots instead of silently migrating them', async () => {
     const snapshot = await SimulationEngine.create('old-schema').snapshot()
-    snapshot.schemaVersion = 6
-    await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('Unsupported snapshot schema: 6')
+    snapshot.schemaVersion = 7
+    await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('Unsupported snapshot schema: 7')
   })
 })

@@ -1,4 +1,7 @@
 import type { ActionDecision, ActionName, GeographicCell, PersonState, UtilityContribution } from '../domain/types'
+import type { CommunitySimulationState } from '../community/types'
+import { evaluateCommunityFeedback } from '../community/feedback'
+import { getCommunityVariableDefinition } from '../community/registry'
 import type { Pcg32 } from '../rng/pcg32'
 import { hexNeighbors } from '../spatial/hex'
 import { evaluateInfluences } from '../influences/evaluate'
@@ -34,6 +37,8 @@ export interface ActionContext {
   cellById: ReadonlyMap<string, GeographicCell>
   occupantsByCell: ReadonlyMap<string, readonly string[]>
   occupantsByActivityLocation: ReadonlyMap<string, readonly string[]>
+  /** Current authoritative catchment state indexed by actual world cell. */
+  communityByCellId: ReadonlyMap<string, CommunitySimulationState>
 }
 
 export interface ActionOutcome {
@@ -115,6 +120,7 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
       * (1000 - getPersonVariable(person.variables, PERSON_VARIABLE_ID.riskTolerance))
       / 3000,
     )),
+    ...communityInfluenceContributions('decision.explore.utility', person.locationCellId, context),
   ], exploreTarget.id))
   candidates.push(candidate('rest', [
     baseContribution(ACTION_BASE_WEIGHT.rest),
@@ -126,6 +132,7 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
     baseContribution(ACTION_BASE_WEIGHT.socialize),
     ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.socializeUtility, person),
     contextContribution('people present', company * OTHER_OCCUPANT_SOCIAL_WEIGHT),
+    ...communityInfluenceContributions('decision.socialize.utility', person.locationCellId, context),
   ]))
   return candidates
 }
@@ -204,6 +211,27 @@ function personInfluenceContributions(targetId: DecisionInfluenceTarget, person:
     targetId: contribution.targetId,
     sourceValue: contribution.sourceValue,
     weightPermille: contribution.weightPermille,
+  }))
+}
+
+function communityInfluenceContributions(
+  targetId: 'decision.socialize.utility' | 'decision.explore.utility',
+  cellId: string,
+  context: ActionContext,
+): UtilityContribution[] {
+  const community = context.communityByCellId.get(cellId)
+  if (!community) return []
+  return evaluateCommunityFeedback(targetId, community.emergent).contributions.map((contribution) => ({
+    kind: 'communityInfluence',
+    factor: getCommunityVariableDefinition(contribution.sourceId).label.toLowerCase(),
+    value: contribution.effect,
+    edgeId: contribution.edgeId,
+    sourceId: contribution.sourceId,
+    targetId: contribution.targetId,
+    sourceValue: contribution.sourceValuePermille,
+    centeredSourceValue: contribution.centeredSourcePermille,
+    weightPermille: contribution.weightPermille,
+    communityId: community.catchment.id,
   }))
 }
 
