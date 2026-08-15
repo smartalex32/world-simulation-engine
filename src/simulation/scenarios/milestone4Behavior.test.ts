@@ -7,6 +7,7 @@ import { Pcg32, hashSeed } from '../rng/pcg32'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { createDefaultPersonVariableValues, getPersonVariable } from '../variables/storage'
 import type { PersonVariableId, PersonVariableValues } from '../variables/types'
+import { createParentCuriosityExposureAccumulator } from '../exposure/model'
 
 const homeCell: GeographicCell = {
   id: '0,0',
@@ -45,6 +46,7 @@ function person(overrides: Partial<PersonVariableValues> = {}): PersonState {
     activityScheduleId: 'activity.schedule.adult.v1',
     currentActivity: { kind: 'home', locationId: 'activity.home.household-a', sinceTick: 0 },
     originTraces: [],
+    development: { exposures: [{ ...createParentCuriosityExposureAccumulator(1), sourcePersonIds: [] }] },
     variables: createDefaultPersonVariableValues(overrides),
     knownCellIds: [homeCell.id],
   }

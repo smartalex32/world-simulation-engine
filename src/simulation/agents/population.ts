@@ -3,13 +3,14 @@ import { resolveCurrentActivity } from '../activities/model'
 import { generateInitialHouseholds } from '../households/generate'
 import { HOUSEHOLD_GENERATION_STREAM } from '../households/config'
 import { calculateCuriosityInheritance } from '../households/inheritance'
+import { createParentCuriosityExposureAccumulator } from '../exposure/model'
 import type { RandomProvider } from '../rng/pcg32'
 import { hexNeighbors } from '../spatial/hex'
 import { PERSON_VARIABLE_ID, getPersonVariableDefinition } from '../variables/registry'
 import { createDefaultPersonVariableValues, getPersonVariable, setPersonVariable } from '../variables/storage'
 import type { PersonVariableId } from '../variables/types'
 
-type BasePersonState = Omit<PersonState, 'ageHoursIntoYear' | 'householdId' | 'activityScheduleId' | 'currentActivity' | 'originTraces'>
+type BasePersonState = Omit<PersonState, 'ageHoursIntoYear' | 'householdId' | 'activityScheduleId' | 'currentActivity' | 'originTraces' | 'development'>
 
 export interface GeneratedPopulation {
   people: PersonState[]
@@ -79,6 +80,7 @@ export function generatePopulation(cells: GeographicCell[], random: RandomProvid
       activityScheduleId: activity.scheduleId,
       currentActivity: { kind: activity.kind, locationId: activity.locationId, sinceTick: 0 },
       originTraces,
+      development: { exposures: [{ ...createParentCuriosityExposureAccumulator(1), sourcePersonIds: [] }] },
       variables,
       knownCellIds: knownCells(assignment.homeCellId, byId),
     }

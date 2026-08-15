@@ -4,6 +4,7 @@ import { Pcg32, hashSeed } from '../rng/pcg32'
 import { advanceJourney, chooseAction, evaluateActions, resolveAction, type ActionContext } from './actions'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { createDefaultPersonVariableValues, getPersonVariable, setPersonVariable } from '../variables/storage'
+import { createParentCuriosityExposureAccumulator } from '../exposure/model'
 
 function createCells(): GeographicCell[] {
   return [
@@ -33,6 +34,7 @@ function person(curiosity = 500): PersonState {
     activityScheduleId: 'activity.schedule.adult.v1',
     currentActivity: { kind: 'home', locationId: 'activity.home.household-test', sinceTick: 0 },
     originTraces: [],
+    development: { exposures: [{ ...createParentCuriosityExposureAccumulator(1), sourcePersonIds: [] }] },
     variables: createDefaultPersonVariableValues({
       [PERSON_VARIABLE_ID.curiosity]: curiosity,
       [PERSON_VARIABLE_ID.riskTolerance]: 500,
