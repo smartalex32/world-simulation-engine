@@ -11,19 +11,17 @@ interface HexMapProps {
   selectedCellId?: string
   people: PersonState[]
   selectedPersonId?: string
-  followPersonId?: string
   onSelect: (cell?: GeographicCell) => void
 }
 
 const HEX_SIZE = 18
 
-export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId, followPersonId, onSelect }: HexMapProps) {
+export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId, onSelect }: HexMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState({ width: 0, height: 0, scale: 0.86, x: 34, y: 42 })
   const drag = useRef<{ x: number; y: number; originX: number; originY: number; moved: boolean } | undefined>(undefined)
   const fittedGrid = useRef('')
-  const followedLocation = useRef('')
   const level = useMemo(() => renderLevel(grid, viewport, HEX_SIZE), [grid, viewport])
 
   useEffect(() => {
@@ -44,26 +42,6 @@ export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId
     fittedGrid.current = key
     setViewport(fitWorld(grid, viewport.width, viewport.height, HEX_SIZE))
   }, [grid, viewport.width, viewport.height])
-
-  useEffect(() => {
-    if (!followPersonId || viewport.width === 0 || viewport.height === 0) {
-      followedLocation.current = ''
-      return
-    }
-    const person = people.find((candidate) => candidate.id === followPersonId)
-    if (!person) return
-    const followKey = `${person.id}:${person.locationCellId}`
-    if (followedLocation.current === followKey) return
-    followedLocation.current = followKey
-    const cell = cellForPerson(person, grid)
-    if (!cell) return
-    const center = axialToPixel(cell, HEX_SIZE)
-    setViewport((current) => ({
-      ...current,
-      x: current.width / 2 - center.x * current.scale,
-      y: current.height / 2 - center.y * current.scale,
-    }))
-  }, [followPersonId, grid, people, viewport.height, viewport.width])
 
   useEffect(() => {
     const canvas = canvasRef.current

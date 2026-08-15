@@ -212,7 +212,7 @@ export default function App() {
 
         <section className="map-panel panel">
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {overlay}</span></div>
-          {projection ? <HexMap grid={projection.world.grid} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selected?.id} people={projection.people} selectedPersonId={selectedPersonId} followPersonId={selectedPersonId} onSelect={(cell) => { setSelected(cell); setSelectedPersonId(undefined) }} /> : <div className="loading">Starting simulation worker…</div>}
+          {projection ? <HexMap grid={projection.world.grid} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selected?.id} people={projection.people} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelected(cell); setSelectedPersonId(undefined) }} /> : <div className="loading">Starting simulation worker…</div>}
         </section>
 
         <aside className="right-panel panel">
@@ -271,7 +271,7 @@ function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell;
 function PersonInspector({ person, onRelease }: { person: PersonState; onRelease: () => void }) {
   const decision = person.lastDecision
   return <div className="person-inspector">
-    <div className="tracking-row"><span><i />Tracking live</span><button className="back-button" onClick={onRelease}>Release to current cell</button></div>
+    <div className="tracking-row"><span><i />Person hooked</span><button className="back-button" onClick={onRelease}>Release to current cell</button></div>
     <div className="inspector-grid">
       <Metric label="Age" value={`${person.ageYears} years`} />
       <Metric label="Location" value={person.locationCellId} />

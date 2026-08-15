@@ -12,12 +12,12 @@ test('creates, steps, inspects, and saves a deterministic world', async ({ page 
   await expect(page.getByText('CLOCK ADVANCED')).toBeVisible()
   await page.getByRole('button', { name: /Inspect person-/ }).first().click()
   await expect(page.getByText('Person inspector')).toBeVisible()
-  await expect(page.getByText('Tracking live')).toBeVisible()
+  await expect(page.getByText('Person hooked')).toBeVisible()
   await expect(page.getByText('Last decision')).toBeVisible()
   await expect(page.getByText(/selection probability/)).toBeVisible()
   await page.getByTitle('Advance one hour').click()
   await expect(page.getByText('Person inspector')).toBeVisible()
-  await expect(page.getByText('Tracking live')).toBeVisible()
+  await expect(page.getByText('Person hooked')).toBeVisible()
 })
 
 test('the same seed and step count produce the same digest', async ({ page }) => {
