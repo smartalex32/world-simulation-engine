@@ -3,16 +3,20 @@ import type { GeographicCell, PersonState } from '../domain/types'
 import { Pcg32, hashSeed } from '../rng/pcg32'
 import { advanceJourney, chooseAction, evaluateActions, resolveAction, type ActionContext } from './actions'
 
-const cells: GeographicCell[] = [
-  { id: '1,1', q: 1, r: 1, terrain: 'plain', elevation: 200, habitability: 800, movementCost: 1000, resourceCapacity: 100, foodAmount: 100, foodRegenerationPerDay: 8 },
-  { id: '2,1', q: 2, r: 1, terrain: 'plain', elevation: 220, habitability: 800, movementCost: 1000, resourceCapacity: 150, foodAmount: 150, foodRegenerationPerDay: 12 },
-  { id: '1,2', q: 1, r: 2, terrain: 'hill', elevation: 620, habitability: 300, movementCost: 1800, resourceCapacity: 20, foodAmount: 20, foodRegenerationPerDay: 1 },
-]
+function createCells(): GeographicCell[] {
+  return [
+    { id: '1,1', q: 1, r: 1, terrain: 'plain', elevation: 200, habitability: 800, movementCost: 1000, resourceCapacity: 100, foodAmount: 100, foodRegenerationPerDay: 8 },
+    { id: '2,1', q: 2, r: 1, terrain: 'plain', elevation: 220, habitability: 800, movementCost: 1000, resourceCapacity: 150, foodAmount: 150, foodRegenerationPerDay: 12 },
+    { id: '1,2', q: 1, r: 2, terrain: 'hill', elevation: 620, habitability: 300, movementCost: 1800, resourceCapacity: 20, foodAmount: 20, foodRegenerationPerDay: 1 },
+  ]
+}
 
-const context: ActionContext = {
-  tick: 12,
-  cellById: new Map(cells.map((cell) => [cell.id, cell])),
-  occupantsByCell: new Map([['1,1', ['test-person']]]),
+function createContext(cells: GeographicCell[], occupants = ['test-person']): ActionContext {
+  return {
+    tick: 12,
+    cellById: new Map(cells.map((cell) => [cell.id, cell])),
+    occupantsByCell: new Map([['1,1', occupants]]),
+  }
 }
 
 function person(curiosity = 500): PersonState {
@@ -29,13 +33,16 @@ function person(curiosity = 500): PersonState {
 
 describe('agent actions', () => {
   it('provides named, inspectable utility contributions', () => {
-    const candidates = evaluateActions(person(900), context)
+    const cells = createCells()
+    const candidates = evaluateActions(person(900), createContext(cells))
     const explore = candidates.find((candidate) => candidate.action === 'explore')
     expect(explore?.contributions).toContainEqual({ factor: 'curiosity', value: 720 })
     expect(explore?.weight).toBeGreaterThan(candidates.find((candidate) => candidate.action === 'rest')?.weight ?? 0)
   })
 
   it('applies eating and exploration without violating state bounds', () => {
+    const cells = createCells()
+    const context = createContext(cells)
     const agent = person()
     agent.hunger = 700
     const beforeFood = cells[0]?.foodAmount ?? 0
@@ -49,6 +56,8 @@ describe('agent actions', () => {
   })
 
   it('takes more than one hourly budget to cross costly terrain', () => {
+    const cells = createCells()
+    const context = createContext(cells)
     const agent = person()
     const outcome = resolveAction(agent, { tick: 1, action: 'explore', targetCellId: '1,2', weight: 1, totalWeight: 1, probabilityPermille: 1000, contributions: [], alternatives: [] }, context)
     expect(outcome.arrived).toBe(false)
@@ -59,6 +68,8 @@ describe('agent actions', () => {
   })
 
   it('resolves scarce food contention without allowing negative stock', () => {
+    const cells = createCells()
+    const context = createContext(cells)
     const scarceCell = cells[0]
     if (!scarceCell) throw new Error('Missing test cell')
     scarceCell.foodAmount = 10
@@ -75,6 +86,8 @@ describe('agent actions', () => {
   })
 
   it('makes high-curiosity agents explore more often across many seeds', () => {
+    const cells = createCells()
+    const context = createContext(cells)
     let lowExploration = 0
     let highExploration = 0
     for (let seed = 0; seed < 500; seed += 1) {
@@ -82,5 +95,27 @@ describe('agent actions', () => {
       if (chooseAction(person(1000), context, new Pcg32(hashSeed(`trial-${seed}`))).action === 'explore') highExploration += 1
     }
     expect(highExploration).toBeGreaterThan(lowExploration * 1.7)
+  })
+
+  it('does not offer socialize without another occupant', () => {
+    const cells = createCells()
+    const candidates = evaluateActions(person(), createContext(cells))
+
+    expect(candidates.find((candidate) => candidate.action === 'socialize')).toBeUndefined()
+  })
+
+  it('offers socialize with named contributions when another occupant shares the cell', () => {
+    const cells = createCells()
+    const candidates = evaluateActions(person(), createContext(cells, ['test-person', 'other-person']))
+    const socialize = candidates.find((candidate) => candidate.action === 'socialize')
+
+    expect(socialize).toBeDefined()
+    expect(socialize?.contributions).toEqual([
+      { factor: 'base', value: 20 },
+      { factor: 'sociability', value: 375 },
+      { factor: 'people present', value: 90 },
+      { factor: 'hunger', value: -15 },
+    ])
+    expect(socialize?.weight).toBe(470)
   })
 })

@@ -19,9 +19,19 @@ describe('SimulationEngine', () => {
       'resources.totalFood',
       'resources.foodConsumed',
       'resources.failedMeals',
+      'social.encounters',
+      'social.encountersPer1000People',
+      'social.relationshipCount',
+      'social.networkDensityPermille',
+      'social.averageFamiliarity',
+      'social.positiveEncounters',
+      'social.tenseEncounters',
     ])
     expect(result.statistics[2]?.value).toBe(1)
     expect(result.projection.people).toHaveLength(200)
+    expect(result.projection.relationships.length).toBeGreaterThan(0)
+    expect(result.events.some((event) => event.type === 'PERSON_ENCOUNTERED')).toBe(true)
+    expect(result.statistics.find((sample) => sample.metricId === 'social.encounters')?.value).toBeGreaterThan(0)
     expect(result.projection.people.every((person) => person.lastDecision && person.hunger >= 0 && person.hunger <= 1000)).toBe(true)
     expect(result.projection.world.grid.cells.every((cell) => cell.foodAmount >= 0 && cell.foodAmount <= cell.resourceCapacity)).toBe(true)
   })
@@ -47,5 +57,11 @@ describe('SimulationEngine', () => {
     const snapshot = await SimulationEngine.create('integrity').snapshot()
     snapshot.state.tick = 5
     await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('digest')
+  })
+
+  it('rejects schema 3 snapshots instead of silently migrating them', async () => {
+    const snapshot = await SimulationEngine.create('old-schema').snapshot()
+    snapshot.schemaVersion = 3
+    await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('Unsupported snapshot schema: 3')
   })
 })

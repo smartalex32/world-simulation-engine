@@ -1,5 +1,5 @@
-export const ENGINE_VERSION = '0.3.0'
-export const SNAPSHOT_SCHEMA_VERSION = 3
+export const ENGINE_VERSION = '0.4.0'
+export const SNAPSHOT_SCHEMA_VERSION = 4
 export const BASE_TICK_HOURS = 1
 
 export type Terrain = 'water' | 'plain' | 'hill'
@@ -36,6 +36,41 @@ export interface PersonTraits {
   curiosity: number
   riskTolerance: number
   sociability: number
+}
+
+export type EncounterOutcome = 'positive' | 'neutral' | 'tense'
+export type EncounterRole = 'initiator' | 'participant'
+
+export interface RelationshipPerspective {
+  affection: number
+  trust: number
+  respect: number
+  fear: number
+}
+
+export interface RelationshipState {
+  id: string
+  personAId: string
+  personBId: string
+  familiarity: number
+  interactionFrequency: number
+  interactionCount: number
+  lastInteractionTick: number
+  aToB: RelationshipPerspective
+  bToA: RelationshipPerspective
+}
+
+export interface LastEncounter {
+  tick: number
+  otherPersonId: string
+  cellId: string
+  role: EncounterRole
+  outcome: EncounterOutcome
+  outcomeWeight: number
+  totalOutcomeWeight: number
+  probabilityPermille: number
+  familiarityBefore: number
+  familiarityAfter: number
 }
 
 export type ActionName = 'eat' | 'move' | 'explore' | 'rest' | 'socialize'
@@ -78,6 +113,7 @@ export interface PersonState {
   knownCellIds: string[]
   journey?: JourneyState
   lastDecision?: ActionDecision
+  lastEncounter?: LastEncounter
 }
 
 export interface DailySpatialCounters {
@@ -85,6 +121,14 @@ export interface DailySpatialCounters {
   completedMoves: number
   foodConsumed: number
   failedMeals: number
+}
+
+export interface DailySocialCounters {
+  encounters: number
+  positiveEncounters: number
+  neutralEncounters: number
+  tenseEncounters: number
+  relationshipsFormed: number
 }
 
 export interface RunConfiguration {
@@ -107,7 +151,9 @@ export interface SimulationState {
   config: RunConfiguration
   world: WorldState
   people: PersonState[]
+  relationships: RelationshipState[]
   dailySpatialCounters: DailySpatialCounters
+  dailySocialCounters: DailySocialCounters
   randomStreams: RandomStreamSnapshot[]
 }
 
@@ -115,7 +161,7 @@ export interface SimulationEvent {
   id: string
   runId: string
   tick: number
-  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'ERROR'
+  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'ERROR'
   version: 1
   cellId?: string
   payload: Record<string, string | number | boolean | null>
@@ -124,7 +170,7 @@ export interface SimulationEvent {
 export interface StatisticSample {
   runId: string
   tick: number
-  metricId: 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.averageHunger' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodConsumed' | 'resources.failedMeals'
+  metricId: 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.averageHunger' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodConsumed' | 'resources.failedMeals' | 'social.encounters' | 'social.encountersPer1000People' | 'social.relationshipCount' | 'social.networkDensityPermille' | 'social.averageFamiliarity' | 'social.positiveEncounters' | 'social.tenseEncounters'
   metricVersion: 1
   scope: 'world'
   value: number
@@ -144,5 +190,6 @@ export interface WorldProjection {
   engineVersion: string
   world: WorldState
   people: PersonState[]
+  relationships: RelationshipState[]
   digest?: string
 }

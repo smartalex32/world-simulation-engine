@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
-import type { GeographicCell, PersonState, SimulationEvent, StatisticSample, WorldProjection } from './simulation/domain/types'
+import type { GeographicCell, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, WorldProjection } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
 import { findPath } from './simulation/spatial/pathfinding'
 import { HexMap, type MapOverlay } from './ui/HexMap'
@@ -155,6 +155,7 @@ export default function App() {
   const hour = tick % 24
   const recentMetrics = newestMetrics(statistics)
   const selectedPerson = projection?.people.find((person) => person.id === selectedPersonId)
+  const selectedRelationships = selectedPerson ? relationshipViews(selectedPerson.id, projection?.relationships ?? []) : []
 
   return (
     <main className="app-shell">
@@ -213,17 +214,26 @@ export default function App() {
             <Metric label="Simulated days" value={recentMetrics['engine.simulatedDays'] ?? day} />
             <Metric label="Last batch" value={`${processingMs.toFixed(2)} ms`} />
           </div>
+          <PanelTitle title="Social signals" subtitle="Daily encounter aggregates" />
+          <div className="metric-list">
+            <Metric label="Encounters" value={recentMetrics['social.encounters'] ?? 0} />
+            <Metric label="Encounters / 1k" value={recentMetrics['social.encountersPer1000People'] ?? 0} />
+            <Metric label="Relationships" value={recentMetrics['social.relationshipCount'] ?? projection?.relationships.length ?? 0} />
+            <Metric label="Network density" value={`${((recentMetrics['social.networkDensityPermille'] ?? networkDensityPermille(projection)) / 10).toFixed(1)}%`} />
+            <Metric label="Avg familiarity" value={`${((recentMetrics['social.averageFamiliarity'] ?? averageFamiliarity(projection)) / 10).toFixed(1)}%`} />
+            <Metric label="Tense encounters" value={recentMetrics['social.tenseEncounters'] ?? 0} />
+          </div>
         </aside>
 
         <section className="map-panel panel">
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {overlay}</span></div>
-          {projection ? <HexMap grid={projection.world.grid} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selected?.id} people={projection.people} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelected(cell); setSelectedPersonId(undefined) }} /> : <div className="loading">Starting simulation worker…</div>}
+          {projection ? <HexMap grid={projection.world.grid} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selected?.id} people={projection.people} relationships={projection.relationships} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelected(cell); setSelectedPersonId(undefined) }} /> : <div className="loading">Starting simulation worker…</div>}
         </section>
 
         <aside className="right-panel panel">
           <PanelTitle title={selectedPerson ? 'Person inspector' : 'Cell inspector'} subtitle={selectedPerson ? selectedPerson.id : selected ? `Cell ${selected.id}` : 'Select a cell'} />
           {selectedPerson
-            ? <PersonInspector person={selectedPerson} grid={projection?.world.grid} onRelease={() => {
+            ? <PersonInspector person={selectedPerson} grid={projection?.world.grid} relationships={selectedRelationships} onHookPerson={inspectPerson} onRelease={() => {
                 const currentCell = projection?.world.grid.cells.find((cell) => cell.id === selectedPerson.locationCellId)
                 setSelected(currentCell)
                 setSelectedPersonId(undefined)
@@ -249,7 +259,7 @@ export default function App() {
         <div className="event-table" role="log">
           <div className="event-header"><span>Tick</span><span>Type</span><span>Details</span></div>
           {events.length === 0 && <div className="event-empty">No events recorded yet.</div>}
-          {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span>{typeof event.payload.personId === 'string' ? <button className="event-person" onClick={() => inspectPerson(String(event.payload.personId))}>Inspect {event.payload.personId}</button> : formatPayload(event.payload)}</span></div>)}
+          {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} /></span></div>)}
         </div>
       </section>
     </main>
@@ -274,7 +284,7 @@ function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell;
   </div>
 }
 
-function PersonInspector({ person, grid, onRelease }: { person: PersonState; grid?: WorldProjection['world']['grid']; onRelease: () => void }) {
+function PersonInspector({ person, grid, relationships, onHookPerson, onRelease }: { person: PersonState; grid?: WorldProjection['world']['grid']; relationships: RelationshipView[]; onHookPerson: (id: string) => void; onRelease: () => void }) {
   const decision = person.lastDecision
   const homePath = grid ? findPath(grid, person.locationCellId, person.homeCellId) : undefined
   return <div className="person-inspector">
@@ -290,6 +300,25 @@ function PersonInspector({ person, grid, onRelease }: { person: PersonState; gri
       <TraitBar label="Risk tolerance" value={person.traits.riskTolerance} />
       <TraitBar label="Sociability" value={person.traits.sociability} />
     </div>
+    <section className="encounter-panel" aria-labelledby="last-encounter-heading">
+      <h3 id="last-encounter-heading">Last encounter</h3>
+      {person.lastEncounter ? <>
+        <div className="encounter-summary"><strong className={`outcome ${person.lastEncounter.outcome}`}>{person.lastEncounter.outcome}</strong><span>{(person.lastEncounter.probabilityPermille / 10).toFixed(1)}% outcome probability</span></div>
+        <button className="encounter-person" onClick={() => onHookPerson(person.lastEncounter!.otherPersonId)} aria-label={`Hook ${person.lastEncounter.otherPersonId}`}>
+          With {person.lastEncounter.otherPersonId} · {person.lastEncounter.cellId} · tick {person.lastEncounter.tick}
+        </button>
+        <small>Familiarity {(person.lastEncounter.familiarityBefore / 10).toFixed(1)}% → {(person.lastEncounter.familiarityAfter / 10).toFixed(1)}%</small>
+      </> : <p>No encounter recorded yet.</p>}
+    </section>
+    <section className="relationship-panel" aria-labelledby="relationships-heading">
+      <div className="section-heading"><h3 id="relationships-heading">Relationships</h3><span>{relationships.length} known</span></div>
+      {relationships.length === 0 ? <p>No direct relationships recorded yet.</p> : <div className="relationship-list">
+        {relationships.map((relationship) => <button key={relationship.id} onClick={() => onHookPerson(relationship.otherPersonId)} aria-label={`Hook ${relationship.otherPersonId}`}>
+          <span><strong>{relationship.otherPersonId}</strong><small>Familiarity {(relationship.familiarity / 10).toFixed(1)}% · frequency {(relationship.interactionFrequency / 10).toFixed(1)}%</small></span>
+          <span className="relationship-dimensions" aria-label="Directional relationship values"><small>A {normalizedPercent(relationship.perspective.affection)} · T {normalizedPercent(relationship.perspective.trust)}</small><small>R {normalizedPercent(relationship.perspective.respect)} · F {normalizedPercent(relationship.perspective.fear)}</small></span>
+        </button>)}
+      </div>}
+    </section>
     <div className="decision-panel">
       <h3>Last decision</h3>
       {decision ? <>
@@ -302,6 +331,17 @@ function PersonInspector({ person, grid, onRelease }: { person: PersonState; gri
   </div>
 }
 
+function EventParticipants({ event, onInspect }: { event: SimulationEvent; onInspect: (id: string) => void }) {
+  const ids = ['personId', 'otherPersonId', 'personAId', 'personBId']
+    .map((key) => event.payload[key])
+    .filter((value): value is string => typeof value === 'string')
+    .filter((value, index, values) => values.indexOf(value) === index)
+  if (ids.length === 0) return formatPayload(event.payload)
+  const details = ['outcome', 'cellId', 'probabilityPermille']
+    .flatMap((key) => event.payload[key] === undefined ? [] : [`${key === 'probabilityPermille' ? 'probability' : key}: ${key === 'probabilityPermille' ? `${(Number(event.payload[key]) / 10).toFixed(1)}%` : String(event.payload[key])}`])
+  return <span className="event-participants">{ids.map((personId) => <button key={personId} className="event-person" onClick={() => onInspect(personId)} aria-label={`Inspect ${personId}`}>Inspect {personId}</button>)}{details.length > 0 && <small>{details.join(' · ')}</small>}</span>
+}
+
 function TraitBar({ label, value }: { label: string; value: number }) {
   return <div className="trait"><div><span>{label}</span><strong>{(value / 10).toFixed(1)}</strong></div><div className="trait-track"><i style={{ width: `${value / 10}%` }} /></div></div>
 }
@@ -310,6 +350,37 @@ function newestMetrics(samples: StatisticSample[]): Record<string, number> {
   const result: Record<string, number> = {}
   for (const sample of samples) if (result[sample.metricId] === undefined) result[sample.metricId] = sample.value
   return result
+}
+
+interface RelationshipView {
+  id: string
+  otherPersonId: string
+  familiarity: number
+  interactionFrequency: number
+  perspective: RelationshipPerspective
+}
+
+function relationshipViews(personId: string, relationships: RelationshipState[]): RelationshipView[] {
+  return relationships
+    .flatMap((relationship) => {
+      if (relationship.personAId === personId) return [{ id: relationship.id, otherPersonId: relationship.personBId, familiarity: relationship.familiarity, interactionFrequency: relationship.interactionFrequency, perspective: relationship.aToB }]
+      if (relationship.personBId === personId) return [{ id: relationship.id, otherPersonId: relationship.personAId, familiarity: relationship.familiarity, interactionFrequency: relationship.interactionFrequency, perspective: relationship.bToA }]
+      return []
+    })
+    .sort((first, second) => second.familiarity - first.familiarity || (first.otherPersonId < second.otherPersonId ? -1 : first.otherPersonId > second.otherPersonId ? 1 : 0))
+}
+
+function normalizedPercent(value: number): string { return `${(value / 10).toFixed(1)}%` }
+
+function networkDensityPermille(projection?: WorldProjection): number {
+  const population = projection?.people.length ?? 0
+  const possible = population > 1 ? population * (population - 1) / 2 : 0
+  return possible ? Math.round((projection?.relationships.length ?? 0) * 1000 / possible) : 0
+}
+
+function averageFamiliarity(projection?: WorldProjection): number {
+  const relationships = projection?.relationships ?? []
+  return relationships.length ? Math.round(relationships.reduce((sum, relationship) => sum + relationship.familiarity, 0) / relationships.length) : 0
 }
 
 function formatPayload(payload: SimulationEvent['payload']): string {
