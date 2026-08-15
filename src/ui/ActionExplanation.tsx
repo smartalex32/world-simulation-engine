@@ -17,9 +17,23 @@ export function ActionExplanation<T extends ContributionView>({ action, probabil
       {targetCellId && <div className="decision-target">Target cell {targetCellId}</div>}
       <div className="contribution-groups">{contributionGroups(contributions).map((group) => <section key={group.id} className="contribution-group" aria-labelledby={`contribution-${group.id}`}>
         <h4 id={`contribution-${group.id}`}>{group.label}</h4>
-        {group.contributions.map((contribution, index) => <div key={`${contribution.sourceId ?? group.id}-${index}`} data-source-id={contribution.sourceId}><span>{labelForSource(contribution.sourceId, contribution.label)}</span><strong className={contribution.value >= 0 ? 'positive' : 'negative'}>{contribution.value >= 0 ? '+' : ''}{contribution.value}</strong></div>)}
+        {group.contributions.map((contribution, index) => <div
+          key={`${contribution.sourceId ?? group.id}-${index}`}
+          data-source-id={contribution.sourceId}
+          data-edge-id={contribution.edgeId}
+          data-community-id={contribution.communityId}
+          data-target-id={contribution.targetId}
+        >
+          <span>{labelForSource(contribution.sourceId, contribution.label)}{contribution.kind === 'communityInfluence' && <small className="contribution-meta">{contribution.communityId} · source {contribution.sourceValue}‰ · centered {signed(contribution.centeredSourceValue)}‰ · weight {contribution.weightPermille}‰ · {contribution.edgeId}</small>}</span>
+          <strong className={contribution.value >= 0 ? 'positive' : 'negative'}>{contribution.value >= 0 ? '+' : ''}{contribution.value}</strong>
+        </div>)}
       </section>)}</div>
       <div className="alternatives"><span>Candidate weights</span>{alternatives.map((entry) => <div key={entry.action}><span>{entry.action}</span><strong>{entry.weight}</strong></div>)}</div>
     </> : <p>No action has been evaluated yet. Advance one hour.</p>}
   </div>
+}
+
+function signed(value: number | undefined): string {
+  if (value === undefined) return '—'
+  return value > 0 ? `+${value}` : String(value)
 }
