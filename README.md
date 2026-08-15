@@ -1,6 +1,6 @@
 # World Simulation Workbench
 
-A local-first, spatial simulation workbench. Milestones 0–2 established the deterministic spatial engine, explainable stochastic behavior, consumable resources, and terrain-aware travel. Milestone 3 added co-located encounters and sparse relationships. Milestone 4 added namespaced person variables, a sparse influence registry, bounded state updates, and structured action explanations.
+A local-first, spatial simulation workbench. Milestones 0–2 established the deterministic spatial engine, explainable stochastic behavior, consumable resources, and terrain-aware travel. Milestone 3 added co-located encounters and sparse relationships. Milestone 4 added namespaced person variables, a sparse influence registry, bounded state updates, and structured action explanations. Milestone 5A adds the first fixed household topology, physical activity schedules, activity-location encounter pools, aging, and household/activity inspection; exposure accumulation, structured experience, and development remain the next 5B slice.
 
 ## Run locally
 
@@ -26,6 +26,8 @@ pnpm test:e2e
 - `src/simulation/relationships/` owns co-location encounter pools, seeded encounter outcomes, canonical relationship dimensions, and interaction-frequency decay.
 - `src/simulation/variables/` owns the nine namespaced person-variable definitions and bounded permille storage.
 - `src/simulation/influences/` owns the eleven sparse, linear, immediate decision-influence edges and exact integer evaluation.
+- `src/simulation/households/` owns the fixed initial household topology, explicit parent-child links, the fictional curiosity starting-predisposition model, and household-generation streams.
+- `src/simulation/activities/` owns versioned child/adult schedules, physical home/commons activity resolution, and activity-location identity.
 - `src/simulation/engine/` coordinates action selection, encounter resolution, relationship updates, daily social aggregates, invariant checks, and projections.
 - `src/simulation/spatial/` owns axial geometry, deterministic world generation, viewport-independent map logic, and weighted A* pathfinding.
 - `src/worker/` owns the live engine and exposes a typed command/response protocol. The UI only receives projections.
@@ -45,7 +47,7 @@ Rules that preserve this contract:
 - Simulation-affecting quantities use integers or documented fixed-point units.
 - Serialized collections have stable ordering; canonical objects sort their keys.
 - RNG state, event sequence, schema version, and engine version are part of snapshots.
-- The current engine is `0.5.0`, snapshot schema is `5`, variable-registry version is `1`, and influence-registry version is `1`. Schema-4 snapshots are rejected as unsupported; no migration is provided.
+- The current engine is `0.6.0`, snapshot schema is `6`, variable-registry version is `1`, influence-registry version is `1`, household-model version is `1`, and activity-registry version is `1`. Schema-5 snapshots are rejected as unsupported; no migration is provided.
 - Any change to rules, RNG behavior, execution order, or fixed-point conversion requires an engine-version change and updated regression fixture.
 - Person-array order currently remains part of authoritative state and RNG assignment. Making equivalent states insensitive to person-array reordering is deferred.
 
@@ -53,7 +55,7 @@ Wall-clock metadata such as save timestamps is deliberately outside the simulati
 
 ## Current boundaries
 
-Milestones 3 and 4 are implemented. The engine provides co-location encounter pools; seeded positive, neutral, and tense outcomes; canonical bidirectional relationships with familiarity, interaction frequency, affection, trust, respect, and fear; daily frequency decay; encounter/relationship events; and social aggregates. The hooked-person inspector shows last-encounter probability, cell, and outcome plus directional relationship values; encounter events navigate to either participant; social metrics are visible; and the map draws the hooked person’s direct ties.
+Milestones 3, 4, and 5A are implemented. The engine provides co-location encounter pools; seeded positive, neutral, and tense outcomes; canonical bidirectional relationships with familiarity, interaction frequency, affection, trust, respect, and fear; daily frequency decay; encounter/relationship events; and social aggregates. The hooked-person inspector shows last-encounter probability, cell, and outcome plus directional relationship values; encounter events navigate to either participant; social metrics are visible; and the map draws the hooked person’s direct ties.
 
 Person state now uses nine integer `0..1000` permille variables: `person.trait.curiosity`, `person.trait.riskTolerance`, `person.trait.sociability`, `person.trait.trustPropensity`, `person.trait.conformity`, `person.trait.persistence`, `person.state.hunger`, `person.state.fatigue`, and `person.need.socialConnection`. Eleven sparse influence edges contribute to eat, move, explore, rest, and socialize utility. Inspector traces distinguish base, contextual, interaction, and registry-backed influence contributions and retain edge ID, source ID/value, weight, effect, alternatives, and selection probability.
 
@@ -61,4 +63,8 @@ Each hour adds 12 hunger, 10 fatigue, and 8 social need, with bounded storage. R
 
 Movement decisions currently target adjacent cells; the pathfinder is used for route inspection and is ready for longer-range destinations. Socialize creates an eligible encounter opportunity, and the engine resolves co-located pairs through the dedicated encounters stream.
 
-Milestone 5—activity schedules, households, structured experiences, exposure accumulation, and development—is next. Deferred beyond the current implementation: behavioral effects for trust propensity/conformity/persistence, person-array order normalization, roads and infrastructure modifiers, long-range goals, community feedback, map editing, accounts, and server execution.
+The first 5A validation population is exactly 200 people: 50 two-parent/one-child households and 50 single-adult households. Children start between ages 6 and 17; family parents are assigned at least 18 years older. Household membership and parent-child links are separate authoritative graphs from social relationships. Each household has a physical home activity location, and each passable cell has a commons activity location. Children use `activity.schedule.child.v1` (home 00:00–08:00 and 16:00–24:00, commons 08:00–16:00); adults use `activity.schedule.adult.v1` (home 00:00–06:00 and 18:00–24:00, commons 06:00–18:00). A person remains physically in their cell while the schedule resolves their activity location; a person on a journey has no activity-location encounter pool. Encounters are built from shared activity locations, not merely from physical cell membership.
+
+5A advances age in hours, updates the age-derived child/adult schedule, emits activity changes and aging events, and samples home, commons, and travel person-hours. It adds named streams `population.households.childAge`, `population.ageRemainderHours`, and `population.inheritance.person.trait.curiosity`; existing population and variable streams retain their contracts. Child curiosity uses `inheritance.parental-baseline-variation.v1`: a configurable fictional starting predisposition from parental mean, a population baseline of 500, and seeded random variation, with weights 500/300/200 respectively. This is a starting tendency, not a fixed outcome and not a biological claim. The UI exposes household members, parent-child roles, current activity, activity locations, and the inheritance trace; map overlays can show households and activity locations.
+
+Milestone 5A is intentionally not the full development milestone. Exposure accumulation, structured experiences, age-dependent plasticity, household conditions, broader inheritance, and childhood-to-adulthood development are deferred to 5B. Also deferred beyond the current implementation: behavioral effects for trust propensity/conformity/persistence, person-array order normalization, roads and infrastructure modifiers, long-range goals, community feedback, map editing, accounts, server execution, and any biological interpretation of the fictional inheritance model.

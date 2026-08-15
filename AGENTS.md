@@ -32,9 +32,9 @@ When code and a design document differ, do not silently choose one. Preserve cur
 - Canvas map and workbench UI in `src/ui/` and `src/App.tsx`.
 - Vitest unit/regression tests and Playwright Chromium/Firefox/WebKit end-to-end tests.
 - One-hour base ticks, PCG32 random streams, snapshot schemas, registry versions, engine versions, and canonical state digests.
-- Engine `0.5.0`, snapshot schema `5`, variable-registry version `1`, and influence-registry version `1`; schema-4 snapshots are rejected rather than migrated.
+- Engine `0.6.0`, snapshot schema `6`, variable-registry version `1`, influence-registry version `1`, household-model version `1`, and activity-registry version `1`; schema-5 snapshots are rejected rather than migrated.
 
-Milestones 0–4 are implemented. The repository now provides the deterministic engine skeleton, seeded people, consumable/regenerating food, terrain-aware travel, spatial statistics and heatmaps, co-located encounters, sparse multi-dimensional relationships, nine namespaced bounded person variables, eleven sparse linear influence edges, and structured decision/relationship inspection. Milestone 5—activities, households, and development—is the next unfinished slice. Community feedback remains deferred to Milestone 6.
+Milestones 0–4 and Milestone 5A are implemented. The repository now provides the deterministic engine skeleton, seeded people, consumable/regenerating food, terrain-aware travel, spatial statistics and heatmaps, co-located encounters, sparse multi-dimensional relationships, nine namespaced bounded person variables, eleven sparse linear influence edges, structured decision/relationship inspection, a fixed 200-person household topology, explicit parent-child links, physical home/commons activity locations, age-derived schedules, aging, activity metrics/events, and household/activity inspection. Milestone 5B—exposure, structured experiences, and development—is next. Community feedback remains deferred to Milestone 6.
 
 ## Non-Negotiable Contracts
 
@@ -98,14 +98,23 @@ The implemented registry contains six traits (`curiosity`, `riskTolerance`, `soc
 
 New-variable initialization uses named streams for `population.variable.person.trait.trustPropensity`, `population.variable.person.trait.conformity`, `population.variable.person.trait.persistence`, `population.variable.person.state.fatigue`, and `population.variable.person.need.socialConnection`. Hourly cadence adds 12 hunger, 10 fatigue, and 8 social need; rest removes up to 180 fatigue and encounters remove up to 140 social need from both participants. Action inspection preserves structured base/context/interaction/influence contributions with source and edge metadata.
 
-Schema-4 snapshots are explicitly rejected rather than migrated. Person-array order remains part of authoritative state and RNG assignment; order-independent person processing is deferred and must be treated as a deliberate engine migration if introduced.
+Schema-5 snapshots are explicitly rejected rather than migrated. Person-array order remains part of authoritative state and RNG assignment; order-independent person processing is deferred and must be treated as a deliberate engine migration if introduced.
 
-### Milestone 5 — Activities, Households, and Development (Next)
+### Milestone 5A — Activities and Household Topology (Implemented)
 
 - Add simple home/activity-location schedules without building a full occupation economy.
-- Add households, parent/child links, structured experiences, exposure accumulation, and age-dependent plasticity.
-- Introduce simple inheritance as a configurable starting predisposition with population baseline and random variation.
-- Explain important developmental changes and preserve the childhood-to-adulthood feedback path.
+- Add the fixed first topology: 50 two-parent/one-child households, 50 single-adult households, and 200 people total; child ages are 6–17.
+- Keep household membership and explicit parent-child links separate from social relationships.
+- Add versioned child/adult schedules, physical home/commons activity locations, travel exclusion from activity pools, aging, activity events, and home/commons/travel person-hour statistics.
+- Introduce the configurable fictional curiosity starting-predisposition model using parental mean, population baseline, and seeded random variation. This is not a biological claim.
+- Expose current activity, household members, parent-child roles, activity-location and household overlays, and the inheritance trace in the inspector.
+
+### Milestone 5B — Exposure, Experiences, and Development (Next)
+
+- Add time-spent and encounter-based exposure accumulation without equating community membership with influence.
+- Add structured experiences, age-dependent plasticity, and controlled developmental changes with explainable contributor traces.
+- Extend inheritance and childhood-to-adulthood feedback only when those systems have independently testable inputs and outputs.
+- Keep broader occupation, institutional, biological, and community-development claims out of this slice.
 
 ### Milestone 6 — Emergent Community Feedback
 
