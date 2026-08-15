@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { GeographicCell, HexGrid, PersonState } from '../simulation/domain/types'
+import type { GeographicCell, HexGrid, PersonState, RelationshipState } from '../simulation/domain/types'
 import { axialToPixel, pixelToAxial } from '../simulation/spatial/hex'
 import { fitWorld, populationMarkerRadius, renderLevel } from './mapViewport'
 
@@ -10,13 +10,14 @@ interface HexMapProps {
   overlay: MapOverlay
   selectedCellId?: string
   people: PersonState[]
+  relationships: RelationshipState[]
   selectedPersonId?: string
   onSelect: (cell?: GeographicCell) => void
 }
 
 const HEX_SIZE = 18
 
-export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId, onSelect }: HexMapProps) {
+export function HexMap({ grid, overlay, selectedCellId, people, relationships, selectedPersonId, onSelect }: HexMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState({ width: 0, height: 0, scale: 0.86, x: 34, y: 42 })
@@ -66,9 +67,10 @@ export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId
       const selected = grid.cells.find((cell) => cell.id === selectedCellId)
       if (selected) drawCell(context, selected, overlay, true, HEX_SIZE, 1, populationCounts.get(selected.id) ?? 0)
     }
-    drawPopulation(context, people, grid, level.stride, selectedPersonId)
+    drawRelationshipNetwork(context, people, relationships, grid, selectedPersonId, viewport.scale)
+    drawPopulation(context, people, grid, level.stride, selectedPersonId, viewport.scale)
     context.restore()
-  }, [grid, level, overlay, people, populationCounts, selectedCellId, selectedPersonId, viewport])
+  }, [grid, level, overlay, people, populationCounts, relationships, selectedCellId, selectedPersonId, viewport])
 
   function pointToCell(clientX: number, clientY: number): GeographicCell | undefined {
     const bounds = canvasRef.current?.getBoundingClientRect()
@@ -121,7 +123,7 @@ export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId
   )
 }
 
-function drawPopulation(context: CanvasRenderingContext2D, people: PersonState[], grid: HexGrid, stride: number, selectedPersonId?: string): void {
+function drawPopulation(context: CanvasRenderingContext2D, people: PersonState[], grid: HexGrid, stride: number, selectedPersonId?: string, viewportScale = 1): void {
   if (stride > 1) {
     const groups = new Map<string, { q: number; r: number; count: number }>()
     for (const person of people) {
@@ -137,10 +139,11 @@ function drawPopulation(context: CanvasRenderingContext2D, people: PersonState[]
     for (const group of groups.values()) {
       const { x, y } = axialToPixel(group, HEX_SIZE)
       context.beginPath()
-      context.arc(x, y, populationMarkerRadius(group.count, stride), 0, Math.PI * 2)
+      context.arc(x, y, screenRadius(populationMarkerRadius(group.count, stride), viewportScale, 2, 8), 0, Math.PI * 2)
       context.fillStyle = 'rgba(241, 210, 111, .58)'
       context.fill()
     }
+    drawSelectedMarker(context, people, grid, selectedPersonId, viewportScale)
     return
   }
 
@@ -155,15 +158,60 @@ function drawPopulation(context: CanvasRenderingContext2D, people: PersonState[]
     const distance = Math.min(8, 2 + Math.sqrt(index) * 2.2)
     const selected = person.id === selectedPersonId
     context.beginPath()
-    context.arc(center.x + Math.cos(angle) * distance, center.y + Math.sin(angle) * distance, populationMarkerRadius(1, 1, selected), 0, Math.PI * 2)
+    context.arc(center.x + Math.cos(angle) * distance, center.y + Math.sin(angle) * distance, screenRadius(populationMarkerRadius(1, 1, selected), viewportScale, selected ? 4 : 2, selected ? 7 : 4), 0, Math.PI * 2)
     context.fillStyle = selected ? '#fff2ad' : 'rgba(238, 197, 82, .86)'
     context.fill()
     if (selected) {
       context.strokeStyle = '#362b12'
-      context.lineWidth = 1.2
+      context.lineWidth = 1.2 / viewportScale
       context.stroke()
     }
   }
+
+}
+
+function drawSelectedMarker(context: CanvasRenderingContext2D, people: PersonState[], grid: HexGrid, selectedPersonId: string | undefined, viewportScale: number): void {
+  if (!selectedPersonId) return
+  const selected = people.find((person) => person.id === selectedPersonId)
+  const cell = selected ? cellForPerson(selected, grid) : undefined
+  if (!cell) return
+  const center = axialToPixel(cell, HEX_SIZE)
+  context.beginPath()
+  context.arc(center.x, center.y, screenRadius(4.5, viewportScale, 5, 8), 0, Math.PI * 2)
+  context.fillStyle = '#fff2ad'
+  context.fill()
+  context.strokeStyle = '#362b12'
+  context.lineWidth = 1.4 / viewportScale
+  context.stroke()
+}
+
+function drawRelationshipNetwork(context: CanvasRenderingContext2D, people: PersonState[], relationships: RelationshipState[], grid: HexGrid, selectedPersonId: string | undefined, viewportScale: number): void {
+  if (!selectedPersonId) return
+  const selected = people.find((person) => person.id === selectedPersonId)
+  const selectedCell = selected ? cellForPerson(selected, grid) : undefined
+  if (!selectedCell) return
+  const peopleById = new Map(people.map((person) => [person.id, person]))
+  const origin = axialToPixel(selectedCell, HEX_SIZE)
+  const directRelationships = relationships
+    .filter((relationship) => relationship.personAId === selectedPersonId || relationship.personBId === selectedPersonId)
+    .sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
+  for (const relationship of directRelationships) {
+    const otherId = relationship.personAId === selectedPersonId ? relationship.personBId : relationship.personAId
+    const other = peopleById.get(otherId)
+    const otherCell = other ? cellForPerson(other, grid) : undefined
+    if (!otherCell) continue
+    const destination = axialToPixel(otherCell, HEX_SIZE)
+    context.beginPath()
+    context.moveTo(origin.x, origin.y)
+    context.lineTo(destination.x, destination.y)
+    context.strokeStyle = `rgba(119, 207, 170, ${0.26 + relationship.familiarity / 2000})`
+    context.lineWidth = screenRadius(1.1 + relationship.familiarity / 1000, viewportScale, 0.7, 2.2)
+    context.stroke()
+  }
+}
+
+function screenRadius(worldRadius: number, viewportScale: number, minimumPixels: number, maximumPixels: number): number {
+  return Math.max(minimumPixels, Math.min(maximumPixels, worldRadius * viewportScale)) / Math.max(viewportScale, 0.001)
 }
 
 function cellForPerson(person: PersonState, grid: HexGrid): GeographicCell | undefined {
