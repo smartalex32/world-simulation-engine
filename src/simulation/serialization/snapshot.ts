@@ -1,4 +1,12 @@
-import { ENGINE_VERSION, SNAPSHOT_SCHEMA_VERSION, type SimulationState, type SnapshotEnvelope } from '../domain/types'
+import {
+  ENGINE_VERSION,
+  INFLUENCE_REGISTRY_VERSION,
+  SNAPSHOT_SCHEMA_VERSION,
+  VARIABLE_REGISTRY_VERSION,
+  type SimulationState,
+  type SnapshotEnvelope,
+} from '../domain/types'
+import { validatePersonVariableValues } from '../variables/storage'
 
 export function canonicalStringify(value: unknown): string {
   return JSON.stringify(sortValue(value))
@@ -41,6 +49,14 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   if (snapshot.state.config?.baseTickHours !== 1 || !Number.isSafeInteger(snapshot.state.tick) || snapshot.state.tick < 0) {
     throw new Error('Snapshot contains an invalid clock')
   }
+  if (snapshot.state.config.variableRegistryVersion !== VARIABLE_REGISTRY_VERSION) {
+    throw new Error(`Unsupported variable registry version: ${String(snapshot.state.config.variableRegistryVersion)}`)
+  }
+  if (snapshot.state.config.influenceRegistryVersion !== INFLUENCE_REGISTRY_VERSION) {
+    throw new Error(`Unsupported influence registry version: ${String(snapshot.state.config.influenceRegistryVersion)}`)
+  }
+  if (!Array.isArray(snapshot.state.people)) throw new Error('Snapshot contains an invalid population')
+  for (const person of snapshot.state.people) validatePersonVariableValues(person.variables)
   const actual = await stateDigest(snapshot.state)
   if (actual !== snapshot.digest) throw new Error('Snapshot digest does not match its contents')
   return snapshot as SnapshotEnvelope

@@ -3,6 +3,8 @@ import type { PersonState, RelationshipState } from '../domain/types'
 import { Pcg32, hashSeed } from '../rng/pcg32'
 import { resolveEncounters, type EncounterContext } from './encounters'
 import { relationshipId } from './model'
+import { PERSON_VARIABLE_ID } from '../variables/registry'
+import { createDefaultPersonVariableValues } from '../variables/storage'
 
 function person(id: string, sociability: number, locationCellId: string): PersonState {
   return {
@@ -10,8 +12,10 @@ function person(id: string, sociability: number, locationCellId: string): Person
     ageYears: 30,
     locationCellId,
     homeCellId: locationCellId,
-    traits: { curiosity: 500, riskTolerance: 500, sociability },
-    hunger: 100,
+    variables: createDefaultPersonVariableValues({
+      [PERSON_VARIABLE_ID.sociability]: sociability,
+      [PERSON_VARIABLE_ID.hunger]: 100,
+    }),
     knownCellIds: [locationCellId],
   }
 }

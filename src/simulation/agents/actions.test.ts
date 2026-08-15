@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { GeographicCell, PersonState } from '../domain/types'
 import { Pcg32, hashSeed } from '../rng/pcg32'
 import { advanceJourney, chooseAction, evaluateActions, resolveAction, type ActionContext } from './actions'
+import { PERSON_VARIABLE_ID } from '../variables/registry'
+import { createDefaultPersonVariableValues, getPersonVariable, setPersonVariable } from '../variables/storage'
 
 function createCells(): GeographicCell[] {
   return [
@@ -25,8 +27,12 @@ function person(curiosity = 500): PersonState {
     ageYears: 30,
     locationCellId: '1,1',
     homeCellId: '1,1',
-    traits: { curiosity, riskTolerance: 500, sociability: 500 },
-    hunger: 100,
+    variables: createDefaultPersonVariableValues({
+      [PERSON_VARIABLE_ID.curiosity]: curiosity,
+      [PERSON_VARIABLE_ID.riskTolerance]: 500,
+      [PERSON_VARIABLE_ID.sociability]: 500,
+      [PERSON_VARIABLE_ID.hunger]: 100,
+    }),
     knownCellIds: ['1,1'],
   }
 }
@@ -36,7 +42,14 @@ describe('agent actions', () => {
     const cells = createCells()
     const candidates = evaluateActions(person(900), createContext(cells))
     const explore = candidates.find((candidate) => candidate.action === 'explore')
-    expect(explore?.contributions).toContainEqual({ factor: 'curiosity', value: 720 })
+    expect(explore?.contributions).toContainEqual(expect.objectContaining({
+      kind: 'influence',
+      factor: 'curiosity',
+      sourceId: PERSON_VARIABLE_ID.curiosity,
+      sourceValue: 900,
+      weightPermille: 800,
+      value: 720,
+    }))
     expect(explore?.weight).toBeGreaterThan(candidates.find((candidate) => candidate.action === 'rest')?.weight ?? 0)
   })
 
@@ -44,11 +57,11 @@ describe('agent actions', () => {
     const cells = createCells()
     const context = createContext(cells)
     const agent = person()
-    agent.hunger = 700
+    setPersonVariable(agent.variables, PERSON_VARIABLE_ID.hunger, 700)
     const beforeFood = cells[0]?.foodAmount ?? 0
     resolveAction(agent, { tick: 1, action: 'eat', weight: 1, totalWeight: 1, probabilityPermille: 1000, contributions: [], alternatives: [] }, context)
-    expect(agent.hunger).toBeGreaterThanOrEqual(0)
-    expect(agent.hunger).toBeLessThan(700)
+    expect(getPersonVariable(agent.variables, PERSON_VARIABLE_ID.hunger)).toBeGreaterThanOrEqual(0)
+    expect(getPersonVariable(agent.variables, PERSON_VARIABLE_ID.hunger)).toBeLessThan(700)
     expect(cells[0]?.foodAmount).toBeLessThan(beforeFood)
     resolveAction(agent, { tick: 2, action: 'explore', targetCellId: '2,1', weight: 1, totalWeight: 1, probabilityPermille: 1000, contributions: [], alternatives: [] }, context)
     expect(agent.locationCellId).toBe('2,1')
@@ -74,9 +87,10 @@ describe('agent actions', () => {
     if (!scarceCell) throw new Error('Missing test cell')
     scarceCell.foodAmount = 10
     const first = person()
-    const second = { ...person(), id: 'second-person', traits: { ...person().traits }, knownCellIds: [...person().knownCellIds] }
-    first.hunger = 500
-    second.hunger = 500
+    const secondBase = person()
+    const second = { ...secondBase, id: 'second-person', variables: { ...secondBase.variables }, knownCellIds: [...secondBase.knownCellIds] }
+    setPersonVariable(first.variables, PERSON_VARIABLE_ID.hunger, 500)
+    setPersonVariable(second.variables, PERSON_VARIABLE_ID.hunger, 500)
     const eat = { tick: 1, action: 'eat' as const, weight: 1, totalWeight: 1, probabilityPermille: 1000, contributions: [], alternatives: [] }
     const firstOutcome = resolveAction(first, eat, context)
     const secondOutcome = resolveAction(second, eat, context)
@@ -110,11 +124,12 @@ describe('agent actions', () => {
     const socialize = candidates.find((candidate) => candidate.action === 'socialize')
 
     expect(socialize).toBeDefined()
-    expect(socialize?.contributions).toEqual([
+    expect(socialize?.contributions.map(({ factor, value }) => ({ factor, value }))).toEqual([
       { factor: 'base', value: 20 },
       { factor: 'sociability', value: 375 },
-      { factor: 'people present', value: 90 },
       { factor: 'hunger', value: -15 },
+      { factor: 'social need', value: 0 },
+      { factor: 'people present', value: 90 },
     ])
     expect(socialize?.weight).toBe(470)
   })

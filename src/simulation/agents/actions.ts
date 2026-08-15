@@ -1,6 +1,26 @@
 import type { ActionDecision, ActionName, GeographicCell, PersonState, UtilityContribution } from '../domain/types'
 import type { Pcg32 } from '../rng/pcg32'
 import { hexNeighbors } from '../spatial/hex'
+import { evaluateInfluences } from '../influences/evaluate'
+import { DECISION_INFLUENCE_TARGET } from '../influences/registry'
+import type { DecisionInfluenceTarget } from '../influences/types'
+import { PERSON_VARIABLE_ID, getPersonVariableDefinition } from '../variables/registry'
+import { adjustPersonVariable, getPersonVariable } from '../variables/storage'
+import {
+  ACTION_BASE_WEIGHT,
+  ACTION_WEIGHT_MAXIMUM,
+  ACTION_WEIGHT_MINIMUM,
+  DESTINATION_FOOD_WEIGHT_PERMILLE,
+  FOOD_TO_HUNGER_RECOVERY,
+  HOME_REST_WEIGHT,
+  HOURLY_TRAVEL_BUDGET,
+  LOCAL_FOOD_WEIGHT_CAP,
+  MOVE_TRAVEL_COST_DIVISOR,
+  NIGHTTIME_REST_WEIGHT,
+  OTHER_OCCUPANT_SOCIAL_WEIGHT,
+  PLAIN_MOVEMENT_COST,
+  REST_FATIGUE_RECOVERY,
+} from './actionConfig'
 
 export interface Candidate {
   action: ActionName
@@ -23,6 +43,8 @@ export interface ActionOutcome {
   travelCost: number
   foodConsumed: number
   failedMeal: boolean
+  hungerReduced: number
+  fatigueReduced: number
 }
 
 export interface JourneyOutcome {
@@ -66,63 +88,70 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
   const moveTarget = bestDestination(neighbors.filter((neighbor) => known.has(neighbor.id)), person, context, false)
   const exploreTarget = bestDestination(neighbors.filter((neighbor) => !known.has(neighbor.id)), person, context, true)
   const company = Math.max(0, (context.occupantsByCell.get(cell.id)?.length ?? 1) - 1)
+  const hunger = getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger)
   const hour = context.tick % 24
   const candidates: Candidate[] = []
 
-  if (cell.foodAmount > 0) candidates.push(candidate('eat', [
-    { factor: 'base', value: 30 },
-    { factor: 'hunger', value: Math.floor(person.hunger * 0.9) },
-    { factor: 'local food', value: Math.min(300, cell.foodAmount) },
+  if (cell.foodAmount > 0 && hunger > 0) candidates.push(candidate('eat', [
+    baseContribution(ACTION_BASE_WEIGHT.eat),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.eatUtility, person),
+    contextContribution('local food', Math.min(LOCAL_FOOD_WEIGHT_CAP, cell.foodAmount)),
   ]))
   if (moveTarget) candidates.push(candidate('move', [
-    { factor: 'base', value: 110 },
-    { factor: 'hunger search', value: Math.floor(person.hunger * 0.12) },
-    { factor: 'sociability', value: Math.floor(person.traits.sociability * 0.08) },
-    { factor: 'destination food', value: Math.floor(moveTarget.foodAmount * 0.35) },
-    { factor: 'travel cost', value: -Math.floor(Math.max(0, moveTarget.movementCost - 1000) / 3) },
+    baseContribution(ACTION_BASE_WEIGHT.move),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.moveUtility, person),
+    contextContribution('destination food', Math.floor(moveTarget.foodAmount * DESTINATION_FOOD_WEIGHT_PERMILLE / 1000)),
+    contextContribution('travel cost', -Math.floor(Math.max(0, moveTarget.movementCost - PLAIN_MOVEMENT_COST) / MOVE_TRAVEL_COST_DIVISOR)),
   ], moveTarget.id))
   if (exploreTarget) candidates.push(candidate('explore', [
-    { factor: 'base', value: 40 },
-    { factor: 'curiosity', value: Math.floor(person.traits.curiosity * 0.8) },
-    { factor: 'risk tolerance', value: Math.floor(person.traits.riskTolerance * 0.25) },
-    { factor: 'hunger', value: -Math.floor(person.hunger * 0.35) },
-    { factor: 'terrain uncertainty', value: -Math.floor(Math.max(0, exploreTarget.movementCost - 1000) * (1000 - person.traits.riskTolerance) / 3000) },
+    baseContribution(ACTION_BASE_WEIGHT.explore),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.exploreUtility, person),
+    interactionContribution('terrain uncertainty', -Math.floor(
+      Math.max(0, exploreTarget.movementCost - PLAIN_MOVEMENT_COST)
+      * (1000 - getPersonVariable(person.variables, PERSON_VARIABLE_ID.riskTolerance))
+      / 3000,
+    )),
   ], exploreTarget.id))
   candidates.push(candidate('rest', [
-    { factor: 'base', value: 120 },
-    { factor: 'nighttime', value: hour >= 21 || hour < 6 ? 450 : 0 },
-    { factor: 'at home', value: person.locationCellId === person.homeCellId ? 80 : 0 },
-    { factor: 'hunger', value: -Math.floor(person.hunger * 0.2) },
+    baseContribution(ACTION_BASE_WEIGHT.rest),
+    contextContribution('nighttime', hour >= 21 || hour < 6 ? NIGHTTIME_REST_WEIGHT : 0),
+    contextContribution('at home', person.locationCellId === person.homeCellId ? HOME_REST_WEIGHT : 0),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.restUtility, person),
   ]))
   if (company > 0) candidates.push(candidate('socialize', [
-    { factor: 'base', value: 20 },
-    { factor: 'sociability', value: Math.floor(person.traits.sociability * 0.75) },
-    { factor: 'people present', value: company * 90 },
-    { factor: 'hunger', value: -Math.floor(person.hunger * 0.15) },
+    baseContribution(ACTION_BASE_WEIGHT.socialize),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.socializeUtility, person),
+    contextContribution('people present', company * OTHER_OCCUPANT_SOCIAL_WEIGHT),
   ]))
   return candidates
 }
 
 export function resolveAction(person: PersonState, decision: ActionDecision, context: ActionContext): ActionOutcome {
   const fromCellId = person.locationCellId
-  const outcome: ActionOutcome = { action: decision.action, fromCellId, targetCellId: decision.targetCellId, arrived: false, travelCost: 0, foodConsumed: 0, failedMeal: false }
+  const outcome: ActionOutcome = { action: decision.action, fromCellId, targetCellId: decision.targetCellId, arrived: false, travelCost: 0, foodConsumed: 0, failedMeal: false, hungerReduced: 0, fatigueReduced: 0 }
   if (decision.action === 'eat') {
     const cell = context.cellById.get(person.locationCellId)
     if (!cell || cell.foodAmount <= 0) outcome.failedMeal = true
     else {
-      const desiredFood = Math.max(1, Math.min(160, Math.ceil(person.hunger / 2)))
+      const hunger = getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger)
+      const desiredFood = Math.max(1, Math.min(160, Math.ceil(hunger / FOOD_TO_HUNGER_RECOVERY)))
       outcome.foodConsumed = Math.min(cell.foodAmount, desiredFood)
       cell.foodAmount -= outcome.foodConsumed
-      person.hunger = Math.max(0, person.hunger - outcome.foodConsumed * 2)
+      const remainingHunger = adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, -outcome.foodConsumed * FOOD_TO_HUNGER_RECOVERY)
+      outcome.hungerReduced = hunger - remainingHunger
     }
   } else if ((decision.action === 'move' || decision.action === 'explore') && decision.targetCellId) {
     const destination = context.cellById.get(decision.targetCellId)
     if (destination?.movementCost) {
       person.journey = { kind: decision.action, destinationCellId: destination.id, totalCost: destination.movementCost, remainingCost: destination.movementCost }
-      const journey = advanceJourney(person, 1000)
+      const journey = advanceJourney(person, HOURLY_TRAVEL_BUDGET)
       outcome.arrived = journey?.arrived ?? false
       outcome.travelCost = journey?.travelCost ?? 0
     }
+  } else if (decision.action === 'rest') {
+    const fatigue = getPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue)
+    const remainingFatigue = adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, -REST_FATIGUE_RECOVERY)
+    outcome.fatigueReduced = fatigue - remainingFatigue
   }
   person.lastDecision = decision
   return outcome
@@ -141,7 +170,7 @@ export function advanceJourney(person: PersonState, hourlyBudget: number): Journ
 }
 
 function candidate(action: ActionName, contributions: UtilityContribution[], targetCellId?: string): Candidate {
-  return { action, targetCellId, contributions, weight: Math.max(1, Math.min(10_000, contributions.reduce((sum, entry) => sum + entry.value, 0))) }
+  return { action, targetCellId, contributions, weight: Math.max(ACTION_WEIGHT_MINIMUM, Math.min(ACTION_WEIGHT_MAXIMUM, contributions.reduce((sum, entry) => sum + entry.value, 0))) }
 }
 
 function bestDestination(options: GeographicCell[], person: PersonState, context: ActionContext, exploring: boolean): GeographicCell | undefined {
@@ -153,10 +182,37 @@ function bestDestination(options: GeographicCell[], person: PersonState, context
 
 function destinationScore(cell: GeographicCell, person: PersonState, context: ActionContext, exploring: boolean): number {
   const people = context.occupantsByCell.get(cell.id)?.length ?? 0
+  const riskTolerance = getPersonVariable(person.variables, PERSON_VARIABLE_ID.riskTolerance)
+  const sociability = getPersonVariable(person.variables, PERSON_VARIABLE_ID.sociability)
   const terrainPenalty = exploring
-    ? Math.floor((cell.movementCost - 1000) * (1000 - person.traits.riskTolerance) / 1000)
-    : cell.movementCost - 1000
-  return cell.foodAmount * 4 + Math.floor(people * person.traits.sociability / 10) - terrainPenalty
+    ? Math.floor((cell.movementCost - PLAIN_MOVEMENT_COST) * (1000 - riskTolerance) / 1000)
+    : cell.movementCost - PLAIN_MOVEMENT_COST
+  return cell.foodAmount * 4 + Math.floor(people * sociability / 10) - terrainPenalty
+}
+
+function personInfluenceContributions(targetId: DecisionInfluenceTarget, person: PersonState): UtilityContribution[] {
+  return evaluateInfluences(targetId, person.variables).contributions.map((contribution) => ({
+    kind: 'influence',
+    factor: getPersonVariableDefinition(contribution.sourceId).label.toLowerCase(),
+    value: contribution.effect,
+    edgeId: contribution.edgeId,
+    sourceId: contribution.sourceId,
+    targetId: contribution.targetId,
+    sourceValue: contribution.sourceValue,
+    weightPermille: contribution.weightPermille,
+  }))
+}
+
+function baseContribution(value: number): UtilityContribution {
+  return { kind: 'base', factor: 'base', value }
+}
+
+function contextContribution(factor: string, value: number): UtilityContribution {
+  return { kind: 'context', factor, value }
+}
+
+function interactionContribution(factor: string, value: number): UtilityContribution {
+  return { kind: 'interaction', factor, value }
 }
 
 function passableNeighbors(cell: GeographicCell, cells: ReadonlyMap<string, GeographicCell>): GeographicCell[] {
