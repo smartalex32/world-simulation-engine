@@ -32,9 +32,9 @@ When code and a design document differ, do not silently choose one. Preserve cur
 - Canvas map and workbench UI in `src/ui/` and `src/App.tsx`.
 - Vitest unit/regression tests and Playwright Chromium/Firefox/WebKit end-to-end tests.
 - One-hour base ticks, PCG32 random streams, snapshot schemas, registry versions, engine versions, and canonical state digests.
-- Engine `0.7.0`, snapshot schema `7`, variable-registry version `1`, influence-registry version `1`, household-model version `1`, activity-registry version `1`, and development-registry version `1`; schema-6 snapshots are rejected rather than migrated.
+- Engine `0.8.0`, snapshot schema `8`, variable-registry version `1`, influence-registry version `1`, household-model version `1`, activity-registry version `1`, development-registry version `1`, and community-registry version `1`; schema-7 snapshots are rejected rather than migrated.
 
-Milestones 0–5B are implemented. The repository now provides the deterministic engine skeleton, seeded people, consumable/regenerating food, terrain-aware travel, spatial statistics and heatmaps, co-located encounters, sparse multi-dimensional relationships, nine namespaced bounded person variables, eleven sparse linear influence edges, structured decision/relationship inspection, a fixed 200-person household topology, explicit parent-child links, physical home/commons activity locations, age-derived schedules, aging, activity metrics/events, household/activity inspection, exact parent-curiosity exposure, structured experiences, and deterministic age-dependent curiosity development. Community feedback remains deferred to Milestone 6.
+Milestones 0–6 are implemented. In addition to the deterministic engine, spatial behavior, relationships, variable/influence registries, households, activities, exposure, experiences, and development, the repository now provides deterministic geographic catchments, bounded daily community evidence, five emergent measures, structural food security, contributor traces, scoped telemetry, and opportunity-gated community feedback.
 
 ## Non-Negotiable Contracts
 
@@ -62,7 +62,7 @@ Keep these responsibilities separable:
 - `simulation/exposure`: exact parent-curiosity co-presence exposure, bounded windows, source-hour accumulation, and structured experiences.
 - `simulation/relationships`: co-location encounter resolution, multi-dimensional relationship state, and scheduled frequency decay.
 - `simulation/development`: age-dependent plasticity and deterministic, explainable curiosity changes from structured experiences.
-- Future `simulation/community`: emergent measures and structurally assigned conditions.
+- `simulation/community`: geographic catchments, daily evidence, emergent measures, structural conditions, aggregation traces, and sparse community feedback.
 - `worker`: engine ownership and typed command/projection transport.
 - `persistence`: snapshots, meaningful events, sampled statistics, imports, exports, and migrations.
 - `ui`: visualization, controls, inspectors, overlays, and diagnostics.
@@ -118,12 +118,14 @@ Schema-5 snapshots are explicitly rejected rather than migrated. Person-array or
 - Development uses no random stream. Each person retains only the latest structured experience and latest non-zero `DevelopmentChangeTrace`; events are `PERSON_EXPERIENCED_PARENT_MODELING` and `PERSON_VARIABLE_DEVELOPED`; metrics are `household.parentChildCoExposureSourceHours`, `development.experiences`, `development.curiosityChanges`, and `development.absoluteCuriosityChange`.
 - Schema 6 is rejected rather than migrated. Broader household conditions, birth/death, occupations, institutions, community feedback, other developmental variables, and biological interpretation remain explicit non-goals for this slice.
 
-### Milestone 6 — Emergent Community Feedback (Next)
+### Milestone 6 — Emergent Community Feedback (Implemented in engine 0.8.0)
 
-- Derive a small set of community measures from behavior, relationships, events, and structural conditions.
-- Begin with social trust, cohesion, cooperation, violence/conflict, and innovation climate.
-- Keep emergent measures distinct from structural inputs such as food security, inequality, infrastructure, or institutional effectiveness.
-- Apply community effects only through measurable exposure and opportunities.
+- The initial valley has two deterministic, complete, non-overlapping geographic catchments. People have no community-membership field; evidence and feedback use actual current cells.
+- Daily bounded evidence derives social trust, cohesion, cooperation, conflict, and innovation climate. Structural food security remains semantically separate.
+- Each measure retains its latest exact fixed-point contributor trace. Community events and statistics are scoped by catchment so equal metric/tick values cannot overwrite each other.
+- Social trust, cohesion, cooperation, and conflict feed only available socialize opportunities; innovation climate feeds only available exploration opportunities. Effects are centered at neutral 500 permille and begin after the daily update.
+- Community processing adds no RNG stream. Schema 7 is rejected rather than migrated.
+- Conflict is a tense-encounter/fear/food-insecurity proxy, not violence. Cooperation is a successful-social-interaction/trust/socialize-uptake proxy, not resource transfer. Institutions, prestige weighting, overlapping communities, and community-to-child development remain deferred.
 
 ### Milestone 7 — Large-World Rendering and Simulation Scale
 
