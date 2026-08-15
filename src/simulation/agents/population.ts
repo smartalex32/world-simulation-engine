@@ -1,9 +1,17 @@
 import type { GeographicCell, PersonState } from '../domain/types'
 import type { RandomProvider } from '../rng/pcg32'
 import { hexNeighbors } from '../spatial/hex'
+import { PERSON_VARIABLE_ID, getPersonVariableDefinition } from '../variables/registry'
+import { createDefaultPersonVariableValues } from '../variables/storage'
+import type { PersonVariableId } from '../variables/types'
 
 export function generatePopulation(cells: GeographicCell[], random: RandomProvider, count = 200): PersonState[] {
   const rng = random.stream('population')
+  const trustRng = random.stream(`population.variable.${PERSON_VARIABLE_ID.trustPropensity}`)
+  const conformityRng = random.stream(`population.variable.${PERSON_VARIABLE_ID.conformity}`)
+  const persistenceRng = random.stream(`population.variable.${PERSON_VARIABLE_ID.persistence}`)
+  const fatigueRng = random.stream(`population.variable.${PERSON_VARIABLE_ID.fatigue}`)
+  const socialConnectionRng = random.stream(`population.variable.${PERSON_VARIABLE_ID.socialConnection}`)
   const byId = new Map(cells.map((cell) => [cell.id, cell]))
   const homes = cells.filter((cell) => cell.habitability >= 500 && cell.movementCost > 0)
   if (homes.length === 0) throw new Error('World has no habitable cells for population placement')
@@ -21,13 +29,23 @@ export function generatePopulation(cells: GeographicCell[], random: RandomProvid
       ageYears: 18 + rng.nextInt(48),
       locationCellId: home.id,
       homeCellId: home.id,
-      traits: {
-        curiosity: rng.nextInt(1001),
-        riskTolerance: rng.nextInt(1001),
-        sociability: rng.nextInt(1001),
-      },
-      hunger: rng.nextInt(301),
+      variables: createDefaultPersonVariableValues({
+        [PERSON_VARIABLE_ID.curiosity]: drawInitialValue(PERSON_VARIABLE_ID.curiosity, rng),
+        [PERSON_VARIABLE_ID.riskTolerance]: drawInitialValue(PERSON_VARIABLE_ID.riskTolerance, rng),
+        [PERSON_VARIABLE_ID.sociability]: drawInitialValue(PERSON_VARIABLE_ID.sociability, rng),
+        [PERSON_VARIABLE_ID.hunger]: drawInitialValue(PERSON_VARIABLE_ID.hunger, rng),
+        [PERSON_VARIABLE_ID.trustPropensity]: drawInitialValue(PERSON_VARIABLE_ID.trustPropensity, trustRng),
+        [PERSON_VARIABLE_ID.conformity]: drawInitialValue(PERSON_VARIABLE_ID.conformity, conformityRng),
+        [PERSON_VARIABLE_ID.persistence]: drawInitialValue(PERSON_VARIABLE_ID.persistence, persistenceRng),
+        [PERSON_VARIABLE_ID.fatigue]: drawInitialValue(PERSON_VARIABLE_ID.fatigue, fatigueRng),
+        [PERSON_VARIABLE_ID.socialConnection]: drawInitialValue(PERSON_VARIABLE_ID.socialConnection, socialConnectionRng),
+      }),
       knownCellIds,
     }
   })
+}
+
+function drawInitialValue(id: PersonVariableId, rng: ReturnType<RandomProvider['stream']>): number {
+  const definition = getPersonVariableDefinition(id)
+  return definition.initializationMinimum + rng.nextInt(definition.initializationMaximum - definition.initializationMinimum + 1)
 }
