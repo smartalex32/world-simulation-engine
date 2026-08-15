@@ -1,6 +1,8 @@
 import {
   BASE_TICK_HOURS,
   ENGINE_VERSION,
+  INFLUENCE_REGISTRY_VERSION,
+  VARIABLE_REGISTRY_VERSION,
   type SimulationEvent,
   type SimulationState,
   type SnapshotEnvelope,
@@ -9,11 +11,20 @@ import {
 } from '../domain/types'
 import { advanceJourney, chooseAction, resolveAction, type ActionContext, type ActionOutcome, type JourneyOutcome } from '../agents/actions'
 import { generatePopulation } from '../agents/population'
+import {
+  ENCOUNTER_SOCIAL_NEED_RECOVERY,
+  HOURLY_FATIGUE_INCREASE,
+  HOURLY_HUNGER_INCREASE,
+  HOURLY_SOCIAL_NEED_INCREASE,
+  HOURLY_TRAVEL_BUDGET,
+} from '../agents/actionConfig'
 import { RandomProvider } from '../rng/pcg32'
 import { resolveEncounters, type ResolvedEncounter } from '../relationships/encounters'
 import { applyEncounter, createRelationship, decayInteractionFrequency, relationshipId } from '../relationships/model'
 import { createSnapshot, validateSnapshot } from '../serialization/snapshot'
 import { generateValley } from '../spatial/worldGenerator'
+import { PERSON_VARIABLE_DEFINITIONS, PERSON_VARIABLE_ID } from '../variables/registry'
+import { adjustPersonVariable, getPersonVariable, validatePersonVariableValues } from '../variables/storage'
 
 export interface StepResult {
   projection: WorldProjection
@@ -43,7 +54,14 @@ export class SimulationEngine {
       runId,
       tick: 0,
       nextEventSequence: 1,
-      config: { seed: normalizedSeed, worldWidth: width, worldHeight: height, baseTickHours: BASE_TICK_HOURS },
+      config: {
+        seed: normalizedSeed,
+        worldWidth: width,
+        worldHeight: height,
+        baseTickHours: BASE_TICK_HOURS,
+        variableRegistryVersion: VARIABLE_REGISTRY_VERSION,
+        influenceRegistryVersion: INFLUENCE_REGISTRY_VERSION,
+      },
       world,
       people,
       relationships: [],
@@ -73,10 +91,14 @@ export class SimulationEngine {
     const statistics: StatisticSample[] = []
     for (let index = 0; index < count; index += 1) {
       this.state.tick += 1
-      for (const person of this.state.people) person.hunger = Math.min(1000, person.hunger + 12)
+      for (const person of this.state.people) {
+        adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, HOURLY_HUNGER_INCREASE)
+        adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, HOURLY_FATIGUE_INCREASE)
+        adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.socialConnection, HOURLY_SOCIAL_NEED_INCREASE)
+      }
 
       for (const person of this.state.people) {
-        const journey = advanceJourney(person, 1000)
+        const journey = advanceJourney(person, HOURLY_TRAVEL_BUDGET)
         if (journey?.arrived) {
           this.recordTravel(journey.travelCost)
           pushEvent(this.journeyEvent(person.id, journey))
@@ -141,6 +163,7 @@ export class SimulationEngine {
       world: this.state.world,
       people: this.state.people,
       relationships: this.state.relationships,
+      variableDefinitions: PERSON_VARIABLE_DEFINITIONS,
       digest,
     }
   }
@@ -177,7 +200,7 @@ export class SimulationEngine {
       { ...base, metricId: 'world.habitableCells', value: cells.filter((cell) => cell.habitability > 0).length },
       { ...base, metricId: 'engine.simulatedDays', value: this.state.tick / 24 },
       { ...base, metricId: 'population.count', value: this.state.people.length },
-      { ...base, metricId: 'population.averageHunger', value: Math.round(this.state.people.reduce((sum, person) => sum + person.hunger, 0) / this.state.people.length) },
+      { ...base, metricId: 'population.averageHunger', value: Math.round(this.state.people.reduce((sum, person) => sum + getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger), 0) / this.state.people.length) },
       { ...base, metricId: 'spatial.occupiedCells', value: this.buildOccupancy().size },
       { ...base, metricId: 'spatial.averageTravelCost', value: Math.round(this.state.dailySpatialCounters.travelCost / this.state.people.length) },
       { ...base, metricId: 'resources.totalFood', value: cells.reduce((sum, cell) => sum + cell.foodAmount, 0) },
@@ -224,6 +247,8 @@ export class SimulationEngine {
     const initiator = this.personById.get(encounter.initiatorId)
     const participant = this.personById.get(encounter.participantId)
     if (!initiator || !participant) throw new Error('Resolved encounter contains a missing person')
+    adjustPersonVariable(initiator.variables, PERSON_VARIABLE_ID.socialConnection, -ENCOUNTER_SOCIAL_NEED_RECOVERY)
+    adjustPersonVariable(participant.variables, PERSON_VARIABLE_ID.socialConnection, -ENCOUNTER_SOCIAL_NEED_RECOVERY)
     const shared = {
       tick: this.state.tick,
       cellId: encounter.cellId,
@@ -290,6 +315,8 @@ export class SimulationEngine {
       actionWeight: decision.weight,
       probabilityPermille: decision.probabilityPermille,
       foodConsumed: outcome.foodConsumed,
+      hungerReduced: outcome.hungerReduced,
+      fatigueReduced: outcome.fatigueReduced,
       travelCost: outcome.travelCost,
     })
   }
@@ -318,8 +345,7 @@ export class SimulationEngine {
     const personIds = new Set(this.state.people.map((person) => person.id))
     for (const person of this.state.people) {
       if (!this.cellById.has(person.locationCellId)) throw new Error(`Person ${person.id} occupies a missing cell`)
-      if (!Number.isInteger(person.hunger) || person.hunger < 0 || person.hunger > 1000) throw new Error(`Person ${person.id} has invalid hunger`)
-      if (Object.values(person.traits).some((trait) => !Number.isInteger(trait) || trait < 0 || trait > 1000)) throw new Error(`Person ${person.id} has invalid traits`)
+      validatePersonVariableValues(person.variables)
       if (person.journey) {
         const destination = this.cellById.get(person.journey.destinationCellId)
         if (!destination?.movementCost) throw new Error(`Person ${person.id} is traveling to an invalid cell`)

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SimulationEngine } from './engine'
+import { PERSON_VARIABLE_ID } from '../variables/registry'
+import { getPersonVariable } from '../variables/storage'
 
 describe('SimulationEngine', () => {
   it('generates an invariant seeded world and daily metrics', async () => {
@@ -32,7 +34,10 @@ describe('SimulationEngine', () => {
     expect(result.projection.relationships.length).toBeGreaterThan(0)
     expect(result.events.some((event) => event.type === 'PERSON_ENCOUNTERED')).toBe(true)
     expect(result.statistics.find((sample) => sample.metricId === 'social.encounters')?.value).toBeGreaterThan(0)
-    expect(result.projection.people.every((person) => person.lastDecision && person.hunger >= 0 && person.hunger <= 1000)).toBe(true)
+    expect(result.projection.people.every((person) => {
+      const hunger = getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger)
+      return person.lastDecision && hunger >= 0 && hunger <= 1000
+    })).toBe(true)
     expect(result.projection.world.grid.cells.every((cell) => cell.foodAmount >= 0 && cell.foodAmount <= cell.resourceCapacity)).toBe(true)
   })
 
@@ -59,9 +64,9 @@ describe('SimulationEngine', () => {
     await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('digest')
   })
 
-  it('rejects schema 3 snapshots instead of silently migrating them', async () => {
+  it('rejects schema 4 snapshots instead of silently migrating them', async () => {
     const snapshot = await SimulationEngine.create('old-schema').snapshot()
-    snapshot.schemaVersion = 3
-    await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('Unsupported snapshot schema: 3')
+    snapshot.schemaVersion = 4
+    await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('Unsupported snapshot schema: 4')
   })
 })

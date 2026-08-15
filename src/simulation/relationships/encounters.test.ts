@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { PersonState } from '../domain/types'
 import { Pcg32, hashSeed } from '../rng/pcg32'
 import { encounterOutcomeWeights, resolveEncounters, type EncounterContext } from './encounters'
+import { PERSON_VARIABLE_ID } from '../variables/registry'
+import { createDefaultPersonVariableValues } from '../variables/storage'
 
 function person(id: string, sociability = 500, cellId = 'cell-a'): PersonState {
   return {
@@ -9,8 +11,10 @@ function person(id: string, sociability = 500, cellId = 'cell-a'): PersonState {
     ageYears: 30,
     locationCellId: cellId,
     homeCellId: cellId,
-    traits: { curiosity: 500, riskTolerance: 500, sociability },
-    hunger: 100,
+    variables: createDefaultPersonVariableValues({
+      [PERSON_VARIABLE_ID.sociability]: sociability,
+      [PERSON_VARIABLE_ID.hunger]: 100,
+    }),
     knownCellIds: [cellId],
   }
 }

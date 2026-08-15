@@ -1,6 +1,10 @@
-export const ENGINE_VERSION = '0.4.0'
-export const SNAPSHOT_SCHEMA_VERSION = 4
+import type { PersonVariableDefinition, PersonVariableId, PersonVariableValues } from '../variables/types'
+
+export const ENGINE_VERSION = '0.5.0'
+export const SNAPSHOT_SCHEMA_VERSION = 5
 export const BASE_TICK_HOURS = 1
+export const VARIABLE_REGISTRY_VERSION = 1
+export const INFLUENCE_REGISTRY_VERSION = 1
 
 export type Terrain = 'water' | 'plain' | 'hill'
 
@@ -30,12 +34,6 @@ export interface WorldState {
   id: string
   name: string
   grid: HexGrid
-}
-
-export interface PersonTraits {
-  curiosity: number
-  riskTolerance: number
-  sociability: number
 }
 
 export type EncounterOutcome = 'positive' | 'neutral' | 'tense'
@@ -75,10 +73,29 @@ export interface LastEncounter {
 
 export type ActionName = 'eat' | 'move' | 'explore' | 'rest' | 'socialize'
 
-export interface UtilityContribution {
+export interface UnattributedUtilityContribution {
+  kind: 'base' | 'context' | 'interaction'
   factor: string
   value: number
+  edgeId?: never
+  sourceId?: never
+  targetId?: never
+  sourceValue?: never
+  weightPermille?: never
 }
+
+export interface InfluenceUtilityContribution {
+  kind: 'influence'
+  factor: string
+  value: number
+  edgeId: string
+  sourceId: PersonVariableId
+  targetId: `decision.${ActionName}.utility`
+  sourceValue: number
+  weightPermille: number
+}
+
+export type UtilityContribution = UnattributedUtilityContribution | InfluenceUtilityContribution
 
 export interface ActionAlternative {
   action: ActionName
@@ -108,8 +125,7 @@ export interface PersonState {
   ageYears: number
   locationCellId: string
   homeCellId: string
-  traits: PersonTraits
-  hunger: number
+  variables: PersonVariableValues
   knownCellIds: string[]
   journey?: JourneyState
   lastDecision?: ActionDecision
@@ -136,6 +152,8 @@ export interface RunConfiguration {
   worldWidth: number
   worldHeight: number
   baseTickHours: number
+  variableRegistryVersion: number
+  influenceRegistryVersion: number
 }
 
 export interface RandomStreamSnapshot {
@@ -191,5 +209,6 @@ export interface WorldProjection {
   world: WorldState
   people: PersonState[]
   relationships: RelationshipState[]
+  variableDefinitions: readonly PersonVariableDefinition[]
   digest?: string
 }
