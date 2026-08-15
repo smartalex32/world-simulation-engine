@@ -1,0 +1,69 @@
+import type { SnapshotEnvelope } from '../simulation/domain/types'
+import { requestId, type SimulationCommand, type SimulationResponse } from './protocol'
+
+type Listener = (response: SimulationResponse) => void
+
+export class SimulationWorkerClient {
+  private readonly worker = new Worker(new URL('./simulation.worker.ts', import.meta.url), { type: 'module' })
+  private readonly listeners = new Set<Listener>()
+  private readonly pendingSnapshots = new Map<string, { resolve: (snapshot: SnapshotEnvelope) => void; reject: (error: Error) => void }>()
+  private ready = false
+
+  constructor() {
+    this.worker.addEventListener('message', (event: MessageEvent<SimulationResponse>) => {
+      const response = event.data
+      if (response.type === 'READY') this.ready = true
+      if (response.type === 'SNAPSHOT') {
+        const pending = this.pendingSnapshots.get(response.requestId)
+        if (pending) {
+          this.pendingSnapshots.delete(response.requestId)
+          pending.resolve(response.snapshot)
+        }
+      }
+      if (response.type === 'ERROR' && response.requestId) {
+        const pending = this.pendingSnapshots.get(response.requestId)
+        if (pending) {
+          this.pendingSnapshots.delete(response.requestId)
+          pending.reject(new Error(response.message))
+        }
+      }
+      for (const listener of this.listeners) listener(response)
+    })
+    this.worker.addEventListener('error', (event) => {
+      const response: SimulationResponse = { type: 'ERROR', message: event.message }
+      for (const listener of this.listeners) listener(response)
+    })
+  }
+
+  subscribe(listener: Listener): () => void {
+    this.listeners.add(listener)
+    if (this.ready) queueMicrotask(() => {
+      if (this.listeners.has(listener)) listener({ type: 'READY' })
+    })
+    return () => this.listeners.delete(listener)
+  }
+
+  create(seed: string): void { this.send({ type: 'CREATE_RUN', requestId: requestId(), seed }) }
+  load(snapshot: SnapshotEnvelope): void { this.send({ type: 'LOAD_RUN', requestId: requestId(), snapshot }) }
+  step(count = 1): void { this.send({ type: 'STEP', requestId: requestId(), count }) }
+  play(ticksPerBatch: number): void { this.send({ type: 'PLAY', requestId: requestId(), ticksPerBatch }) }
+  pause(): void { this.send({ type: 'PAUSE', requestId: requestId() }) }
+  setSpeed(ticksPerBatch: number): void { this.send({ type: 'SET_SPEED', requestId: requestId(), ticksPerBatch }) }
+  reset(): void { this.send({ type: 'RESET', requestId: requestId() }) }
+
+  snapshot(): Promise<SnapshotEnvelope> {
+    const id = requestId()
+    return new Promise((resolve, reject) => {
+      this.pendingSnapshots.set(id, { resolve, reject })
+      this.send({ type: 'REQUEST_SNAPSHOT', requestId: id })
+    })
+  }
+
+  dispose(): void {
+    this.send({ type: 'DISPOSE', requestId: requestId() })
+  }
+
+  private send(command: SimulationCommand): void {
+    this.worker.postMessage(command)
+  }
+}
