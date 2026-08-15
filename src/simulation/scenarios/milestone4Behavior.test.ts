@@ -38,8 +38,13 @@ function person(overrides: Partial<PersonVariableValues> = {}): PersonState {
   return {
     id: 'person-a',
     ageYears: 30,
+    ageHoursIntoYear: 0,
     locationCellId: homeCell.id,
     homeCellId: homeCell.id,
+    householdId: 'household-a',
+    activityScheduleId: 'activity.schedule.adult.v1',
+    currentActivity: { kind: 'home', locationId: 'activity.home.household-a', sinceTick: 0 },
+    originTraces: [],
     variables: createDefaultPersonVariableValues(overrides),
     knownCellIds: [homeCell.id],
   }
@@ -50,6 +55,7 @@ function context(withCompany = false): ActionContext {
     tick: 12,
     cellById: new Map([[homeCell.id, { ...homeCell }], [unknownNeighbor.id, { ...unknownNeighbor }]]),
     occupantsByCell: new Map([[homeCell.id, withCompany ? ['person-a', 'person-b'] : ['person-a']]]),
+    occupantsByActivityLocation: new Map([['activity.home.household-a', withCompany ? ['person-a', 'person-b'] : ['person-a']]]),
   }
 }
 
@@ -114,6 +120,7 @@ describe('Milestone 4 influence behavior', () => {
       tick: 12,
       cellById: new Map([[isolatedCell.id, isolatedCell]]),
       occupantsByCell: new Map([[isolatedCell.id, ['person-a']]]),
+      occupantsByActivityLocation: new Map([['activity.home.household-a', ['person-a']]]),
     }
     const isolatedPerson = person()
 

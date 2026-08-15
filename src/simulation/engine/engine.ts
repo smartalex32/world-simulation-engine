@@ -1,6 +1,8 @@
 import {
   BASE_TICK_HOURS,
+  ACTIVITY_REGISTRY_VERSION,
   ENGINE_VERSION,
+  HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
   type SimulationEvent,
@@ -9,6 +11,8 @@ import {
   type StatisticSample,
   type WorldProjection,
 } from '../domain/types'
+import { resolveCurrentActivity } from '../activities/model'
+import { scheduleForAge } from '../activities/config'
 import { advanceJourney, chooseAction, resolveAction, type ActionContext, type ActionOutcome, type JourneyOutcome } from '../agents/actions'
 import { generatePopulation } from '../agents/population'
 import {
@@ -25,6 +29,7 @@ import { createSnapshot, validateSnapshot } from '../serialization/snapshot'
 import { generateValley } from '../spatial/worldGenerator'
 import { PERSON_VARIABLE_DEFINITIONS, PERSON_VARIABLE_ID } from '../variables/registry'
 import { adjustPersonVariable, getPersonVariable, validatePersonVariableValues } from '../variables/storage'
+import { validateHouseholdActivityState } from './invariants'
 
 export interface StepResult {
   projection: WorldProjection
@@ -37,18 +42,22 @@ export class SimulationEngine {
   private readonly cellById: Map<string, SimulationState['world']['grid']['cells'][number]>
   private readonly personById: Map<string, SimulationState['people'][number]>
   private readonly relationshipById: Map<string, SimulationState['relationships'][number]>
+  private readonly householdById: Map<string, SimulationState['households'][number]>
+  private readonly activityLocationById: Map<string, SimulationState['activityLocations'][number]>
 
   private constructor(private state: SimulationState, random: RandomProvider) {
     this.random = random
     this.cellById = new Map(state.world.grid.cells.map((cell) => [cell.id, cell]))
     this.personById = new Map(state.people.map((person) => [person.id, person]))
     this.relationshipById = new Map(state.relationships.map((relationship) => [relationship.id, relationship]))
+    this.householdById = new Map(state.households.map((household) => [household.id, household]))
+    this.activityLocationById = new Map(state.activityLocations.map((location) => [location.id, location]))
   }
 
   static create(seed: string, width = 32, height = 24): SimulationEngine {
     const normalizedSeed = seed.trim() || 'valley-001'
     const { world, random } = generateValley(normalizedSeed, width, height)
-    const people = generatePopulation(world.grid.cells, random)
+    const generatedPopulation = generatePopulation(world.grid.cells, random)
     const runId = `run-${world.id.slice(6)}-${width}x${height}`
     return new SimulationEngine({
       runId,
@@ -61,12 +70,18 @@ export class SimulationEngine {
         baseTickHours: BASE_TICK_HOURS,
         variableRegistryVersion: VARIABLE_REGISTRY_VERSION,
         influenceRegistryVersion: INFLUENCE_REGISTRY_VERSION,
+        householdModelVersion: HOUSEHOLD_MODEL_VERSION,
+        activityRegistryVersion: ACTIVITY_REGISTRY_VERSION,
       },
       world,
-      people,
+      people: generatedPopulation.people,
+      households: generatedPopulation.households,
+      parentChildLinks: generatedPopulation.parentChildLinks,
+      activityLocations: generatedPopulation.activityLocations,
       relationships: [],
       dailySpatialCounters: { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 },
       dailySocialCounters: { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 },
+      dailyActivityCounters: { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 },
       randomStreams: random.snapshot(),
     }, random)
   }
@@ -105,8 +120,11 @@ export class SimulationEngine {
         }
       }
 
+      this.resolveActivities(pushEvent)
+
       const occupantsByCell = this.buildOccupancy(true)
-      const context: ActionContext = { tick: this.state.tick, cellById: this.cellById, occupantsByCell }
+      const occupantsByActivityLocation = this.buildActivityOccupancy()
+      const context: ActionContext = { tick: this.state.tick, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation }
       const actionRng = this.random.stream('actions')
       const decisions = this.state.people
         .filter((person) => !person.journey)
@@ -118,12 +136,15 @@ export class SimulationEngine {
         if (outcome.failedMeal) this.state.dailySpatialCounters.failedMeals += 1
         pushEvent(this.actionEvent(person.id, decision, outcome))
       }
+      this.resolveActivities(pushEvent)
+      const postActionActivityOccupancy = this.buildActivityOccupancy()
       const socializerIds = new Set(decisions
         .filter(({ decision }) => decision.action === 'socialize')
         .map(({ person }) => person.id))
       const encounters = resolveEncounters({
         peopleById: this.personById,
-        occupantsByCell,
+        occupantsByActivityLocation: postActionActivityOccupancy,
+        activityLocationsById: this.activityLocationById,
         socializerIds,
         relationshipsById: this.relationshipById,
       }, this.random.stream('encounters'))
@@ -135,12 +156,15 @@ export class SimulationEngine {
       if (encounters.length > 0) {
         this.state.relationships = [...this.relationshipById.values()].sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
       }
+      this.recordActivityPersonHours()
+      this.advanceAges(pushEvent)
       if (this.state.tick % 24 === 0) {
         this.regenerateFood()
         statistics.push(...this.sampleDailyStatistics())
         this.decayRelationshipFrequencies()
         this.state.dailySpatialCounters = { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 }
         this.state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
+        this.state.dailyActivityCounters = { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 }
       }
     }
     this.state.randomStreams = this.random.snapshot()
@@ -162,6 +186,9 @@ export class SimulationEngine {
       engineVersion: ENGINE_VERSION,
       world: this.state.world,
       people: this.state.people,
+      households: this.state.households,
+      parentChildLinks: this.state.parentChildLinks,
+      activityLocations: this.state.activityLocations,
       relationships: this.state.relationships,
       variableDefinitions: PERSON_VARIABLE_DEFINITIONS,
       digest,
@@ -213,6 +240,9 @@ export class SimulationEngine {
       { ...base, metricId: 'social.averageFamiliarity', value: averageFamiliarity },
       { ...base, metricId: 'social.positiveEncounters', value: this.state.dailySocialCounters.positiveEncounters },
       { ...base, metricId: 'social.tenseEncounters', value: this.state.dailySocialCounters.tenseEncounters },
+      { ...base, metricId: 'activity.homePersonHours', value: this.state.dailyActivityCounters.homePersonHours },
+      { ...base, metricId: 'activity.commonsPersonHours', value: this.state.dailyActivityCounters.commonsPersonHours },
+      { ...base, metricId: 'activity.travelPersonHours', value: this.state.dailyActivityCounters.travelPersonHours },
     ]
   }
 
@@ -238,6 +268,71 @@ export class SimulationEngine {
     return occupancy
   }
 
+  private buildActivityOccupancy(): Map<string, string[]> {
+    const occupancy = new Map<string, string[]>()
+    for (const person of this.state.people) {
+      const locationId = person.currentActivity.locationId
+      if (locationId === null || person.currentActivity.kind === 'travel') continue
+      const occupants = occupancy.get(locationId)
+      if (occupants) occupants.push(person.id)
+      else occupancy.set(locationId, [person.id])
+    }
+    return occupancy
+  }
+
+  private resolveActivities(pushEvent: (event: SimulationEvent) => void): void {
+    const hourOfDay = this.state.tick % 24
+    for (const person of this.state.people) {
+      const household = this.householdById.get(person.householdId)
+      if (!household) throw new Error(`Person ${person.id} belongs to missing household ${person.householdId}`)
+      const resolved = resolveCurrentActivity({
+        personId: person.id,
+        ageYears: person.ageYears,
+        locationCellId: person.locationCellId,
+        householdId: household.id,
+        householdHomeCellId: household.homeCellId,
+        journey: person.journey,
+      }, hourOfDay)
+      const next = resolved === null
+        ? { kind: 'travel' as const, locationId: null }
+        : { kind: resolved.kind, locationId: resolved.locationId }
+      person.activityScheduleId = resolved?.scheduleId ?? scheduleForAge(person.ageYears)
+      if (person.currentActivity.kind === next.kind && person.currentActivity.locationId === next.locationId) continue
+      const previousKind = person.currentActivity.kind
+      const previousLocationId = person.currentActivity.locationId
+      person.currentActivity = { ...next, sinceTick: this.state.tick }
+      pushEvent(this.event('PERSON_ACTIVITY_CHANGED', {
+        personId: person.id,
+        previousKind,
+        previousLocationId,
+        currentKind: next.kind,
+        currentLocationId: next.locationId,
+      }))
+    }
+  }
+
+  private recordActivityPersonHours(): void {
+    for (const person of this.state.people) {
+      if (person.currentActivity.kind === 'home') this.state.dailyActivityCounters.homePersonHours += 1
+      else if (person.currentActivity.kind === 'commons') this.state.dailyActivityCounters.commonsPersonHours += 1
+      else this.state.dailyActivityCounters.travelPersonHours += 1
+    }
+  }
+
+  private advanceAges(pushEvent: (event: SimulationEvent) => void): void {
+    for (const person of this.state.people) {
+      person.ageHoursIntoYear += BASE_TICK_HOURS
+      if (person.ageHoursIntoYear < 8760) continue
+      person.ageHoursIntoYear -= 8760
+      person.ageYears += 1
+      person.activityScheduleId = scheduleForAge(person.ageYears)
+      pushEvent(this.event('PERSON_AGED', {
+        personId: person.id,
+        ageYears: person.ageYears,
+      }))
+    }
+  }
+
   private applyEncounter(encounter: ResolvedEncounter): boolean {
     const id = relationshipId(encounter.initiatorId, encounter.participantId)
     const existing = this.relationshipById.get(id)
@@ -252,6 +347,7 @@ export class SimulationEngine {
     const shared = {
       tick: this.state.tick,
       cellId: encounter.cellId,
+      activityLocationId: encounter.activityLocationId,
       outcome: encounter.outcome,
       outcomeWeight: encounter.outcomeWeight,
       totalOutcomeWeight: encounter.totalOutcomeWeight,
@@ -282,6 +378,7 @@ export class SimulationEngine {
       personId: encounter.initiatorId,
       otherPersonId: encounter.participantId,
       cellId: encounter.cellId,
+      activityLocationId: encounter.activityLocationId,
       outcome: encounter.outcome,
       outcomeWeight: encounter.outcomeWeight,
       totalOutcomeWeight: encounter.totalOutcomeWeight,
@@ -299,6 +396,7 @@ export class SimulationEngine {
       personAId: firstId,
       personBId: secondId,
       cellId: encounter.cellId,
+      activityLocationId: encounter.activityLocationId,
     })
   }
 
@@ -334,6 +432,7 @@ export class SimulationEngine {
   }
 
   private assertInvariants(): void {
+    validateHouseholdActivityState(this.state)
     const { width, height, cells } = this.state.world.grid
     if (cells.length !== width * height) throw new Error('World cell count does not match bounds')
     if (new Set(cells.map((cell) => cell.id)).size !== cells.length) throw new Error('World contains duplicate cell IDs')
@@ -354,6 +453,8 @@ export class SimulationEngine {
       if (person.lastEncounter) {
         if (!personIds.has(person.lastEncounter.otherPersonId) || person.lastEncounter.otherPersonId === person.id) throw new Error(`Person ${person.id} has an invalid last encounter`)
         if (person.lastEncounter.tick > this.state.tick) throw new Error(`Person ${person.id} has a future encounter`)
+        const encounterLocation = this.activityLocationById.get(person.lastEncounter.activityLocationId)
+        if (!encounterLocation || encounterLocation.cellId !== person.lastEncounter.cellId) throw new Error(`Person ${person.id} has an invalid encounter activity location`)
       }
     }
     if (new Set(this.state.relationships.map((relationship) => relationship.id)).size !== this.state.relationships.length) throw new Error('Relationships contain duplicate IDs')
