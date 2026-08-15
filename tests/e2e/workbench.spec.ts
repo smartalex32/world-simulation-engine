@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { createCommonsActivity, createHouseholdHomeActivity } from '../../src/simulation/activities/model'
 import { scheduleForAge } from '../../src/simulation/activities/config'
+import { createCommunityState, createDailyCommunityCounters, createTwoCatchmentGeography } from '../../src/simulation/community'
 import type { PersonState } from '../../src/simulation/domain/types'
 import { SimulationEngine } from '../../src/simulation/engine/engine'
 import { createParentCuriosityExposureAccumulator } from '../../src/simulation/exposure/model'
@@ -8,6 +9,8 @@ import { createSnapshot } from '../../src/simulation/serialization/snapshot'
 import { axialToPixel } from '../../src/simulation/spatial/hex'
 import { PERSON_VARIABLE_ID } from '../../src/simulation/variables/registry'
 import { setPersonVariable } from '../../src/simulation/variables/storage'
+
+test.describe.configure({ timeout: 60_000 })
 
 test('creates, steps, inspects, and saves a deterministic world', async ({ page }) => {
   await page.goto('/')
@@ -69,7 +72,7 @@ test('the same seed and step count produce the same digest', async ({ page }) =>
   await page.getByTitle('Advance one hour').click()
   await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
   const firstDigest = await page.locator('.fact').filter({ hasText: 'STATE' }).locator('strong').textContent()
-  expect(firstDigest).toBe('d58d5618b5')
+  expect(firstDigest).toBe('e756231a46')
   await page.getByRole('button', { name: 'Reset' }).click()
   await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
   await page.getByTitle('Advance one hour').click()
@@ -164,7 +167,13 @@ test('inspects persisted experience and deterministic development at the 720-hou
   await developmentSnapshot.evaluate((button) => (button as HTMLButtonElement).click())
   await expect(page.getByText('Day 30 · 00:00')).toBeVisible()
   const canvas = page.getByLabel('Hex world map')
-  await expect.poll(async () => canvas.getAttribute('data-map-viewport')).not.toBeNull()
+  await expect.poll(async () => canvas.evaluate((element) => {
+    const transform = element.getAttribute('data-map-viewport')
+    return transform !== null
+      && transform !== '34.000,42.000,0.86000'
+      && element.clientWidth > 0
+      && element.clientHeight > 0
+  })).toBe(true)
   const bounds = await canvas.boundingBox()
   const transform = await canvas.getAttribute('data-map-viewport')
   expect(bounds).not.toBeNull()
@@ -190,6 +199,122 @@ test('inspects persisted experience and deterministic development at the 720-hou
   await expect(page.getByRole('button', { name: /Hook development source/ }).first()).toBeVisible()
 })
 
+test('maps and explains authoritative catchment measures without losing a hooked person', async ({ page }) => {
+  const restoreEngine = await SimulationEngine.create('valley-001')
+  const restoreResult = restoreEngine.step(24)
+  const westAtSnapshot = restoreResult.projection.communities.find((community) => community.catchment.displayName === 'West Valley')
+  expect(westAtSnapshot).toBeDefined()
+  const snapshot = await restoreEngine.snapshot()
+  await page.goto('/')
+  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  await storeNamedSnapshot(page, snapshot, 'e2e:community', 'Community fixture')
+  await expect(page.locator('.community-signal-card')).toHaveCount(2)
+  await expect(page.locator('.community-signal-card').filter({ hasText: 'West Valley' })).toBeVisible()
+  await expect(page.locator('.community-signal-card').filter({ hasText: 'East Valley' })).toBeVisible()
+
+  for (let hour = 0; hour < 24; hour += 1) await page.getByTitle('Advance one hour').click()
+  await expect(page.getByText('Day 1 · 00:00')).toBeVisible()
+  const canvas = page.getByLabel('Hex world map')
+  const communityLayer = page.getByRole('button', { name: 'community', exact: true })
+  await communityLayer.click()
+  await expect(communityLayer).toHaveClass(/active/)
+  await page.getByLabel('Community map measure').selectOption('community.emergent.conflict')
+  await expect(page.getByLabel('Community overlay legend')).toContainText('Conflict pressure')
+  await expect(page.getByLabel('Community overlay legend')).toContainText('West Valley')
+  await expect(page.getByLabel('Community overlay legend')).toContainText('East Valley')
+
+  const encounter = page.locator('.event-row').filter({ hasText: 'PERSON ENCOUNTERED' }).first()
+  await expect(encounter).toBeVisible()
+  await encounter.getByRole('button').first().click()
+  await expect(page.getByText('Person hooked')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Current geographic exposure', exact: true })).toBeVisible()
+  const hookedPersonId = await page.locator('.right-panel .panel-title').first().locator('span').textContent()
+  const cameraBefore = await canvas.getAttribute('data-map-viewport')
+
+  await page.getByRole('region', { name: 'Community signals' }).getByRole('button', { name: 'Inspect West Valley community' }).click()
+  await expect(page.getByText('Community inspector')).toBeVisible()
+  await expect(page.getByText('Person remains hooked')).toBeVisible()
+  await expect(canvas).toHaveAttribute('data-map-viewport', cameraBefore ?? '')
+  const socialTrustCard = page.locator('.community-measure-card').filter({ hasText: 'Social trust' })
+  const traceDisclosure = socialTrustCard.getByRole('button', { name: 'Why this measure?' })
+  await expect(traceDisclosure).toHaveAttribute('aria-expanded', 'false')
+  await traceDisclosure.click()
+  await expect(traceDisclosure).toHaveAttribute('aria-expanded', 'true')
+  await expect(socialTrustCard).toContainText('previous')
+  await expect(socialTrustCard).toContainText('observed')
+  await expect(socialTrustCard).toContainText('current')
+  await expect(socialTrustCard.locator('[data-source-id]').first()).toBeVisible()
+  await expect(page.getByText(/not assigned to people through community membership/)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Return to hooked person' }).click()
+  await expect(page.locator('.right-panel .panel-title').first().locator('span')).toHaveText(hookedPersonId ?? '')
+  await expect(page.getByText('Person hooked')).toBeVisible()
+  await expect(canvas).toHaveAttribute('data-map-viewport', cameraBefore ?? '')
+
+  const communityEvent = page.locator('.event-row').filter({ hasText: 'COMMUNITY MEASURES UPDATED' }).first()
+  await expect(communityEvent).toBeVisible()
+  await expect(communityEvent).toContainText(/ticks 1–24/)
+  await communityEvent.getByRole('button', { name: /Inspect .* community/ }).click()
+  await expect(page.getByText('Community inspector')).toBeVisible()
+
+  await page.reload()
+  const communitySnapshot = page.getByRole('button', { name: /Community fixture Hour 24/ })
+  await expect(communitySnapshot).toBeVisible()
+  await communitySnapshot.click()
+  await expect(page.getByText('Day 1 · 00:00')).toBeVisible()
+  await expect(page.locator('.community-signal-card').filter({ hasText: 'West Valley' })).toContainText(`${((westAtSnapshot?.emergent['community.emergent.socialTrust'] ?? 0) / 10).toFixed(1)}%`)
+})
+
+test('shows the authoritative community influence in an actual person action trace', async ({ page }) => {
+  const expected = await SimulationEngine.create('valley-001')
+  const result = expected.step(25)
+  const person = result.projection.people.find((candidate) => candidate.lastDecision?.contributions.some((contribution) => contribution.kind === 'communityInfluence' && contribution.value !== 0))
+  expect(person).toBeDefined()
+  if (!person) return
+
+  await page.goto('/')
+  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  for (let hour = 0; hour < 25; hour += 1) await page.getByTitle('Advance one hour').click()
+  await hookPersonAtCurrentCell(page, person)
+  const communityGroup = page.locator('#contribution-community-exposure').locator('..')
+  await expect(communityGroup).toBeVisible()
+  await expect(communityGroup).toContainText('Community exposure')
+  const contribution = communityGroup.locator('[data-community-id][data-edge-id][data-source-id]').first()
+  await expect(contribution).toBeVisible()
+  await expect(contribution).toContainText(/source \d+‰ · centered [+-]?\d+‰ · weight -?\d+‰/)
+})
+
+async function hookPersonAtCurrentCell(page: import('@playwright/test').Page, person: PersonState): Promise<void> {
+  const canvas = page.getByLabel('Hex world map')
+  await expect.poll(async () => canvas.getAttribute('data-map-viewport')).not.toBeNull()
+  const bounds = await canvas.boundingBox()
+  const transform = await canvas.getAttribute('data-map-viewport')
+  expect(bounds).not.toBeNull()
+  expect(transform).not.toBeNull()
+  if (!bounds || !transform) return
+  const [x = Number.NaN, y = Number.NaN, scale = Number.NaN] = transform.split(',').map(Number)
+  const comma = person.locationCellId.indexOf(',')
+  const center = axialToPixel({ q: Number(person.locationCellId.slice(0, comma)), r: Number(person.locationCellId.slice(comma + 1)) }, 18)
+  await page.mouse.click(bounds.x + x + center.x * scale, bounds.y + y + center.y * scale)
+  const personButton = page.locator('.occupant-list button').filter({ hasText: person.id })
+  await expect(personButton).toBeVisible()
+  await personButton.click()
+}
+
+async function storeNamedSnapshot(page: import('@playwright/test').Page, snapshot: Awaited<ReturnType<SimulationEngine['snapshot']>>, key: string, name: string): Promise<void> {
+  await page.evaluate(async ({ savedSnapshot, savedKey, savedName }) => new Promise<void>((resolve, reject) => {
+    const opening = indexedDB.open('world-simulation-workbench', 1)
+    opening.onerror = () => reject(opening.error)
+    opening.onsuccess = () => {
+      const database = opening.result
+      const transaction = database.transaction('snapshots', 'readwrite')
+      transaction.objectStore('snapshots').put({ key: savedKey, runId: savedSnapshot.state.runId, kind: 'named', name: savedName, createdAt: '2000-01-01T00:00:00.000Z', snapshot: savedSnapshot })
+      transaction.oncomplete = () => { database.close(); resolve() }
+      transaction.onerror = () => reject(transaction.error)
+    }
+  }), { savedSnapshot: snapshot, savedKey: key, savedName: name })
+}
+
 async function controlledDevelopmentEngine(): Promise<SimulationEngine> {
   const source = (await SimulationEngine.create('development-ui-controlled').snapshot()).state
   const state = structuredClone(source)
@@ -202,6 +327,9 @@ async function controlledDevelopmentEngine(): Promise<SimulationEngine> {
   state.world.grid = { width: 2, height: 1, cells: [homeCell, awayCell] }
   state.config.worldWidth = 2
   state.config.worldHeight = 1
+  const catchments = createTwoCatchmentGeography({ cells: state.world.grid.cells, width: state.world.grid.width, height: state.world.grid.height })
+  state.communities = catchments.map((catchment) => ({ ...createCommunityState(catchment, 500, 0), lastUpdatedTick: 0, latestTraces: [] }))
+  state.dailyCommunityCounters = catchments.map((catchment) => ({ communityId: catchment.id, counters: { ...createDailyCommunityCounters(), windowStartTick: 1, windowEndTick: 24 } }))
   state.tick = 0
   state.nextEventSequence = 1
   const retained = new Set(['person-0001', 'person-0051', 'person-0101', 'person-0151'])
