@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
 import type { GeographicCell, PersonState, SimulationEvent, StatisticSample, WorldProjection } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
+import { findPath } from './simulation/spatial/pathfinding'
 import { HexMap, type MapOverlay } from './ui/HexMap'
 import { SimulationWorkerClient } from './worker/client'
 import type { SimulationResponse } from './worker/protocol'
@@ -195,7 +196,7 @@ export default function App() {
         <aside className="left-panel panel">
           <PanelTitle title="Map layers" subtitle={`${projection?.world.grid.cells.length ?? 0} hex cells`} />
           <div className="overlay-list">
-            {(['terrain', 'elevation', 'habitability', 'movement'] as MapOverlay[]).map((entry) => (
+            {(['terrain', 'elevation', 'habitability', 'movement', 'food', 'population'] as MapOverlay[]).map((entry) => (
               <button key={entry} className={overlay === entry ? 'active' : ''} onClick={() => setOverlay(entry)}><span className={`swatch ${entry}`} />{entry}</button>
             ))}
           </div>
@@ -205,6 +206,10 @@ export default function App() {
             <Metric label="Habitable" value={recentMetrics['world.habitableCells'] ?? '—'} />
             <Metric label="Population" value={recentMetrics['population.count'] ?? projection?.people.length ?? 0} />
             <Metric label="Average hunger" value={recentMetrics['population.averageHunger'] ?? averageHunger(projection?.people)} />
+            <Metric label="Occupied cells" value={recentMetrics['spatial.occupiedCells'] ?? '—'} />
+            <Metric label="World food" value={recentMetrics['resources.totalFood'] ?? totalFood(projection)} />
+            <Metric label="Food consumed/day" value={recentMetrics['resources.foodConsumed'] ?? '—'} />
+            <Metric label="Travel cost/person" value={recentMetrics['spatial.averageTravelCost'] ?? '—'} />
             <Metric label="Simulated days" value={recentMetrics['engine.simulatedDays'] ?? day} />
             <Metric label="Last batch" value={`${processingMs.toFixed(2)} ms`} />
           </div>
@@ -218,7 +223,7 @@ export default function App() {
         <aside className="right-panel panel">
           <PanelTitle title={selectedPerson ? 'Person inspector' : 'Cell inspector'} subtitle={selectedPerson ? selectedPerson.id : selected ? `Cell ${selected.id}` : 'Select a cell'} />
           {selectedPerson
-            ? <PersonInspector person={selectedPerson} onRelease={() => {
+            ? <PersonInspector person={selectedPerson} grid={projection?.world.grid} onRelease={() => {
                 const currentCell = projection?.world.grid.cells.find((cell) => cell.id === selectedPerson.locationCellId)
                 setSelected(currentCell)
                 setSelectedPersonId(undefined)
@@ -262,14 +267,16 @@ function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell;
     <Metric label="Elevation" value={cell.elevation} />
     <Metric label="Habitability" value={`${(cell.habitability / 10).toFixed(1)}%`} />
     <Metric label="Move cost" value={cell.movementCost === 0 ? 'Blocked' : (cell.movementCost / 1000).toFixed(2)} />
-    <Metric label="Resources" value={cell.resourceCapacity} />
+    <Metric label="Food stock" value={`${cell.foodAmount} / ${cell.resourceCapacity}`} />
+    <Metric label="Daily regrowth" value={cell.foodRegenerationPerDay} />
     <div className="occupant-list"><span>People here ({people.length})</span>{people.slice(0, 12).map((person) => <button key={person.id} onClick={() => onSelectPerson(person.id)}>{person.id}<small>hunger {person.hunger}</small></button>)}{people.length === 0 && <em>None</em>}</div>
     <div className="neighbor-list"><span>Six neighbors</span><code>{hexNeighbors(cell).map((coord) => `${coord.q},${coord.r}`).join('  ')}</code></div>
   </div>
 }
 
-function PersonInspector({ person, onRelease }: { person: PersonState; onRelease: () => void }) {
+function PersonInspector({ person, grid, onRelease }: { person: PersonState; grid?: WorldProjection['world']['grid']; onRelease: () => void }) {
   const decision = person.lastDecision
+  const homePath = grid ? findPath(grid, person.locationCellId, person.homeCellId) : undefined
   return <div className="person-inspector">
     <div className="tracking-row"><span><i />Person hooked</span><button className="back-button" onClick={onRelease}>Release to current cell</button></div>
     <div className="inspector-grid">
@@ -277,6 +284,8 @@ function PersonInspector({ person, onRelease }: { person: PersonState; onRelease
       <Metric label="Location" value={person.locationCellId} />
       <Metric label="Home" value={person.homeCellId} />
       <Metric label="Hunger" value={`${(person.hunger / 10).toFixed(1)}%`} />
+      {person.journey && <><Metric label="Traveling to" value={person.journey.destinationCellId} /><Metric label="Travel remaining" value={`${person.journey.remainingCost} / ${person.journey.totalCost}`} /></>}
+      <Metric label="Route home" value={homePath ? `${Math.max(0, homePath.cellIds.length - 1)} steps · ${homePath.totalCost} cost` : 'No route'} />
       <TraitBar label="Curiosity" value={person.traits.curiosity} />
       <TraitBar label="Risk tolerance" value={person.traits.riskTolerance} />
       <TraitBar label="Sociability" value={person.traits.sociability} />
@@ -313,4 +322,9 @@ function messageOf(reason: unknown): string { return reason instanceof Error ? r
 function averageHunger(people?: PersonState[]): string | number {
   if (!people?.length) return '—'
   return Math.round(people.reduce((sum, person) => sum + person.hunger, 0) / people.length)
+}
+
+function totalFood(projection?: WorldProjection): string | number {
+  if (!projection) return '—'
+  return projection.world.grid.cells.reduce((sum, cell) => sum + cell.foodAmount, 0)
 }

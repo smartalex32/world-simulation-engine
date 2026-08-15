@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test'
 test('creates, steps, inspects, and saves a deterministic world', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('Seeded Valley')).toBeVisible()
+  await page.getByRole('button', { name: 'food', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'food', exact: true })).toHaveClass(/active/)
   await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
   await page.getByTitle('Advance one hour').click()
   await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
@@ -26,7 +28,7 @@ test('the same seed and step count produce the same digest', async ({ page }) =>
   await page.getByTitle('Advance one hour').click()
   await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
   const firstDigest = await page.locator('.fact').filter({ hasText: 'STATE' }).locator('strong').textContent()
-  expect(firstDigest).toBe('947810a836')
+  expect(firstDigest).toBe('2efcead4b5')
   await page.getByRole('button', { name: 'Reset' }).click()
   await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
   await page.getByTitle('Advance one hour').click()

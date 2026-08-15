@@ -20,6 +20,7 @@ export function generateValley(seed: string, width = 32, height = 24): { world: 
       const hill = !water && elevation >= 620
       const terrain = water ? 'water' : hill ? 'hill' : 'plain'
       const habitability = water ? 0 : hill ? Math.max(150, 780 - elevation) : Math.max(450, 900 - Math.abs(elevation - 300))
+      const resourceCapacity = water ? 0 : Math.max(0, Math.floor(habitability / 5) + rng.nextInt(41))
       cells.push({
         id: cellId({ q, r }),
         q,
@@ -28,7 +29,9 @@ export function generateValley(seed: string, width = 32, height = 24): { world: 
         elevation,
         habitability,
         movementCost: water ? 0 : hill ? 1800 : 1000,
-        resourceCapacity: water ? 0 : Math.max(0, Math.floor(habitability / 5) + rng.nextInt(41)),
+        resourceCapacity,
+        foodAmount: resourceCapacity,
+        foodRegenerationPerDay: resourceCapacity === 0 ? 0 : Math.max(1, Math.floor(resourceCapacity / 12)),
       })
     }
   }

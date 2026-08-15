@@ -1,5 +1,5 @@
-export const ENGINE_VERSION = '0.2.0'
-export const SNAPSHOT_SCHEMA_VERSION = 2
+export const ENGINE_VERSION = '0.3.0'
+export const SNAPSHOT_SCHEMA_VERSION = 3
 export const BASE_TICK_HOURS = 1
 
 export type Terrain = 'water' | 'plain' | 'hill'
@@ -16,6 +16,8 @@ export interface GeographicCell extends HexCoord {
   habitability: number
   movementCost: number
   resourceCapacity: number
+  foodAmount: number
+  foodRegenerationPerDay: number
 }
 
 export interface HexGrid {
@@ -59,6 +61,13 @@ export interface ActionDecision {
   alternatives: ActionAlternative[]
 }
 
+export interface JourneyState {
+  kind: 'move' | 'explore'
+  destinationCellId: string
+  totalCost: number
+  remainingCost: number
+}
+
 export interface PersonState {
   id: string
   ageYears: number
@@ -67,7 +76,15 @@ export interface PersonState {
   traits: PersonTraits
   hunger: number
   knownCellIds: string[]
+  journey?: JourneyState
   lastDecision?: ActionDecision
+}
+
+export interface DailySpatialCounters {
+  travelCost: number
+  completedMoves: number
+  foodConsumed: number
+  failedMeals: number
 }
 
 export interface RunConfiguration {
@@ -90,6 +107,7 @@ export interface SimulationState {
   config: RunConfiguration
   world: WorldState
   people: PersonState[]
+  dailySpatialCounters: DailySpatialCounters
   randomStreams: RandomStreamSnapshot[]
 }
 
@@ -97,7 +115,7 @@ export interface SimulationEvent {
   id: string
   runId: string
   tick: number
-  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'ERROR'
+  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'ERROR'
   version: 1
   cellId?: string
   payload: Record<string, string | number | boolean | null>
@@ -106,7 +124,7 @@ export interface SimulationEvent {
 export interface StatisticSample {
   runId: string
   tick: number
-  metricId: 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.averageHunger'
+  metricId: 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.averageHunger' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodConsumed' | 'resources.failedMeals'
   metricVersion: 1
   scope: 'world'
   value: number

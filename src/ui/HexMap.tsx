@@ -3,7 +3,7 @@ import type { GeographicCell, HexGrid, PersonState } from '../simulation/domain/
 import { axialToPixel, pixelToAxial } from '../simulation/spatial/hex'
 import { fitWorld, populationMarkerRadius, renderLevel } from './mapViewport'
 
-export type MapOverlay = 'terrain' | 'elevation' | 'habitability' | 'movement'
+export type MapOverlay = 'terrain' | 'elevation' | 'habitability' | 'movement' | 'food' | 'population'
 
 interface HexMapProps {
   grid: HexGrid
@@ -23,6 +23,7 @@ export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId
   const drag = useRef<{ x: number; y: number; originX: number; originY: number; moved: boolean } | undefined>(undefined)
   const fittedGrid = useRef('')
   const level = useMemo(() => renderLevel(grid, viewport, HEX_SIZE), [grid, viewport])
+  const populationCounts = useMemo(() => populationByRenderedCell(people, grid, level.stride), [grid, level.stride, people])
 
   useEffect(() => {
     const container = containerRef.current
@@ -60,14 +61,14 @@ export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId
     context.save()
     context.translate(viewport.x, viewport.y)
     context.scale(viewport.scale, viewport.scale)
-    for (const cell of level.cells) drawCell(context, cell, overlay, cell.id === selectedCellId, level.cellRadius, level.borderAlpha)
+    for (const cell of level.cells) drawCell(context, cell, overlay, cell.id === selectedCellId, level.cellRadius, level.borderAlpha, populationCounts.get(cell.id) ?? 0)
     if (level.stride > 1 && selectedCellId) {
       const selected = grid.cells.find((cell) => cell.id === selectedCellId)
-      if (selected) drawCell(context, selected, overlay, true, HEX_SIZE, 1)
+      if (selected) drawCell(context, selected, overlay, true, HEX_SIZE, 1, populationCounts.get(selected.id) ?? 0)
     }
     drawPopulation(context, people, grid, level.stride, selectedPersonId)
     context.restore()
-  }, [grid, level, overlay, people, selectedCellId, selectedPersonId, viewport])
+  }, [grid, level, overlay, people, populationCounts, selectedCellId, selectedPersonId, viewport])
 
   function pointToCell(clientX: number, clientY: number): GeographicCell | undefined {
     const bounds = canvasRef.current?.getBoundingClientRect()
@@ -173,7 +174,7 @@ function cellForPerson(person: PersonState, grid: HexGrid): GeographicCell | und
   return grid.cells[r * grid.width + q]
 }
 
-function drawCell(context: CanvasRenderingContext2D, cell: GeographicCell, overlay: MapOverlay, selected: boolean, radius: number, borderAlpha: number): void {
+function drawCell(context: CanvasRenderingContext2D, cell: GeographicCell, overlay: MapOverlay, selected: boolean, radius: number, borderAlpha: number, population: number): void {
   const { x, y } = axialToPixel(cell, HEX_SIZE)
   context.beginPath()
   for (let index = 0; index < 6; index += 1) {
@@ -184,7 +185,7 @@ function drawCell(context: CanvasRenderingContext2D, cell: GeographicCell, overl
     else context.lineTo(px, py)
   }
   context.closePath()
-  context.fillStyle = cellColor(cell, overlay)
+  context.fillStyle = cellColor(cell, overlay, population)
   context.fill()
   if (selected || borderAlpha > 0) {
     context.strokeStyle = selected ? '#f2c94c' : `rgba(9, 17, 14, ${borderAlpha})`
@@ -193,7 +194,7 @@ function drawCell(context: CanvasRenderingContext2D, cell: GeographicCell, overl
   }
 }
 
-function cellColor(cell: GeographicCell, overlay: MapOverlay): string {
+function cellColor(cell: GeographicCell, overlay: MapOverlay, population: number): string {
   if (overlay === 'terrain') {
     if (cell.terrain === 'water') return '#244b5a'
     if (cell.terrain === 'hill') return '#6d6547'
@@ -201,8 +202,23 @@ function cellColor(cell: GeographicCell, overlay: MapOverlay): string {
   }
   if (overlay === 'elevation') return gradient(cell.elevation / 1000, [32, 61, 47], [218, 207, 167])
   if (overlay === 'habitability') return cell.habitability === 0 ? '#25312f' : gradient(cell.habitability / 1000, [85, 47, 44], [87, 169, 101])
+  if (overlay === 'food') return cell.resourceCapacity === 0 ? '#27322e' : gradient(cell.foodAmount / cell.resourceCapacity, [84, 42, 38], [111, 176, 82])
+  if (overlay === 'population') return population === 0 ? '#1b2823' : gradient(Math.min(1, population / 8), [52, 72, 62], [236, 186, 70])
   if (cell.movementCost === 0) return '#253c49'
   return gradient((cell.movementCost - 1000) / 800, [59, 112, 71], [176, 89, 56])
+}
+
+function populationByRenderedCell(people: PersonState[], grid: HexGrid, stride: number): Map<string, number> {
+  const result = new Map<string, number>()
+  for (const person of people) {
+    const cell = cellForPerson(person, grid)
+    if (!cell) continue
+    const q = Math.floor(cell.q / stride) * stride
+    const r = Math.floor(cell.r / stride) * stride
+    const id = `${q},${r}`
+    result.set(id, (result.get(id) ?? 0) + 1)
+  }
+  return result
 }
 
 function gradient(amount: number, from: [number, number, number], to: [number, number, number]): string {

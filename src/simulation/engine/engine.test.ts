@@ -14,10 +14,16 @@ describe('SimulationEngine', () => {
       'engine.simulatedDays',
       'population.count',
       'population.averageHunger',
+      'spatial.occupiedCells',
+      'spatial.averageTravelCost',
+      'resources.totalFood',
+      'resources.foodConsumed',
+      'resources.failedMeals',
     ])
     expect(result.statistics[2]?.value).toBe(1)
     expect(result.projection.people).toHaveLength(200)
     expect(result.projection.people.every((person) => person.lastDecision && person.hunger >= 0 && person.hunger <= 1000)).toBe(true)
+    expect(result.projection.world.grid.cells.every((cell) => cell.foodAmount >= 0 && cell.foodAmount <= cell.resourceCapacity)).toBe(true)
   })
 
   it('produces different worlds for different seeds', async () => {
