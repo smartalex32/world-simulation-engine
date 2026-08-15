@@ -32,9 +32,9 @@ When code and a design document differ, do not silently choose one. Preserve cur
 - Canvas map and workbench UI in `src/ui/` and `src/App.tsx`.
 - Vitest unit/regression tests and Playwright Chromium/Firefox/WebKit end-to-end tests.
 - One-hour base ticks, PCG32 random streams, snapshot schemas, registry versions, engine versions, and canonical state digests.
-- Engine `0.6.0`, snapshot schema `6`, variable-registry version `1`, influence-registry version `1`, household-model version `1`, and activity-registry version `1`; schema-5 snapshots are rejected rather than migrated.
+- Engine `0.7.0`, snapshot schema `7`, variable-registry version `1`, influence-registry version `1`, household-model version `1`, activity-registry version `1`, and development-registry version `1`; schema-6 snapshots are rejected rather than migrated.
 
-Milestones 0–4 and Milestone 5A are implemented. The repository now provides the deterministic engine skeleton, seeded people, consumable/regenerating food, terrain-aware travel, spatial statistics and heatmaps, co-located encounters, sparse multi-dimensional relationships, nine namespaced bounded person variables, eleven sparse linear influence edges, structured decision/relationship inspection, a fixed 200-person household topology, explicit parent-child links, physical home/commons activity locations, age-derived schedules, aging, activity metrics/events, and household/activity inspection. Milestone 5B—exposure, structured experiences, and development—is next. Community feedback remains deferred to Milestone 6.
+Milestones 0–5B are implemented. The repository now provides the deterministic engine skeleton, seeded people, consumable/regenerating food, terrain-aware travel, spatial statistics and heatmaps, co-located encounters, sparse multi-dimensional relationships, nine namespaced bounded person variables, eleven sparse linear influence edges, structured decision/relationship inspection, a fixed 200-person household topology, explicit parent-child links, physical home/commons activity locations, age-derived schedules, aging, activity metrics/events, household/activity inspection, exact parent-curiosity exposure, structured experiences, and deterministic age-dependent curiosity development. Community feedback remains deferred to Milestone 6.
 
 ## Non-Negotiable Contracts
 
@@ -59,9 +59,9 @@ Keep these responsibilities separable:
 - `simulation/agents`: opportunities, decision evaluation, action selection, and action execution.
 - `simulation/variables`: namespaced variable definitions, registry ordering, and bounded integer permille person values.
 - `simulation/influences`: sparse typed edge definitions, target indexes, and exact linear modifier evaluation.
-- Future `simulation/exposure`: time spent, encounter pools, source strength, and accumulated exposure.
+- `simulation/exposure`: exact parent-curiosity co-presence exposure, bounded windows, source-hour accumulation, and structured experiences.
 - `simulation/relationships`: co-location encounter resolution, multi-dimensional relationship state, and scheduled frequency decay.
-- Future `simulation/development`: experiences, plasticity, and controlled long-term change.
+- `simulation/development`: age-dependent plasticity and deterministic, explainable curiosity changes from structured experiences.
 - Future `simulation/community`: emergent measures and structurally assigned conditions.
 - `worker`: engine ownership and typed command/projection transport.
 - `persistence`: snapshots, meaningful events, sampled statistics, imports, exports, and migrations.
@@ -109,14 +109,16 @@ Schema-5 snapshots are explicitly rejected rather than migrated. Person-array or
 - Introduce the configurable fictional curiosity starting-predisposition model using parental mean, population baseline, and seeded random variation. This is not a biological claim.
 - Expose current activity, household members, parent-child roles, activity-location and household overlays, and the inheritance trace in the inspector.
 
-### Milestone 5B — Exposure, Experiences, and Development (Next)
+### Milestone 5B — Exposure, Experiences, and Development (Implemented in engine 0.7.0)
 
-- Add time-spent and encounter-based exposure accumulation without equating community membership with influence.
-- Add structured experiences, age-dependent plasticity, and controlled developmental changes with explainable contributor traces.
-- Extend inheritance and childhood-to-adulthood feedback only when those systems have independently testable inputs and outputs.
-- Keep broader occupation, institutional, biological, and community-development claims out of this slice.
+- Exposure uses `exposure.parent.curiosity-modeling` and is accumulated only from linked parent/child co-presence in the same household home cell and canonical home activity location. Membership, same-cell presence, commons activity, and travelers do not count.
+- Each window spans exactly 720 ticks: 1–720, 721–1440, and so on. Recipient hours, source hours, weighted source curiosity hours, and source IDs are bounded and serialized.
+- Completed windows emit `experience.parent.curiosity-modeling` with exposure strength `min(1000, floor(sourceHours * 1000 / 720))` and symmetric integer source-mean rounding.
+- `development.parent-curiosity-to-curiosity` applies deterministic curiosity development using `(sourceMean - current) * exposureStrength * plasticity / 1,000,000`, symmetric rounding, and clamping. Plasticity is 30/15/3/1 permille per month for childhood/adolescence/adult/late-life age bands.
+- Development uses no random stream. Each person retains only the latest structured experience and latest non-zero `DevelopmentChangeTrace`; events are `PERSON_EXPERIENCED_PARENT_MODELING` and `PERSON_VARIABLE_DEVELOPED`; metrics are `household.parentChildCoExposureSourceHours`, `development.experiences`, `development.curiosityChanges`, and `development.absoluteCuriosityChange`.
+- Schema 6 is rejected rather than migrated. Broader household conditions, birth/death, occupations, institutions, community feedback, other developmental variables, and biological interpretation remain explicit non-goals for this slice.
 
-### Milestone 6 — Emergent Community Feedback
+### Milestone 6 — Emergent Community Feedback (Next)
 
 - Derive a small set of community measures from behavior, relationships, events, and structural conditions.
 - Begin with social trust, cohesion, cooperation, violence/conflict, and innovation climate.
