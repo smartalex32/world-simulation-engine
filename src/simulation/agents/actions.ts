@@ -33,6 +33,7 @@ export interface ActionContext {
   tick: number
   cellById: ReadonlyMap<string, GeographicCell>
   occupantsByCell: ReadonlyMap<string, readonly string[]>
+  occupantsByActivityLocation: ReadonlyMap<string, readonly string[]>
 }
 
 export interface ActionOutcome {
@@ -87,7 +88,10 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
   const known = new Set(person.knownCellIds)
   const moveTarget = bestDestination(neighbors.filter((neighbor) => known.has(neighbor.id)), person, context, false)
   const exploreTarget = bestDestination(neighbors.filter((neighbor) => !known.has(neighbor.id)), person, context, true)
-  const company = Math.max(0, (context.occupantsByCell.get(cell.id)?.length ?? 1) - 1)
+  const activityLocationId = person.currentActivity.locationId
+  const company = activityLocationId === null
+    ? 0
+    : Math.max(0, (context.occupantsByActivityLocation.get(activityLocationId)?.length ?? 1) - 1)
   const hunger = getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger)
   const hour = context.tick % 24
   const candidates: Candidate[] = []

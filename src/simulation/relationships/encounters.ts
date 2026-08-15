@@ -1,4 +1,4 @@
-import type { EncounterOutcome, PersonState, RelationshipState } from '../domain/types'
+import type { ActivityLocationState, EncounterOutcome, PersonState, RelationshipState } from '../domain/types'
 import type { Pcg32 } from '../rng/pcg32'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { getPersonVariable } from '../variables/storage'
@@ -14,6 +14,7 @@ export interface ResolvedEncounter {
   initiatorId: string
   participantId: string
   cellId: string
+  activityLocationId: string
   outcome: EncounterOutcome
   outcomeWeight: number
   totalOutcomeWeight: number
@@ -23,19 +24,25 @@ export interface ResolvedEncounter {
 
 export interface EncounterContext {
   peopleById: ReadonlyMap<string, PersonState>
-  occupantsByCell: ReadonlyMap<string, readonly string[]>
+  occupantsByActivityLocation: ReadonlyMap<string, readonly string[]>
+  activityLocationsById: ReadonlyMap<string, ActivityLocationState>
   socializerIds: ReadonlySet<string>
   relationshipsById: ReadonlyMap<string, RelationshipState>
 }
 
 export function resolveEncounters(context: EncounterContext, rng: Pcg32): ResolvedEncounter[] {
   const encounters: ResolvedEncounter[] = []
-  const cells = [...context.occupantsByCell.entries()]
+  const locations = [...context.occupantsByActivityLocation.entries()]
     .sort(([first], [second]) => first < second ? -1 : first > second ? 1 : 0)
 
-  for (const [cellId, occupantIds] of cells) {
+  for (const [activityLocationId, occupantIds] of locations) {
+    const activityLocation = context.activityLocationsById.get(activityLocationId)
+    if (!activityLocation) throw new Error(`Encounter pool references missing activity location ${activityLocationId}`)
     const eligible = [...occupantIds]
-      .filter((personId) => context.peopleById.has(personId))
+      .filter((personId) => {
+        const person = context.peopleById.get(personId)
+        return person?.currentActivity.kind !== 'travel' && person?.currentActivity.locationId === activityLocationId
+      })
       .sort(compareIds)
     const socializerPool = eligible.filter((personId) => context.socializerIds.has(personId))
     if (socializerPool.length === 0) continue
@@ -47,14 +54,14 @@ export function resolveEncounters(context: EncounterContext, rng: Pcg32): Resolv
     while (socializerIndex < socializers.length && participantIndex < participants.length) {
       const initiatorId = socializers[socializerIndex]
       const participantId = participants[participantIndex]
-      if (initiatorId && participantId) encounters.push(resolvePair(initiatorId, participantId, cellId, context, rng))
+      if (initiatorId && participantId) encounters.push(resolvePair(initiatorId, participantId, activityLocation.cellId, activityLocationId, context, rng))
       socializerIndex += 1
       participantIndex += 1
     }
     while (socializerIndex + 1 < socializers.length) {
       const initiatorId = socializers[socializerIndex]
       const participantId = socializers[socializerIndex + 1]
-      if (initiatorId && participantId) encounters.push(resolvePair(initiatorId, participantId, cellId, context, rng))
+      if (initiatorId && participantId) encounters.push(resolvePair(initiatorId, participantId, activityLocation.cellId, activityLocationId, context, rng))
       socializerIndex += 2
     }
   }
@@ -73,7 +80,7 @@ export function encounterOutcomeWeights(first: PersonState, second: PersonState,
   }
 }
 
-function resolvePair(initiatorId: string, participantId: string, cellId: string, context: EncounterContext, rng: Pcg32): ResolvedEncounter {
+function resolvePair(initiatorId: string, participantId: string, cellId: string, activityLocationId: string, context: EncounterContext, rng: Pcg32): ResolvedEncounter {
   const initiator = context.peopleById.get(initiatorId)
   const participant = context.peopleById.get(participantId)
   if (!initiator || !participant) throw new Error('Encounter contains a missing person')
@@ -92,6 +99,7 @@ function resolvePair(initiatorId: string, participantId: string, cellId: string,
     initiatorId,
     participantId,
     cellId,
+    activityLocationId,
     outcome,
     outcomeWeight,
     totalOutcomeWeight,

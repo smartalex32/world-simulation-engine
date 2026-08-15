@@ -1,11 +1,15 @@
 import {
+  ACTIVITY_REGISTRY_VERSION,
   ENGINE_VERSION,
+  HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   SNAPSHOT_SCHEMA_VERSION,
   VARIABLE_REGISTRY_VERSION,
   type SimulationState,
   type SnapshotEnvelope,
 } from '../domain/types'
+import { HOUSEHOLD_GENERATION_STREAM } from '../households/config'
+import { validateHouseholdActivityState } from '../engine/invariants'
 import { validatePersonVariableValues } from '../variables/storage'
 
 export function canonicalStringify(value: unknown): string {
@@ -55,9 +59,34 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   if (snapshot.state.config.influenceRegistryVersion !== INFLUENCE_REGISTRY_VERSION) {
     throw new Error(`Unsupported influence registry version: ${String(snapshot.state.config.influenceRegistryVersion)}`)
   }
+  if (snapshot.state.config.householdModelVersion !== HOUSEHOLD_MODEL_VERSION) {
+    throw new Error(`Unsupported household model version: ${String(snapshot.state.config.householdModelVersion)}`)
+  }
+  if (snapshot.state.config.activityRegistryVersion !== ACTIVITY_REGISTRY_VERSION) {
+    throw new Error(`Unsupported activity registry version: ${String(snapshot.state.config.activityRegistryVersion)}`)
+  }
   if (!Array.isArray(snapshot.state.people)) throw new Error('Snapshot contains an invalid population')
   for (const person of snapshot.state.people) validatePersonVariableValues(person.variables)
+  validateHouseholdActivityState(snapshot.state)
+  validateRandomStreams(snapshot.state.randomStreams)
   const actual = await stateDigest(snapshot.state)
   if (actual !== snapshot.digest) throw new Error('Snapshot digest does not match its contents')
   return snapshot as SnapshotEnvelope
+}
+
+function validateRandomStreams(value: unknown): void {
+  if (!Array.isArray(value)) throw new Error('Snapshot contains invalid random streams')
+  const names: string[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') throw new Error('Snapshot contains an invalid random stream')
+    const stream = entry as { name?: unknown; stateHex?: unknown; incrementHex?: unknown }
+    if (typeof stream.name !== 'string' || !/^[0-9a-f]{16}$/i.test(String(stream.stateHex)) || !/^[0-9a-f]{16}$/i.test(String(stream.incrementHex))) {
+      throw new Error('Snapshot contains an invalid random stream')
+    }
+    names.push(stream.name)
+  }
+  if (!names.every((name, index) => index === 0 || (names[index - 1] as string) < name)) throw new Error('Snapshot random streams are not in canonical order')
+  for (const required of Object.values(HOUSEHOLD_GENERATION_STREAM)) {
+    if (!names.includes(required)) throw new Error(`Snapshot is missing random stream: ${required}`)
+  }
 }

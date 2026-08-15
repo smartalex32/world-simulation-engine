@@ -3,6 +3,8 @@ import { variableGroups, type VariableDefinitionView, type VariableLayer } from 
 interface PersonVariableSectionsProps {
   definitions: readonly VariableDefinitionView[]
   values: Readonly<Record<string, number>>
+  /** Limits rendering to the supplied semantic layers while retaining registry order. */
+  layers?: readonly VariableLayer[]
 }
 
 const SECTIONS: ReadonlyArray<{ layer: VariableLayer; title: string; description: string }> = [
@@ -11,9 +13,11 @@ const SECTIONS: ReadonlyArray<{ layer: VariableLayer; title: string; description
   { layer: 'trait', title: 'Core dispositions', description: 'Persistent tendencies' },
 ]
 
-export function PersonVariableSections({ definitions, values }: PersonVariableSectionsProps) {
+export function PersonVariableSections({ definitions, values, layers }: PersonVariableSectionsProps) {
+  const visibleLayers = layers ? new Set(layers) : undefined
   return <>
     {SECTIONS.map(({ layer, title, description }) => {
+    if (visibleLayers && !visibleLayers.has(layer)) return null
     const groups = variableGroups(definitions, values, layer)
     if (groups.length === 0) return null
     return <section className="variable-section" key={layer} aria-labelledby={`${layer}-variables-heading`}>
