@@ -116,7 +116,7 @@ describe('Milestone 5 bounded validation', () => {
     expect(highValues.reduce((sum, value) => sum + value, 0)).toBeGreaterThan(lowValues.reduce((sum, value) => sum + value, 0))
   })
 
-  it('round-trips schema 6 and all named streams, then continues identically for 168 ticks', async () => {
+  it('round-trips schema 7 and all named streams, then continues identically for 168 ticks', async () => {
     const first = SimulationEngine.create('milestone-5-reproducibility')
     const second = SimulationEngine.create('milestone-5-reproducibility')
     first.step(168)
@@ -124,7 +124,7 @@ describe('Milestone 5 bounded validation', () => {
     const firstSnapshot = await first.snapshot()
     const secondSnapshot = await second.snapshot()
     expect(firstSnapshot).toEqual(secondSnapshot)
-    expect(firstSnapshot.schemaVersion).toBe(6)
+    expect(firstSnapshot.schemaVersion).toBe(7)
     expect(firstSnapshot.state.randomStreams.map(({ name }) => name)).toEqual([...firstSnapshot.state.randomStreams.map(({ name }) => name)].sort())
 
     const restored = await SimulationEngine.restore(firstSnapshot)

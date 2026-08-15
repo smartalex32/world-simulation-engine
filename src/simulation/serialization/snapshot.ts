@@ -1,5 +1,6 @@
 import {
   ACTIVITY_REGISTRY_VERSION,
+  DEVELOPMENT_REGISTRY_VERSION,
   ENGINE_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
@@ -64,6 +65,9 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   }
   if (snapshot.state.config.activityRegistryVersion !== ACTIVITY_REGISTRY_VERSION) {
     throw new Error(`Unsupported activity registry version: ${String(snapshot.state.config.activityRegistryVersion)}`)
+  }
+  if (snapshot.state.config.developmentRegistryVersion !== DEVELOPMENT_REGISTRY_VERSION) {
+    throw new Error(`Unsupported development registry version: ${String(snapshot.state.config.developmentRegistryVersion)}`)
   }
   if (!Array.isArray(snapshot.state.people)) throw new Error('Snapshot contains an invalid population')
   for (const person of snapshot.state.people) validatePersonVariableValues(person.variables)

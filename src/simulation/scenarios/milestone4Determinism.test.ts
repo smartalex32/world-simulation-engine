@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ACTIVITY_REGISTRY_VERSION,
+  DEVELOPMENT_REGISTRY_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   SNAPSHOT_SCHEMA_VERSION,
@@ -108,6 +109,7 @@ describe('Milestone 4 deterministic state and persistence', () => {
     expect(snapshot.state.config.influenceRegistryVersion).toBe(INFLUENCE_REGISTRY_VERSION)
     expect(snapshot.state.config.householdModelVersion).toBe(HOUSEHOLD_MODEL_VERSION)
     expect(snapshot.state.config.activityRegistryVersion).toBe(ACTIVITY_REGISTRY_VERSION)
+    expect(snapshot.state.config.developmentRegistryVersion).toBe(DEVELOPMENT_REGISTRY_VERSION)
     expect(snapshot.state.randomStreams.map(({ name }) => name)).toEqual(expect.arrayContaining([
       'worldgen',
       'population',
@@ -183,7 +185,7 @@ describe('Milestone 4 deterministic state and persistence', () => {
     await expect(SimulationEngine.restore(influenceMismatch)).rejects.toThrow('Unsupported influence registry version')
   })
 
-  it('rejects malformed variable records in schema-6 snapshots', async () => {
+  it('rejects malformed variable records in schema-7 snapshots', async () => {
     const snapshot = await SimulationEngine.create('milestone-4-malformed-variables').snapshot()
 
     const missing = cloneSnapshot(snapshot)

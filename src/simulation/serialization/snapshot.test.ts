@@ -9,13 +9,13 @@ describe('canonical serialization', () => {
     )
   })
 
-  it('round-trips schema 6 households, activity locations, links, and named streams', async () => {
+  it('round-trips schema 7 households, activity locations, links, development, and named streams', async () => {
     const snapshot = await SimulationEngine.create('schema-6-round-trip').snapshot()
     const validated = await validateSnapshot(structuredClone(snapshot))
 
     expect(validated).toEqual(snapshot)
-    expect(validated.schemaVersion).toBe(6)
-    expect(validated.engineVersion).toBe('0.6.0')
+    expect(validated.schemaVersion).toBe(7)
+    expect(validated.engineVersion).toBe('0.7.0')
     expect(validated.state.households).toHaveLength(100)
     expect(validated.state.parentChildLinks).toHaveLength(100)
     expect(validated.state.randomStreams.map(({ name }) => name)).toEqual(expect.arrayContaining([
@@ -25,7 +25,7 @@ describe('canonical serialization', () => {
     ]))
   })
 
-  it('rejects unsupported household and activity registry versions', async () => {
+  it('rejects unsupported household, activity, and development registry versions', async () => {
     const base = await SimulationEngine.create('schema-6-registry-rejection').snapshot()
     const householdMismatch = structuredClone(base.state)
     householdMismatch.config.householdModelVersion += 1
@@ -34,6 +34,10 @@ describe('canonical serialization', () => {
     const activityMismatch = structuredClone(base.state)
     activityMismatch.config.activityRegistryVersion += 1
     await expect(validateSnapshot(await createSnapshot(activityMismatch))).rejects.toThrow('Unsupported activity registry version')
+
+    const developmentMismatch = structuredClone(base.state)
+    developmentMismatch.config.developmentRegistryVersion += 1
+    await expect(validateSnapshot(await createSnapshot(developmentMismatch))).rejects.toThrow('Unsupported development registry version')
   })
 
   it('rejects malformed household membership, links, locations, and inheritance sources', async () => {
@@ -64,5 +68,37 @@ describe('canonical serialization', () => {
     if (!child?.originTraces[0]) throw new Error('Missing controlled inheritance trace')
     child.originTraces[0].parentIds = ['person-0002', 'person-0052']
     await expect(validateSnapshot(await createSnapshot(unrelatedTrace))).rejects.toThrow('do not match parent-child links')
+  })
+
+  it('rejects malformed development accumulators and unrelated exposure sources', async () => {
+    const base = await SimulationEngine.create('schema-7-development-rejection').snapshot()
+
+    const missingAccumulator = structuredClone(base.state)
+    const firstPerson = missingAccumulator.people[0]
+    if (!firstPerson) throw new Error('Missing controlled person fixture')
+    firstPerson.development.exposures = []
+    await expect(validateSnapshot(await createSnapshot(missingAccumulator))).rejects.toThrow('invalid development state')
+
+    const excessiveHours = structuredClone(base.state)
+    const child = excessiveHours.people.find(({ id }) => id === 'person-0101')
+    const accumulator = child?.development.exposures[0]
+    if (!child || !accumulator) throw new Error('Missing controlled child development fixture')
+    accumulator.recipientHours = 721
+    accumulator.sourceHours = 721
+    accumulator.weightedSourceValueHours = 360_500
+    accumulator.sourcePersonIds = ['person-0001']
+    accumulator.lastExposureTick = 1
+    await expect(validateSnapshot(await createSnapshot(excessiveHours))).rejects.toThrow('out-of-range exposure totals')
+
+    const unrelatedSource = structuredClone(base.state)
+    const unrelatedChild = unrelatedSource.people.find(({ id }) => id === 'person-0101')
+    const unrelatedAccumulator = unrelatedChild?.development.exposures[0]
+    if (!unrelatedAccumulator) throw new Error('Missing controlled child exposure fixture')
+    unrelatedAccumulator.recipientHours = 1
+    unrelatedAccumulator.sourceHours = 1
+    unrelatedAccumulator.weightedSourceValueHours = 500
+    unrelatedAccumulator.sourcePersonIds = ['person-0002']
+    unrelatedAccumulator.lastExposureTick = 1
+    await expect(validateSnapshot(await createSnapshot(unrelatedSource))).rejects.toThrow('invalid development sources')
   })
 })

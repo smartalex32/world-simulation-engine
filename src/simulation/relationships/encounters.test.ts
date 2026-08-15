@@ -4,6 +4,7 @@ import { Pcg32, hashSeed } from '../rng/pcg32'
 import { encounterOutcomeWeights, resolveEncounters, type EncounterContext } from './encounters'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { createDefaultPersonVariableValues } from '../variables/storage'
+import { createParentCuriosityExposureAccumulator } from '../exposure/model'
 
 function person(id: string, sociability = 500, cellId = 'cell-a'): PersonState {
   return {
@@ -16,6 +17,7 @@ function person(id: string, sociability = 500, cellId = 'cell-a'): PersonState {
     activityScheduleId: 'activity.schedule.adult.v1',
     currentActivity: { kind: 'commons', locationId: cellId, sinceTick: 0 },
     originTraces: [],
+    development: { exposures: [{ ...createParentCuriosityExposureAccumulator(1), sourcePersonIds: [] }] },
     variables: createDefaultPersonVariableValues({
       [PERSON_VARIABLE_ID.sociability]: sociability,
       [PERSON_VARIABLE_ID.hunger]: 100,

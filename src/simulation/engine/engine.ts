@@ -1,12 +1,14 @@
 import {
   BASE_TICK_HOURS,
   ACTIVITY_REGISTRY_VERSION,
+  DEVELOPMENT_REGISTRY_VERSION,
   ENGINE_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
   type SimulationEvent,
   type SimulationState,
+  type ParentCuriosityModelingExperience,
   type SnapshotEnvelope,
   type StatisticSample,
   type WorldProjection,
@@ -28,8 +30,14 @@ import { applyEncounter, createRelationship, decayInteractionFrequency, relation
 import { createSnapshot, validateSnapshot } from '../serialization/snapshot'
 import { generateValley } from '../spatial/worldGenerator'
 import { PERSON_VARIABLE_DEFINITIONS, PERSON_VARIABLE_ID } from '../variables/registry'
-import { adjustPersonVariable, getPersonVariable, validatePersonVariableValues } from '../variables/storage'
+import { adjustPersonVariable, getPersonVariable, setPersonVariable, validatePersonVariableValues } from '../variables/storage'
 import { validateHouseholdActivityState } from './invariants'
+import {
+  accumulateParentCuriosityExposure,
+  completeParentCuriosityExposureWindow,
+  PARENT_CURIOSITY_EXPOSURE_CHANNEL,
+} from '../exposure/model'
+import { applyParentCuriosityDevelopment } from '../development/apply'
 
 export interface StepResult {
   projection: WorldProjection
@@ -44,6 +52,7 @@ export class SimulationEngine {
   private readonly relationshipById: Map<string, SimulationState['relationships'][number]>
   private readonly householdById: Map<string, SimulationState['households'][number]>
   private readonly activityLocationById: Map<string, SimulationState['activityLocations'][number]>
+  private readonly parentIdsByChildId: Map<string, readonly string[]>
 
   private constructor(private state: SimulationState, random: RandomProvider) {
     this.random = random
@@ -52,6 +61,14 @@ export class SimulationEngine {
     this.relationshipById = new Map(state.relationships.map((relationship) => [relationship.id, relationship]))
     this.householdById = new Map(state.households.map((household) => [household.id, household]))
     this.activityLocationById = new Map(state.activityLocations.map((location) => [location.id, location]))
+    const parentIdsByChildId = new Map<string, string[]>()
+    for (const link of state.parentChildLinks) {
+      const parentIds = parentIdsByChildId.get(link.childId)
+      if (parentIds) parentIds.push(link.parentId)
+      else parentIdsByChildId.set(link.childId, [link.parentId])
+    }
+    for (const parentIds of parentIdsByChildId.values()) parentIds.sort(compareIds)
+    this.parentIdsByChildId = new Map([...parentIdsByChildId.entries()].sort(([first], [second]) => compareIds(first, second)))
   }
 
   static create(seed: string, width = 32, height = 24): SimulationEngine {
@@ -72,6 +89,7 @@ export class SimulationEngine {
         influenceRegistryVersion: INFLUENCE_REGISTRY_VERSION,
         householdModelVersion: HOUSEHOLD_MODEL_VERSION,
         activityRegistryVersion: ACTIVITY_REGISTRY_VERSION,
+        developmentRegistryVersion: DEVELOPMENT_REGISTRY_VERSION,
       },
       world,
       people: generatedPopulation.people,
@@ -82,6 +100,7 @@ export class SimulationEngine {
       dailySpatialCounters: { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 },
       dailySocialCounters: { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 },
       dailyActivityCounters: { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 },
+      dailyDevelopmentCounters: { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0 },
       randomStreams: random.snapshot(),
     }, random)
   }
@@ -157,6 +176,8 @@ export class SimulationEngine {
         this.state.relationships = [...this.relationshipById.values()].sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
       }
       this.recordActivityPersonHours()
+      this.accumulateDevelopmentExposure()
+      if (this.state.tick % 720 === 0) this.processDevelopment(pushEvent)
       this.advanceAges(pushEvent)
       if (this.state.tick % 24 === 0) {
         this.regenerateFood()
@@ -165,6 +186,7 @@ export class SimulationEngine {
         this.state.dailySpatialCounters = { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 }
         this.state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
         this.state.dailyActivityCounters = { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 }
+        this.state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0 }
       }
     }
     this.state.randomStreams = this.random.snapshot()
@@ -243,6 +265,10 @@ export class SimulationEngine {
       { ...base, metricId: 'activity.homePersonHours', value: this.state.dailyActivityCounters.homePersonHours },
       { ...base, metricId: 'activity.commonsPersonHours', value: this.state.dailyActivityCounters.commonsPersonHours },
       { ...base, metricId: 'activity.travelPersonHours', value: this.state.dailyActivityCounters.travelPersonHours },
+      { ...base, metricId: 'household.parentChildCoExposureSourceHours', value: this.state.dailyDevelopmentCounters.parentChildCoExposureSourceHours },
+      { ...base, metricId: 'development.experiences', value: this.state.dailyDevelopmentCounters.developmentExperiences },
+      { ...base, metricId: 'development.curiosityChanges', value: this.state.dailyDevelopmentCounters.developmentChanges },
+      { ...base, metricId: 'development.absoluteCuriosityChange', value: this.state.dailyDevelopmentCounters.absoluteCuriosityChange },
     ]
   }
 
@@ -316,6 +342,113 @@ export class SimulationEngine {
       if (person.currentActivity.kind === 'home') this.state.dailyActivityCounters.homePersonHours += 1
       else if (person.currentActivity.kind === 'commons') this.state.dailyActivityCounters.commonsPersonHours += 1
       else this.state.dailyActivityCounters.travelPersonHours += 1
+    }
+  }
+
+  private accumulateDevelopmentExposure(): void {
+    for (const [childId, parentIds] of this.parentIdsByChildId) {
+      const child = this.personById.get(childId)
+      if (!child) throw new Error(`Development exposure recipient ${childId} is missing`)
+      const household = this.householdById.get(child.householdId)
+      if (!household) throw new Error(`Development exposure recipient ${childId} has a missing household`)
+      if (child.currentActivity.kind !== 'home' || child.currentActivity.locationId !== household.homeActivityLocationId || child.locationCellId !== household.homeCellId) continue
+      const coPresentParents = parentIds.flatMap((parentId) => {
+        const parent = this.personById.get(parentId)
+        if (!parent) throw new Error(`Development exposure source ${parentId} is missing`)
+        if (parent.currentActivity.kind !== 'home' || parent.currentActivity.locationId !== household.homeActivityLocationId || parent.locationCellId !== household.homeCellId) return []
+        return [{ parentId, curiosityPermille: getPersonVariable(parent.variables, PERSON_VARIABLE_ID.curiosity) }]
+      })
+      if (coPresentParents.length === 0) continue
+      const accumulator = child.development.exposures.find(({ channelId }) => channelId === PARENT_CURIOSITY_EXPOSURE_CHANNEL)
+      if (!accumulator) throw new Error(`Person ${child.id} is missing parent curiosity exposure state`)
+      const updated = accumulateParentCuriosityExposure({ accumulator, tick: this.state.tick, coPresentParents })
+      child.development.exposures = [{ ...updated, sourcePersonIds: [...updated.sourcePersonIds] }]
+      this.state.dailyDevelopmentCounters.parentChildCoExposureSourceHours += coPresentParents.length
+    }
+  }
+
+  private processDevelopment(pushEvent: (event: SimulationEvent) => void): void {
+    const nextWindowStartTick = this.state.tick + 1
+    for (const person of this.state.people) {
+      const accumulator = person.development.exposures.find(({ channelId }) => channelId === PARENT_CURIOSITY_EXPOSURE_CHANNEL)
+      if (!accumulator) throw new Error(`Person ${person.id} is missing parent curiosity exposure state`)
+      const completed = completeParentCuriosityExposureWindow(accumulator, nextWindowStartTick, person.id)
+      person.development.exposures = [{ ...completed.accumulator, sourcePersonIds: [...completed.accumulator.sourcePersonIds] }]
+      if (!completed.experience) continue
+      const household = this.householdById.get(person.householdId)
+      if (!household) throw new Error(`Development recipient ${person.id} has a missing household`)
+      const experienceId = `${person.id}:${completed.experience.windowStartTick}-${completed.experience.windowEndTick}:${completed.experience.type}`
+      const experience: ParentCuriosityModelingExperience = {
+        id: experienceId,
+        type: completed.experience.type,
+        personId: person.id,
+        householdId: household.id,
+        sourcePersonIds: [...completed.experience.sourcePersonIds],
+        activityLocationId: household.homeActivityLocationId,
+        startTick: completed.experience.windowStartTick,
+        endTick: completed.experience.windowEndTick,
+        recipientHours: completed.experience.recipientHours,
+        sourceHours: completed.experience.sourceHours,
+        sourceMeanPermille: completed.experience.sourceMeanPermille,
+        exposureStrengthPermille: completed.experience.exposureStrengthPermille,
+      }
+      person.development.lastExperience = experience
+      this.state.dailyDevelopmentCounters.developmentExperiences += 1
+      pushEvent(this.event('PERSON_EXPERIENCED_PARENT_MODELING', {
+        personId: person.id,
+        householdId: household.id,
+        experienceId,
+        activityLocationId: household.homeActivityLocationId,
+        sourcePersonIds: experience.sourcePersonIds.join(','),
+        sourcePersonCount: experience.sourcePersonIds.length,
+        recipientHours: experience.recipientHours,
+        sourceHours: experience.sourceHours,
+        sourceMeanPermille: experience.sourceMeanPermille,
+        exposureStrengthPermille: experience.exposureStrengthPermille,
+      }))
+      const currentCuriosity = getPersonVariable(person.variables, PERSON_VARIABLE_ID.curiosity)
+      const developed = applyParentCuriosityDevelopment({
+        currentCuriosityPermille: currentCuriosity,
+        ageYears: person.ageYears,
+        experience: completed.experience,
+      })
+      setPersonVariable(person.variables, PERSON_VARIABLE_ID.curiosity, developed.currentValuePermille)
+      if (developed.trace.appliedDeltaPermille === 0) continue
+      const trace = {
+        edgeId: developed.trace.edgeId,
+        targetId: PERSON_VARIABLE_ID.curiosity,
+        experienceId,
+        previousValue: developed.trace.previousValuePermille,
+        sourceValuePermille: developed.trace.sourceValuePermille,
+        gapPermille: developed.trace.gapPermille,
+        exposureStrengthPermille: developed.trace.exposureStrengthPermille,
+        ageBand: developed.trace.ageBand,
+        plasticityPermille: developed.trace.plasticityPermille,
+        resolution: 'deterministic' as const,
+        applicationProbabilityPermille: developed.trace.applicationProbabilityPermille,
+        requestedDelta: developed.trace.requestedDeltaPermille,
+        appliedDelta: developed.trace.appliedDeltaPermille,
+        currentValue: developed.trace.currentValuePermille,
+      }
+      person.development.lastChange = trace
+      this.state.dailyDevelopmentCounters.developmentChanges += 1
+      this.state.dailyDevelopmentCounters.absoluteCuriosityChange += Math.abs(trace.appliedDelta)
+      pushEvent(this.event('PERSON_VARIABLE_DEVELOPED', {
+        personId: person.id,
+        experienceId,
+        edgeId: trace.edgeId,
+        targetId: trace.targetId,
+        previousValue: trace.previousValue,
+        sourceValuePermille: trace.sourceValuePermille,
+        gapPermille: trace.gapPermille,
+        exposureStrengthPermille: trace.exposureStrengthPermille,
+        ageBand: trace.ageBand,
+        plasticityPermille: trace.plasticityPermille,
+        applicationProbabilityPermille: trace.applicationProbabilityPermille,
+        requestedDelta: trace.requestedDelta,
+        appliedDelta: trace.appliedDelta,
+        currentValue: trace.currentValue,
+      }))
     }
   }
 
@@ -473,4 +606,8 @@ export class SimulationEngine {
     if (social.positiveEncounters + social.neutralEncounters + social.tenseEncounters !== social.encounters) throw new Error('Daily social outcome counters do not sum to encounters')
     if (social.relationshipsFormed > social.encounters) throw new Error('Daily relationship formations exceed encounters')
   }
+}
+
+function compareIds(first: string, second: string): number {
+  return first < second ? -1 : first > second ? 1 : 0
 }
