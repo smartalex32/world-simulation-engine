@@ -31,6 +31,10 @@ describe('SimulationEngine', () => {
       'activity.homePersonHours',
       'activity.commonsPersonHours',
       'activity.travelPersonHours',
+      'household.parentChildCoExposureSourceHours',
+      'development.experiences',
+      'development.curiosityChanges',
+      'development.absoluteCuriosityChange',
     ])
     expect(result.statistics[2]?.value).toBe(1)
     expect(result.projection.people).toHaveLength(200)
@@ -69,9 +73,9 @@ describe('SimulationEngine', () => {
     await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('digest')
   })
 
-  it('rejects schema 5 snapshots instead of silently migrating them', async () => {
+  it('rejects schema 6 snapshots instead of silently migrating them', async () => {
     const snapshot = await SimulationEngine.create('old-schema').snapshot()
-    snapshot.schemaVersion = 5
-    await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('Unsupported snapshot schema: 5')
+    snapshot.schemaVersion = 6
+    await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('Unsupported snapshot schema: 6')
   })
 })

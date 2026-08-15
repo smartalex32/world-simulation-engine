@@ -1,6 +1,8 @@
 import { scheduleForAge } from '../activities/config'
 import { commonsActivityId, householdHomeActivityId } from '../activities/model'
 import type { CuriosityInheritanceTrace, SimulationState } from '../domain/types'
+import { PARENT_CURIOSITY_EXPOSURE_CHANNEL, PARENT_CURIOSITY_EXPOSURE_WINDOW_TICKS, PARENT_CURIOSITY_EXPERIENCE_TYPE } from '../exposure/model'
+import { DEVELOPMENT_PARENT_CURIOSITY_EDGE_ID, DEVELOPMENT_PLASTICITY_REGISTRY } from '../development/model'
 
 export function validateHouseholdActivityState(state: SimulationState): void {
   if (!Array.isArray(state.households)) throw new Error('Simulation contains invalid households')
@@ -93,6 +95,7 @@ export function validateHouseholdActivityState(state: SimulationState): void {
     } else if (person.originTraces.length !== 0) {
       throw new Error(`Non-child ${person.id} has an inheritance trace`)
     }
+    validateDevelopmentState(person, state, expectedParentIds ?? [], peopleById, household)
   }
   if (memberships.size !== state.people.length) throw new Error('Not every person belongs to exactly one household')
 
@@ -101,6 +104,82 @@ export function validateHouseholdActivityState(state: SimulationState): void {
   const expectedPersonHours = state.people.length * (state.tick % 24)
   if (activityCounters.homePersonHours + activityCounters.commonsPersonHours + activityCounters.travelPersonHours !== expectedPersonHours) {
     throw new Error('Daily activity counters do not sum to elapsed person-hours')
+  }
+  const developmentCounters = state.dailyDevelopmentCounters
+  if (!developmentCounters || Object.values(developmentCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily development counters are invalid')
+}
+
+function validateDevelopmentState(
+  person: SimulationState['people'][number],
+  state: SimulationState,
+  expectedParentIds: readonly string[],
+  peopleById: ReadonlyMap<string, unknown>,
+  household: SimulationState['households'][number],
+): void {
+  if (!person.development || !Array.isArray(person.development.exposures) || person.development.exposures.length !== 1) throw new Error(`Person ${person.id} has invalid development state`)
+  const accumulator = person.development.exposures[0]
+  if (!accumulator || accumulator.channelId !== PARENT_CURIOSITY_EXPOSURE_CHANNEL) throw new Error(`Person ${person.id} has an unknown development exposure channel`)
+  const expectedWindowStartTick = Math.floor(state.tick / PARENT_CURIOSITY_EXPOSURE_WINDOW_TICKS) * PARENT_CURIOSITY_EXPOSURE_WINDOW_TICKS + 1
+  if (accumulator.windowStartTick !== expectedWindowStartTick) throw new Error(`Person ${person.id} has an invalid exposure window start`)
+  const accumulatorIntegers = [accumulator.recipientHours, accumulator.sourceHours, accumulator.weightedSourceValueHours]
+  if (accumulatorIntegers.some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error(`Person ${person.id} has invalid exposure totals`)
+  if (accumulator.recipientHours > PARENT_CURIOSITY_EXPOSURE_WINDOW_TICKS || accumulator.sourceHours > accumulator.recipientHours * 2 || accumulator.weightedSourceValueHours > accumulator.sourceHours * 1000) {
+    throw new Error(`Person ${person.id} has out-of-range exposure totals`)
+  }
+  validateCanonicalSources(person.id, accumulator.sourcePersonIds, expectedParentIds, peopleById)
+  if (accumulator.sourceHours === 0 && (accumulator.recipientHours !== 0 || accumulator.weightedSourceValueHours !== 0 || accumulator.sourcePersonIds.length !== 0 || accumulator.lastExposureTick !== undefined)) {
+    throw new Error(`Person ${person.id} has inconsistent empty exposure state`)
+  }
+  if (accumulator.sourceHours > 0) {
+    if (accumulator.sourcePersonIds.length === 0) throw new Error(`Person ${person.id} has exposure without sources`)
+    if (!Number.isSafeInteger(accumulator.lastExposureTick) || (accumulator.lastExposureTick as number) < accumulator.windowStartTick || (accumulator.lastExposureTick as number) > state.tick) {
+      throw new Error(`Person ${person.id} has an invalid last exposure tick`)
+    }
+  }
+  if (expectedParentIds.length === 0 && accumulator.sourceHours !== 0) throw new Error(`Non-child ${person.id} has parent exposure`)
+
+  const experience = person.development.lastExperience
+  if (experience) {
+    if (experience.type !== PARENT_CURIOSITY_EXPERIENCE_TYPE || experience.personId !== person.id || experience.householdId !== household.id || experience.activityLocationId !== household.homeActivityLocationId) {
+      throw new Error(`Person ${person.id} has invalid last development experience context`)
+    }
+    if (!Number.isSafeInteger(experience.startTick) || !Number.isSafeInteger(experience.endTick) || experience.endTick - experience.startTick + 1 !== PARENT_CURIOSITY_EXPOSURE_WINDOW_TICKS || experience.endTick > state.tick) {
+      throw new Error(`Person ${person.id} has invalid last development experience window`)
+    }
+    const expectedId = `${person.id}:${experience.startTick}-${experience.endTick}:${experience.type}`
+    if (experience.id !== expectedId) throw new Error(`Person ${person.id} has a non-canonical experience ID`)
+    if (!Number.isSafeInteger(experience.recipientHours) || !Number.isSafeInteger(experience.sourceHours) || experience.recipientHours <= 0 || experience.recipientHours > PARENT_CURIOSITY_EXPOSURE_WINDOW_TICKS || experience.sourceHours <= 0 || experience.sourceHours > experience.recipientHours * 2) {
+      throw new Error(`Person ${person.id} has invalid last development experience exposure`)
+    }
+    validateCanonicalSources(person.id, experience.sourcePersonIds, expectedParentIds, peopleById)
+    if (experience.sourcePersonIds.length === 0) throw new Error(`Person ${person.id} has an experience without sources`)
+    if (!Number.isSafeInteger(experience.sourceMeanPermille) || experience.sourceMeanPermille < 0 || experience.sourceMeanPermille > 1000) throw new Error(`Person ${person.id} has invalid experience source mean`)
+    const expectedStrength = Math.min(1000, Math.floor(experience.sourceHours * 1000 / PARENT_CURIOSITY_EXPOSURE_WINDOW_TICKS))
+    if (experience.exposureStrengthPermille !== expectedStrength) throw new Error(`Person ${person.id} has invalid experience exposure strength`)
+  } else if (expectedParentIds.length === 0 && person.development.lastChange) {
+    throw new Error(`Non-child ${person.id} has a development change`)
+  }
+
+  const change = person.development.lastChange
+  if (change) {
+    if (change.edgeId !== DEVELOPMENT_PARENT_CURIOSITY_EDGE_ID || change.targetId !== 'person.trait.curiosity' || !change.experienceId.startsWith(`${person.id}:`) || change.resolution !== 'deterministic' || change.applicationProbabilityPermille !== 1000) {
+      throw new Error(`Person ${person.id} has invalid last development change context`)
+    }
+    const bounded = [change.previousValue, change.sourceValuePermille, change.exposureStrengthPermille, change.currentValue]
+    if (bounded.some((value) => !Number.isSafeInteger(value) || value < 0 || value > 1000)) throw new Error(`Person ${person.id} has invalid development change values`)
+    const signed = [change.gapPermille, change.requestedDelta, change.appliedDelta]
+    if (signed.some((value) => !Number.isSafeInteger(value) || value < -1000 || value > 1000)) throw new Error(`Person ${person.id} has invalid signed development change values`)
+    if (change.gapPermille !== change.sourceValuePermille - change.previousValue || change.currentValue !== change.previousValue + change.appliedDelta || change.appliedDelta === 0) {
+      throw new Error(`Person ${person.id} has an inconsistent development change`)
+    }
+    const plasticity = DEVELOPMENT_PLASTICITY_REGISTRY.find(({ ageBand }) => ageBand === change.ageBand)?.curiosityPlasticityPermillePerMonth
+    if (change.plasticityPermille !== plasticity) throw new Error(`Person ${person.id} has invalid development plasticity`)
+  }
+}
+
+function validateCanonicalSources(personId: string, sourcePersonIds: readonly string[], expectedParentIds: readonly string[], peopleById: ReadonlyMap<string, unknown>): void {
+  if (!isSortedUnique(sourcePersonIds) || sourcePersonIds.some((sourceId) => sourceId === personId || !peopleById.has(sourceId) || !expectedParentIds.includes(sourceId))) {
+    throw new Error(`Person ${personId} has invalid development sources`)
   }
 }
 

@@ -5,6 +5,7 @@ import { resolveEncounters, type EncounterContext } from './encounters'
 import { relationshipId } from './model'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { createDefaultPersonVariableValues } from '../variables/storage'
+import { createParentCuriosityExposureAccumulator } from '../exposure/model'
 
 function person(id: string, sociability: number, locationCellId: string): PersonState {
   return {
@@ -17,6 +18,7 @@ function person(id: string, sociability: number, locationCellId: string): Person
     activityScheduleId: 'activity.schedule.adult.v1',
     currentActivity: { kind: 'commons', locationId: locationCellId, sinceTick: 0 },
     originTraces: [],
+    development: { exposures: [{ ...createParentCuriosityExposureAccumulator(1), sourcePersonIds: [] }] },
     variables: createDefaultPersonVariableValues({
       [PERSON_VARIABLE_ID.sociability]: sociability,
       [PERSON_VARIABLE_ID.hunger]: 100,
