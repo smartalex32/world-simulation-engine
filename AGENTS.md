@@ -31,9 +31,10 @@ When code and a design document differ, do not silently choose one. Preserve cur
 - IndexedDB persistence in `src/persistence/`.
 - Canvas map and workbench UI in `src/ui/` and `src/App.tsx`.
 - Vitest unit/regression tests and Playwright Chromium/Firefox/WebKit end-to-end tests.
-- One-hour base ticks, PCG32 random streams, snapshot schemas, engine versions, and canonical state digests.
+- One-hour base ticks, PCG32 random streams, snapshot schemas, registry versions, engine versions, and canonical state digests.
+- Engine `0.5.0`, snapshot schema `5`, variable-registry version `1`, and influence-registry version `1`; schema-4 snapshots are rejected rather than migrated.
 
-Milestones 0–2 currently provide the deterministic engine skeleton, simple agents, consumable/regenerating food, terrain-aware travel, spatial statistics, heatmaps, and person inspection. Relationships, households, development, and community feedback are not yet implemented.
+Milestones 0–4 are implemented. The repository now provides the deterministic engine skeleton, seeded people, consumable/regenerating food, terrain-aware travel, spatial statistics and heatmaps, co-located encounters, sparse multi-dimensional relationships, nine namespaced bounded person variables, eleven sparse linear influence edges, and structured decision/relationship inspection. Milestone 5—activities, households, and development—is the next unfinished slice. Community feedback remains deferred to Milestone 6.
 
 ## Non-Negotiable Contracts
 
@@ -56,10 +57,10 @@ Keep these responsibilities separable:
 - `simulation/rng`: seeded streams and deterministic random selection.
 - `simulation/spatial`: coordinates, neighborhood queries, effective distance, paths, and spatial partitioning.
 - `simulation/agents`: opportunities, decision evaluation, action selection, and action execution.
-- Future `simulation/variables`: variable and trait definitions plus bounded person values.
-- Future `simulation/influences`: sparse edge definitions, conditions, curves, and modifier evaluation.
+- `simulation/variables`: namespaced variable definitions, registry ordering, and bounded integer permille person values.
+- `simulation/influences`: sparse typed edge definitions, target indexes, and exact linear modifier evaluation.
 - Future `simulation/exposure`: time spent, encounter pools, source strength, and accumulated exposure.
-- Future `simulation/relationships`: multi-dimensional relationship state and scheduled aggregation.
+- `simulation/relationships`: co-location encounter resolution, multi-dimensional relationship state, and scheduled frequency decay.
 - Future `simulation/development`: experiences, plasticity, and controlled long-term change.
 - Future `simulation/community`: emergent measures and structurally assigned conditions.
 - `worker`: engine ownership and typed command/projection transport.
@@ -72,7 +73,9 @@ Do not let arbitrary modules directly mutate traits or learned variables. Change
 
 Work in independently reviewable vertical slices. The next unfinished slice takes precedence over later ideas unless the user explicitly changes priority.
 
-### Milestone 3 — Social Encounters and Relationships
+### Milestone 3 — Social Encounters and Relationships (Implemented)
+
+Implemented in engine `0.4.0` and retained in `0.5.0`:
 
 - Build encounter pools from shared cells or activity locations; avoid global O(N²) comparisons.
 - Add familiarity, interaction frequency, affection, trust, respect, and fear as independent relationship dimensions where needed.
@@ -80,16 +83,24 @@ Work in independently reviewable vertical slices. The next unfinished slice take
 - Add encounter/relationship events, daily aggregates, person inspection, and network inspection.
 - Validate that dense and dispersed settlements create different encounter and network patterns.
 
-### Milestone 4 — Variable, Trait, and Influence Registries
+### Milestone 4 — Variable, Trait, and Influence Registries (Implemented)
+
+Implemented in engine `0.5.0` and snapshot schema `5`:
 
 - Replace hardcoded trait access with typed registry IDs and bounded variable storage.
 - Start only with curiosity, risk tolerance, sociability, trust, conformity, and persistence.
 - Add hunger, fatigue, and social need as state/need variables—not traits.
 - Implement a sparse influence registry with linear, immediate edges first.
 - Centralize coefficients and units; retain per-action modifier traces.
-- Add fixed-seed, edge-level, statistical tendency, invariant, and snapshot migration tests.
+- Add fixed-seed, edge-level, statistical tendency, invariant, and snapshot compatibility tests.
 
-### Milestone 5 — Activities, Households, and Development
+The implemented registry contains six traits (`curiosity`, `riskTolerance`, `sociability`, `trustPropensity`, `conformity`, and `persistence`), two states (`hunger` and `fatigue`), and one need (`socialConnection`), all stored as namespaced integer permille values. Eleven enabled linear immediate edges currently affect action utility. Trust propensity, conformity, and persistence are stored, initialized, serialized, validated, and displayed but have no behavior utility edges yet.
+
+New-variable initialization uses named streams for `population.variable.person.trait.trustPropensity`, `population.variable.person.trait.conformity`, `population.variable.person.trait.persistence`, `population.variable.person.state.fatigue`, and `population.variable.person.need.socialConnection`. Hourly cadence adds 12 hunger, 10 fatigue, and 8 social need; rest removes up to 180 fatigue and encounters remove up to 140 social need from both participants. Action inspection preserves structured base/context/interaction/influence contributions with source and edge metadata.
+
+Schema-4 snapshots are explicitly rejected rather than migrated. Person-array order remains part of authoritative state and RNG assignment; order-independent person processing is deferred and must be treated as a deliberate engine migration if introduced.
+
+### Milestone 5 — Activities, Households, and Development (Next)
 
 - Add simple home/activity-location schedules without building a full occupation economy.
 - Add households, parent/child links, structured experiences, exposure accumulation, and age-dependent plasticity.
