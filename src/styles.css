@@ -55,6 +55,7 @@ button.primary:hover { background: #e0bc58; }
 .overlay-list button.active { background: #223029; border-color: #34463d; color: #eef5f0; }
 .swatch { width: 13px; height: 13px; border-radius: 3px; background: #426a4d; }
 .swatch.elevation { background: linear-gradient(135deg, #203d2f, #dacfaa); }.swatch.habitability { background: linear-gradient(135deg, #552f2c, #57a965); }.swatch.movement { background: linear-gradient(135deg, #3b7047, #b05938); }
+.swatch.food { background: linear-gradient(135deg, #542a26, #6fb052); }.swatch.population { background: linear-gradient(135deg, #34483e, #ecba46); }
 .metric-list, .inspector-grid { padding: 7px 16px; }
 .metric { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 35px; border-bottom: 1px solid #202c27; }
 .metric span { color: var(--muted); font-size: 11px; }.metric strong { font-size: 12px; text-transform: capitalize; }
