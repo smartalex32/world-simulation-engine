@@ -529,7 +529,7 @@ A draft must remain separate from the active simulation.
 
 ## Milestone 8B.1 — Draft World Lifecycle
 
-Status: Next Slice
+Status: Implemented
 
 ### Goal
 
@@ -564,6 +564,18 @@ Create the architectural boundary for editable pre-simulation worlds without yet
 - Hydrology
 - Political borders
 - Complex editor undo history
+
+### Implemented Boundary
+
+- Versioned, serializable worker-owned draft records
+- Deterministic bounded generated previews
+- Create, update, reset, discard, hydrate, and explicit commit operations
+- Separate IndexedDB draft persistence, distinct from authoritative snapshots
+- Revision checks and in-flight UI protection against stale draft commits
+- Commit through the existing authoritative world-creation path
+
+Draft previews are summaries only in this slice. A draft map viewport and
+editing operations remain later slices.
 
 ---
 
@@ -1431,7 +1443,7 @@ Development-agent rules belong in `AGENTS.md`.
 Completed:
 
 ```text
-Milestones 0–8A
+Milestones 0–8B.1
 ```
 
 Current milestone:
@@ -1443,14 +1455,13 @@ Milestone 8B — Draft Map Authoring
 Next independently reviewable slice:
 
 ```text
-Milestone 8B.1 — Draft World Lifecycle
+Milestone 8B.2 — Placement Zone Authoring
 ```
 
 The intended immediate sequence is:
 
 ```text
-8B.1 Draft World Lifecycle
-  -> 8B.2 Placement Zone Authoring
+8B.2 Placement Zone Authoring
   -> 8B.3 Terrain Painting
   -> 8B.4 Settlement Editing
   -> 8B.5 Roads

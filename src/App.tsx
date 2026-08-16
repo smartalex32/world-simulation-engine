@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
 import type { CommunityVariableDefinition, CommunityVariableId } from './simulation/community/types'
-import type { DevelopmentExperienceType, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, UtilityContribution, WorldCreationRequest } from './simulation/domain/types'
+import type { DevelopmentExperienceType, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, UtilityContribution, WorldCreationDraft, WorldCreationRequest, WorldDraftPreview, WorldDraftRecord } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
 import type { ProjectedCommunityState, WorkbenchProjection } from './projection'
 import { HexMap, type MapOverlay } from './ui/HexMap'
@@ -21,6 +21,8 @@ const SPEEDS = [
   { value: 720, label: '30 days / batch' },
 ]
 
+const WORLD_SETUP_DRAFT_ID = 'workbench-world-setup'
+
 export default function App() {
   const client = useMemo(() => new SimulationWorkerClient(), [])
   const database = useMemo(() => new WorkbenchDatabase(), [])
@@ -31,6 +33,12 @@ export default function App() {
     name: 'The Seeded Valley', seed: 'valley-001', width: 32, height: 24, population: 200,
     placements: [{ name: 'Westhaven', region: 'west', allocation: 100 }, { name: 'Eastwatch', region: 'east', allocation: 100 }],
   })
+  const [worldDraft, setWorldDraft] = useState<WorldDraftRecord>()
+  const [draftPreview, setDraftPreview] = useState<WorldDraftPreview>()
+  const [draftBusy, setDraftBusy] = useState(false)
+  const worldDraftRef = useRef<WorldDraftRecord | undefined>(undefined)
+  const draftBusyRef = useRef(false)
+  const commitAfterDraftUpdateRef = useRef(false)
   const [projection, setProjection] = useState<WorkbenchProjection>()
   const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
   const [status, setStatus] = useState<'starting' | 'idle' | 'paused' | 'playing'>('starting')
@@ -52,6 +60,11 @@ export default function App() {
   const statusRef = useRef<typeof status>('starting')
   const importRef = useRef<HTMLInputElement>(null)
   const requestViewport = useCallback((request: import('./projection').MapProjectionRequest) => client.setViewport(request), [client])
+
+  function setDraftOperationBusy(value: boolean) {
+    draftBusyRef.current = value
+    setDraftBusy(value)
+  }
 
   useEffect(() => {
     projectionRef.current = projection
@@ -90,6 +103,56 @@ export default function App() {
       } else if (response.type === 'ERROR') {
         setError(response.message)
         setStatus('paused')
+        commitAfterDraftUpdateRef.current = false
+        setDraftOperationBusy(false)
+      } else if (response.type === 'DRAFT') {
+        if (response.action === 'committing') {
+          // This arrives before the new run's FRAME so its RUN_CREATED event
+          // is retained. The draft remains recoverable until commit succeeds.
+          setEvents([])
+          setStatistics([])
+          setSelectedCellId(undefined)
+          setSelectedPersonId(undefined)
+          setSelectedCommunityId(undefined)
+        } else if (response.action === 'committed' || response.action === 'discarded') {
+          const discarded = response.draft
+          setDraftOperationBusy(true)
+          if (discarded) {
+            try { await database.deleteWorldDraft(discarded.draftId) } catch (reason) { setError(messageOf(reason)) }
+          }
+          commitAfterDraftUpdateRef.current = false
+          worldDraftRef.current = undefined
+          setWorldDraft(undefined)
+          setDraftPreview(undefined)
+          setDraftOperationBusy(false)
+          if (response.action === 'committed') {
+            if (discarded) setSeed(discarded.draft.seed)
+            setSetupOpen(false)
+            setError(undefined)
+            lastAutosavedTick.current = -1
+          } else {
+            setSetupOpen(false)
+          }
+        } else if (response.draft) {
+          worldDraftRef.current = response.draft
+          setWorldDraft(response.draft)
+          if (response.preview) setDraftPreview(response.preview)
+          if (response.action === 'reset') setWorldSetup(worldSetupFromDraft(response.draft.draft))
+          if (response.action === 'hydrated') setWorldSetup(worldSetupFromDraft(response.draft.draft))
+          setDraftOperationBusy(true)
+          try {
+            await database.saveWorldDraft(response.draft)
+            if (response.action === 'updated' && commitAfterDraftUpdateRef.current) {
+              commitAfterDraftUpdateRef.current = false
+              client.commitDraft(WORLD_SETUP_DRAFT_ID)
+            } else {
+              setDraftOperationBusy(false)
+            }
+          } catch (reason) {
+            setError(messageOf(reason))
+            setDraftOperationBusy(false)
+          }
+        }
       }
     }
     void refreshSnapshots()
@@ -159,25 +222,61 @@ export default function App() {
     if (importRef.current) importRef.current.value = ''
   }
 
-  function createFromSetup() {
-    setSeed(worldSetup.seed)
-    client.create({
-      seed: worldSetup.seed,
-      name: worldSetup.name,
-      width: worldSetup.width,
-      height: worldSetup.height,
-      initialPopulationCount: worldSetup.population,
-      settlements: worldSetup.placements.map((placement, index) => ({ id: `settlement-${index + 1}`, name: placement.name, preset: placement.region })),
-      populationZones: worldSetup.placements.map((placement, index) => ({ id: `population-zone-${index + 1}`, name: `${placement.name} residents`, populationCount: placement.allocation, settlementId: `settlement-${index + 1}`, preset: placement.region, radiusCells: 3 })),
-    })
-    setSetupOpen(false)
-    setEvents([])
-    setStatistics([])
-    setSelectedCellId(undefined)
-    setSelectedPersonId(undefined)
-    setSelectedCommunityId(undefined)
-    setError(undefined)
-    lastAutosavedTick.current = -1
+  async function openWorldSetup() {
+    setSetupOpen(true)
+    worldDraftRef.current = undefined
+    setWorldDraft(undefined)
+    setDraftPreview(undefined)
+    setDraftOperationBusy(true)
+    try {
+      const saved = await database.loadWorldDraft(WORLD_SETUP_DRAFT_ID)
+      if (saved) client.hydrateDraft(saved)
+      else client.createDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(worldSetup))
+    } catch (reason) {
+      setDraftOperationBusy(false)
+      setError(`Draft setup failed: ${messageOf(reason)}`)
+      try { await database.deleteWorldDraft(WORLD_SETUP_DRAFT_ID) } catch { /* Preserve the original error when storage is unavailable. */ }
+    }
+  }
+
+  function updateWorldSetup(next: WorldSetupValues) {
+    const currentDraft = worldDraftRef.current
+    if (!currentDraft || draftBusyRef.current) return
+    setWorldSetup(next)
+    setDraftOperationBusy(true)
+    // The worker command queue serializes this single-editor flow. Retaining
+    // revision checks in the protocol protects future concurrent editors,
+    // while omitting them here prevents stale React renders from rejecting a
+    // valid queued edit immediately before a commit.
+    client.updateDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(next))
+  }
+
+  function discardWorldSetup() {
+    if (!worldDraftRef.current) {
+      setSetupOpen(false)
+      return
+    }
+    if (draftBusyRef.current) return
+    setDraftOperationBusy(true)
+    client.discardDraft(WORLD_SETUP_DRAFT_ID)
+  }
+
+  function resetWorldSetup() {
+    const currentDraft = worldDraftRef.current
+    if (draftBusyRef.current || !currentDraft) return
+    setDraftOperationBusy(true)
+    client.resetDraft(WORLD_SETUP_DRAFT_ID)
+  }
+
+  function commitWorldSetup() {
+    const currentDraft = worldDraftRef.current
+    if (!currentDraft) return
+    if (draftBusyRef.current) {
+      commitAfterDraftUpdateRef.current = true
+      return
+    }
+    setDraftOperationBusy(true)
+    client.commitDraft(WORLD_SETUP_DRAFT_ID)
   }
 
   function inspectPerson(personId: string) {
@@ -222,7 +321,7 @@ export default function App() {
       </header>
 
       <section className="controlbar" aria-label="Simulation controls">
-        <button className="secondary" onClick={() => setSetupOpen(true)}>Create world</button>
+        <button className="secondary" onClick={() => { void openWorldSetup() }}>Create world</button>
         <span className="active-world-seed">Seed <strong>{projection?.seed ?? seed}</strong></span>
         <div className="divider" />
         <button className="icon-button" onClick={() => client.step()} disabled={status === 'playing'} title="Advance one hour">Step +1h</button>
@@ -324,7 +423,7 @@ export default function App() {
           {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
       </section>
-      {setupOpen && <WorldSetup value={worldSetup} onChange={setWorldSetup} onClose={() => setSetupOpen(false)} onCreate={createFromSetup} />}
+      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} busy={draftBusy} />}
     </main>
   )
 }
@@ -352,6 +451,48 @@ function worldSetupFromCreation(creation: WorldCreationRequest): WorldSetupValue
       { name: creation.populationZones.length > 2 ? 'Other starting places' : settlementName(second, 'Eastwatch'), region: 'east', allocation: remainingPopulation },
     ],
   }
+}
+
+function creationDraftFromSetup(setup: WorldSetupValues): WorldCreationDraft {
+  return {
+    seed: setup.seed,
+    name: setup.name,
+    width: setup.width,
+    height: setup.height,
+    initialPopulationCount: setup.population,
+    settlements: setup.placements.map((placement, index) => ({ id: `settlement-${index + 1}`, name: placement.name, preset: placement.region })),
+    populationZones: setup.placements.map((placement, index) => ({
+      id: `population-zone-${index + 1}`,
+      name: `${placement.name} residents`,
+      populationCount: placement.allocation,
+      settlementId: `settlement-${index + 1}`,
+      preset: placement.region,
+      radiusCells: 3,
+    })),
+  }
+}
+
+function worldSetupFromDraft(draft: WorldCreationDraft): WorldSetupValues {
+  const first = draft.populationZones[0]
+  const second = draft.populationZones[1]
+  const settlementName = (zone: typeof first, fallback: string) => draft.settlements.find((settlement) => settlement.id === zone?.settlementId)?.name ?? zone?.name.replace(/ residents$/, '') ?? fallback
+  const firstPopulation = first?.populationCount ?? Math.floor(draft.initialPopulationCount / 2)
+  return {
+    name: draft.name,
+    seed: draft.seed,
+    width: draft.width,
+    height: draft.height,
+    population: draft.initialPopulationCount,
+    placements: [
+      { name: settlementName(first, 'Westhaven'), region: setupRegion(first?.preset, 'west'), allocation: firstPopulation },
+      { name: settlementName(second, 'Eastwatch'), region: setupRegion(second?.preset, 'east'), allocation: draft.initialPopulationCount - firstPopulation },
+    ],
+  }
+}
+
+function setupRegion(preset: WorldCreationDraft['populationZones'][number]['preset'], fallback: 'west' | 'center' | 'east'): 'west' | 'center' | 'east' {
+  if (preset === 'central') return 'center'
+  return preset ?? fallback
 }
 
 function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell; people: PersonState[]; onSelectPerson: (id: string) => void }) {

@@ -2,8 +2,9 @@
 
 import { SimulationEngine } from '../simulation/engine/engine'
 import { WorkbenchProjectionBuilder, type MapProjectionRequest } from '../projection'
-import type { SimulationEvent, StatisticSample, WorldCreationDraft } from '../simulation/domain/types'
+import type { SimulationEvent, StatisticSample, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
+import { createWorldDraftRecord, previewWorldDraft, resetWorldDraftRecord, updateWorldDraftRecord, validateWorldDraftRecord } from '../simulation/domain/worldDraft'
 import type { SimulationCommand, SimulationResponse, WorkbenchSnapshotEnvelope } from './protocol'
 import { MAX_TICKS_PER_WORKER_TURN, SimulationBatchScheduler, TelemetryBuffer, validateWorkerContinuation, type WorkerContinuationState } from './frameScheduler'
 
@@ -13,6 +14,7 @@ let projectionBuilder: WorkbenchProjectionBuilder | undefined
 let viewportRequest: MapProjectionRequest | undefined
 let projectionEpoch = 0
 let initialCreation: WorldCreationDraft = defaultWorldCreationRequest('valley-001')
+let activeDraft: WorldDraftRecord | undefined
 let playing = false
 let ticksPerBatch = 24
 let loopScheduled = false
@@ -143,6 +145,64 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           playing = false
           await create(command.creation, command.requestId)
           break
+        case 'CREATE_DRAFT': {
+          if (activeDraft) throw new Error(`A world draft is already active: ${activeDraft.draftId}`)
+          const candidate = createWorldDraftRecord(command.draftId, command.draft)
+          const preview = previewWorldDraft(candidate)
+          activeDraft = candidate
+          respond({ type: 'DRAFT', requestId: command.requestId, action: 'created', draft: candidate, preview })
+          break
+        }
+        case 'HYDRATE_DRAFT': {
+          // Persistence is not authoritative simulation state. Validate it at
+          // the worker boundary before replacing the active authoring draft.
+          const candidate = validateWorldDraftRecord(command.draft)
+          const preview = previewWorldDraft(candidate)
+          activeDraft = candidate
+          respond({ type: 'DRAFT', requestId: command.requestId, action: 'hydrated', draft: candidate, preview })
+          break
+        }
+        case 'UPDATE_DRAFT': {
+          const draft = requiredDraft(command.draftId)
+          const candidate = updateWorldDraftRecord(draft, command.draft, command.expectedRevision)
+          const preview = previewWorldDraft(candidate)
+          activeDraft = candidate
+          respond({ type: 'DRAFT', requestId: command.requestId, action: 'updated', draft: candidate, preview })
+          break
+        }
+        case 'RESET_DRAFT': {
+          const draft = requiredDraft(command.draftId)
+          const candidate = resetWorldDraftRecord(draft, command.expectedRevision)
+          const preview = previewWorldDraft(candidate)
+          activeDraft = candidate
+          respond({ type: 'DRAFT', requestId: command.requestId, action: 'reset', draft: candidate, preview })
+          break
+        }
+        case 'REQUEST_DRAFT_PREVIEW': {
+          const draft = requiredDraft(command.draftId)
+          respond({ type: 'DRAFT', requestId: command.requestId, action: 'previewed', draft, preview: previewWorldDraft(draft) })
+          break
+        }
+        case 'COMMIT_DRAFT': {
+          const draft = requiredDraft(command.draftId)
+          if (command.expectedRevision !== undefined && command.expectedRevision !== draft.revision) {
+            throw new Error(`World draft revision conflict: expected ${command.expectedRevision}, current ${draft.revision}`)
+          }
+          // Let UI clear stale run artifacts before RUN_CREATED, but reserve
+          // final committed state until authoritative creation succeeds.
+          playing = false
+          respond({ type: 'DRAFT', requestId: command.requestId, action: 'committing', draft })
+          await create(draft.draft, command.requestId)
+          activeDraft = undefined
+          respond({ type: 'DRAFT', requestId: command.requestId, action: 'committed', draft })
+          break
+        }
+        case 'DISCARD_DRAFT': {
+          const draft = requiredDraft(command.draftId)
+          activeDraft = undefined
+          respond({ type: 'DRAFT', requestId: command.requestId, action: 'discarded', draft })
+          break
+        }
         case 'LOAD_RUN': {
           playing = false
           engine = await SimulationEngine.restore(command.snapshot)
@@ -208,6 +268,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
         case 'DISPOSE':
           playing = false
           engine = undefined
+          activeDraft = undefined
           projectionBuilder = undefined
           viewportRequest = undefined
           clearPendingTelemetry()
@@ -222,3 +283,8 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
 })
 
 respond({ type: 'READY' })
+
+function requiredDraft(draftId: string): WorldDraftRecord {
+  if (!activeDraft || activeDraft.draftId !== draftId) throw new Error(`World draft is not active: ${draftId}`)
+  return activeDraft
+}

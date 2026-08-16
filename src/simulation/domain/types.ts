@@ -105,6 +105,32 @@ export interface WorldCreationRequest {
   settlements: SettlementState[]
 }
 
+/**
+ * A non-authoritative, versioned world-authoring record. Drafts are editable
+ * outside a live run and only become authoritative through an explicit worker
+ * commit.
+ */
+export interface WorldDraftRecord {
+  version: 2
+  draftId: string
+  revision: number
+  /** Immutable authored input retained so reset never depends on UI state. */
+  initialDraft: WorldCreationDraft
+  draft: WorldCreationDraft
+}
+
+/** A bounded, deterministic result used by authoring UI before commit. */
+export interface WorldDraftPreview {
+  version: 1
+  draftId: string
+  revision: number
+  creation: WorldCreationRequest
+  worldId: string
+  cellCount: number
+  passableCellCount: number
+  terrainCounts: Record<Terrain, number>
+}
+
 export interface WorldState {
   id: string
   name: string

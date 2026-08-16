@@ -1,5 +1,5 @@
 import type { MapProjectionRequest } from '../projection'
-import type { WorldCreationDraft } from '../simulation/domain/types'
+import type { WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
 import { requestId, type SimulationCommand, type SimulationResponse, type WorkbenchSnapshotEnvelope } from './protocol'
 
@@ -46,6 +46,13 @@ export class SimulationWorkerClient {
   }
 
   create(creation: WorldCreationDraft | string): void { this.send({ type: 'CREATE_RUN', requestId: requestId(), creation: typeof creation === 'string' ? defaultWorldCreationRequest(creation) : creation }) }
+  createDraft(draftId: string, draft: WorldCreationDraft): void { this.send({ type: 'CREATE_DRAFT', requestId: requestId(), draftId, draft }) }
+  hydrateDraft(draft: WorldDraftRecord): void { this.send({ type: 'HYDRATE_DRAFT', requestId: requestId(), draft }) }
+  updateDraft(draftId: string, draft: WorldCreationDraft, expectedRevision?: number): void { this.send({ type: 'UPDATE_DRAFT', requestId: requestId(), draftId, draft, expectedRevision }) }
+  resetDraft(draftId: string, expectedRevision?: number): void { this.send({ type: 'RESET_DRAFT', requestId: requestId(), draftId, expectedRevision }) }
+  previewDraft(draftId: string): void { this.send({ type: 'REQUEST_DRAFT_PREVIEW', requestId: requestId(), draftId }) }
+  commitDraft(draftId: string, expectedRevision?: number): void { this.send({ type: 'COMMIT_DRAFT', requestId: requestId(), draftId, expectedRevision }) }
+  discardDraft(draftId: string): void { this.send({ type: 'DISCARD_DRAFT', requestId: requestId(), draftId }) }
   load(snapshot: WorkbenchSnapshotEnvelope): void { this.send({ type: 'LOAD_RUN', requestId: requestId(), snapshot }) }
   step(count = 1): void { this.send({ type: 'STEP', requestId: requestId(), count }) }
   play(ticksPerBatch: number): void { this.send({ type: 'PLAY', requestId: requestId(), ticksPerBatch }) }

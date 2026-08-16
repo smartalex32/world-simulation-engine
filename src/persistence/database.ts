@@ -1,10 +1,11 @@
-import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
+import type { SimulationEvent, StatisticSample, WorldDraftRecord } from '../simulation/domain/types'
+import { validateWorldDraftRecord } from '../simulation/domain/worldDraft'
 import { validateSnapshot } from '../simulation/serialization/snapshot'
 import { validateWorkerContinuation } from '../worker/frameScheduler'
 import type { WorkbenchSnapshotEnvelope } from '../worker/protocol'
 
 const DATABASE_NAME = 'world-simulation-workbench'
-const DATABASE_VERSION = 1
+const DATABASE_VERSION = 2
 
 export interface RunRecord {
   runId: string
@@ -82,6 +83,35 @@ export class WorkbenchDatabase {
     await transactionDone(transaction)
   }
 
+  /** Drafts are deliberately separate from authoritative snapshots and runs. */
+  async saveWorldDraft(record: WorldDraftRecord): Promise<WorldDraftRecord> {
+    const validated = validateWorldDraftRecord(record)
+    const database = await this.open()
+    const transaction = database.transaction('worldDrafts', 'readwrite')
+    transaction.objectStore('worldDrafts').put(validated)
+    await transactionDone(transaction)
+    return validated
+  }
+
+  async loadWorldDraft(draftId: string): Promise<WorldDraftRecord | undefined> {
+    const database = await this.open()
+    const record = await request<unknown>(database.transaction('worldDrafts').objectStore('worldDrafts').get(draftId))
+    return record === undefined ? undefined : validateWorldDraftRecord(record)
+  }
+
+  async listWorldDrafts(): Promise<WorldDraftRecord[]> {
+    const database = await this.open()
+    const records = await request<unknown[]>(database.transaction('worldDrafts').objectStore('worldDrafts').getAll())
+    return records.map(validateWorldDraftRecord).sort((first, second) => first.draftId.localeCompare(second.draftId))
+  }
+
+  async deleteWorldDraft(draftId: string): Promise<void> {
+    const database = await this.open()
+    const transaction = database.transaction('worldDrafts', 'readwrite')
+    transaction.objectStore('worldDrafts').delete(draftId)
+    await transactionDone(transaction)
+  }
+
   async listRuns(): Promise<RunRecord[]> {
     const database = await this.open()
     const records = await request<RunRecord[]>(database.transaction('runs').objectStore('runs').getAll())
@@ -136,16 +166,25 @@ export class WorkbenchDatabase {
         const opening = indexedDB.open(DATABASE_NAME, DATABASE_VERSION)
         opening.onupgradeneeded = () => {
           const database = opening.result
-          const runs = database.createObjectStore('runs', { keyPath: 'runId' })
-          runs.createIndex('updatedAt', 'updatedAt')
-          const snapshots = database.createObjectStore('snapshots', { keyPath: 'key' })
-          snapshots.createIndex('runId', 'runId')
-          const events = database.createObjectStore('events', { keyPath: 'storageKey' })
-          events.createIndex('runId', 'runId')
-          events.createIndex('runTick', ['runId', 'tick'])
-          const statistics = database.createObjectStore('statistics', { keyPath: 'storageKey' })
-          statistics.createIndex('runId', 'runId')
-          statistics.createIndex('runMetricTick', ['runId', 'metricId', 'tick'])
+          if (!database.objectStoreNames.contains('runs')) {
+            const runs = database.createObjectStore('runs', { keyPath: 'runId' })
+            runs.createIndex('updatedAt', 'updatedAt')
+          }
+          if (!database.objectStoreNames.contains('snapshots')) {
+            const snapshots = database.createObjectStore('snapshots', { keyPath: 'key' })
+            snapshots.createIndex('runId', 'runId')
+          }
+          if (!database.objectStoreNames.contains('events')) {
+            const events = database.createObjectStore('events', { keyPath: 'storageKey' })
+            events.createIndex('runId', 'runId')
+            events.createIndex('runTick', ['runId', 'tick'])
+          }
+          if (!database.objectStoreNames.contains('statistics')) {
+            const statistics = database.createObjectStore('statistics', { keyPath: 'storageKey' })
+            statistics.createIndex('runId', 'runId')
+            statistics.createIndex('runMetricTick', ['runId', 'metricId', 'tick'])
+          }
+          if (!database.objectStoreNames.contains('worldDrafts')) database.createObjectStore('worldDrafts', { keyPath: 'draftId' })
         }
         opening.onsuccess = () => resolve(opening.result)
         opening.onerror = () => reject(opening.error ?? new Error('Unable to open IndexedDB'))

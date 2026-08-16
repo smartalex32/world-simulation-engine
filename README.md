@@ -38,7 +38,7 @@ Current next milestone:
 
 - Milestone 8B — Draft Map Authoring
 
-See `ROADMAP.md` for planned sequencing and future systems.
+See `docs/ROADMAP.md` for planned sequencing and future systems.
 
 ---
 
@@ -104,7 +104,7 @@ docs/
 
 AGENTS.md
 README.md
-ROADMAP.md
+docs/ROADMAP.md
 ```
 
 Some projection functionality may currently live near UI or worker code while boundaries continue to mature.
@@ -630,9 +630,9 @@ These are intentionally deferred until measurements justify them.
 
 # Draft Map Authoring
 
-The next roadmap milestone introduces a worker-owned draft world.
+Milestone 8B.1 introduces a worker-owned draft world lifecycle.
 
-The intended ownership model is:
+The ownership model is:
 
 ```text
 UI editing tools
@@ -644,9 +644,15 @@ UI editing tools
   -> authoritative world
 ```
 
-Draft state must not silently modify a running authoritative simulation.
+Draft state does not silently modify a running authoritative simulation. A
+versioned draft record can be created, previewed, updated, reset, persisted,
+rehydrated, committed, or discarded. The generated preview is a bounded,
+non-authoritative summary; committing delegates to the same creation boundary
+used for a new authoritative run.
 
-See `ROADMAP.md` for incremental slices.
+The current implementation deliberately does not yet provide terrain painting,
+user-drawn zones, settlement editing, roads, or draft import/export. See
+`docs/ROADMAP.md` for the next incremental slices.
 
 ---
 
@@ -811,7 +817,7 @@ The current simulator does not attempt to fully model:
 
 Some of these may become future milestones.
 
-See `ROADMAP.md`.
+See `docs/ROADMAP.md`.
 
 ---
 
@@ -823,7 +829,7 @@ The project documentation is divided by purpose:
 
 Describes what the system currently is.
 
-## `ROADMAP.md`
+## `docs/ROADMAP.md`
 
 Describes where the system is going.
 

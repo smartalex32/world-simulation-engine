@@ -1,3 +1,5 @@
+import type { WorldDraftPreview } from '../simulation/domain/types'
+
 export interface WorldSetupValues {
   name: string
   seed: string
@@ -10,8 +12,12 @@ export interface WorldSetupValues {
 interface WorldSetupProps {
   value: WorldSetupValues
   onChange: (value: WorldSetupValues) => void
-  onClose: () => void
-  onCreate: () => void
+  onCancel: () => void
+  onReset: () => void
+  onCommit: () => void
+  draftRevision?: number
+  preview?: WorldDraftPreview
+  busy?: boolean
 }
 
 const DIMENSIONS = [
@@ -20,7 +26,7 @@ const DIMENSIONS = [
   { label: 'Large · 128 × 128', width: 128, height: 128 },
 ]
 
-export function WorldSetup({ value, onChange, onClose, onCreate }: WorldSetupProps) {
+export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draftRevision, preview, busy = false }: WorldSetupProps) {
   const update = <K extends keyof WorldSetupValues>(key: K, next: WorldSetupValues[K]) => onChange({ ...value, [key]: next })
   const updatePlacement = (index: 0 | 1, key: 'name' | 'region' | 'allocation', next: string | number) => {
     const placements = [...value.placements] as WorldSetupValues['placements']
@@ -34,20 +40,26 @@ export function WorldSetup({ value, onChange, onClose, onCreate }: WorldSetupPro
     ? DIMENSIONS
     : [{ label: `Imported · ${value.width} × ${value.height}`, width: value.width, height: value.height }, ...DIMENSIONS]
 
-  return <div className="setup-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape') onClose() }}>
+  const previewReady = preview !== undefined && preview.revision === draftRevision
+  const previewSummary = previewReady && preview
+    ? <small className="draft-preview" aria-live="polite">Draft preview · {preview.cellCount.toLocaleString()} cells · {preview.passableCellCount.toLocaleString()} passable · {preview.terrainCounts.water.toLocaleString()} water</small>
+    : <small className="draft-preview" aria-live="polite">Updating deterministic draft preview…</small>
+  return <div className="setup-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape' && !busy) onCancel() }}>
     <section className="world-setup" role="dialog" aria-modal="true" aria-labelledby="world-setup-title">
-      <header><div><span className="eyebrow">WORLD CREATION</span><h2 id="world-setup-title">Shape a new world</h2><p>All inputs become part of a reproducible creation request.</p></div><button className="setup-close" aria-label="Close world setup" onClick={onClose}>×</button></header>
+      <header><div><span className="eyebrow">WORLD DRAFT</span><h2 id="world-setup-title">Shape a new world</h2><p>This is a detached draft. Your active simulation remains unchanged until you commit it.</p></div><button className="setup-close" aria-label="Discard world draft" disabled={busy} onClick={onCancel}>×</button></header>
+      <fieldset className="setup-fields" disabled={busy}>
       <div className="setup-grid">
-        <label><span>World name</span><input autoFocus aria-label="World name" value={value.name} onChange={(event) => update('name', event.target.value)} /></label>
-        <label><span>Seed</span><input aria-label="World seed" value={value.seed} onChange={(event) => update('seed', event.target.value)} /></label>
+        <label><span>World name</span><input autoFocus aria-label="World name" maxLength={80} value={value.name} onChange={(event) => update('name', event.target.value)} /></label>
+        <label><span>Seed</span><input aria-label="World seed" maxLength={160} value={value.seed} onChange={(event) => update('seed', event.target.value)} /></label>
         <label><span>Map scale</span><select aria-label="Map scale" value={`${value.width}x${value.height}`} onChange={(event) => { const dimension = dimensions.find((entry) => `${entry.width}x${entry.height}` === event.target.value); if (dimension) onChange({ ...value, width: dimension.width, height: dimension.height }) }}>{dimensions.map((dimension) => <option key={dimension.label} value={`${dimension.width}x${dimension.height}`}>{dimension.label}</option>)}</select></label>
         <label><span>Starting population</span><input aria-label="Starting population" type="number" min={1} max={500} value={value.population} onChange={(event) => update('population', Math.min(500, Math.max(1, Number(event.target.value) || 1)))} /></label>
       </div>
       <section className="placement-section" aria-labelledby="placement-title"><div><span className="eyebrow">INITIAL PLACEMENT</span><h3 id="placement-title">Two starting settlements</h3><p>Named placement zones are distinct from emergent communities and do not imply governance.</p></div>
-        {value.placements.map((placement, index) => <div className="placement-row" key={index}><label><span>Settlement {index + 1}</span><input aria-label={`Settlement ${index + 1} name`} value={placement.name} onChange={(event) => updatePlacement(index as 0 | 1, 'name', event.target.value)} /></label><label><span>Placement region</span><select aria-label={`Settlement ${index + 1} region`} value={placement.region} onChange={(event) => updatePlacement(index as 0 | 1, 'region', event.target.value as 'west' | 'center' | 'east')}><option value="west">West</option><option value="center">Central</option><option value="east">East</option></select></label><label><span>People</span><input aria-label={`Settlement ${index + 1} people`} type="number" min={0} max={500} value={placement.allocation} onChange={(event) => updatePlacement(index as 0 | 1, 'allocation', Math.min(500, Math.max(0, Number(event.target.value) || 0)))} /></label></div>)}
+        {value.placements.map((placement, index) => <div className="placement-row" key={index}><label><span>Settlement {index + 1}</span><input aria-label={`Settlement ${index + 1} name`} maxLength={80} value={placement.name} onChange={(event) => updatePlacement(index as 0 | 1, 'name', event.target.value)} /></label><label><span>Placement region</span><select aria-label={`Settlement ${index + 1} region`} value={placement.region} onChange={(event) => updatePlacement(index as 0 | 1, 'region', event.target.value as 'west' | 'center' | 'east')}><option value="west">West</option><option value="center">Central</option><option value="east">East</option></select></label><label><span>People</span><input aria-label={`Settlement ${index + 1} people`} type="number" min={0} max={500} value={placement.allocation} onChange={(event) => updatePlacement(index as 0 | 1, 'allocation', Math.min(500, Math.max(0, Number(event.target.value) || 0)))} /></label></div>)}
         <div className={allocated === value.population && distinctRegions && namesValid ? 'allocation valid' : 'allocation'}><span>Allocated</span><strong>{allocated} / {value.population}</strong>{allocated !== value.population && <small>Adjust placements to match the starting population.</small>}{!distinctRegions && <small>Choose distinct placement regions so initial zones do not overlap.</small>}{!namesValid && <small>Name the world and both settlements before creation.</small>}</div>
       </section>
-      <footer><span>Terrain preset: <strong>Seeded Valley</strong><small>1 km hex radius · max 128 × 128</small></span><div><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={allocated !== value.population || !distinctRegions || !namesValid} onClick={onCreate}>Create world</button></div></footer>
+      </fieldset>
+      <footer><span>Terrain preset: <strong>Seeded Valley</strong><small>1 km hex radius · max 128 × 128</small>{previewSummary}</span><div><button className="secondary" disabled={busy} onClick={onCancel}>Discard draft</button><button className="secondary" disabled={busy || draftRevision === undefined} onClick={onReset}>Reset draft</button><button className="primary" disabled={busy || allocated !== value.population || !distinctRegions || !namesValid || !previewReady} onClick={onCommit}>Commit &amp; create world</button></div></footer>
     </section>
   </div>
 }

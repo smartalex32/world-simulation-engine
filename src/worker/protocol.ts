@@ -1,11 +1,18 @@
 import type { MapProjectionRequest, WorkbenchProjection } from '../projection'
-import type { SimulationEvent, SnapshotEnvelope, StatisticSample, WorldCreationDraft } from '../simulation/domain/types'
+import type { SimulationEvent, SnapshotEnvelope, StatisticSample, WorldCreationDraft, WorldDraftPreview, WorldDraftRecord } from '../simulation/domain/types'
 import type { WorkerContinuationState } from './frameScheduler'
 
 export type WorkbenchSnapshotEnvelope = SnapshotEnvelope & { workerContinuation?: WorkerContinuationState }
 
 export type SimulationCommand =
   | { type: 'CREATE_RUN'; requestId: string; creation: WorldCreationDraft }
+  | { type: 'CREATE_DRAFT'; requestId: string; draftId: string; draft: WorldCreationDraft }
+  | { type: 'HYDRATE_DRAFT'; requestId: string; draft: WorldDraftRecord }
+  | { type: 'UPDATE_DRAFT'; requestId: string; draftId: string; draft: WorldCreationDraft; expectedRevision?: number }
+  | { type: 'RESET_DRAFT'; requestId: string; draftId: string; expectedRevision?: number }
+  | { type: 'REQUEST_DRAFT_PREVIEW'; requestId: string; draftId: string }
+  | { type: 'COMMIT_DRAFT'; requestId: string; draftId: string; expectedRevision?: number }
+  | { type: 'DISCARD_DRAFT'; requestId: string; draftId: string }
   | { type: 'LOAD_RUN'; requestId: string; snapshot: WorkbenchSnapshotEnvelope }
   | { type: 'STEP'; requestId: string; count?: number }
   | { type: 'PLAY'; requestId: string; ticksPerBatch: number }
@@ -20,6 +27,7 @@ export type SimulationResponse =
   | { type: 'READY' }
   | { type: 'FRAME'; requestId?: string; projection: WorkbenchProjection; events: SimulationEvent[]; statistics: StatisticSample[]; processingMs: number }
   | { type: 'STATUS'; requestId?: string; status: 'idle' | 'paused' | 'playing'; ticksPerBatch: number }
+  | { type: 'DRAFT'; requestId: string; action: 'created' | 'hydrated' | 'updated' | 'reset' | 'previewed' | 'committing' | 'committed' | 'discarded'; draft?: WorldDraftRecord; preview?: WorldDraftPreview }
   | { type: 'SNAPSHOT'; requestId: string; snapshot: WorkbenchSnapshotEnvelope }
   | { type: 'ERROR'; requestId?: string; message: string; stack?: string }
 

@@ -26,9 +26,10 @@ test('opens the world setup surface with explicit scale and settlement allocatio
   await setup.getByLabel('Settlement 1 people').fill('120')
   await setup.getByLabel('Settlement 2 people').fill('120')
   await expect(setup.locator('.allocation')).toContainText('240 / 240')
-  await expect(setup.getByRole('button', { name: 'Create world', exact: true })).toBeEnabled()
+  await expect(setup.locator('.draft-preview')).toContainText('Draft preview')
+  await expect(setup.getByRole('button', { name: 'Commit & create world', exact: true })).toBeEnabled()
   await expect(page.getByText('Communities are geographic exposure measures, not memberships.')).toBeVisible()
-  await setup.getByRole('button', { name: 'Create world', exact: true }).click()
+  await setup.getByRole('button', { name: 'Commit & create world', exact: true }).click()
   await expect(setup).toBeHidden()
   await expect(page.locator('.world-overview strong')).toHaveText('Ardentia')
   await expect(page.getByText('64 × 48 hexes · 1 km radius')).toBeVisible()
@@ -43,6 +44,38 @@ test('opens the world setup surface with explicit scale and settlement allocatio
   await expect(page.getByRole('heading', { name: 'Daily samples' })).toBeHidden()
   await page.getByRole('button', { name: 'world', exact: true }).click()
   await expect(page.locator('.world-overview strong')).toHaveText('Ardentia')
+})
+
+test('discards an editable world draft without changing the active simulation', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  const activeSeed = await page.locator('.active-world-seed').textContent()
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.locator('.draft-preview')).toContainText('Draft preview')
+  await setup.getByLabel('World name').fill('Discarded Draft')
+  await setup.getByRole('button', { name: 'Reset draft', exact: true }).click()
+  await expect(setup.getByLabel('World name')).toHaveValue('The Seeded Valley')
+  await setup.getByRole('button', { name: 'Discard draft', exact: true }).click()
+  await expect(setup).toBeHidden()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  await expect(page.locator('.active-world-seed')).toHaveText(activeSeed ?? '')
+})
+
+test('rehydrates a persisted draft before any authoritative world commit', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  let setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.locator('.draft-preview')).toContainText('Draft preview')
+  await setup.getByLabel('World name').fill('Persisted Draft Valley')
+  await expect(setup.getByRole('button', { name: 'Commit & create world', exact: true })).toBeEnabled()
+  await page.reload()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.getByLabel('World name')).toHaveValue('Persisted Draft Valley')
+  await setup.getByRole('button', { name: 'Discard draft', exact: true }).click()
+  await expect(setup).toBeHidden()
 })
 
 test('settles an idle viewport request and supports keyboard map navigation', async ({ page }) => {
@@ -245,7 +278,7 @@ test('inspects persisted experience and deterministic development at the 720-hou
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   await page.evaluate(async (savedSnapshot) => new Promise<void>((resolve, reject) => {
-    const opening = indexedDB.open('world-simulation-workbench', 1)
+    const opening = indexedDB.open('world-simulation-workbench')
     opening.onerror = () => reject(opening.error)
     opening.onsuccess = () => {
       const database = opening.result
@@ -413,7 +446,7 @@ async function findVisiblePerson(page: import('@playwright/test').Page, people: 
 
 async function storeNamedSnapshot(page: import('@playwright/test').Page, snapshot: Awaited<ReturnType<SimulationEngine['snapshot']>>, key: string, name: string): Promise<void> {
   await page.evaluate(async ({ savedSnapshot, savedKey, savedName }) => new Promise<void>((resolve, reject) => {
-    const opening = indexedDB.open('world-simulation-workbench', 1)
+    const opening = indexedDB.open('world-simulation-workbench')
     opening.onerror = () => reject(opening.error)
     opening.onsuccess = () => {
       const database = opening.result

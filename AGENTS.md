@@ -27,7 +27,7 @@ Use these sources according to their responsibilities:
 
 - `AGENTS.md` defines engineering rules, agent behavior, delegation, validation, and implementation constraints.
 - `README.md` describes the currently implemented architecture, repository structure, runtime model, and current system boundaries.
-- `ROADMAP.md` defines milestone status, planned sequencing, future capabilities, and explicitly deferred areas.
+- `docs/ROADMAP.md` defines milestone status, planned sequencing, future capabilities, and explicitly deferred areas.
 - `docs/TRAIT_AND_INFLUENCE_SYSTEM.md` defines the target person-variable, sparse influence, exposure, behavior, development, and community-feedback model.
 - Tests and serialized fixtures define the executable reproducibility and compatibility contract.
 
@@ -435,13 +435,13 @@ UI code must not bypass owning simulation systems.
 
 # Current Development Priority
 
-`ROADMAP.md` is the authoritative source for milestone status and planned sequencing.
+`docs/ROADMAP.md` is the authoritative source for milestone status and planned sequencing.
 
 When the user supplies a specific change request:
 
 - The requested change takes priority.
 - Do not redirect the task to the next roadmap milestone.
-- Use `ROADMAP.md` to understand surrounding scope, prerequisites, and deferred systems.
+- Use `docs/ROADMAP.md` to understand surrounding scope, prerequisites, and deferred systems.
 - Implement only the support necessary to complete the requested behavior.
 
 When the user asks to continue development without naming a feature:
@@ -870,7 +870,7 @@ Fix substantive findings before completion.
 Update documentation according to responsibility:
 
 - Implemented architecture or current system boundaries → `README.md`
-- Milestone status, sequencing, future scope, or deferred work → `ROADMAP.md`
+- Milestone status, sequencing, future scope, or deferred work → `docs/ROADMAP.md`
 - Trait, influence, exposure, development, or community model semantics → relevant design document
 - Simulation formulas or contracts → relevant canonical technical documentation
 - Version/persistence contracts → all affected references
