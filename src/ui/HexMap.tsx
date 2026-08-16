@@ -1,68 +1,77 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CommunitySimulationState, CommunityVariableDefinition, CommunityVariableId } from '../simulation/community/types'
-import type { ActivityLocationState, GeographicCell, HouseholdState, HexGrid, PersonState, RelationshipState } from '../simulation/domain/types'
+import type { CommunityVariableDefinition, CommunityVariableId } from '../simulation/community/types'
+import type { GeographicCell } from '../simulation/domain/types'
+import type { MapProjection, ProjectedMapCell, ProjectionOverlay, ProjectedCommunityState, WorldDescriptor } from '../projection'
 import { axialToPixel, pixelToAxial } from '../simulation/spatial/hex'
-import { fitWorld, populationMarkerRadius, renderLevel } from './mapViewport'
+import { aggregateRegionPolygon, fitWorld, mapProjectionRequest, type MapViewportState } from './mapViewport'
 
-export type MapOverlay = 'terrain' | 'elevation' | 'habitability' | 'movement' | 'food' | 'population' | 'community'
+export type MapOverlay = ProjectionOverlay
 
 interface HexMapProps {
-  grid: HexGrid
+  world: WorldDescriptor
+  map: MapProjection
   overlay: MapOverlay
-  selectedCellId?: string
-  people: PersonState[]
-  relationships: RelationshipState[]
-  activityLocations: readonly ActivityLocationState[]
-  households: readonly HouseholdState[]
-  communities: readonly CommunitySimulationState[]
-  communityVariableDefinitions: readonly CommunityVariableDefinition[]
   communityMeasureId: CommunityVariableId
+  communities: readonly ProjectedCommunityState[]
+  communityVariableDefinitions: readonly CommunityVariableDefinition[]
+  selectedCellId?: string
   selectedCommunityId?: string
   showActivityLocations: boolean
   showHouseholds: boolean
   selectedPersonId?: string
-  onSelect: (cell?: GeographicCell) => void
+  onSelect: (cell: GeographicCell) => void
+  onFocusCell: (cellId: string) => void
+  onViewportRequest: (request: ReturnType<typeof mapProjectionRequest>) => void
 }
 
 const HEX_SIZE = 18
 
-export function HexMap({ grid, overlay, selectedCellId, people, relationships, activityLocations, households, communities, communityVariableDefinitions, communityMeasureId, selectedCommunityId, showActivityLocations, showHouseholds, selectedPersonId, onSelect }: HexMapProps) {
+export function HexMap({ world, map, overlay, communityMeasureId, communities, communityVariableDefinitions, selectedCellId, selectedCommunityId, showActivityLocations, showHouseholds, selectedPersonId, onSelect, onFocusCell, onViewportRequest }: HexMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [viewport, setViewport] = useState({ width: 0, height: 0, scale: 0.86, x: 34, y: 42 })
+  const [viewport, setViewport] = useState<MapViewportState>({ width: 0, height: 0, scale: 0.86, x: 34, y: 42 })
   const drag = useRef<{ x: number; y: number; originX: number; originY: number; moved: boolean } | undefined>(undefined)
-  const fittedGrid = useRef('')
-  const level = useMemo(() => renderLevel(grid, viewport, HEX_SIZE), [grid, viewport])
-  const populationCounts = useMemo(() => populationByRenderedCell(people, grid, level.stride), [grid, level.stride, people])
-  const cellsById = useMemo(() => new Map(grid.cells.map((cell) => [cell.id, cell])), [grid])
-  const communityByCellId = useMemo(() => {
-    const result = new Map<string, CommunitySimulationState>()
-    for (const community of communities) for (const cellId of community.catchment.cellIds) result.set(cellId, community)
-    return result
-  }, [communities])
+  const fittedWorld = useRef('')
+  const revision = useRef(map.revision)
+  const sendFrame = useRef<number | undefined>(undefined)
+  const selectedCell = useMemo(() => map.exactCells.find((cell) => cell.id === selectedCellId) ?? (map.focusCell?.id === selectedCellId ? map.focusCell : undefined), [map.exactCells, map.focusCell, selectedCellId])
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
     const observer = new ResizeObserver(([entry]) => {
-      if (!entry) return
-      setViewport((current) => ({ ...current, width: entry.contentRect.width, height: entry.contentRect.height }))
+      if (entry) setViewport((current) => ({ ...current, width: entry.contentRect.width, height: entry.contentRect.height }))
     })
     observer.observe(container)
     return () => observer.disconnect()
   }, [])
 
   useEffect(() => {
-    if (viewport.width === 0 || viewport.height === 0) return
-    const key = `${grid.width}x${grid.height}`
-    if (fittedGrid.current === key) return
-    fittedGrid.current = key
-    setViewport(fitWorld(grid, viewport.width, viewport.height, HEX_SIZE))
-  }, [grid, viewport.width, viewport.height])
+    if (!viewport.width || !viewport.height) return
+    const key = `${world.id}:${world.width}x${world.height}`
+    if (fittedWorld.current === key) return
+    fittedWorld.current = key
+    setViewport(fitWorld(world, viewport.width, viewport.height, HEX_SIZE))
+  }, [viewport.height, viewport.width, world.height, world.id, world.width])
+
+  useEffect(() => {
+    if (!viewport.width || !viewport.height) return
+    if (sendFrame.current !== undefined) cancelAnimationFrame(sendFrame.current)
+    sendFrame.current = requestAnimationFrame(() => {
+      revision.current += 1
+      onViewportRequest(mapProjectionRequest(world, viewport, HEX_SIZE, revision.current, overlay, {
+        communityMeasureId: overlay === 'community' ? communityMeasureId : undefined,
+        focusCellId: selectedCellId,
+        hookedPersonId: selectedPersonId,
+      }))
+      sendFrame.current = undefined
+    })
+    return () => { if (sendFrame.current !== undefined) cancelAnimationFrame(sendFrame.current) }
+  }, [communityMeasureId, onViewportRequest, overlay, selectedCellId, selectedPersonId, viewport, world.height, world.id, world.width])
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || viewport.width === 0 || viewport.height === 0) return
+    if (!canvas || !viewport.width || !viewport.height) return
     const ratio = window.devicePixelRatio || 1
     canvas.width = Math.floor(viewport.width * ratio)
     canvas.height = Math.floor(viewport.height * ratio)
@@ -71,317 +80,168 @@ export function HexMap({ grid, overlay, selectedCellId, people, relationships, a
     const context = canvas.getContext('2d')
     if (!context) return
     context.setTransform(ratio, 0, 0, ratio, 0, 0)
-    context.clearRect(0, 0, viewport.width, viewport.height)
     context.fillStyle = '#0d1311'
     context.fillRect(0, 0, viewport.width, viewport.height)
     context.save()
     context.translate(viewport.x, viewport.y)
     context.scale(viewport.scale, viewport.scale)
-    for (const cell of level.cells) drawCell(context, cell, overlay, cell.id === selectedCellId, level.cellRadius, level.borderAlpha, populationCounts.get(cell.id) ?? 0, communityByCellId.get(cell.id), communityMeasureId)
-    if (overlay === 'community') drawCommunityBoundaries(context, level.cells, communityByCellId, level.stride, level.cellRadius, viewport.scale, selectedCommunityId)
-    if (level.stride > 1 && selectedCellId) {
-      const selected = grid.cells.find((cell) => cell.id === selectedCellId)
-      if (selected) drawCell(context, selected, overlay, true, HEX_SIZE, 1, populationCounts.get(selected.id) ?? 0, communityByCellId.get(selected.id), communityMeasureId)
-    }
-    drawRelationshipNetwork(context, people, relationships, grid, selectedPersonId, viewport.scale)
-    drawPopulation(context, people, grid, level.stride, selectedPersonId, viewport.scale)
-    if (showActivityLocations) drawActivityLocations(context, activityLocations, cellsById, level.stride, selectedPersonId ? people.find((person) => person.id === selectedPersonId)?.currentActivity.locationId : undefined, viewport.scale)
-    if (showHouseholds) drawHouseholds(context, households, cellsById, level.stride, selectedPersonId ? people.find((person) => person.id === selectedPersonId)?.householdId : undefined, viewport.scale)
+    const appliedMeasureId = map.communityMeasureId ?? communityMeasureId
+    if (map.lod === 'cell') for (const cell of map.exactCells) drawCell(context, cell, map.overlay, cell.id === selectedCellId, HEX_SIZE, map.borderAlpha, appliedMeasureId)
+    else for (const region of map.regions) drawRegion(context, region, map.overlay, appliedMeasureId)
+    if (selectedCell && !map.exactCells.some((cell) => cell.id === selectedCell.id)) drawCell(context, selectedCell, map.overlay, true, HEX_SIZE, 1, appliedMeasureId)
+    drawRelationships(context, map, viewport.scale)
+    drawPopulation(context, map, viewport.scale)
+    if (showActivityLocations) drawLocationMarkers(context, map.activityMarkers, viewport.scale, 'activity')
+    if (showHouseholds) drawLocationMarkers(context, map.householdMarkers, viewport.scale, 'household')
     context.restore()
-  }, [activityLocations, cellsById, communityByCellId, communityMeasureId, grid, households, level, overlay, people, populationCounts, relationships, selectedCellId, selectedCommunityId, selectedPersonId, showActivityLocations, showHouseholds, viewport])
+  }, [communityMeasureId, map, overlay, selectedCell, selectedCellId, showActivityLocations, showHouseholds, viewport])
 
-  function pointToCell(clientX: number, clientY: number): GeographicCell | undefined {
+  function focusAt(clientX: number, clientY: number): void {
     const bounds = canvasRef.current?.getBoundingClientRect()
-    if (!bounds) return undefined
+    if (!bounds) return
     const localX = (clientX - bounds.left - viewport.x) / viewport.scale
     const localY = (clientY - bounds.top - viewport.y) / viewport.scale
     const coordinate = pixelToAxial(localX, localY, HEX_SIZE)
-    if (coordinate.q < 0 || coordinate.r < 0 || coordinate.q >= grid.width || coordinate.r >= grid.height) return undefined
-    return grid.cells[coordinate.r * grid.width + coordinate.q]
+    if (coordinate.q < 0 || coordinate.r < 0 || coordinate.q >= world.width || coordinate.r >= world.height) return
+    const id = `${coordinate.q},${coordinate.r}`
+    const exact = map.exactCells.find((cell) => cell.id === id)
+    if (exact) onSelect(exact)
+    else onFocusCell(id)
   }
 
-  return (
-    <div className="map-container" ref={containerRef}>
-      <canvas
-        ref={canvasRef}
-        aria-label="Hex world map"
-        data-map-viewport={`${viewport.x.toFixed(3)},${viewport.y.toFixed(3)},${viewport.scale.toFixed(5)}`}
-        onPointerDown={(event) => {
-          event.currentTarget.setPointerCapture(event.pointerId)
-          drag.current = { x: event.clientX, y: event.clientY, originX: viewport.x, originY: viewport.y, moved: false }
-        }}
-        onPointerMove={(event) => {
-          const current = drag.current
-          if (!current) return
-          const dx = event.clientX - current.x
-          const dy = event.clientY - current.y
-          if (Math.abs(dx) + Math.abs(dy) > 3) current.moved = true
-          setViewport((view) => ({ ...view, x: current.originX + dx, y: current.originY + dy }))
-        }}
-        onPointerUp={(event) => {
-          const current = drag.current
-          drag.current = undefined
-          if (!current?.moved) onSelect(pointToCell(event.clientX, event.clientY))
-        }}
-        onWheel={(event) => {
-          event.preventDefault()
-          const bounds = event.currentTarget.getBoundingClientRect()
-          const cursorX = event.clientX - bounds.left
-          const cursorY = event.clientY - bounds.top
-          setViewport((view) => {
-            const nextScale = Math.max(0.015, Math.min(4, view.scale * (event.deltaY < 0 ? 1.12 : 0.89)))
-            const ratio = nextScale / view.scale
-            return { ...view, scale: nextScale, x: cursorX - (cursorX - view.x) * ratio, y: cursorY - (cursorY - view.y) * ratio }
-          })
-        }}
-      />
-      <button className="map-fit" onClick={() => setViewport(fitWorld(grid, viewport.width, viewport.height, HEX_SIZE))}>Fit world</button>
-      {overlay === 'community' && <div className="community-map-legend" aria-label="Community overlay legend">
-        <strong>{communityVariableDefinitions.find((definition) => definition.id === communityMeasureId)?.label ?? communityMeasureId}</strong>
-        <small>{communityMeasureId === 'community.emergent.conflict' ? 'Geographic catchments · higher conflict is warmer' : 'Geographic catchments · higher values are greener'}</small>
-        {communities.map((community) => <div key={community.catchment.id} className={community.catchment.id === selectedCommunityId ? 'selected' : ''}><i style={{ background: communityColor(communityValue(community, communityMeasureId), communityMeasureId) }} /><span>{community.catchment.displayName}</span><b>{(communityValue(community, communityMeasureId) / 10).toFixed(1)}%</b></div>)}
-      </div>}
-      <div className="map-lod">{level.label} · {level.cells.length.toLocaleString()} drawn</div>
-      <div className="map-help">Drag to pan · Wheel to zoom · Click to inspect</div>
-    </div>
-  )
+  const hookedOffscreen = Boolean(selectedPersonId && map.hookedPersonMarker && !map.hookedPersonMarker.visible)
+  return <div className="map-container" ref={containerRef}>
+    <canvas
+      ref={canvasRef}
+      aria-label="Hex world map"
+      aria-describedby="map-render-status"
+      tabIndex={0}
+      data-map-viewport={`${viewport.x.toFixed(3)},${viewport.y.toFixed(3)},${viewport.scale.toFixed(5)}`}
+      data-map-revision={map.revision}
+      data-map-lod={map.lod}
+      data-map-region-size={map.regionSize}
+      data-map-border-alpha={map.borderAlpha}
+      data-map-primitive-count={map.exactCells.length + map.regions.length}
+      data-map-population-markers={map.populationMarkers.length}
+      data-hooked-person-id={map.hookedPersonMarker?.personId}
+      data-hooked-cell={map.hookedPersonMarker ? `${map.hookedPersonMarker.q},${map.hookedPersonMarker.r}` : undefined}
+      data-hooked-visible={map.hookedPersonMarker?.visible}
+      onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, originX: viewport.x, originY: viewport.y, moved: false } }}
+      onPointerMove={(event) => {
+        const current = drag.current
+        if (!current) return
+        const dx = event.clientX - current.x
+        const dy = event.clientY - current.y
+        if (Math.abs(dx) + Math.abs(dy) > 3) current.moved = true
+        setViewport((view) => ({ ...view, x: current.originX + dx, y: current.originY + dy }))
+      }}
+      onPointerUp={(event) => { const current = drag.current; drag.current = undefined; if (current && !current.moved) focusAt(event.clientX, event.clientY) }}
+      onWheel={(event) => {
+        event.preventDefault()
+        const bounds = event.currentTarget.getBoundingClientRect()
+        const cursorX = event.clientX - bounds.left
+        const cursorY = event.clientY - bounds.top
+        setViewport((view) => {
+          const nextScale = Math.max(1e-6, Math.min(4, view.scale * (event.deltaY < 0 ? 1.12 : 0.89)))
+          const ratio = nextScale / view.scale
+          return { ...view, scale: nextScale, x: cursorX - (cursorX - view.x) * ratio, y: cursorY - (cursorY - view.y) * ratio }
+        })
+      }}
+      onKeyDown={(event) => {
+        const pan = Math.max(24, Math.min(viewport.width, viewport.height) * .08)
+        if (event.key === 'f' || event.key === 'F') { event.preventDefault(); setViewport(fitWorld(world, viewport.width, viewport.height, HEX_SIZE)); return }
+        if (event.key === '+' || event.key === '=') { event.preventDefault(); setViewport((view) => ({ ...view, scale: Math.min(4, view.scale * 1.2) })); return }
+        if (event.key === '-') { event.preventDefault(); setViewport((view) => ({ ...view, scale: Math.max(1e-6, view.scale / 1.2) })); return }
+        const delta = event.key === 'ArrowLeft' || event.key === 'a' || event.key === 'A' ? [pan, 0] : event.key === 'ArrowRight' || event.key === 'd' || event.key === 'D' ? [-pan, 0] : event.key === 'ArrowUp' || event.key === 'w' || event.key === 'W' ? [0, pan] : event.key === 'ArrowDown' || event.key === 's' || event.key === 'S' ? [0, -pan] : undefined
+        if (delta) { const [deltaX = 0, deltaY = 0] = delta; event.preventDefault(); setViewport((view) => ({ ...view, x: view.x + deltaX, y: view.y + deltaY })) }
+      }}
+    />
+    <button className="map-fit" onClick={() => setViewport(fitWorld(world, viewport.width, viewport.height, HEX_SIZE))}>Fit world</button>
+    {map.overlay === 'community' && <CommunityLegend communities={communities} definitions={communityVariableDefinitions} measureId={map.communityMeasureId ?? communityMeasureId} selectedCommunityId={selectedCommunityId} />}
+    <div id="map-render-status" className="map-lod" aria-live="polite">{map.lod === 'cell' ? (map.borderAlpha > 0 ? 'hex detail' : 'terrain overview') : map.lod === 'region' ? 'regional overview' : 'world overview'} · {(map.exactCells.length + map.regions.length).toLocaleString()} primitives{hookedOffscreen ? ' · hooked person outside view' : ''}</div>
+    <div className="map-help">Drag or arrows/WASD to pan · Wheel or +/- to zoom · F to fit · Click to inspect</div>
+  </div>
 }
 
-function drawActivityLocations(context: CanvasRenderingContext2D, locations: readonly ActivityLocationState[], cellsById: ReadonlyMap<string, GeographicCell>, stride: number, selectedLocationId: string | null | undefined, viewportScale: number): void {
-  const visible = stride > 1
-    ? aggregateLocationCells(locations.map((location) => ({ cellId: location.cellId, selected: location.id === selectedLocationId })), cellsById, stride)
-    : locations.map((location) => ({ cellId: location.cellId, count: 1, selected: location.id === selectedLocationId }))
-  for (const marker of visible) {
-    const cell = cellsById.get(marker.cellId)
-    if (!cell) continue
-    const { x, y } = axialToPixel(cell, HEX_SIZE)
-    const radius = screenRadius(marker.selected ? 5.5 : Math.min(4.2, 2.1 + marker.count * .25), viewportScale, marker.selected ? 4 : 2, marker.selected ? 7 : 4)
-    context.beginPath()
-    context.rect(x - radius, y - radius, radius * 2, radius * 2)
-    context.fillStyle = marker.selected ? 'rgba(120, 215, 255, .95)' : 'rgba(104, 185, 210, .7)'
-    context.fill()
-    if (marker.selected) { context.strokeStyle = '#e5fbff'; context.lineWidth = 1.1 / viewportScale; context.stroke() }
-  }
-}
-
-function drawHouseholds(context: CanvasRenderingContext2D, households: readonly HouseholdState[], cellsById: ReadonlyMap<string, GeographicCell>, stride: number, selectedHouseholdId: string | undefined, viewportScale: number): void {
-  const visible = stride > 1
-    ? aggregateLocationCells(households.map((household) => ({ cellId: household.homeCellId, selected: household.id === selectedHouseholdId })), cellsById, stride)
-    : households.map((household) => ({ cellId: household.homeCellId, count: household.memberIds.length, selected: household.id === selectedHouseholdId }))
-  for (const marker of visible) {
-    const cell = cellsById.get(marker.cellId)
-    if (!cell) continue
-    const { x, y } = axialToPixel(cell, HEX_SIZE)
-    const radius = screenRadius(marker.selected ? 6 : Math.min(4.5, 2.2 + marker.count * .2), viewportScale, marker.selected ? 4 : 2, marker.selected ? 7 : 4)
-    context.beginPath()
-    context.moveTo(x, y - radius)
-    context.lineTo(x + radius, y + radius)
-    context.lineTo(x - radius, y + radius)
-    context.closePath()
-    context.fillStyle = marker.selected ? 'rgba(255, 225, 126, .95)' : 'rgba(226, 172, 83, .72)'
-    context.fill()
-    if (marker.selected) { context.strokeStyle = '#fff0bb'; context.lineWidth = 1.1 / viewportScale; context.stroke() }
-  }
-}
-
-function aggregateLocationCells(entries: readonly { cellId: string; selected: boolean }[], cellsById: ReadonlyMap<string, GeographicCell>, stride: number): { cellId: string; count: number; selected: boolean }[] {
-  const counts = new Map<string, { count: number; selected: boolean }>()
-  for (const entry of entries) {
-    const cell = cellsById.get(entry.cellId)
-    if (!cell) continue
-    const id = `${Math.floor(cell.q / stride) * stride},${Math.floor(cell.r / stride) * stride}`
-    const existing = counts.get(id)
-    counts.set(id, { count: (existing?.count ?? 0) + 1, selected: (existing?.selected ?? false) || entry.selected })
-  }
-  return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([cellId, value]) => ({ cellId, ...value }))
-}
-
-function drawPopulation(context: CanvasRenderingContext2D, people: PersonState[], grid: HexGrid, stride: number, selectedPersonId?: string, viewportScale = 1): void {
-  if (stride > 1) {
-    const groups = new Map<string, { q: number; r: number; count: number }>()
-    for (const person of people) {
-      const cell = cellForPerson(person, grid)
-      if (!cell) continue
-      const q = Math.floor(cell.q / stride) * stride
-      const r = Math.floor(cell.r / stride) * stride
-      const key = `${q},${r}`
-      const group = groups.get(key)
-      if (group) group.count += 1
-      else groups.set(key, { q, r, count: 1 })
-    }
-    for (const group of groups.values()) {
-      const { x, y } = axialToPixel(group, HEX_SIZE)
-      context.beginPath()
-      context.arc(x, y, screenRadius(populationMarkerRadius(group.count, stride), viewportScale, 2, 8), 0, Math.PI * 2)
-      context.fillStyle = 'rgba(241, 210, 111, .58)'
-      context.fill()
-    }
-    drawSelectedMarker(context, people, grid, selectedPersonId, viewportScale)
-    return
-  }
-
-  const occupancy = new Map<string, number>()
-  for (const person of people) {
-    const cell = cellForPerson(person, grid)
-    if (!cell) continue
-    const index = occupancy.get(cell.id) ?? 0
-    occupancy.set(cell.id, index + 1)
-    const center = axialToPixel(cell, HEX_SIZE)
-    const angle = (index * 2.399963229728653) % (Math.PI * 2)
-    const distance = Math.min(8, 2 + Math.sqrt(index) * 2.2)
-    const selected = person.id === selectedPersonId
-    context.beginPath()
-    context.arc(center.x + Math.cos(angle) * distance, center.y + Math.sin(angle) * distance, screenRadius(populationMarkerRadius(1, 1, selected), viewportScale, selected ? 4 : 2, selected ? 7 : 4), 0, Math.PI * 2)
-    context.fillStyle = selected ? '#fff2ad' : 'rgba(238, 197, 82, .86)'
-    context.fill()
-    if (selected) {
-      context.strokeStyle = '#362b12'
-      context.lineWidth = 1.2 / viewportScale
-      context.stroke()
-    }
-  }
-
-}
-
-function drawSelectedMarker(context: CanvasRenderingContext2D, people: PersonState[], grid: HexGrid, selectedPersonId: string | undefined, viewportScale: number): void {
-  if (!selectedPersonId) return
-  const selected = people.find((person) => person.id === selectedPersonId)
-  const cell = selected ? cellForPerson(selected, grid) : undefined
-  if (!cell) return
-  const center = axialToPixel(cell, HEX_SIZE)
-  context.beginPath()
-  context.arc(center.x, center.y, screenRadius(4.5, viewportScale, 5, 8), 0, Math.PI * 2)
-  context.fillStyle = '#fff2ad'
-  context.fill()
-  context.strokeStyle = '#362b12'
-  context.lineWidth = 1.4 / viewportScale
-  context.stroke()
-}
-
-function drawRelationshipNetwork(context: CanvasRenderingContext2D, people: PersonState[], relationships: RelationshipState[], grid: HexGrid, selectedPersonId: string | undefined, viewportScale: number): void {
-  if (!selectedPersonId) return
-  const selected = people.find((person) => person.id === selectedPersonId)
-  const selectedCell = selected ? cellForPerson(selected, grid) : undefined
-  if (!selectedCell) return
-  const peopleById = new Map(people.map((person) => [person.id, person]))
-  const origin = axialToPixel(selectedCell, HEX_SIZE)
-  const directRelationships = relationships
-    .filter((relationship) => relationship.personAId === selectedPersonId || relationship.personBId === selectedPersonId)
-    .sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
-  for (const relationship of directRelationships) {
-    const otherId = relationship.personAId === selectedPersonId ? relationship.personBId : relationship.personAId
-    const other = peopleById.get(otherId)
-    const otherCell = other ? cellForPerson(other, grid) : undefined
-    if (!otherCell) continue
-    const destination = axialToPixel(otherCell, HEX_SIZE)
-    context.beginPath()
-    context.moveTo(origin.x, origin.y)
-    context.lineTo(destination.x, destination.y)
-    context.strokeStyle = `rgba(119, 207, 170, ${0.26 + relationship.familiarity / 2000})`
-    context.lineWidth = screenRadius(1.1 + relationship.familiarity / 1000, viewportScale, 0.7, 2.2)
-    context.stroke()
-  }
-}
-
-function screenRadius(worldRadius: number, viewportScale: number, minimumPixels: number, maximumPixels: number): number {
-  return Math.max(minimumPixels, Math.min(maximumPixels, worldRadius * viewportScale)) / Math.max(viewportScale, 0.001)
-}
-
-function cellForPerson(person: PersonState, grid: HexGrid): GeographicCell | undefined {
-  const comma = person.locationCellId.indexOf(',')
-  const q = Number(person.locationCellId.slice(0, comma))
-  const r = Number(person.locationCellId.slice(comma + 1))
-  if (!Number.isInteger(q) || !Number.isInteger(r) || q < 0 || r < 0 || q >= grid.width || r >= grid.height) return undefined
-  return grid.cells[r * grid.width + q]
-}
-
-function drawCell(context: CanvasRenderingContext2D, cell: GeographicCell, overlay: MapOverlay, selected: boolean, radius: number, borderAlpha: number, population: number, community: CommunitySimulationState | undefined, communityMeasureId: CommunityVariableId): void {
+function drawCell(context: CanvasRenderingContext2D, cell: ProjectedMapCell, overlay: MapOverlay, selected: boolean, radius: number, borderAlpha: number, communityMeasureId: CommunityVariableId): void {
   const { x, y } = axialToPixel(cell, HEX_SIZE)
-  context.beginPath()
-  for (let index = 0; index < 6; index += 1) {
-    const angle = ((60 * index - 30) * Math.PI) / 180
-    const px = x + radius * Math.cos(angle)
-    const py = y + radius * Math.sin(angle)
-    if (index === 0) context.moveTo(px, py)
-    else context.lineTo(px, py)
-  }
-  context.closePath()
-  context.fillStyle = cellColor(cell, overlay, population, community, communityMeasureId)
+  hexPath(context, x, y, radius)
+  context.fillStyle = cellColor(cell, overlay, cell.communityValuePermille, communityMeasureId)
   context.fill()
   if (selected || borderAlpha > 0) {
     context.strokeStyle = selected ? '#f2c94c' : `rgba(9, 17, 14, ${borderAlpha})`
-    context.lineWidth = selected ? 3 : 0.8
+    context.lineWidth = selected ? 3 : .8
     context.stroke()
   }
 }
 
-function cellColor(cell: GeographicCell, overlay: MapOverlay, population: number, community: CommunitySimulationState | undefined, communityMeasureId: CommunityVariableId): string {
-  if (overlay === 'terrain') {
-    if (cell.terrain === 'water') return '#244b5a'
-    if (cell.terrain === 'hill') return '#6d6547'
-    return '#426a4d'
+function drawRegion(context: CanvasRenderingContext2D, region: MapProjection['regions'][number], overlay: MapOverlay, communityMeasureId: CommunityVariableId): void {
+  const [topLeft, topRight, bottomRight, bottomLeft] = aggregateRegionPolygon(region.q, region.r, region.qMax, region.rMax, HEX_SIZE)
+  if (!topLeft || !topRight || !bottomRight || !bottomLeft) return
+  context.fillStyle = regionColor(region, overlay, communityMeasureId)
+  context.beginPath()
+  context.moveTo(topLeft.x, topLeft.y)
+  context.lineTo(topRight.x, topRight.y)
+  context.lineTo(bottomRight.x, bottomRight.y)
+  context.lineTo(bottomLeft.x, bottomLeft.y)
+  context.closePath()
+  context.fill()
+}
+
+function drawPopulation(context: CanvasRenderingContext2D, map: MapProjection, scale: number): void {
+  for (const marker of map.populationMarkers) drawMarker(context, marker.q, marker.r, marker.count, scale, false)
+  const hooked = map.hookedPersonMarker
+  if (hooked?.visible) drawMarker(context, hooked.q, hooked.r, 1, scale, true)
+}
+
+function drawMarker(context: CanvasRenderingContext2D, q: number, r: number, count: number, scale: number, selected: boolean): void {
+  const center = axialToPixel({ q, r }, HEX_SIZE)
+  const pixels = selected ? 7 : Math.max(2, Math.min(8, 2 + Math.sqrt(count) * 1.15))
+  context.beginPath()
+  context.arc(center.x, center.y, pixels / Math.max(scale, .001), 0, Math.PI * 2)
+  context.fillStyle = selected ? '#fff2ad' : 'rgba(238, 197, 82, .78)'
+  context.fill()
+  if (selected) { context.strokeStyle = '#362b12'; context.lineWidth = 1.3 / Math.max(scale, .001); context.stroke() }
+}
+
+function drawLocationMarkers(context: CanvasRenderingContext2D, markers: readonly MapProjection['activityMarkers'][number][], scale: number, kind: 'activity' | 'household'): void {
+  for (const marker of markers) {
+    const center = axialToPixel(marker, HEX_SIZE)
+    const radius = (marker.selected ? 6 : Math.max(2, Math.min(4, 2 + Math.sqrt(marker.count) * .45))) / Math.max(scale, .001)
+    context.beginPath()
+    if (kind === 'activity') context.rect(center.x - radius, center.y - radius, radius * 2, radius * 2)
+    else { context.moveTo(center.x, center.y - radius); context.lineTo(center.x + radius, center.y + radius); context.lineTo(center.x - radius, center.y + radius); context.closePath() }
+    context.fillStyle = kind === 'activity' ? (marker.selected ? 'rgba(120, 215, 255, .95)' : 'rgba(104, 185, 210, .7)') : (marker.selected ? 'rgba(255, 225, 126, .95)' : 'rgba(226, 172, 83, .72)')
+    context.fill()
   }
-  if (overlay === 'elevation') return gradient(cell.elevation / 1000, [32, 61, 47], [218, 207, 167])
-  if (overlay === 'habitability') return cell.habitability === 0 ? '#25312f' : gradient(cell.habitability / 1000, [85, 47, 44], [87, 169, 101])
-  if (overlay === 'food') return cell.resourceCapacity === 0 ? '#27322e' : gradient(cell.foodAmount / cell.resourceCapacity, [84, 42, 38], [111, 176, 82])
-  if (overlay === 'population') return population === 0 ? '#1b2823' : gradient(Math.min(1, population / 8), [52, 72, 62], [236, 186, 70])
-  if (overlay === 'community') return community ? communityColor(communityValue(community, communityMeasureId), communityMeasureId) : '#18211e'
-  if (cell.movementCost === 0) return '#253c49'
-  return gradient((cell.movementCost - 1000) / 800, [59, 112, 71], [176, 89, 56])
 }
 
-const AXIAL_DIRECTIONS = [[1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1]] as const
-
-function drawCommunityBoundaries(context: CanvasRenderingContext2D, cells: readonly GeographicCell[], communityByCellId: ReadonlyMap<string, CommunitySimulationState>, stride: number, radius: number, viewportScale: number, selectedCommunityId?: string): void {
-  for (const cell of cells) {
-    const community = communityByCellId.get(cell.id)
-    if (!community) continue
-    const center = axialToPixel(cell, HEX_SIZE)
-    for (let edge = 0; edge < 6; edge += 1) {
-      const direction = AXIAL_DIRECTIONS[edge]
-      if (!direction) continue
-      const neighborId = `${cell.q + direction[0] * stride},${cell.r + direction[1] * stride}`
-      const neighbor = communityByCellId.get(neighborId)
-      if (neighbor?.catchment.id === community.catchment.id) continue
-      const startAngle = ((60 * edge - 30) * Math.PI) / 180
-      const endAngle = ((60 * (edge + 1) - 30) * Math.PI) / 180
-      context.beginPath()
-      context.moveTo(center.x + radius * Math.cos(startAngle), center.y + radius * Math.sin(startAngle))
-      context.lineTo(center.x + radius * Math.cos(endAngle), center.y + radius * Math.sin(endAngle))
-      context.strokeStyle = community.catchment.id === selectedCommunityId ? '#fff0ad' : 'rgba(230, 237, 227, .58)'
-      context.lineWidth = (community.catchment.id === selectedCommunityId ? 2.8 : 1.25) / Math.max(viewportScale, .001)
-      context.stroke()
-    }
+function drawRelationships(context: CanvasRenderingContext2D, map: MapProjection, scale: number): void {
+  for (const segment of map.relationshipSegments) {
+    const origin = axialToPixel({ q: segment.originQ, r: segment.originR }, HEX_SIZE)
+    const destination = axialToPixel({ q: segment.destinationQ, r: segment.destinationR }, HEX_SIZE)
+    context.beginPath(); context.moveTo(origin.x, origin.y); context.lineTo(destination.x, destination.y)
+    context.strokeStyle = `rgba(119, 207, 170, ${.26 + segment.familiarity / 2000})`
+    context.lineWidth = Math.max(.7, Math.min(2.2, 1.1 + segment.familiarity / 1000)) / Math.max(scale, .001)
+    context.stroke()
   }
 }
 
-function communityValue(community: CommunitySimulationState, id: CommunityVariableId): number {
-  if (id === 'community.structural.foodSecurity') return community.structural[id]
-  return community.emergent[id]
+function CommunityLegend({ communities, definitions, measureId, selectedCommunityId }: { communities: readonly ProjectedCommunityState[]; definitions: readonly CommunityVariableDefinition[]; measureId: CommunityVariableId; selectedCommunityId?: string }) {
+  return <div className="community-map-legend" aria-label="Community overlay legend"><strong>{definitions.find((definition) => definition.id === measureId)?.label ?? measureId}</strong><small>{measureId === 'community.emergent.conflict' ? 'Geographic catchments · higher conflict is warmer' : 'Geographic catchments · higher values are greener'}</small>{communities.map((community) => { const value = measureId === 'community.structural.foodSecurity' ? community.structural[measureId] : community.emergent[measureId]; return <div key={community.catchment.id} className={community.catchment.id === selectedCommunityId ? 'selected' : ''}><i style={{ background: communityColor(value, measureId) }} /><span>{community.catchment.displayName}</span><b>{(value / 10).toFixed(1)}%</b></div> })}</div>
 }
 
-function communityColor(value: number, id: CommunityVariableId): string {
-  const amount = Math.max(0, Math.min(1, value / 1000))
-  return id === 'community.emergent.conflict'
-    ? gradient(amount, [44, 91, 65], [151, 62, 54])
-    : gradient(amount, [77, 51, 48], [78, 139, 91])
+function hexPath(context: CanvasRenderingContext2D, x: number, y: number, radius: number): void { context.beginPath(); for (let index = 0; index < 6; index += 1) { const angle = ((60 * index - 30) * Math.PI) / 180; const px = x + radius * Math.cos(angle); const py = y + radius * Math.sin(angle); if (index === 0) context.moveTo(px, py); else context.lineTo(px, py) }; context.closePath() }
+function cellColor(cell: ProjectedMapCell, overlay: MapOverlay, communityValue: number | undefined, communityMeasureId: CommunityVariableId): string { return regionColor({ dominantTerrain: cell.terrain, elevation: cell.elevation, habitability: cell.habitability, movementCost: cell.movementCost, foodAmount: cell.foodAmount, resourceCapacity: cell.resourceCapacity, populationCount: cell.populationCount, communityValuePermille: communityValue }, overlay, communityMeasureId) }
+function regionColor(region: Pick<MapProjection['regions'][number], 'dominantTerrain' | 'elevation' | 'habitability' | 'movementCost' | 'foodAmount' | 'resourceCapacity' | 'populationCount' | 'communityValuePermille'>, overlay: MapOverlay, communityMeasureId: CommunityVariableId): string {
+  if (overlay === 'terrain') return region.dominantTerrain === 'water' ? '#244b5a' : region.dominantTerrain === 'hill' ? '#6d6547' : '#426a4d'
+  if (overlay === 'elevation') return gradient(region.elevation / 1000, [32, 61, 47], [218, 207, 167])
+  if (overlay === 'habitability') return region.habitability === 0 ? '#25312f' : gradient(region.habitability / 1000, [85, 47, 44], [87, 169, 101])
+  if (overlay === 'food') return region.resourceCapacity === 0 ? '#27322e' : gradient((region.foodAmount ?? 0) / region.resourceCapacity, [84, 42, 38], [111, 176, 82])
+  if (overlay === 'population') return region.populationCount === 0 ? '#1b2823' : gradient(Math.min(1, region.populationCount / 8), [52, 72, 62], [236, 186, 70])
+  if (overlay === 'community') return communityColor(region.communityValuePermille ?? 0, communityMeasureId)
+  if (region.movementCost === 0) return '#253c49'
+  return gradient((region.movementCost - 1000) / 800, [59, 112, 71], [176, 89, 56])
 }
-
-function populationByRenderedCell(people: PersonState[], grid: HexGrid, stride: number): Map<string, number> {
-  const result = new Map<string, number>()
-  for (const person of people) {
-    const cell = cellForPerson(person, grid)
-    if (!cell) continue
-    const q = Math.floor(cell.q / stride) * stride
-    const r = Math.floor(cell.r / stride) * stride
-    const id = `${q},${r}`
-    result.set(id, (result.get(id) ?? 0) + 1)
-  }
-  return result
-}
-
-function gradient(amount: number, from: [number, number, number], to: [number, number, number]): string {
-  const clamped = Math.max(0, Math.min(1, amount))
-  const channels = from.map((value, index) => Math.round(value + ((to[index] ?? value) - value) * clamped))
-  return `rgb(${channels.join(',')})`
-}
+function communityColor(value: number, id: CommunityVariableId): string { const amount = Math.max(0, Math.min(1, value / 1000)); return id === 'community.emergent.conflict' ? gradient(amount, [44, 91, 65], [151, 62, 54]) : gradient(amount, [77, 51, 48], [78, 139, 91]) }
+function gradient(amount: number, from: [number, number, number], to: [number, number, number]): string { const clamped = Math.max(0, Math.min(1, amount)); const channels = from.map((value, index) => Math.round(value + ((to[index] ?? value) - value) * clamped)); return `rgb(${channels.join(',')})` }

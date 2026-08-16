@@ -88,6 +88,16 @@ export interface StepResult {
   statistics: StatisticSample[]
 }
 
+export interface AdvanceResult {
+  events: SimulationEvent[]
+  statistics: StatisticSample[]
+}
+
+export interface AdvanceOptions {
+  /** False defers the batch clock event so a worker may yield without changing event sequencing. */
+  clockEventHours?: number | false
+}
+
 export class SimulationEngine {
   private random: RandomProvider
   private readonly cellById: Map<string, SimulationState['world']['grid']['cells'][number]>
@@ -172,7 +182,16 @@ export class SimulationEngine {
   }
 
   step(count = 1): StepResult {
+    const result = this.advance(count)
+    return { ...result, projection: this.project() }
+  }
+
+  /** Advances authoritative state without constructing a UI/test projection. */
+  advance(count = 1, options: AdvanceOptions = {}): AdvanceResult {
     if (!Number.isSafeInteger(count) || count < 1) throw new RangeError('Step count must be a positive safe integer')
+    if (options.clockEventHours !== undefined && options.clockEventHours !== false && (!Number.isSafeInteger(options.clockEventHours) || options.clockEventHours < 1)) {
+      throw new RangeError('Clock event hours must be a positive safe integer')
+    }
     const events: SimulationEvent[] = []
     let eventWriteIndex = 0
     const pushEvent = (event: SimulationEvent) => {
@@ -258,14 +277,21 @@ export class SimulationEngine {
     }
     this.state.randomStreams = this.random.snapshot()
     this.syncCommunityCounterState()
-    const clockEvent = this.event('CLOCK_ADVANCED', { hours: count, currentTick: this.state.tick })
-    pushEvent(clockEvent)
+    if (options.clockEventHours !== false) {
+      const clockHours = options.clockEventHours ?? count
+      pushEvent(this.event('CLOCK_ADVANCED', { hours: clockHours, currentTick: this.state.tick }))
+    }
     if (events.length === 500 && eventWriteIndex > 0) {
       const ordered = [...events.slice(eventWriteIndex), ...events.slice(0, eventWriteIndex)]
       events.splice(0, events.length, ...ordered)
     }
     this.assertInvariants()
-    return { projection: this.project(), events, statistics }
+    return { events, statistics }
+  }
+
+  completeAdvanceBatch(hours: number): SimulationEvent {
+    if (!Number.isSafeInteger(hours) || hours < 1) throw new RangeError('Completed batch hours must be a positive safe integer')
+    return this.event('CLOCK_ADVANCED', { hours, currentTick: this.state.tick })
   }
 
   project(digest?: string): WorldProjection {

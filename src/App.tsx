@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
-import type { CommunitySimulationState, CommunityVariableDefinition, CommunityVariableId } from './simulation/community/types'
-import type { DevelopmentExperienceType, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, UtilityContribution, WorldProjection } from './simulation/domain/types'
+import type { CommunityVariableDefinition, CommunityVariableId } from './simulation/community/types'
+import type { DevelopmentExperienceType, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, UtilityContribution } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
-import { findPath } from './simulation/spatial/pathfinding'
+import type { ProjectedCommunityState, WorkbenchProjection } from './projection'
 import { HexMap, type MapOverlay } from './ui/HexMap'
 import { ActionExplanation } from './ui/ActionExplanation'
 import { PersonVariableSections } from './ui/PersonVariableSections'
 import { CommunityInspector, CommunitySignals } from './ui/CommunityPanels'
+import { mergeWorkbenchProjection } from './ui/projectionFrame'
 import type { ContributionView, VariableDefinitionView } from './ui/personVariables'
 import { SimulationWorkerClient } from './worker/client'
 import type { SimulationResponse } from './worker/protocol'
@@ -23,13 +24,13 @@ export default function App() {
   const client = useMemo(() => new SimulationWorkerClient(), [])
   const database = useMemo(() => new WorkbenchDatabase(), [])
   const [seed, setSeed] = useState('valley-001')
-  const [projection, setProjection] = useState<WorldProjection>()
-  const projectionRef = useRef<WorldProjection | undefined>(undefined)
+  const [projection, setProjection] = useState<WorkbenchProjection>()
+  const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
   const [status, setStatus] = useState<'starting' | 'idle' | 'paused' | 'playing'>('starting')
   const [speed, setSpeed] = useState(24)
   const [events, setEvents] = useState<SimulationEvent[]>([])
   const [statistics, setStatistics] = useState<StatisticSample[]>([])
-  const [selected, setSelected] = useState<GeographicCell>()
+  const [selectedCellId, setSelectedCellId] = useState<string>()
   const [selectedPersonId, setSelectedPersonId] = useState<string>()
   const [selectedCommunityId, setSelectedCommunityId] = useState<string>()
   const [overlay, setOverlay] = useState<MapOverlay>('terrain')
@@ -43,6 +44,7 @@ export default function App() {
   const lastAutosavedTick = useRef(-1)
   const statusRef = useRef<typeof status>('starting')
   const importRef = useRef<HTMLInputElement>(null)
+  const requestViewport = useCallback((request: import('./projection').MapProjectionRequest) => client.setViewport(request), [client])
 
   useEffect(() => {
     projectionRef.current = projection
@@ -60,7 +62,8 @@ export default function App() {
       if (response.type === 'READY') {
         client.create(seed)
       } else if (response.type === 'FRAME') {
-        const nextProjection = { ...response.projection, digest: response.projection.digest ?? projectionRef.current?.digest }
+        const previousProjection = projectionRef.current
+        const nextProjection = { ...mergeWorkbenchProjection(previousProjection, response.projection), digest: response.projection.digest ?? previousProjection?.digest }
         projectionRef.current = nextProjection
         setProjection(nextProjection)
         setProcessingMs(response.processingMs)
@@ -134,7 +137,7 @@ export default function App() {
       setSeed(saved.snapshot.state.config.seed)
       setEvents([])
       setStatistics([])
-      setSelected(undefined)
+      setSelectedCellId(undefined)
       setSelectedPersonId(undefined)
       setSelectedCommunityId(undefined)
       await refreshSnapshots(saved.runId)
@@ -146,7 +149,7 @@ export default function App() {
     client.create(seed)
     setEvents([])
     setStatistics([])
-    setSelected(undefined)
+    setSelectedCellId(undefined)
     setSelectedPersonId(undefined)
     setSelectedCommunityId(undefined)
     setError(undefined)
@@ -156,8 +159,7 @@ export default function App() {
   function inspectPerson(personId: string) {
     const person = projectionRef.current?.people.find((candidate) => candidate.id === personId)
     if (!person) return
-    const cell = projectionRef.current?.world.grid.cells.find((candidate) => candidate.id === person.locationCellId)
-    setSelected(cell)
+    setSelectedCellId(person.locationCellId)
     setSelectedPersonId(personId)
     setSelectedCommunityId(undefined)
   }
@@ -174,6 +176,7 @@ export default function App() {
   const selectedPerson = projection?.people.find((person) => person.id === selectedPersonId)
   const selectedCommunity = projection?.communities.find((community) => community.catchment.id === selectedCommunityId)
   const selectedRelationships = selectedPerson ? relationshipViews(selectedPerson.id, projection?.relationships ?? []) : []
+  const selected = selectedCellId ? projection?.map.exactCells.find((cell) => cell.id === selectedCellId) ?? (projection?.map.focusCell?.id === selectedCellId ? projection.map.focusCell : undefined) : undefined
 
   return (
     <main className="app-shell">
@@ -186,7 +189,7 @@ export default function App() {
           <Fact label="SEED" value={projection?.seed ?? '—'} />
           <Fact label="TIME" value={`Day ${day} · ${hour.toString().padStart(2, '0')}:00`} />
           <Fact label="ENGINE" value={`v${projection?.engineVersion ?? '—'}`} />
-          <Fact label="STATE" value={projection?.digest?.slice(0, 10) ?? 'computing…'} mono />
+          <Fact label="SAVED HASH" value={projection?.digest?.slice(0, 10) ?? 'computing…'} mono />
         </div>
         <div className={`status-pill ${status}`}><span />{status}</div>
       </header>
@@ -213,7 +216,7 @@ export default function App() {
 
       <section className="workspace">
         <aside className="left-panel panel">
-          <PanelTitle title="Map layers" subtitle={`${projection?.world.grid.cells.length ?? 0} hex cells`} />
+          <PanelTitle title="Map layers" subtitle={`${projection?.world.cellCount ?? 0} hex cells`} />
           <div className="overlay-list">
             {(['terrain', 'elevation', 'habitability', 'movement', 'food', 'population', 'community'] as MapOverlay[]).map((entry) => (
               <button key={entry} aria-pressed={overlay === entry} className={overlay === entry ? 'active' : ''} onClick={() => setOverlay(entry)}><span className={`swatch ${entry}`} />{entry}</button>
@@ -225,12 +228,12 @@ export default function App() {
           </div>}
           <PanelTitle title="Daily samples" subtitle="Latest aggregates" />
           <div className="metric-list">
-            <Metric label="Cells" value={recentMetrics['world.cellCount'] ?? projection?.world.grid.cells.length ?? 0} />
+            <Metric label="Cells" value={recentMetrics['world.cellCount'] ?? projection?.world.cellCount ?? 0} />
             <Metric label="Habitable" value={recentMetrics['world.habitableCells'] ?? '—'} />
             <Metric label="Population" value={recentMetrics['population.count'] ?? projection?.people.length ?? 0} />
             <Metric label="Average hunger" value={recentMetrics['population.averageHunger'] ?? averageVariable(projection?.people, 'person.state.hunger')} />
             <Metric label="Occupied cells" value={recentMetrics['spatial.occupiedCells'] ?? '—'} />
-            <Metric label="World food" value={recentMetrics['resources.totalFood'] ?? totalFood(projection)} />
+            <Metric label="World food" value={recentMetrics['resources.totalFood'] ?? 'Awaiting daily sample'} />
             <Metric label="Food consumed/day" value={recentMetrics['resources.foodConsumed'] ?? '—'} />
             <Metric label="Travel cost/person" value={recentMetrics['spatial.averageTravelCost'] ?? '—'} />
             <Metric label="Simulated days" value={recentMetrics['engine.simulatedDays'] ?? day} />
@@ -255,8 +258,8 @@ export default function App() {
         </aside>
 
         <section className="map-panel panel">
-          <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {overlay}</span></div>
-          {projection ? <HexMap grid={projection.world.grid} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selected?.id} people={projection.people} relationships={projection.relationships} activityLocations={projection.activityLocations} households={projection.households} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelected(cell); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} /> : <div className="loading">Starting simulation worker…</div>}
+          <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {projection?.map.overlay ?? overlay}{projection && projection.map.overlay !== overlay ? ' · updating…' : ''}</span></div>
+          {projection ? <HexMap world={projection.world} map={projection.map} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selectedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelectedCellId(cell.id); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onFocusCell={(cellId) => { setSelectedCellId(cellId); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onViewportRequest={requestViewport} /> : <div className="loading">Starting simulation worker…</div>}
         </section>
 
         <aside className="right-panel panel">
@@ -264,9 +267,8 @@ export default function App() {
           {selectedCommunity
             ? <CommunityInspector community={selectedCommunity} definitions={projection?.communityVariableDefinitions ?? []} hasHookedPerson={selectedPerson !== undefined} onReturnToPerson={() => setSelectedCommunityId(undefined)} />
             : selectedPerson
-            ? <PersonInspector person={selectedPerson} tick={projection?.tick ?? 0} grid={projection?.world.grid} variableDefinitions={projection?.variableDefinitions ?? []} communityVariableDefinitions={projection?.communityVariableDefinitions ?? []} communities={projection?.communities ?? []} relationships={selectedRelationships} households={projection?.households ?? []} parentChildLinks={projection?.parentChildLinks ?? []} people={projection?.people ?? []} onHookPerson={inspectPerson} onRelease={() => {
-                const currentCell = projection?.world.grid.cells.find((cell) => cell.id === selectedPerson.locationCellId)
-                setSelected(currentCell)
+            ? <PersonInspector person={selectedPerson} tick={projection?.tick ?? 0} routeHome={projection?.routeHome?.personId === selectedPerson.id ? projection.routeHome : undefined} variableDefinitions={projection?.variableDefinitions ?? []} communityVariableDefinitions={projection?.communityVariableDefinitions ?? []} communities={projection?.communities ?? []} personCommunityId={projection?.personCommunityIds[selectedPerson.id]} relationships={selectedRelationships} households={projection?.households ?? []} parentChildLinks={projection?.parentChildLinks ?? []} people={projection?.people ?? []} onHookPerson={inspectPerson} onRelease={() => {
+                setSelectedCellId(selectedPerson.locationCellId)
                 setSelectedPersonId(undefined)
               }} />
             : selected
@@ -315,14 +317,13 @@ function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell;
   </div>
 }
 
-function PersonInspector({ person, tick, grid, variableDefinitions, communityVariableDefinitions, communities, relationships, households, parentChildLinks, people, onHookPerson, onRelease }: { person: PersonState; tick: number; grid?: WorldProjection['world']['grid']; variableDefinitions: readonly VariableDefinitionView[]; communityVariableDefinitions: readonly CommunityVariableDefinition[]; communities: readonly CommunitySimulationState[]; relationships: RelationshipView[]; households: readonly HouseholdState[]; parentChildLinks: readonly ParentChildLink[]; people: readonly PersonState[]; onHookPerson: (id: string) => void; onRelease: () => void }) {
+function PersonInspector({ person, tick, routeHome, variableDefinitions, communityVariableDefinitions, communities, personCommunityId, relationships, households, parentChildLinks, people, onHookPerson, onRelease }: { person: PersonState; tick: number; routeHome?: WorkbenchProjection['routeHome']; variableDefinitions: readonly VariableDefinitionView[]; communityVariableDefinitions: readonly CommunityVariableDefinition[]; communities: readonly ProjectedCommunityState[]; personCommunityId?: string; relationships: RelationshipView[]; households: readonly HouseholdState[]; parentChildLinks: readonly ParentChildLink[]; people: readonly PersonState[]; onHookPerson: (id: string) => void; onRelease: () => void }) {
   const [showDevelopmentInputs, setShowDevelopmentInputs] = useState(false)
   const decision = person.lastDecision
-  const homePath = grid ? findPath(grid, person.locationCellId, person.homeCellId) : undefined
   const household = households.find((candidate) => candidate.id === person.householdId)
   const householdMembers = householdMemberViews(person, household, parentChildLinks, people)
   const firstOriginTrace = person.originTraces[0]
-  const geographicCommunity = communities.find((community) => community.catchment.cellIds.includes(person.locationCellId))
+  const geographicCommunity = communities.find((community) => community.catchment.id === personCommunityId)
   return <div className="person-inspector">
     <div className="tracking-row"><span><i />Person hooked</span><button className="back-button" onClick={onRelease}>Release to current cell</button></div>
     <div className="inspector-grid">
@@ -330,7 +331,7 @@ function PersonInspector({ person, tick, grid, variableDefinitions, communityVar
       <Metric label="Location" value={person.locationCellId} />
       <Metric label="Home" value={person.homeCellId} />
       {person.journey && <><Metric label="Traveling to" value={person.journey.destinationCellId} /><Metric label="Travel remaining" value={`${person.journey.remainingCost} / ${person.journey.totalCost}`} /></>}
-      <Metric label="Route home" value={homePath ? `${Math.max(0, homePath.cellIds.length - 1)} steps · ${homePath.totalCost} cost` : 'No route'} />
+      <Metric label="Route home" value={routeHome?.reachable ? `${routeHome.steps ?? 0} steps · ${routeHome.totalCost ?? 0} cost` : routeHome?.truncated ? 'Search limit reached' : routeHome ? 'No route' : 'Calculating'} />
     </div>
     <section className="activity-panel" aria-labelledby="current-activity-heading">
       <div className="section-heading"><h3 id="current-activity-heading">Current activity</h3><span>{scheduleLabel(person.activityScheduleId)}</span></div>
@@ -541,13 +542,13 @@ function roleRank(role: HouseholdMemberView['role']): number {
   return role === 'Parent' ? 0 : role === 'Child' ? 1 : 2
 }
 
-function networkDensityPermille(projection?: WorldProjection): number {
+function networkDensityPermille(projection?: WorkbenchProjection): number {
   const population = projection?.people.length ?? 0
   const possible = population > 1 ? population * (population - 1) / 2 : 0
   return possible ? Math.round((projection?.relationships.length ?? 0) * 1000 / possible) : 0
 }
 
-function averageFamiliarity(projection?: WorldProjection): number {
+function averageFamiliarity(projection?: WorkbenchProjection): number {
   const relationships = projection?.relationships ?? []
   return relationships.length ? Math.round(relationships.reduce((sum, relationship) => sum + relationship.familiarity, 0) / relationships.length) : 0
 }
@@ -589,9 +590,4 @@ function averageVariable(people: PersonState[] | undefined, variableId: string):
   if (!people?.length) return '—'
   const values = people.map((person) => person.variables[variableId as keyof PersonState['variables']]).filter((value): value is number => typeof value === 'number')
   return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : '—'
-}
-
-function totalFood(projection?: WorldProjection): string | number {
-  if (!projection) return '—'
-  return projection.world.grid.cells.reduce((sum, cell) => sum + cell.foodAmount, 0)
 }

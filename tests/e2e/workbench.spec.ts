@@ -12,6 +12,67 @@ import { setPersonVariable } from '../../src/simulation/variables/storage'
 
 test.describe.configure({ timeout: 60_000 })
 
+test('settles an idle viewport request and supports keyboard map navigation', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  const canvas = page.getByLabel('Hex world map')
+  await expect.poll(async () => canvas.getAttribute('data-map-revision')).not.toBeNull()
+  await page.waitForTimeout(300)
+  const settledRevision = await canvas.getAttribute('data-map-revision')
+  await page.waitForTimeout(300)
+  await expect(canvas).toHaveAttribute('data-map-revision', settledRevision ?? '')
+  const before = await canvas.getAttribute('data-map-viewport')
+  await canvas.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect.poll(async () => canvas.getAttribute('data-map-viewport')).not.toBe(before)
+  await page.keyboard.press('f')
+  await expect(canvas).toHaveAttribute('data-map-revision', /\d+/)
+})
+
+test('switches to bounded world overview rendering without distant hex outlines', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  const canvas = page.getByLabel('Hex world map')
+  await expect(canvas).toHaveAttribute('data-map-lod', 'cell')
+  const bounds = await canvas.boundingBox()
+  expect(bounds).not.toBeNull()
+  if (!bounds) return
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+  for (let index = 0; index < 18; index += 1) await page.mouse.wheel(0, 500)
+  await expect(canvas).toHaveAttribute('data-map-lod', /region|world/)
+  await expect(canvas).toHaveAttribute('data-map-border-alpha', '0')
+  const primitiveCount = Number(await canvas.getAttribute('data-map-primitive-count'))
+  expect(primitiveCount).toBeLessThanOrEqual(4096)
+  await expect(page.locator('#map-render-status')).toContainText(/regional overview|world overview/)
+})
+
+test('keeps a hooked person live without changing the camera', async ({ page }) => {
+  const expected = SimulationEngine.create('valley-001')
+  const before = expected.project()
+  const after = expected.step(1).projection
+
+  await page.goto('/')
+  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  const person = await findVisiblePerson(page, before.people)
+  expect(person).toBeDefined()
+  if (!person) return
+  const moved = after.people.find((candidate) => candidate.id === person.id)
+  expect(moved).toBeDefined()
+  if (!moved) return
+  await hookPersonAtCurrentCell(page, person)
+  const canvas = page.getByLabel('Hex world map')
+  await expect(canvas).toHaveAttribute('data-hooked-person-id', person.id)
+  const cameraBefore = await canvas.getAttribute('data-map-viewport')
+  await page.getByTitle('Advance one hour').click()
+  await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
+  await expect(page.getByText('Person hooked')).toBeVisible()
+  await expect(canvas).toHaveAttribute('data-map-viewport', cameraBefore ?? '')
+  await expect(canvas).toHaveAttribute('data-hooked-person-id', person.id)
+  const comma = moved.locationCellId.indexOf(',')
+  await expect(canvas).toHaveAttribute('data-hooked-cell', `${Number(moved.locationCellId.slice(0, comma))},${Number(moved.locationCellId.slice(comma + 1))}`)
+  await expect(page.locator('.inspector-grid .metric').filter({ hasText: 'Location' }).first().locator('strong')).toHaveText(moved.locationCellId)
+})
+
 test('creates, steps, inspects, and saves a deterministic world', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('Seeded Valley')).toBeVisible()
@@ -71,13 +132,13 @@ test('the same seed and step count produce the same digest', async ({ page }) =>
   await expect(page.getByText('Seeded Valley')).toBeVisible()
   await page.getByTitle('Advance one hour').click()
   await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
-  const firstDigest = await page.locator('.fact').filter({ hasText: 'STATE' }).locator('strong').textContent()
+  const firstDigest = await page.locator('.fact').filter({ hasText: 'SAVED HASH' }).locator('strong').textContent()
   expect(firstDigest).toBe('e756231a46')
   await page.getByRole('button', { name: 'Reset' }).click()
   await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
   await page.getByTitle('Advance one hour').click()
   await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
-  await expect(page.locator('.fact').filter({ hasText: 'STATE' }).locator('strong')).toHaveText(firstDigest ?? '')
+  await expect(page.locator('.fact').filter({ hasText: 'SAVED HASH' }).locator('strong')).toHaveText(firstDigest ?? '')
 })
 
 test('encounter events navigate between hooked people and their relationships', async ({ page }) => {
@@ -299,6 +360,22 @@ async function hookPersonAtCurrentCell(page: import('@playwright/test').Page, pe
   const personButton = page.locator('.occupant-list button').filter({ hasText: person.id })
   await expect(personButton).toBeVisible()
   await personButton.click()
+}
+
+async function findVisiblePerson(page: import('@playwright/test').Page, people: readonly PersonState[]): Promise<PersonState | undefined> {
+  const canvas = page.getByLabel('Hex world map')
+  await expect.poll(async () => canvas.getAttribute('data-map-viewport')).not.toBeNull()
+  const bounds = await canvas.boundingBox()
+  const transform = await canvas.getAttribute('data-map-viewport')
+  if (!bounds || !transform) return undefined
+  const [x = Number.NaN, y = Number.NaN, scale = Number.NaN] = transform.split(',').map(Number)
+  return people.find((person) => {
+    const comma = person.locationCellId.indexOf(',')
+    const center = axialToPixel({ q: Number(person.locationCellId.slice(0, comma)), r: Number(person.locationCellId.slice(comma + 1)) }, 18)
+    const screenX = x + center.x * scale
+    const screenY = y + center.y * scale
+    return screenX >= 0 && screenX <= bounds.width && screenY >= 0 && screenY <= bounds.height
+  })
 }
 
 async function storeNamedSnapshot(page: import('@playwright/test').Page, snapshot: Awaited<ReturnType<SimulationEngine['snapshot']>>, key: string, name: string): Promise<void> {

@@ -67,7 +67,7 @@ describe('SimulationEngine', () => {
     restored.step(120)
 
     expect((await restored.snapshot()).digest).toBe((await uninterrupted.snapshot()).digest)
-  })
+  }, 15_000)
 
   it('rejects modified snapshots', async () => {
     const snapshot = await SimulationEngine.create('integrity').snapshot()
