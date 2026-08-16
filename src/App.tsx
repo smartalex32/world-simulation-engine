@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
-import type { GeographicCell, PersonState, SimulationEvent, StatisticSample, WorldProjection } from './simulation/domain/types'
+import type { DevelopmentExperienceType, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, UtilityContribution, WorldProjection } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
 import { findPath } from './simulation/spatial/pathfinding'
 import { HexMap, type MapOverlay } from './ui/HexMap'
+import { ActionExplanation } from './ui/ActionExplanation'
+import { PersonVariableSections } from './ui/PersonVariableSections'
+import type { ContributionView, VariableDefinitionView } from './ui/personVariables'
 import { SimulationWorkerClient } from './worker/client'
 import type { SimulationResponse } from './worker/protocol'
 
@@ -27,6 +30,8 @@ export default function App() {
   const [selected, setSelected] = useState<GeographicCell>()
   const [selectedPersonId, setSelectedPersonId] = useState<string>()
   const [overlay, setOverlay] = useState<MapOverlay>('terrain')
+  const [showActivityLocations, setShowActivityLocations] = useState(false)
+  const [showHouseholds, setShowHouseholds] = useState(false)
   const [snapshots, setSnapshots] = useState<SavedSnapshot[]>([])
   const [error, setError] = useState<string>()
   const [processingMs, setProcessingMs] = useState(0)
@@ -155,6 +160,7 @@ export default function App() {
   const hour = tick % 24
   const recentMetrics = newestMetrics(statistics)
   const selectedPerson = projection?.people.find((person) => person.id === selectedPersonId)
+  const selectedRelationships = selectedPerson ? relationshipViews(selectedPerson.id, projection?.relationships ?? []) : []
 
   return (
     <main className="app-shell">
@@ -200,12 +206,16 @@ export default function App() {
               <button key={entry} className={overlay === entry ? 'active' : ''} onClick={() => setOverlay(entry)}><span className={`swatch ${entry}`} />{entry}</button>
             ))}
           </div>
+          {projection && <div className="map-annotation-toggles" aria-label="Map annotations">
+            <button aria-label="Activity locations" aria-pressed={showActivityLocations} className={showActivityLocations ? 'active' : ''} onClick={() => setShowActivityLocations((current) => !current)}>Activity locations</button>
+            <button aria-label="Households" aria-pressed={showHouseholds} className={showHouseholds ? 'active' : ''} onClick={() => setShowHouseholds((current) => !current)}>Households</button>
+          </div>}
           <PanelTitle title="Daily samples" subtitle="Latest aggregates" />
           <div className="metric-list">
             <Metric label="Cells" value={recentMetrics['world.cellCount'] ?? projection?.world.grid.cells.length ?? 0} />
             <Metric label="Habitable" value={recentMetrics['world.habitableCells'] ?? '—'} />
             <Metric label="Population" value={recentMetrics['population.count'] ?? projection?.people.length ?? 0} />
-            <Metric label="Average hunger" value={recentMetrics['population.averageHunger'] ?? averageHunger(projection?.people)} />
+            <Metric label="Average hunger" value={recentMetrics['population.averageHunger'] ?? averageVariable(projection?.people, 'person.state.hunger')} />
             <Metric label="Occupied cells" value={recentMetrics['spatial.occupiedCells'] ?? '—'} />
             <Metric label="World food" value={recentMetrics['resources.totalFood'] ?? totalFood(projection)} />
             <Metric label="Food consumed/day" value={recentMetrics['resources.foodConsumed'] ?? '—'} />
@@ -213,17 +223,26 @@ export default function App() {
             <Metric label="Simulated days" value={recentMetrics['engine.simulatedDays'] ?? day} />
             <Metric label="Last batch" value={`${processingMs.toFixed(2)} ms`} />
           </div>
+          <PanelTitle title="Social signals" subtitle="Daily encounter aggregates" />
+          <div className="metric-list">
+            <Metric label="Encounters" value={recentMetrics['social.encounters'] ?? 0} />
+            <Metric label="Encounters / 1k" value={recentMetrics['social.encountersPer1000People'] ?? 0} />
+            <Metric label="Relationships" value={recentMetrics['social.relationshipCount'] ?? projection?.relationships.length ?? 0} />
+            <Metric label="Network density" value={`${((recentMetrics['social.networkDensityPermille'] ?? networkDensityPermille(projection)) / 10).toFixed(1)}%`} />
+            <Metric label="Avg familiarity" value={`${((recentMetrics['social.averageFamiliarity'] ?? averageFamiliarity(projection)) / 10).toFixed(1)}%`} />
+            <Metric label="Tense encounters" value={recentMetrics['social.tenseEncounters'] ?? 0} />
+          </div>
         </aside>
 
         <section className="map-panel panel">
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {overlay}</span></div>
-          {projection ? <HexMap grid={projection.world.grid} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selected?.id} people={projection.people} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelected(cell); setSelectedPersonId(undefined) }} /> : <div className="loading">Starting simulation worker…</div>}
+          {projection ? <HexMap grid={projection.world.grid} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selected?.id} people={projection.people} relationships={projection.relationships} activityLocations={projection.activityLocations} households={projection.households} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelected(cell); setSelectedPersonId(undefined) }} /> : <div className="loading">Starting simulation worker…</div>}
         </section>
 
         <aside className="right-panel panel">
           <PanelTitle title={selectedPerson ? 'Person inspector' : 'Cell inspector'} subtitle={selectedPerson ? selectedPerson.id : selected ? `Cell ${selected.id}` : 'Select a cell'} />
           {selectedPerson
-            ? <PersonInspector person={selectedPerson} grid={projection?.world.grid} onRelease={() => {
+            ? <PersonInspector person={selectedPerson} tick={projection?.tick ?? 0} grid={projection?.world.grid} variableDefinitions={projection?.variableDefinitions ?? []} relationships={selectedRelationships} households={projection?.households ?? []} parentChildLinks={projection?.parentChildLinks ?? []} people={projection?.people ?? []} onHookPerson={inspectPerson} onRelease={() => {
                 const currentCell = projection?.world.grid.cells.find((cell) => cell.id === selectedPerson.locationCellId)
                 setSelected(currentCell)
                 setSelectedPersonId(undefined)
@@ -249,7 +268,7 @@ export default function App() {
         <div className="event-table" role="log">
           <div className="event-header"><span>Tick</span><span>Type</span><span>Details</span></div>
           {events.length === 0 && <div className="event-empty">No events recorded yet.</div>}
-          {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span>{typeof event.payload.personId === 'string' ? <button className="event-person" onClick={() => inspectPerson(String(event.payload.personId))}>Inspect {event.payload.personId}</button> : formatPayload(event.payload)}</span></div>)}
+          {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} /></span></div>)}
         </div>
       </section>
     </main>
@@ -269,47 +288,240 @@ function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell;
     <Metric label="Move cost" value={cell.movementCost === 0 ? 'Blocked' : (cell.movementCost / 1000).toFixed(2)} />
     <Metric label="Food stock" value={`${cell.foodAmount} / ${cell.resourceCapacity}`} />
     <Metric label="Daily regrowth" value={cell.foodRegenerationPerDay} />
-    <div className="occupant-list"><span>People here ({people.length})</span>{people.slice(0, 12).map((person) => <button key={person.id} onClick={() => onSelectPerson(person.id)}>{person.id}<small>hunger {person.hunger}</small></button>)}{people.length === 0 && <em>None</em>}</div>
+    <div className="occupant-list"><span>People here ({people.length})</span>{people.slice(0, 12).map((person) => <button key={person.id} onClick={() => onSelectPerson(person.id)}>{person.id}<small>authoritative person state</small></button>)}{people.length === 0 && <em>None</em>}</div>
     <div className="neighbor-list"><span>Six neighbors</span><code>{hexNeighbors(cell).map((coord) => `${coord.q},${coord.r}`).join('  ')}</code></div>
   </div>
 }
 
-function PersonInspector({ person, grid, onRelease }: { person: PersonState; grid?: WorldProjection['world']['grid']; onRelease: () => void }) {
+function PersonInspector({ person, tick, grid, variableDefinitions, relationships, households, parentChildLinks, people, onHookPerson, onRelease }: { person: PersonState; tick: number; grid?: WorldProjection['world']['grid']; variableDefinitions: readonly VariableDefinitionView[]; relationships: RelationshipView[]; households: readonly HouseholdState[]; parentChildLinks: readonly ParentChildLink[]; people: readonly PersonState[]; onHookPerson: (id: string) => void; onRelease: () => void }) {
+  const [showDevelopmentInputs, setShowDevelopmentInputs] = useState(false)
   const decision = person.lastDecision
   const homePath = grid ? findPath(grid, person.locationCellId, person.homeCellId) : undefined
+  const household = households.find((candidate) => candidate.id === person.householdId)
+  const householdMembers = householdMemberViews(person, household, parentChildLinks, people)
+  const firstOriginTrace = person.originTraces[0]
   return <div className="person-inspector">
     <div className="tracking-row"><span><i />Person hooked</span><button className="back-button" onClick={onRelease}>Release to current cell</button></div>
     <div className="inspector-grid">
       <Metric label="Age" value={`${person.ageYears} years`} />
       <Metric label="Location" value={person.locationCellId} />
       <Metric label="Home" value={person.homeCellId} />
-      <Metric label="Hunger" value={`${(person.hunger / 10).toFixed(1)}%`} />
       {person.journey && <><Metric label="Traveling to" value={person.journey.destinationCellId} /><Metric label="Travel remaining" value={`${person.journey.remainingCost} / ${person.journey.totalCost}`} /></>}
       <Metric label="Route home" value={homePath ? `${Math.max(0, homePath.cellIds.length - 1)} steps · ${homePath.totalCost} cost` : 'No route'} />
-      <TraitBar label="Curiosity" value={person.traits.curiosity} />
-      <TraitBar label="Risk tolerance" value={person.traits.riskTolerance} />
-      <TraitBar label="Sociability" value={person.traits.sociability} />
     </div>
-    <div className="decision-panel">
-      <h3>Last decision</h3>
-      {decision ? <>
-        <div className="decision-name"><strong>{decision.action}</strong><span>{(decision.probabilityPermille / 10).toFixed(1)}% selection probability</span></div>
-        {decision.targetCellId && <div className="decision-target">Target cell {decision.targetCellId}</div>}
-        <div className="contributions">{decision.contributions.map((entry) => <div key={entry.factor}><span>{entry.factor}</span><strong className={entry.value >= 0 ? 'positive' : 'negative'}>{entry.value >= 0 ? '+' : ''}{entry.value}</strong></div>)}</div>
-        <div className="alternatives"><span>Candidate weights</span>{decision.alternatives.map((entry) => <div key={entry.action}><span>{entry.action}</span><strong>{entry.weight}</strong></div>)}</div>
-      </> : <p>No action has been evaluated yet. Advance one hour.</p>}
-    </div>
+    <section className="activity-panel" aria-labelledby="current-activity-heading">
+      <div className="section-heading"><h3 id="current-activity-heading">Current activity</h3><span>{scheduleLabel(person.activityScheduleId)}</span></div>
+      <div className="activity-details">
+        <Metric label="Kind" value={person.currentActivity.kind} />
+        <Metric label="Location" value={person.currentActivity.kind === 'travel' ? 'None while traveling' : person.currentActivity.locationId ?? 'None'} />
+        <Metric label="Cell" value={person.locationCellId} />
+        <Metric label="Since tick" value={person.currentActivity.sinceTick} />
+      </div>
+    </section>
+    <PersonVariableSections definitions={variableDefinitions} values={variableValues(person)} layers={['state', 'need']} />
+    <section className="household-panel" aria-labelledby="household-heading">
+      <div className="section-heading"><h3 id="household-heading">Household</h3><span>{household ? household.memberIds.length : 0} members</span></div>
+      {household ? <>
+        <div className="activity-details"><Metric label="Household ID" value={household.id} /><Metric label="Home" value={household.homeCellId} /></div>
+        <div className="household-members">
+          {householdMembers.map((member) => <button key={member.id} onClick={() => onHookPerson(member.id)} aria-label={`Hook ${member.id}`}><span><strong>{member.id}</strong><small>{member.role}</small></span><span>{member.ageYears} years</span></button>)}
+        </div>
+        {firstOriginTrace && <div className="inheritance-trace"><strong>Starting predisposition</strong><span>Curiosity {firstOriginTrace.finalValue / 10}%</span><small>Fictional, configurable parental-baseline-variation model; this is a starting tendency, not a fixed outcome.</small></div>}
+      </> : <p>Household data is unavailable for this person.</p>}
+    </section>
+    <section className="encounter-panel" aria-labelledby="last-encounter-heading">
+      <h3 id="last-encounter-heading">Last encounter</h3>
+      {person.lastEncounter ? <>
+        <div className="encounter-summary"><strong className={`outcome ${person.lastEncounter.outcome}`}>{person.lastEncounter.outcome}</strong><span>{(person.lastEncounter.probabilityPermille / 10).toFixed(1)}% outcome probability</span></div>
+        <button className="encounter-person" onClick={() => onHookPerson(person.lastEncounter!.otherPersonId)} aria-label={`Hook ${person.lastEncounter.otherPersonId}`}>
+          With {person.lastEncounter.otherPersonId} · {person.lastEncounter.cellId} · tick {person.lastEncounter.tick}
+        </button>
+        <small>Familiarity {(person.lastEncounter.familiarityBefore / 10).toFixed(1)}% → {(person.lastEncounter.familiarityAfter / 10).toFixed(1)}%</small>
+      </> : <p>No encounter recorded yet.</p>}
+    </section>
+    <section className="relationship-panel" aria-labelledby="relationships-heading">
+      <div className="section-heading"><h3 id="relationships-heading">Relationships</h3><span>{relationships.length} known</span></div>
+      {relationships.length === 0 ? <p>No direct relationships recorded yet.</p> : <div className="relationship-list">
+        {relationships.map((relationship) => <button key={relationship.id} onClick={() => onHookPerson(relationship.otherPersonId)} aria-label={`Hook ${relationship.otherPersonId}`}>
+          <span><strong>{relationship.otherPersonId}</strong><small>Familiarity {(relationship.familiarity / 10).toFixed(1)}% · frequency {(relationship.interactionFrequency / 10).toFixed(1)}%</small></span>
+          <span className="relationship-dimensions" aria-label="Directional relationship values"><small>A {normalizedPercent(relationship.perspective.affection)} · T {normalizedPercent(relationship.perspective.trust)}</small><small>R {normalizedPercent(relationship.perspective.respect)} · F {normalizedPercent(relationship.perspective.fear)}</small></span>
+        </button>)}
+      </div>}
+    </section>
+    <DevelopmentInspector person={person} tick={tick} variableDefinitions={variableDefinitions} onHookPerson={onHookPerson} showInputs={showDevelopmentInputs} onToggleInputs={() => setShowDevelopmentInputs((current) => !current)} />
+    <PersonVariableSections definitions={variableDefinitions} values={variableValues(person)} layers={['trait']} />
+    <ActionExplanation action={decision?.action} probabilityPermille={decision?.probabilityPermille} targetCellId={decision?.targetCellId} contributions={decision ? contributionViews(decision.contributions, variableDefinitions) : []} alternatives={decision?.alternatives ?? []} labelForSource={(sourceId, fallback) => sourceLabel(sourceId, fallback, variableDefinitions)} />
   </div>
 }
 
-function TraitBar({ label, value }: { label: string; value: number }) {
-  return <div className="trait"><div><span>{label}</span><strong>{(value / 10).toFixed(1)}</strong></div><div className="trait-track"><i style={{ width: `${value / 10}%` }} /></div></div>
+const DEVELOPMENT_EXPERIENCE_DISPLAY: Record<DevelopmentExperienceType, { label: string; channel: string }> = {
+  'experience.parent.curiosity-modeling': { label: 'Parent curiosity modeling', channel: 'Household co-presence' },
+}
+
+function DevelopmentInspector({ person, tick, variableDefinitions, onHookPerson, showInputs, onToggleInputs }: { person: PersonState; tick: number; variableDefinitions: readonly VariableDefinitionView[]; onHookPerson: (id: string) => void; showInputs: boolean; onToggleInputs: () => void }) {
+  const experience = person.development.lastExperience
+  const exposure = person.development.exposures[0]
+  const change = person.development.lastChange
+  const targetLabel = change ? variableDefinitions.find((definition) => definition.id === change.targetId)?.label ?? change.targetId : 'Curiosity'
+  const elapsedHours = exposure ? Math.max(0, Math.min(720, tick - exposure.windowStartTick + 1)) : 0
+  return <div className="development-inspector">
+    <section className="development-panel" aria-labelledby="recent-experience-heading">
+      <div className="section-heading"><h3 id="recent-experience-heading">Recent experience</h3><span>{experience ? `Ticks ${experience.startTick}–${experience.endTick}` : 'No completed window'}</span></div>
+      {experience ? <>
+        <div className="development-grid">
+          <Metric label="Type" value={DEVELOPMENT_EXPERIENCE_DISPLAY[experience.type].label} />
+          <Metric label="Channel" value={DEVELOPMENT_EXPERIENCE_DISPLAY[experience.type].channel} />
+          <Metric label="Household" value={experience.householdId} />
+          <Metric label="Home activity" value={experience.activityLocationId} />
+          <Metric label="Recipient hours" value={`${experience.recipientHours} person-hours`} />
+          <Metric label="Source hours" value={`${experience.sourceHours} person-hours`} />
+          <Metric label="Source mean" value={formatPermille(experience.sourceMeanPermille)} />
+          <Metric label="Exposure strength" value={formatPermille(experience.exposureStrengthPermille)} />
+        </div>
+        <DevelopmentSources ids={experience.sourcePersonIds} onHookPerson={onHookPerson} />
+      </> : <p>No completed developmental experience recorded.</p>}
+    </section>
+    <section className="development-panel" aria-labelledby="development-exposure-heading">
+      <div className="section-heading"><h3 id="development-exposure-heading">Developmental exposure</h3><span>{elapsedHours} / 720 hours</span></div>
+      {exposure && (exposure.recipientHours > 0 || exposure.sourceHours > 0) ? <>
+        <div className="exposure-progress" aria-label={`Exposure window ${elapsedHours} of 720 hours`}><i style={{ width: `${elapsedHours / 7.2}%` }} /></div>
+        <div className="development-grid">
+          <Metric label="Window starts" value={`Tick ${exposure.windowStartTick}`} />
+          <Metric label="Recipient hours" value={`${exposure.recipientHours} person-hours`} />
+          <Metric label="Source hours" value={`${exposure.sourceHours} person-hours`} />
+          <Metric label="Last co-presence" value={exposure.lastExposureTick === undefined ? 'None' : `Tick ${exposure.lastExposureTick}`} />
+        </div>
+        <DevelopmentSources ids={exposure.sourcePersonIds} onHookPerson={onHookPerson} />
+      </> : <p>No co-presence recorded in current window.</p>}
+    </section>
+    <section className="development-panel" aria-labelledby="development-change-heading">
+      <div className="section-heading"><h3 id="development-change-heading">Development change</h3><span>{change?.resolution ?? 'No applied change'}</span></div>
+      {change ? <>
+        <div className="development-change-summary"><strong>{targetLabel}</strong><span>{change.previousValue} → {change.currentValue} ({signed(change.appliedDelta)} permille)</span></div>
+        <div className="development-grid">
+          <Metric label="Age band" value={change.ageBand} />
+          <Metric label="Plasticity" value={`${change.plasticityPermille} permille / month`} />
+          <Metric label="Exposure strength" value={formatPermille(change.exposureStrengthPermille)} />
+          <Metric label="Application" value={`${change.resolution} · ${formatPermille(change.applicationProbabilityPermille)}`} />
+        </div>
+        <button className="development-disclosure" aria-expanded={showInputs} aria-controls="development-formula-inputs" onClick={onToggleInputs}>Contributors and formula inputs</button>
+        {showInputs && <div id="development-formula-inputs" className="formula-inputs">
+          <Metric label="Parent source value" value={`${change.sourceValuePermille} permille`} />
+          <Metric label="Source gap" value={`${signed(change.gapPermille)} permille`} />
+          <Metric label="Requested delta" value={`${signed(change.requestedDelta)} permille`} />
+          <Metric label="Applied delta" value={`${signed(change.appliedDelta)} permille`} />
+          <Metric label="Edge" value={change.edgeId} />
+          <Metric label="Experience" value={change.experienceId} />
+        </div>}
+      </> : <p>No developmental variable change recorded.</p>}
+    </section>
+  </div>
+}
+
+function DevelopmentSources({ ids, onHookPerson }: { ids: readonly string[]; onHookPerson: (id: string) => void }) {
+  return <div className="development-sources"><span>Source people ({ids.length})</span>{ids.length ? ids.map((id) => <button key={id} onClick={() => onHookPerson(id)} aria-label={`Hook development source ${id}`}>{id}</button>) : <small>None recorded</small>}</div>
+}
+
+function formatPermille(value: number): string { return `${(value / 10).toFixed(1)}% · ${value} permille` }
+function signed(value: number): string { return value > 0 ? `+${value}` : String(value) }
+
+function EventParticipants({ event, onInspect }: { event: SimulationEvent; onInspect: (id: string) => void }) {
+  const ids = ['personId', 'otherPersonId', 'personAId', 'personBId']
+    .map((key) => event.payload[key])
+    .filter((value): value is string => typeof value === 'string')
+    .filter((value, index, values) => values.indexOf(value) === index)
+  if (ids.length === 0) return formatPayload(event.payload)
+  const details = ['outcome', 'cellId', 'targetId', 'appliedDelta', 'recipientHours', 'sourceHours', 'probabilityPermille', 'exposureStrengthPermille']
+    .flatMap((key) => event.payload[key] === undefined ? [] : [`${key === 'probabilityPermille' ? 'probability' : key}: ${key === 'probabilityPermille' ? `${(Number(event.payload[key]) / 10).toFixed(1)}%` : String(event.payload[key])}`])
+  return <span className="event-participants">{ids.map((personId) => <button key={personId} className="event-person" onClick={() => onInspect(personId)} aria-label={`Inspect ${personId}`}>Inspect {personId}</button>)}{details.length > 0 && <small>{details.join(' · ')}</small>}</span>
 }
 
 function newestMetrics(samples: StatisticSample[]): Record<string, number> {
   const result: Record<string, number> = {}
   for (const sample of samples) if (result[sample.metricId] === undefined) result[sample.metricId] = sample.value
   return result
+}
+
+interface RelationshipView {
+  id: string
+  otherPersonId: string
+  familiarity: number
+  interactionFrequency: number
+  perspective: RelationshipPerspective
+}
+
+function relationshipViews(personId: string, relationships: RelationshipState[]): RelationshipView[] {
+  return relationships
+    .flatMap((relationship) => {
+      if (relationship.personAId === personId) return [{ id: relationship.id, otherPersonId: relationship.personBId, familiarity: relationship.familiarity, interactionFrequency: relationship.interactionFrequency, perspective: relationship.aToB }]
+      if (relationship.personBId === personId) return [{ id: relationship.id, otherPersonId: relationship.personAId, familiarity: relationship.familiarity, interactionFrequency: relationship.interactionFrequency, perspective: relationship.bToA }]
+      return []
+    })
+    .sort((first, second) => second.familiarity - first.familiarity || (first.otherPersonId < second.otherPersonId ? -1 : first.otherPersonId > second.otherPersonId ? 1 : 0))
+}
+
+function normalizedPercent(value: number): string { return `${(value / 10).toFixed(1)}%` }
+
+function scheduleLabel(scheduleId: PersonState['activityScheduleId']): string {
+  if (scheduleId === 'activity.schedule.child.v1') return 'Child daily schedule'
+  if (scheduleId === 'activity.schedule.adult.v1') return 'Adult daily schedule'
+  return scheduleId
+}
+
+interface HouseholdMemberView {
+  id: string
+  ageYears: number
+  role: 'Parent' | 'Child' | 'Member'
+}
+
+function householdMemberViews(person: PersonState, household: HouseholdState | undefined, links: readonly ParentChildLink[], people: readonly PersonState[]): HouseholdMemberView[] {
+  if (!household) return []
+  const peopleById = new Map(people.map((candidate) => [candidate.id, candidate]))
+  const parentIds = new Set(links.filter((link) => link.householdId === household.id && link.childId === person.id).map((link) => link.parentId))
+  const childIds = new Set(links.filter((link) => link.householdId === household.id && link.parentId === person.id).map((link) => link.childId))
+  return household.memberIds
+    .map((id): HouseholdMemberView | undefined => {
+      const member = peopleById.get(id)
+      if (!member) return undefined
+      return { id, ageYears: member.ageYears, role: parentIds.has(id) ? 'Parent' : childIds.has(id) ? 'Child' : 'Member' }
+    })
+    .filter((member): member is HouseholdMemberView => member !== undefined)
+    .sort((first, second) => roleRank(first.role) - roleRank(second.role) || first.id.localeCompare(second.id))
+}
+
+function roleRank(role: HouseholdMemberView['role']): number {
+  return role === 'Parent' ? 0 : role === 'Child' ? 1 : 2
+}
+
+function networkDensityPermille(projection?: WorldProjection): number {
+  const population = projection?.people.length ?? 0
+  const possible = population > 1 ? population * (population - 1) / 2 : 0
+  return possible ? Math.round((projection?.relationships.length ?? 0) * 1000 / possible) : 0
+}
+
+function averageFamiliarity(projection?: WorldProjection): number {
+  const relationships = projection?.relationships ?? []
+  return relationships.length ? Math.round(relationships.reduce((sum, relationship) => sum + relationship.familiarity, 0) / relationships.length) : 0
+}
+
+function variableValues(person: PersonState): Record<string, number> {
+  return Object.fromEntries(Object.entries(person.variables))
+}
+
+function contributionViews(contributions: readonly UtilityContribution[], definitions: readonly VariableDefinitionView[]): ContributionView[] {
+  const layerById = new Map(definitions.map((definition) => [definition.id, definition.layer]))
+  return contributions.map((contribution) => ({
+    value: contribution.value,
+    sourceId: contribution.sourceId,
+    sourceLayer: contribution.sourceId ? layerById.get(contribution.sourceId) : undefined,
+    kind: contribution.kind,
+    label: contribution.factor,
+  }))
+}
+
+function sourceLabel(sourceId: string | undefined, fallback: string | undefined, definitions: readonly VariableDefinitionView[]): string {
+  if (sourceId) return definitions.find((definition) => definition.id === sourceId)?.label ?? `Unknown source (${sourceId})`
+  return fallback || 'Unattributed source'
 }
 
 function formatPayload(payload: SimulationEvent['payload']): string {
@@ -319,9 +531,10 @@ function formatPayload(payload: SimulationEvent['payload']): string {
 
 function messageOf(reason: unknown): string { return reason instanceof Error ? reason.message : String(reason) }
 
-function averageHunger(people?: PersonState[]): string | number {
+function averageVariable(people: PersonState[] | undefined, variableId: string): string | number {
   if (!people?.length) return '—'
-  return Math.round(people.reduce((sum, person) => sum + person.hunger, 0) / people.length)
+  const values = people.map((person) => person.variables[variableId as keyof PersonState['variables']]).filter((value): value is number => typeof value === 'number')
+  return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : '—'
 }
 
 function totalFood(projection?: WorldProjection): string | number {

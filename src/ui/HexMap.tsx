@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { GeographicCell, HexGrid, PersonState } from '../simulation/domain/types'
+import type { ActivityLocationState, GeographicCell, HouseholdState, HexGrid, PersonState, RelationshipState } from '../simulation/domain/types'
 import { axialToPixel, pixelToAxial } from '../simulation/spatial/hex'
 import { fitWorld, populationMarkerRadius, renderLevel } from './mapViewport'
 
@@ -10,13 +10,18 @@ interface HexMapProps {
   overlay: MapOverlay
   selectedCellId?: string
   people: PersonState[]
+  relationships: RelationshipState[]
+  activityLocations: readonly ActivityLocationState[]
+  households: readonly HouseholdState[]
+  showActivityLocations: boolean
+  showHouseholds: boolean
   selectedPersonId?: string
   onSelect: (cell?: GeographicCell) => void
 }
 
 const HEX_SIZE = 18
 
-export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId, onSelect }: HexMapProps) {
+export function HexMap({ grid, overlay, selectedCellId, people, relationships, activityLocations, households, showActivityLocations, showHouseholds, selectedPersonId, onSelect }: HexMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState({ width: 0, height: 0, scale: 0.86, x: 34, y: 42 })
@@ -24,6 +29,7 @@ export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId
   const fittedGrid = useRef('')
   const level = useMemo(() => renderLevel(grid, viewport, HEX_SIZE), [grid, viewport])
   const populationCounts = useMemo(() => populationByRenderedCell(people, grid, level.stride), [grid, level.stride, people])
+  const cellsById = useMemo(() => new Map(grid.cells.map((cell) => [cell.id, cell])), [grid])
 
   useEffect(() => {
     const container = containerRef.current
@@ -66,9 +72,12 @@ export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId
       const selected = grid.cells.find((cell) => cell.id === selectedCellId)
       if (selected) drawCell(context, selected, overlay, true, HEX_SIZE, 1, populationCounts.get(selected.id) ?? 0)
     }
-    drawPopulation(context, people, grid, level.stride, selectedPersonId)
+    drawRelationshipNetwork(context, people, relationships, grid, selectedPersonId, viewport.scale)
+    drawPopulation(context, people, grid, level.stride, selectedPersonId, viewport.scale)
+    if (showActivityLocations) drawActivityLocations(context, activityLocations, cellsById, level.stride, selectedPersonId ? people.find((person) => person.id === selectedPersonId)?.currentActivity.locationId : undefined, viewport.scale)
+    if (showHouseholds) drawHouseholds(context, households, cellsById, level.stride, selectedPersonId ? people.find((person) => person.id === selectedPersonId)?.householdId : undefined, viewport.scale)
     context.restore()
-  }, [grid, level, overlay, people, populationCounts, selectedCellId, selectedPersonId, viewport])
+  }, [activityLocations, cellsById, grid, households, level, overlay, people, populationCounts, relationships, selectedCellId, selectedPersonId, showActivityLocations, showHouseholds, viewport])
 
   function pointToCell(clientX: number, clientY: number): GeographicCell | undefined {
     const bounds = canvasRef.current?.getBoundingClientRect()
@@ -85,6 +94,7 @@ export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId
       <canvas
         ref={canvasRef}
         aria-label="Hex world map"
+        data-map-viewport={`${viewport.x.toFixed(3)},${viewport.y.toFixed(3)},${viewport.scale.toFixed(5)}`}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId)
           drag.current = { x: event.clientX, y: event.clientY, originX: viewport.x, originY: viewport.y, moved: false }
@@ -121,7 +131,56 @@ export function HexMap({ grid, overlay, selectedCellId, people, selectedPersonId
   )
 }
 
-function drawPopulation(context: CanvasRenderingContext2D, people: PersonState[], grid: HexGrid, stride: number, selectedPersonId?: string): void {
+function drawActivityLocations(context: CanvasRenderingContext2D, locations: readonly ActivityLocationState[], cellsById: ReadonlyMap<string, GeographicCell>, stride: number, selectedLocationId: string | null | undefined, viewportScale: number): void {
+  const visible = stride > 1
+    ? aggregateLocationCells(locations.map((location) => ({ cellId: location.cellId, selected: location.id === selectedLocationId })), cellsById, stride)
+    : locations.map((location) => ({ cellId: location.cellId, count: 1, selected: location.id === selectedLocationId }))
+  for (const marker of visible) {
+    const cell = cellsById.get(marker.cellId)
+    if (!cell) continue
+    const { x, y } = axialToPixel(cell, HEX_SIZE)
+    const radius = screenRadius(marker.selected ? 5.5 : Math.min(4.2, 2.1 + marker.count * .25), viewportScale, marker.selected ? 4 : 2, marker.selected ? 7 : 4)
+    context.beginPath()
+    context.rect(x - radius, y - radius, radius * 2, radius * 2)
+    context.fillStyle = marker.selected ? 'rgba(120, 215, 255, .95)' : 'rgba(104, 185, 210, .7)'
+    context.fill()
+    if (marker.selected) { context.strokeStyle = '#e5fbff'; context.lineWidth = 1.1 / viewportScale; context.stroke() }
+  }
+}
+
+function drawHouseholds(context: CanvasRenderingContext2D, households: readonly HouseholdState[], cellsById: ReadonlyMap<string, GeographicCell>, stride: number, selectedHouseholdId: string | undefined, viewportScale: number): void {
+  const visible = stride > 1
+    ? aggregateLocationCells(households.map((household) => ({ cellId: household.homeCellId, selected: household.id === selectedHouseholdId })), cellsById, stride)
+    : households.map((household) => ({ cellId: household.homeCellId, count: household.memberIds.length, selected: household.id === selectedHouseholdId }))
+  for (const marker of visible) {
+    const cell = cellsById.get(marker.cellId)
+    if (!cell) continue
+    const { x, y } = axialToPixel(cell, HEX_SIZE)
+    const radius = screenRadius(marker.selected ? 6 : Math.min(4.5, 2.2 + marker.count * .2), viewportScale, marker.selected ? 4 : 2, marker.selected ? 7 : 4)
+    context.beginPath()
+    context.moveTo(x, y - radius)
+    context.lineTo(x + radius, y + radius)
+    context.lineTo(x - radius, y + radius)
+    context.closePath()
+    context.fillStyle = marker.selected ? 'rgba(255, 225, 126, .95)' : 'rgba(226, 172, 83, .72)'
+    context.fill()
+    if (marker.selected) { context.strokeStyle = '#fff0bb'; context.lineWidth = 1.1 / viewportScale; context.stroke() }
+  }
+}
+
+function aggregateLocationCells(entries: readonly { cellId: string; selected: boolean }[], cellsById: ReadonlyMap<string, GeographicCell>, stride: number): { cellId: string; count: number; selected: boolean }[] {
+  const counts = new Map<string, { count: number; selected: boolean }>()
+  for (const entry of entries) {
+    const cell = cellsById.get(entry.cellId)
+    if (!cell) continue
+    const id = `${Math.floor(cell.q / stride) * stride},${Math.floor(cell.r / stride) * stride}`
+    const existing = counts.get(id)
+    counts.set(id, { count: (existing?.count ?? 0) + 1, selected: (existing?.selected ?? false) || entry.selected })
+  }
+  return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([cellId, value]) => ({ cellId, ...value }))
+}
+
+function drawPopulation(context: CanvasRenderingContext2D, people: PersonState[], grid: HexGrid, stride: number, selectedPersonId?: string, viewportScale = 1): void {
   if (stride > 1) {
     const groups = new Map<string, { q: number; r: number; count: number }>()
     for (const person of people) {
@@ -137,10 +196,11 @@ function drawPopulation(context: CanvasRenderingContext2D, people: PersonState[]
     for (const group of groups.values()) {
       const { x, y } = axialToPixel(group, HEX_SIZE)
       context.beginPath()
-      context.arc(x, y, populationMarkerRadius(group.count, stride), 0, Math.PI * 2)
+      context.arc(x, y, screenRadius(populationMarkerRadius(group.count, stride), viewportScale, 2, 8), 0, Math.PI * 2)
       context.fillStyle = 'rgba(241, 210, 111, .58)'
       context.fill()
     }
+    drawSelectedMarker(context, people, grid, selectedPersonId, viewportScale)
     return
   }
 
@@ -155,15 +215,60 @@ function drawPopulation(context: CanvasRenderingContext2D, people: PersonState[]
     const distance = Math.min(8, 2 + Math.sqrt(index) * 2.2)
     const selected = person.id === selectedPersonId
     context.beginPath()
-    context.arc(center.x + Math.cos(angle) * distance, center.y + Math.sin(angle) * distance, populationMarkerRadius(1, 1, selected), 0, Math.PI * 2)
+    context.arc(center.x + Math.cos(angle) * distance, center.y + Math.sin(angle) * distance, screenRadius(populationMarkerRadius(1, 1, selected), viewportScale, selected ? 4 : 2, selected ? 7 : 4), 0, Math.PI * 2)
     context.fillStyle = selected ? '#fff2ad' : 'rgba(238, 197, 82, .86)'
     context.fill()
     if (selected) {
       context.strokeStyle = '#362b12'
-      context.lineWidth = 1.2
+      context.lineWidth = 1.2 / viewportScale
       context.stroke()
     }
   }
+
+}
+
+function drawSelectedMarker(context: CanvasRenderingContext2D, people: PersonState[], grid: HexGrid, selectedPersonId: string | undefined, viewportScale: number): void {
+  if (!selectedPersonId) return
+  const selected = people.find((person) => person.id === selectedPersonId)
+  const cell = selected ? cellForPerson(selected, grid) : undefined
+  if (!cell) return
+  const center = axialToPixel(cell, HEX_SIZE)
+  context.beginPath()
+  context.arc(center.x, center.y, screenRadius(4.5, viewportScale, 5, 8), 0, Math.PI * 2)
+  context.fillStyle = '#fff2ad'
+  context.fill()
+  context.strokeStyle = '#362b12'
+  context.lineWidth = 1.4 / viewportScale
+  context.stroke()
+}
+
+function drawRelationshipNetwork(context: CanvasRenderingContext2D, people: PersonState[], relationships: RelationshipState[], grid: HexGrid, selectedPersonId: string | undefined, viewportScale: number): void {
+  if (!selectedPersonId) return
+  const selected = people.find((person) => person.id === selectedPersonId)
+  const selectedCell = selected ? cellForPerson(selected, grid) : undefined
+  if (!selectedCell) return
+  const peopleById = new Map(people.map((person) => [person.id, person]))
+  const origin = axialToPixel(selectedCell, HEX_SIZE)
+  const directRelationships = relationships
+    .filter((relationship) => relationship.personAId === selectedPersonId || relationship.personBId === selectedPersonId)
+    .sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
+  for (const relationship of directRelationships) {
+    const otherId = relationship.personAId === selectedPersonId ? relationship.personBId : relationship.personAId
+    const other = peopleById.get(otherId)
+    const otherCell = other ? cellForPerson(other, grid) : undefined
+    if (!otherCell) continue
+    const destination = axialToPixel(otherCell, HEX_SIZE)
+    context.beginPath()
+    context.moveTo(origin.x, origin.y)
+    context.lineTo(destination.x, destination.y)
+    context.strokeStyle = `rgba(119, 207, 170, ${0.26 + relationship.familiarity / 2000})`
+    context.lineWidth = screenRadius(1.1 + relationship.familiarity / 1000, viewportScale, 0.7, 2.2)
+    context.stroke()
+  }
+}
+
+function screenRadius(worldRadius: number, viewportScale: number, minimumPixels: number, maximumPixels: number): number {
+  return Math.max(minimumPixels, Math.min(maximumPixels, worldRadius * viewportScale)) / Math.max(viewportScale, 0.001)
 }
 
 function cellForPerson(person: PersonState, grid: HexGrid): GeographicCell | undefined {
