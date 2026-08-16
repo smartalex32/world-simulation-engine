@@ -1,12 +1,12 @@
-import type { SnapshotEnvelope } from '../simulation/domain/types'
-import { requestId, type SimulationCommand, type SimulationResponse } from './protocol'
+import type { MapProjectionRequest } from '../projection'
+import { requestId, type SimulationCommand, type SimulationResponse, type WorkbenchSnapshotEnvelope } from './protocol'
 
 type Listener = (response: SimulationResponse) => void
 
 export class SimulationWorkerClient {
   private readonly worker = new Worker(new URL('./simulation.worker.ts', import.meta.url), { type: 'module' })
   private readonly listeners = new Set<Listener>()
-  private readonly pendingSnapshots = new Map<string, { resolve: (snapshot: SnapshotEnvelope) => void; reject: (error: Error) => void }>()
+  private readonly pendingSnapshots = new Map<string, { resolve: (snapshot: WorkbenchSnapshotEnvelope) => void; reject: (error: Error) => void }>()
   private ready = false
 
   constructor() {
@@ -44,14 +44,15 @@ export class SimulationWorkerClient {
   }
 
   create(seed: string): void { this.send({ type: 'CREATE_RUN', requestId: requestId(), seed }) }
-  load(snapshot: SnapshotEnvelope): void { this.send({ type: 'LOAD_RUN', requestId: requestId(), snapshot }) }
+  load(snapshot: WorkbenchSnapshotEnvelope): void { this.send({ type: 'LOAD_RUN', requestId: requestId(), snapshot }) }
   step(count = 1): void { this.send({ type: 'STEP', requestId: requestId(), count }) }
   play(ticksPerBatch: number): void { this.send({ type: 'PLAY', requestId: requestId(), ticksPerBatch }) }
   pause(): void { this.send({ type: 'PAUSE', requestId: requestId() }) }
   setSpeed(ticksPerBatch: number): void { this.send({ type: 'SET_SPEED', requestId: requestId(), ticksPerBatch }) }
+  setViewport(viewport: MapProjectionRequest): void { this.send({ type: 'SET_VIEWPORT', requestId: requestId(), viewport }) }
   reset(): void { this.send({ type: 'RESET', requestId: requestId() }) }
 
-  snapshot(): Promise<SnapshotEnvelope> {
+  snapshot(): Promise<WorkbenchSnapshotEnvelope> {
     const id = requestId()
     return new Promise((resolve, reject) => {
       this.pendingSnapshots.set(id, { resolve, reject })

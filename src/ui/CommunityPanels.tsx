@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import type { CommunitySimulationState, CommunityVariableDefinition, CommunityVariableId } from '../simulation/community/types'
+import type { CommunityVariableDefinition, CommunityVariableId } from '../simulation/community/types'
+import type { ProjectedCommunityState } from '../projection'
 
 interface CommunitySignalsProps {
-  communities: readonly CommunitySimulationState[]
+  communities: readonly ProjectedCommunityState[]
   definitions: readonly CommunityVariableDefinition[]
   selectedMeasureId: CommunityVariableId
   onSelectMeasure: (id: CommunityVariableId) => void
@@ -19,7 +20,7 @@ export function CommunitySignals({ communities, definitions, selectedMeasureId, 
     </select></label>
     <div className="community-signal-list">
       {communities.map((community) => <article className="community-signal-card" key={community.catchment.id} data-community-id={community.catchment.id}>
-        <div className="community-card-heading"><div><strong>{community.catchment.displayName}</strong><small>{community.catchment.cellIds.length} cells</small></div><button onClick={() => onInspect(community.catchment.id)} aria-label={`Inspect ${community.catchment.displayName} community`}>Inspect</button></div>
+        <div className="community-card-heading"><div><strong>{community.catchment.displayName}</strong><small>{community.catchment.cellCount} cells</small></div><button onClick={() => onInspect(community.catchment.id)} aria-label={`Inspect ${community.catchment.displayName} community`}>Inspect</button></div>
         <div className="community-compact-values">
           {emergent.map((definition) => <button key={definition.id} className={selectedMeasureId === definition.id ? 'active' : ''} onClick={() => onSelectMeasure(definition.id)} aria-label={`Show ${definition.label} for ${community.catchment.displayName} on map`}><span>{definition.label}</span><strong>{formatPermille(community.emergent[definition.id as keyof typeof community.emergent])}</strong></button>)}
         </div>
@@ -30,7 +31,7 @@ export function CommunitySignals({ communities, definitions, selectedMeasureId, 
 }
 
 interface CommunityInspectorProps {
-  community: CommunitySimulationState
+  community: ProjectedCommunityState
   definitions: readonly CommunityVariableDefinition[]
   hasHookedPerson: boolean
   onReturnToPerson: () => void
@@ -44,7 +45,7 @@ export function CommunityInspector({ community, definitions, hasHookedPerson, on
     {hasHookedPerson && <div className="tracking-row community-return"><span><i />Person remains hooked</span><button className="back-button" onClick={onReturnToPerson}>Return to hooked person</button></div>}
     <div className="inspector-grid">
       <Metric label="Community ID" value={community.catchment.id} mono />
-      <Metric label="Geographic scope" value={`${community.catchment.cellIds.length} catchment cells`} />
+      <Metric label="Geographic scope" value={`${community.catchment.cellCount} catchment cells`} />
       <Metric label="Anchor cell" value={community.catchment.anchorCellId} mono />
       <Metric label="Latest update" value={`Tick ${community.lastUpdatedTick}`} />
       <Metric label="Evidence window" value={window ? `Ticks ${window.start}–${window.end}` : 'No completed window'} />
@@ -61,7 +62,7 @@ export function CommunityInspector({ community, definitions, hasHookedPerson, on
   </div>
 }
 
-function CommunityMeasureCard({ community, definition, value }: { community: CommunitySimulationState; definition: CommunityVariableDefinition; value: number }) {
+function CommunityMeasureCard({ community, definition, value }: { community: ProjectedCommunityState; definition: CommunityVariableDefinition; value: number }) {
   const [expanded, setExpanded] = useState(false)
   const trace = community.latestTraces.find((candidate) => candidate.variableId === definition.id)
   const controlId = `community-trace-${safeId(community.catchment.id)}-${safeId(definition.id)}`
@@ -93,7 +94,7 @@ function orderedDefinitions(definitions: readonly CommunityVariableDefinition[],
   return definitions.filter((definition) => definition.layer === layer).sort((first, second) => first.order - second.order || first.id.localeCompare(second.id))
 }
 
-function latestWindow(community: CommunitySimulationState): { start: number; end: number } | undefined {
+function latestWindow(community: ProjectedCommunityState): { start: number; end: number } | undefined {
   const trace = community.latestTraces[0]
   return trace ? { start: trace.windowStartTick, end: trace.windowEndTick } : undefined
 }

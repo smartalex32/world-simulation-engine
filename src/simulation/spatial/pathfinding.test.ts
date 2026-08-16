@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GeographicCell, HexGrid } from '../domain/types'
-import { findPath } from './pathfinding'
+import { findPath, findPathDetailed } from './pathfinding'
 
 function cell(id: string, q: number, r: number, movementCost: number): GeographicCell {
   return { id, q, r, terrain: movementCost === 0 ? 'water' : movementCost > 1000 ? 'hill' : 'plain', elevation: 100, habitability: movementCost ? 500 : 0, movementCost, resourceCapacity: 10, foodAmount: 10, foodRegenerationPerDay: 1 }
@@ -25,5 +25,9 @@ describe('weighted hex pathfinding', () => {
     const goal = blocked.cells.find((entry) => entry.id === '2,0')
     if (goal) goal.movementCost = 0
     expect(findPath(blocked, '0,0', '2,0')).toBeUndefined()
+  })
+
+  it('reports a bounded search honestly when its expansion budget is exhausted', () => {
+    expect(findPathDetailed(grid, '0,0', '2,0', { maxExpansions: 1 })).toEqual({ truncated: true })
   })
 })

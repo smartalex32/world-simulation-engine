@@ -34,7 +34,7 @@ When code and a design document differ, do not silently choose one. Preserve cur
 - One-hour base ticks, PCG32 random streams, snapshot schemas, registry versions, engine versions, and canonical state digests.
 - Engine `0.8.0`, snapshot schema `8`, variable-registry version `1`, influence-registry version `1`, household-model version `1`, activity-registry version `1`, development-registry version `1`, and community-registry version `1`; schema-7 snapshots are rejected rather than migrated.
 
-Milestones 0–6 are implemented. In addition to the deterministic engine, spatial behavior, relationships, variable/influence registries, households, activities, exposure, experiences, and development, the repository now provides deterministic geographic catchments, bounded daily community evidence, five emergent measures, structural food security, contributor traces, scoped telemetry, and opportunity-gated community feedback.
+Milestones 0–7 are implemented. In addition to the deterministic engine, spatial behavior, relationships, variable/influence registries, households, activities, exposure, experiences, development, and community feedback, the repository now provides a bounded viewport projection protocol, aligned geographic aggregation, level-of-detail rendering, screen-bounded markers, responsive worker tick quanta, and hook-preserving large-world inspection.
 
 ## Non-Negotiable Contracts
 
@@ -63,6 +63,7 @@ Keep these responsibilities separable:
 - `simulation/relationships`: co-location encounter resolution, multi-dimensional relationship state, and scheduled frequency decay.
 - `simulation/development`: age-dependent plasticity and deterministic, explainable curiosity changes from structured experiences.
 - `simulation/community`: geographic catchments, daily evidence, emergent measures, structural conditions, aggregation traces, and sparse community feedback.
+- `projection`: non-authoritative viewport requests, workbench transport projections, aligned aggregate regions, marker budgets, spatial indexes, and bounded inspection summaries.
 - `worker`: engine ownership and typed command/projection transport.
 - `persistence`: snapshots, meaningful events, sampled statistics, imports, exports, and migrations.
 - `ui`: visualization, controls, inspectors, overlays, and diagnostics.
@@ -127,13 +128,15 @@ Schema-5 snapshots are explicitly rejected rather than migrated. Person-array or
 - Community processing adds no RNG stream. Schema 7 is rejected rather than migrated.
 - Conflict is a tense-encounter/fear/food-insecurity proxy, not violence. Cooperation is a successful-social-interaction/trust/socialize-uptake proxy, not resource transfer. Institutions, prestige weighting, overlapping communities, and community-to-child development remain deferred.
 
-### Milestone 7 — Large-World Rendering and Simulation Scale
+### Milestone 7 — Large-World Rendering and Simulation Scale (Implemented)
 
-- Add level-of-detail rendering: local hexes, regional aggregation, then continuous world-scale geography without visible hexes.
-- Keep agent markers bounded in screen space; aggregate or hide them at distant zoom levels.
-- Preserve a hooked person’s highlight and live inspector data without forcing camera follow.
-- Add viewport culling, chunked spatial data, cached aggregate overlays, and worker projection budgets as demonstrated needs arise.
-- Separate visualization cadence from simulation cadence and support fast-forward without rendering every tick.
+- Projection protocol `1` removes full grids, all commons locations, and catchment cell-ID arrays from worker frames. The current population-sized person/social arrays remain temporarily for inspector compatibility.
+- Viewport requests produce at most 4,096 exact cells or aligned regions, 1,500 population markers, 750 activity markers, 750 household markers, and 250 selected-person relationship segments.
+- Local detail uses exact cells and fades outlines below seven projected pixels. Regional/world views use deterministic aggregate values and shared-edge axial polygons with no hex outlines.
+- People and annotations aggregate without losing counts. Markers stay bounded in screen space; a hooked person remains live and highlighted when visible, reports offscreen status, and never changes the camera.
+- Worker advancement yields after at most 24 ticks, while render frames are independently throttled and telemetry is flushed without loss. Viewport revisions/caches remain outside simulation state and digests; a versioned worker continuation stored outside canonical state/digest preserves partially completed logical batches across save/load.
+- The renderer can fit and request bounded data for an 8,192×8,192 world descriptor. Authoritative dense-grid storage, population paging/cohorts, dirty chunk deltas, and OffscreenCanvas remain deferred scaling limits.
+- This milestone does not change simulation rules, RNG, engine `0.8.0`, or snapshot schema `8`.
 
 ### Milestone 8 — World Creation Tools
 
