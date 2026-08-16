@@ -1,5 +1,7 @@
-import type { SimulationEvent, SnapshotEnvelope, StatisticSample } from '../simulation/domain/types'
+import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
 import { validateSnapshot } from '../simulation/serialization/snapshot'
+import { validateWorkerContinuation } from '../worker/frameScheduler'
+import type { WorkbenchSnapshotEnvelope } from '../worker/protocol'
 
 const DATABASE_NAME = 'world-simulation-workbench'
 const DATABASE_VERSION = 1
@@ -19,7 +21,7 @@ export interface SavedSnapshot {
   kind: 'autosave' | 'named'
   name: string
   createdAt: string
-  snapshot: SnapshotEnvelope
+  snapshot: WorkbenchSnapshotEnvelope
 }
 
 interface StoredEvent extends SimulationEvent { storageKey: string }
@@ -29,7 +31,7 @@ export interface ExportBundle {
   format: 'world-simulation-bundle'
   bundleVersion: 1
   exportedAt: string
-  snapshot: SnapshotEnvelope
+  snapshot: WorkbenchSnapshotEnvelope
   events: SimulationEvent[]
   statistics: StatisticSample[]
 }
@@ -37,7 +39,7 @@ export interface ExportBundle {
 export class WorkbenchDatabase {
   private databasePromise?: Promise<IDBDatabase>
 
-  async saveSnapshot(snapshot: SnapshotEnvelope, kind: 'autosave' | 'named', name?: string): Promise<SavedSnapshot> {
+  async saveSnapshot(snapshot: WorkbenchSnapshotEnvelope, kind: 'autosave' | 'named', name?: string): Promise<SavedSnapshot> {
     const database = await this.open()
     const now = new Date().toISOString()
     const key = kind === 'autosave' ? `${snapshot.state.runId}:autosave` : `${snapshot.state.runId}:named:${crypto.randomUUID()}`
@@ -100,7 +102,7 @@ export class WorkbenchDatabase {
     await transactionDone(transaction)
   }
 
-  async exportBundle(snapshot: SnapshotEnvelope): Promise<ExportBundle> {
+  async exportBundle(snapshot: WorkbenchSnapshotEnvelope): Promise<ExportBundle> {
     const database = await this.open()
     const events = await request<StoredEvent[]>(database.transaction('events').objectStore('events').index('runId').getAll(snapshot.state.runId))
     const statistics = await request<StoredStatistic[]>(database.transaction('statistics').objectStore('statistics').index('runId').getAll(snapshot.state.runId))
@@ -118,7 +120,9 @@ export class WorkbenchDatabase {
     if (!value || typeof value !== 'object') throw new Error('Import is not an object')
     const bundle = value as Partial<ExportBundle>
     if (bundle.format !== 'world-simulation-bundle' || bundle.bundleVersion !== 1 || !bundle.snapshot) throw new Error('Unsupported import bundle')
-    const snapshot = await validateSnapshot(bundle.snapshot)
+    const validated = await validateSnapshot(bundle.snapshot)
+    const workerContinuation = validateWorkerContinuation((bundle.snapshot as WorkbenchSnapshotEnvelope).workerContinuation)
+    const snapshot: WorkbenchSnapshotEnvelope = workerContinuation ? { ...validated, workerContinuation } : validated
     const events = Array.isArray(bundle.events) ? bundle.events : []
     const statistics = Array.isArray(bundle.statistics) ? bundle.statistics : []
     await this.appendTelemetry(events, statistics)

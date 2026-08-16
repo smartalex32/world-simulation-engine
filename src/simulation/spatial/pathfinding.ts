@@ -6,26 +6,45 @@ export interface PathResult {
   totalCost: number
 }
 
+export interface PathSearchResult {
+  path?: PathResult
+  truncated: boolean
+}
+
+export interface PathSearchOptions {
+  cellById?: ReadonlyMap<string, HexGrid['cells'][number]>
+  maxExpansions?: number
+}
+
 export function findPath(grid: HexGrid, startCellId: string, goalCellId: string): PathResult | undefined {
-  const cells = new Map(grid.cells.map((cell) => [cell.id, cell]))
+  return findPathDetailed(grid, startCellId, goalCellId).path
+}
+
+export function findPathDetailed(grid: HexGrid, startCellId: string, goalCellId: string, options: PathSearchOptions = {}): PathSearchResult {
+  const cells = options.cellById ?? new Map(grid.cells.map((cell) => [cell.id, cell]))
+  const maxExpansions = options.maxExpansions ?? Number.POSITIVE_INFINITY
+  if (!(maxExpansions === Number.POSITIVE_INFINITY || (Number.isSafeInteger(maxExpansions) && maxExpansions >= 1))) throw new RangeError('Path expansion limit must be a positive safe integer')
   const start = cells.get(startCellId)
   const goal = cells.get(goalCellId)
-  if (!start || !goal || !start.movementCost || !goal.movementCost) return undefined
-  if (start.id === goal.id) return { cellIds: [start.id], totalCost: 0 }
+  if (!start || !goal || !start.movementCost || !goal.movementCost) return { truncated: false }
+  if (start.id === goal.id) return { path: { cellIds: [start.id], totalCost: 0 }, truncated: false }
 
   const open = new Set([start.id])
   const cameFrom = new Map<string, string>()
   const costs = new Map<string, number>([[start.id, 0]])
   const estimates = new Map<string, number>([[start.id, hexDistance(start, goal) * 1000]])
 
+  let expansions = 0
   while (open.size > 0) {
+    if (expansions >= maxExpansions) return { truncated: true }
     const currentId = [...open].sort((a, b) => {
       const difference = (estimates.get(a) ?? Number.POSITIVE_INFINITY) - (estimates.get(b) ?? Number.POSITIVE_INFINITY)
       return difference || (a < b ? -1 : a > b ? 1 : 0)
     })[0]
     if (!currentId) break
-    if (currentId === goal.id) return reconstructPath(cameFrom, costs, currentId)
+    if (currentId === goal.id) return { path: reconstructPath(cameFrom, costs, currentId), truncated: false }
     open.delete(currentId)
+    expansions += 1
     const current = cells.get(currentId)
     if (!current) continue
     const neighbors = hexNeighbors(current)
@@ -41,7 +60,7 @@ export function findPath(grid: HexGrid, startCellId: string, goalCellId: string)
       open.add(neighbor.id)
     }
   }
-  return undefined
+  return { truncated: false }
 }
 
 function reconstructPath(cameFrom: Map<string, string>, costs: Map<string, number>, goalId: string): PathResult {
