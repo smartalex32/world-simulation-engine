@@ -1,93 +1,904 @@
-# World Simulation Workbench
+# World Simulation Engine
 
-A local-first, spatial simulation workbench. Milestones 0–2 established the deterministic spatial engine, explainable stochastic behavior, consumable resources, and terrain-aware travel. Milestones 3–6 added relationships, namespaced variables and sparse influences, household exposure and development, and geographically derived community feedback. Milestone 7 added bounded large-world rendering. Milestone 8A adds reproducible world creation with authored scale, population, placement zones, and settlements.
+A spatial, stochastic, agent-based world simulator focused on explainable behavior, reproducible execution, and emergent social conditions.
 
-## Run locally
+The project models a world from individual behavior upward:
 
-```powershell
-pnpm install
-pnpm dev
+```text
+geography and environment
+  -> individual exposure and experience
+  -> probabilistic behavior and development
+  -> social interaction
+  -> emergent community conditions
+  -> new exposure for current and future people
 ```
 
-Production and verification commands:
+The simulation is intentionally developed through small vertical slices. Current systems focus on deterministic execution, spatial behavior, individual decisions, relationships, household activity, developmental exposure, community feedback, scalable visualization, and reproducible world creation.
+
+Generative AI is not part of authoritative simulation behavior.
+
+---
+
+# Current Status
+
+Implemented milestones:
+
+- Milestone 0 — Deterministic Simulation Core
+- Milestone 1 — Spatial World and Movement
+- Milestone 2 — Agent Decisions and Actions
+- Milestone 3 — Social Encounters and Relationships
+- Milestone 4 — Variable, Trait, and Influence Registries
+- Milestone 5A — Activities and Household Topology
+- Milestone 5B — Exposure, Experiences, and Development
+- Milestone 6 — Emergent Community Feedback
+- Milestone 7 — Large-World Rendering and Simulation Scale
+- Milestone 8A — Reproducible World Creation
+
+Current next milestone:
+
+- Milestone 8B — Draft Map Authoring
+
+See `ROADMAP.md` for planned sequencing and future systems.
+
+---
+
+# Technology Stack
+
+## Frontend
+
+- React 19
+- TypeScript
+- Vite
+
+## Simulation Runtime
+
+- DOM-free TypeScript simulation engine
+- Dedicated Web Worker ownership
+- Fixed one-hour base simulation ticks
+- Seeded PCG32 random streams
+- Integer/fixed-point authoritative calculations where appropriate
+
+## Persistence
+
+- IndexedDB
+- Versioned snapshot schemas
+- Versioned simulation/model contracts
+- Import/export support
+- Explicit compatibility validation
+
+## Testing
+
+- Vitest
+- Playwright
+- Chromium
+- Firefox
+- WebKit
+
+---
+
+# Repository Structure
+
+The exact internal structure may evolve, but the major architectural responsibilities are:
+
+```text
+src/
+├── simulation/
+│   ├── domain/
+│   ├── rng/
+│   ├── spatial/
+│   ├── agents/
+│   ├── variables/
+│   ├── influences/
+│   ├── exposure/
+│   ├── relationships/
+│   ├── development/
+│   └── community/
+├── worker/
+├── persistence/
+├── ui/
+├── projection/
+└── App.tsx
+
+docs/
+└── TRAIT_AND_INFLUENCE_SYSTEM.md
+
+AGENTS.md
+README.md
+ROADMAP.md
+```
+
+Some projection functionality may currently live near UI or worker code while boundaries continue to mature.
+
+---
+
+# Architectural Model
+
+The simulator separates authoritative state from presentation.
+
+```text
+UI
+ │
+ │ commands / viewport requests
+ ▼
+Worker
+ │
+ │ owns
+ ▼
+Simulation Engine
+ │
+ ├── authoritative world state
+ ├── RNG streams
+ ├── people
+ ├── relationships
+ ├── households
+ ├── activities
+ ├── variables
+ ├── exposures
+ ├── development
+ └── community conditions
+
+Worker
+ │
+ │ bounded projections
+ ▼
+UI
+```
+
+The UI never directly mutates authoritative simulation state.
+
+Rendering and simulation fidelity are separate concerns.
+
+---
+
+# Reproducibility Model
+
+The simulation is designed so that identical inputs produce identical canonical results.
+
+A run is defined by inputs including:
+
+- Initial state
+- User configuration
+- Seed
+- Engine version
+- Snapshot schema version
+- World-generator version
+- Registry/model versions
+
+Simulation randomness is centralized into named seeded RNG streams.
+
+Authoritative simulation code must not use:
+
+```ts
+Math.random()
+```
+
+or wall-clock time to determine outcomes.
+
+RNG state is serialized where required so loading a snapshot can continue the same simulation sequence.
+
+---
+
+# Canonical State
+
+Authoritative simulation state includes the state necessary to continue the simulation reproducibly.
+
+Examples include:
+
+- World state
+- People
+- Person variables
+- Household topology
+- Activity state
+- Relationships
+- Exposure windows
+- Development state
+- Community state
+- RNG state
+- Engine/model version information
+
+Presentation-only state is intentionally excluded from canonical simulation output.
+
+Examples include:
+
+- Camera position
+- Viewport cache
+- Level-of-detail selections
+- Render throttling state
+- Marker layout
+- UI selections that do not affect simulation behavior
+
+Canonical state digests are used to verify deterministic behavior.
+
+---
+
+# Time Model
+
+The base simulation cadence is one hour per tick.
+
+Higher-level systems may operate at larger deterministic intervals.
+
+Examples include:
+
+- Hourly needs and activity behavior
+- Encounter behavior driven by co-location
+- Exposure accumulation across hours
+- Multi-day or monthly exposure windows
+- Daily community aggregation
+- Age-dependent development
+
+Higher-level cadence must derive from simulation ticks rather than wall-clock time.
+
+---
+
+# Spatial World
+
+The world uses hex-based spatial geography.
+
+Current capabilities include:
+
+- Axial coordinates
+- Passability
+- Neighborhood queries
+- Spatial distance
+- Activity locations
+- Household homes
+- Settlements
+- Geographic community catchments
+- World-scale projections
+- Level-of-detail aggregation
+
+The authoritative world remains spatial even when the UI renders aggregated regions.
+
+---
+
+# People and Variables
+
+Person state uses typed, namespaced variables.
+
+The initial trait registry includes:
+
+- Curiosity
+- Risk tolerance
+- Sociability
+- Trust propensity
+- Conformity
+- Persistence
+
+Short-term state includes:
+
+- Hunger
+- Fatigue
+
+Needs include:
+
+- Social connection
+
+These categories remain semantically distinct even when they use related registry/storage infrastructure.
+
+Values are represented with bounded integer permille units where applicable.
+
+---
+
+# Influence System
+
+Behavioral and developmental effects use a sparse influence graph.
+
+Influences are modeled as explicit typed edges rather than an all-to-all trait matrix.
+
+An influence edge can define relationships such as:
+
+```text
+person.trait.curiosity
+    -> exploration action utility
+```
+
+or:
+
+```text
+community.innovationClimate
+    -> exploration opportunity utility
+```
+
+The influence system preserves metadata used for explanation traces.
+
+See:
+
+```text
+docs/TRAIT_AND_INFLUENCE_SYSTEM.md
+```
+
+for the detailed target model.
+
+---
+
+# Agent Decisions
+
+People are presented with context-dependent action opportunities.
+
+The general decision pipeline is:
+
+```text
+current person state
+  + location/context
+  + available opportunities
+  + relationships
+  + sparse influences
+  -> action utility
+  -> probability
+  -> seeded selection
+  -> execution
+```
+
+Probabilistic behavior remains reproducible because all random selection uses named deterministic RNG streams.
+
+Important action evaluations preserve structured explanation data.
+
+---
+
+# Relationships and Encounters
+
+Social encounters are derived from spatial co-location rather than global pairwise comparison.
+
+Relationship dimensions may include:
+
+- Familiarity
+- Interaction frequency
+- Affection
+- Trust
+- Respect
+- Fear
+
+These dimensions remain independent rather than being compressed into one generic relationship score.
+
+Relationship state can influence future interactions.
+
+Encounter processing is spatially bounded to avoid global O(N²) comparisons.
+
+---
+
+# Households
+
+Household topology is modeled independently from social relationship state.
+
+Current household behavior includes:
+
+- Household membership
+- Parent-child links
+- Home locations
+- Adult and child roles
+- Variable household generation
+- Activity schedules
+
+A parent-child relationship in household topology is not automatically equivalent to social affection, trust, or another relationship dimension.
+
+---
+
+# Activities
+
+People follow versioned activity patterns that can place them at:
+
+- Home
+- Commons/activity locations
+- Travel states
+- Other supported locations
+
+Activity determines where people physically spend time and therefore affects:
+
+- Encounters
+- Exposure
+- Needs
+- Statistics
+- Future behavior
+
+Physical co-presence is preferred over abstract membership when determining social exposure.
+
+---
+
+# Exposure and Experience
+
+The first implemented developmental exposure model concerns parent-child curiosity modeling.
+
+Exposure depends on actual qualifying co-presence.
+
+The current mechanism tracks evidence such as:
+
+- Recipient exposure hours
+- Source hours
+- Weighted source values
+- Source identifiers
+
+Completed exposure windows produce structured experiences.
+
+Experiences are distinct from permanent person traits.
+
+---
+
+# Development
+
+Structured experiences can produce deterministic developmental changes.
+
+The first implemented developmental relationship is:
+
+```text
+parent curiosity exposure
+  -> curiosity development
+```
+
+Development accounts for:
+
+- Current value
+- Source value
+- Exposure strength
+- Age-dependent plasticity
+- Fixed-point rounding
+- Value bounds
+
+Development itself currently requires no random draw.
+
+Changes preserve structured explanation traces.
+
+This model is fictional simulation behavior and should not be interpreted as a biological claim.
+
+---
+
+# Emergent Communities
+
+Communities are currently represented through geographic catchments rather than person membership fields.
+
+People contribute evidence according to their actual location and behavior.
+
+Current emergent measures include:
+
+- Social trust
+- Cohesion
+- Cooperation
+- Conflict
+- Innovation climate
+
+Structural conditions such as food security remain semantically separate.
+
+Community measures are derived from observed simulation evidence and can influence future opportunities.
+
+This creates a macro-to-micro feedback loop:
+
+```text
+individual behavior
+  -> daily community evidence
+  -> emergent community conditions
+  -> future action opportunities
+```
+
+The current conflict measure is a simulation proxy and is not equivalent to warfare.
+
+---
+
+# World Rendering and Projection
+
+The simulation and renderer use separate fidelity models.
+
+The worker provides bounded projections appropriate to the current viewport.
+
+Current projection behavior includes:
+
+- Exact local cells
+- Regional aggregation
+- World-level aggregation
+- Bounded population markers
+- Bounded activity markers
+- Bounded household markers
+- Selected-person relationship segments
+- Hooked-person summaries
+- Settlement summaries
+- Population-zone summaries
+
+The UI does not require the complete authoritative world to render a world-scale view.
+
+---
+
+# Level of Detail
+
+At close zoom:
+
+- Individual cells can be shown.
+- Hex outlines can be visible.
+- Individual markers can be rendered.
+
+At larger scales:
+
+- Cells aggregate into regions.
+- Hex outlines disappear.
+- People aggregate.
+- Markers remain bounded in screen space.
+- Counts and statistics remain preserved.
+
+Rendering fidelity does not change simulation fidelity.
+
+---
+
+# Hooked Person Behavior
+
+A user may hook or select a person for continued inspection.
+
+A hooked person:
+
+- Remains highlighted when visible
+- Continues updating in the inspector
+- Can report offscreen state
+- Does not automatically move the camera
+
+Hooking is an inspection feature, not simulation state.
+
+---
+
+# Worker Execution
+
+The worker owns authoritative simulation advancement.
+
+Execution is structured so that long logical advances can yield periodically rather than blocking UI responsiveness.
+
+Render frames and simulation advancement are independently managed.
+
+Worker scheduling differences must not change canonical simulation outcomes.
+
+Any worker continuation state that affects resuming an interrupted logical request must preserve deterministic behavior without contaminating canonical world semantics unnecessarily.
+
+---
+
+# Persistence
+
+Snapshots preserve the state necessary to continue the simulation.
+
+Persistence contracts are explicit and versioned.
+
+When a snapshot format changes, the project must either:
+
+- Provide an explicit tested migration, or
+- Explicitly reject unsupported schemas
+
+Unsupported old formats must never be silently misread.
+
+---
+
+# World Creation
+
+World creation uses a versioned deterministic creation request.
+
+Current configuration includes concepts such as:
+
+- World name
+- Seed
+- Dimensions
+- Physical scale
+- Initial population
+- Settlements
+- Population-placement zones
+
+Terrain generation occurs deterministically from the supplied seed.
+
+Population placement is resolved after terrain generation so UI presets do not guess passability.
+
+Household generation remains reproducible.
+
+Settlements currently represent named geographic places only.
+
+They do not imply:
+
+- Government
+- Political control
+- Culture
+- Economy
+- Community membership
+
+---
+
+# Current World-Generation Bounds
+
+The currently implemented world generator supports bounded dense authoritative worlds intended for validation rather than final maximum scale.
+
+The implementation currently supports configurable worlds within defined limits such as:
+
+- Bounded cells per axis
+- Bounded dense authoritative cell count
+- Fixed physical hex scale
+- Bounded initial population
+
+Exact limits should be read from the implementation rather than duplicated as permanent product guarantees.
+
+The projection architecture is designed to support much larger represented worlds than the current dense authoritative storage model.
+
+---
+
+# Current Scaling Boundaries
+
+Large-world rendering is substantially more scalable than authoritative simulation storage.
+
+Known areas for later scaling work include:
+
+- Dense-grid authoritative storage
+- Very large populations
+- Population paging
+- Cohort simulation
+- Chunked world state
+- Dirty-region updates
+- Background aggregation
+- OffscreenCanvas
+- Parallel simulation strategies
+
+These are intentionally deferred until measurements justify them.
+
+---
+
+# Draft Map Authoring
+
+The next roadmap milestone introduces a worker-owned draft world.
+
+The intended ownership model is:
+
+```text
+UI editing tools
+  -> worker command
+  -> draft world mutation
+  -> preview projection
+  -> validation
+  -> explicit commit
+  -> authoritative world
+```
+
+Draft state must not silently modify a running authoritative simulation.
+
+See `ROADMAP.md` for incremental slices.
+
+---
+
+# Diagnostics and Explainability
+
+The workbench should treat diagnostics as first-class product features.
+
+Important inspectable data includes:
+
+- Seed
+- Current tick/date
+- Simulation speed
+- Person variables
+- Needs/states
+- Current activity
+- Household information
+- Relationships
+- Action explanations
+- Experience traces
+- Development traces
+- Community measures
+- Community contributor traces
+- Meaningful events
+- Sampled metrics
+- Cell data
+- World-generation data
+
+The simulator should make it possible to understand why an observed outcome occurred.
+
+---
+
+# Testing Philosophy
+
+The simulation uses several complementary test types.
+
+## Unit Tests
+
+For exact deterministic logic such as:
+
+- Fixed-point formulas
+- Bounds
+- Curves
+- Utility calculations
+- Spatial calculations
+- Availability conditions
+
+## Fixed-Seed Regression Tests
+
+For reproducibility-sensitive behavior.
+
+## Controlled Scenario Tests
+
+For isolating causal effects.
+
+## Statistical Multi-Seed Tests
+
+For validating probabilistic tendencies.
+
+A probabilistic tendency must not be inferred from one seed.
+
+## Invariant Tests
+
+For system rules such as:
+
+- Valid probability ranges
+- Variable bounds
+- Stable identifiers
+- Valid relationships
+- Unique locations where required
+- Conservation rules
+- Impossible actions
+
+## Persistence Tests
+
+For:
+
+- Snapshot round trips
+- Schema validation
+- Version compatibility
+- Migration/rejection
+- RNG restoration
+
+## End-to-End Tests
+
+For important UI, worker, persistence, and simulation workflows across supported browsers.
+
+---
+
+# Validation Commands
+
+Common validation commands include:
 
 ```powershell
 pnpm typecheck
 pnpm test
 pnpm build
-pnpm exec playwright install chromium firefox webkit
 pnpm test:e2e
 ```
 
-## Architecture
+During normal development, targeted validation should be used while iterating.
 
-- `src/simulation/` is DOM-free TypeScript. It owns serializable state, PCG32 randomness, the simulation clock, spatial functions, statistics, and snapshots.
-- `src/simulation/agents/` owns population initialization, local opportunity discovery, utility contributions, weighted action selection, and action resolution.
-- `src/simulation/relationships/` owns co-location encounter pools, seeded encounter outcomes, canonical relationship dimensions, and interaction-frequency decay.
-- `src/simulation/variables/` owns the nine namespaced person-variable definitions and bounded permille storage.
-- `src/simulation/influences/` owns the eleven sparse, linear, immediate decision-influence edges and exact integer evaluation.
-- `src/simulation/households/` owns deterministic variable-size household topology, exact placement-zone allocation, explicit parent-child links, the fictional curiosity starting-predisposition model, and household-generation streams.
-- `src/simulation/activities/` owns versioned child/adult schedules, physical home/commons activity resolution, and activity-location identity.
-- `src/simulation/exposure/` owns the exact parent-curiosity exposure channel, bounded 720-hour windows, source-hour accumulation, and structured experience creation.
-- `src/simulation/development/` owns age-band plasticity and deterministic, explainable curiosity development from structured experiences.
-- `src/simulation/community/` owns deterministic geographic catchments, bounded daily evidence, emergent and structural community measures, aggregation traces, and sparse community-to-decision feedback.
-- `src/projection/` owns the non-authoritative workbench projection protocol, viewport bounds, aligned aggregate regions, marker budgets, spatial indexes, and bounded route summaries.
-- `src/simulation/engine/` coordinates action selection, encounter resolution, relationship updates, daily social aggregates, invariant checks, and projections.
-- `src/simulation/spatial/` owns axial geometry, deterministic world generation, viewport-independent map logic, and weighted A* pathfinding.
-- `src/worker/` owns the live engine and exposes a typed command/response protocol. The UI only receives projections.
-- `src/persistence/` stores autosaves, named snapshots, meaningful events, and statistics in IndexedDB. JSON bundles provide import/export.
-- `src/ui/` and `src/App.tsx` contain presentation and workbench interaction code. They do not mutate authoritative engine state.
+The complete validation suite is expected for major milestone or release-level work.
 
-## Reproducibility contract
+See `AGENTS.md` for risk-based validation guidance.
 
-The same initial state or validated snapshot, simulation configuration, engine version, and seed must produce the same canonical state digest in supported Chromium, Firefox, and WebKit versions.
+---
 
-Rules that preserve this contract:
+# Development Rules
 
-- Simulation code must not call `Math.random()` or use wall-clock time to determine outcomes.
-- Random draws come from named, snapshot-restorable PCG32 streams.
-- Encounter resolution uses its own named `encounters` stream so social draws remain isolated from world generation, population initialization, and action selection.
-- Trust propensity, conformity, persistence, fatigue, and social-need initialization use dedicated `population.variable.<variable-id>` streams. The original `population` stream retains home, age, curiosity, risk-tolerance, sociability, and hunger draw order.
-- Simulation-affecting quantities use integers or documented fixed-point units.
-- Map viewports, projection epochs/revisions, and render caches are ephemeral presentation state and never enter snapshots, RNG, or canonical digests. A small versioned worker continuation checkpoint is stored outside canonical state/digest so a mid-fast-forward save resumes the same logical clock batch.
-- Serialized collections have stable ordering; canonical objects sort their keys.
-- RNG state, event sequence, schema version, and engine version are part of snapshots.
-- The current engine is `0.9.0`, snapshot schema is `9`, world-generator version is `1`, variable-registry version is `1`, influence-registry version is `1`, household-model version is `2`, activity-registry version is `1`, development-registry version is `1`, and community-registry version is `1`. Schema-8 snapshots are rejected as unsupported; no migration is provided.
-- Any change to rules, RNG behavior, execution order, or fixed-point conversion requires an engine-version change and updated regression fixture.
-- Person-array order currently remains part of authoritative state and RNG assignment. Making equivalent states insensitive to person-array reordering is deferred.
+Before changing simulation behavior:
 
-Wall-clock metadata such as save timestamps is deliberately outside the simulation state and digest.
+- Determine whether canonical output changes.
+- Determine whether RNG draw ordering changes.
+- Determine whether persistence changes.
+- Determine whether version increments are necessary.
+- Update explanation traces.
+- Add appropriate tests.
 
-## Current boundaries
+Avoid broad architectural refactors unless required by the current vertical slice.
 
-Milestones 3–7 are implemented. The engine provides co-location encounter pools; seeded positive, neutral, and tense outcomes; canonical bidirectional relationships; household activity; exposure; structured experiences; deterministic developmental traces; and geographic community feedback. The workbench exposes hooked-person movement and relationships without camera following, household/activity/development inspection, decision explanations, community evidence, scoped statistics, and bounded large-world map diagnostics.
+---
 
-Person state now uses nine integer `0..1000` permille variables: `person.trait.curiosity`, `person.trait.riskTolerance`, `person.trait.sociability`, `person.trait.trustPropensity`, `person.trait.conformity`, `person.trait.persistence`, `person.state.hunger`, `person.state.fatigue`, and `person.need.socialConnection`. Eleven sparse influence edges contribute to eat, move, explore, rest, and socialize utility. Inspector traces distinguish base, contextual, interaction, and registry-backed influence contributions and retain edge ID, source ID/value, weight, effect, alternatives, and selection probability.
+# Versioning
 
-Each hour adds 12 hunger, 10 fatigue, and 8 social need, with bounded storage. Rest removes up to 180 fatigue, encounters remove up to 140 social need from both participants, and food removes two hunger units per food unit. Trust propensity, conformity, and persistence are initialized, serialized, displayed, and validated but deliberately have no behavior utility edges yet.
+The project uses explicit versioned contracts for systems such as:
 
-Movement decisions currently target adjacent cells; the pathfinder is used for route inspection and is ready for longer-range destinations. Socialize creates an eligible encounter opportunity, and the engine resolves co-located pairs through the dedicated encounters stream.
+- Engine behavior
+- Snapshot schema
+- World generation
+- Variable registries
+- Influence registries
+- Household models
+- Activity registries
+- Development registries
+- Community registries
 
-The default validation population remains 200 people: 50 two-parent/one-child households and 50 single-adult households. Milestone 8A generalizes this to 1–500 people using deterministic three-person family and single-adult households while preserving exact authored placement-zone totals. Children start between ages 6 and 17; family parents are assigned at least 18 years older. Household membership and parent-child links are separate authoritative graphs from social relationships. Each household has a physical home activity location, and each passable cell has a commons activity location. Children use `activity.schedule.child.v1` (home 00:00–08:00 and 16:00–24:00, commons 08:00–16:00); adults use `activity.schedule.adult.v1` (home 00:00–06:00 and 18:00–24:00, commons 06:00–18:00). A person remains physically in their cell while the schedule resolves their activity location; a person on a journey has no activity-location encounter pool. Encounters are built from shared activity locations, not merely from physical cell membership.
+Current numeric versions should be obtained from source rather than treated as permanent documentation constants.
 
-5A advances age in hours, updates the age-derived child/adult schedule, emits activity changes and aging events, and samples home, commons, and travel person-hours. It adds named streams `population.households.childAge`, `population.ageRemainderHours`, and `population.inheritance.person.trait.curiosity`; existing population and variable streams retain their contracts. Child curiosity uses `inheritance.parental-baseline-variation.v1`: a configurable fictional starting predisposition from parental mean, a population baseline of 500, and seeded random variation, with weights 500/300/200 respectively. This is a starting tendency, not a fixed outcome and not a biological claim. The UI exposes household members, parent-child roles, current activity, activity locations, and the inheritance trace; map overlays can show households and activity locations.
+A version should change only when its corresponding contract changes.
 
-Deferred beyond the current implementation: behavioral effects for trust propensity/conformity/persistence, household conditions, broader inheritance, person-array order normalization, roads and infrastructure modifiers, long-range goals, overlapping or institutional communities, terrain painting, accounts, server execution, and any biological interpretation of the fictional inheritance model.
+---
 
-Milestone 5B uses the exact IDs `exposure.parent.curiosity-modeling`, `experience.parent.curiosity-modeling`, and `development.parent-curiosity-to-curiosity`. Exposure is granted only when a child and linked parent(s) are physically co-present in the same household home cell and canonical home activity location; household membership, same-cell presence, commons co-location, and travel alone do not grant exposure. Each exposed child hour increments recipient hours and each co-present linked parent increments source hours and weighted source curiosity hours. Windows run from ticks 1–720, 721–1440, and so on. At each boundary, source mean is symmetric integer-rounded weighted source value divided by source hours, exposure strength is `min(1000, floor(sourceHours * 1000 / 720))`, and curiosity changes by symmetric rounding of `(sourceMean - current) * exposureStrength * plasticity / 1,000,000`, clamped to `0..1000`. Plasticity is 30 permille/month for childhood, 15 for adolescence, 3 for adults, and 1 for late life. Development is deterministic and consumes no RNG stream.
+# Non-Goals of the Current Implementation
 
-Only the latest bounded structured experience and latest non-zero development trace are retained per person. Meaningful events are `PERSON_EXPERIENCED_PARENT_MODELING` and `PERSON_VARIABLE_DEVELOPED`; sampled metrics are `household.parentChildCoExposureSourceHours`, `development.experiences`, `development.curiosityChanges`, and `development.absoluteCuriosityChange`. Broader household conditions, birth/death, occupation, institutions, other developmental variables, and biological interpretation remain out of scope.
+The current simulator does not attempt to fully model:
 
-Milestone 6 divides the initial valley into two deterministic, complete, non-overlapping geographic catchments. This is an exposure boundary, not person membership: hourly evidence is attributed to the catchment containing the person, action, arrival, encounter, or resource at that time. Each 24-hour window records bounded person-hours, commons exposure, action selections, exploration arrivals, meal outcomes, encounter outcomes, post-encounter relationship dimensions, and pre-regeneration food supply.
+- Politics
+- Government
+- Warfare
+- Religion
+- Language
+- Detailed economics
+- Financial systems
+- Technology trees
+- Genetics
+- Detailed disease
+- Full ecology
+- Narrative generation
+- Multiplayer
+- Collaborative editing
+- Massive cohort simulation
 
-Five emergent measures—social trust, cohesion, cooperation, conflict, and innovation climate—are updated from that observed evidence with named fixed-point formulas and 750/250 prior/observation smoothing. Food security is deliberately separate as a structural measure with 500/500 smoothing. Every update retains its latest exact contributor trace. “Conflict” currently means a tense-encounter/fear/food-insecurity proxy, not violence; “cooperation” means a successful social-interaction/trust/socialize-uptake proxy, not material helping.
+Some of these may become future milestones.
 
-Community feedback is sparse and opportunity-gated. Social trust, cohesion, cooperation, and conflict modify socialize utility only when a co-located social opportunity exists; innovation climate modifies explore utility only when an unknown passable neighbor exists. The effect is centered on neutral 500 permille, uses the person’s actual current-cell catchment, begins on the tick after daily aggregation, and is retained in the action explanation. Community aggregation and feedback use no additional random stream. Institutions, inequality, crime, violence, resource transfers, prestige weighting, overlapping communities, and community-driven childhood development remain deferred.
+See `ROADMAP.md`.
 
-Milestone 7 introduces projection protocol version `1`. Worker frames no longer clone the full geographic grid, all commons locations, or catchment cell-ID arrays. The UI requests conservative axial viewport bounds; the worker returns at most 4,096 exact cells or aligned aggregate regions, 1,500 population markers, 750 activity markers, 750 household markers, and 250 selected-person relationship segments. Exact map cells retain projected population and community values; distant regions retain deterministic dominant terrain, rounded environmental means, resource totals when requested, population totals, and community values. Globally aligned region keys and shared axial polygon edges prevent pan shimmer and distant hex outlines.
+---
 
-Population, activity, and household markers aggregate without dropping counts. A hooked person is projected separately, stays live while moving, reports when outside the viewport, and never moves the camera. Route-home inspection uses a bounded cached search with an explicit truncated result. Canvas controls support pointer and keyboard pan/zoom plus fit-to-world; screen-space marker sizes remain bounded. Worlds at least 8,192×8,192 can be fit and represented with a bounded render payload, although authoritative dense world storage is still a separate scaling limit.
+# Documentation
 
-Simulation advancement and visualization cadence are now separate. The worker advances at most 24 ticks per event-loop turn, accumulates telemetry until a deterministic flush boundary, and renders at most about 10 frames per second while playing. View changes are revisioned, stale map payloads cannot overwrite a newer view, autosave remains observational, and splitting a logical batch preserves state-at-tick and RNG behavior. Mid-batch saves carry a versioned worker continuation outside the canonical state/digest so restore does not lose the deferred logical clock boundary. Population paging, authoritative chunked/sparse world storage, dirty-chunk deltas, OffscreenCanvas, and cohort simulation remain deferred.
+The project documentation is divided by purpose:
 
-Milestone 8A introduces a versioned world-creation request. The creator supports 8–128 cells per axis (at most 16,384 dense authoritative cells), a fixed pointy-axial physical scale of one kilometer per hex radius, 1–500 initial people, two named settlements, and exact deterministic population allocations to disjoint West/Center/East placement zones. Settlements are named spatial places only; they do not imply government, political ownership, economics, or community membership. Seed, world name, dimensions, resolved zones, settlement anchors, population count, and generator/model versions are serialized and digest-covered. The same creation request reproduces the same world and reset restores that complete request. Terrain/elevation/water/resource painting, roads, user-drawn zone geometry, settlement simulation, and kingdoms remain later Milestone 8 slices.
+## `README.md`
+
+Describes what the system currently is.
+
+## `ROADMAP.md`
+
+Describes where the system is going.
+
+## `AGENTS.md`
+
+Defines how Codex and development agents should work in the repository.
+
+## `docs/TRAIT_AND_INFLUENCE_SYSTEM.md`
+
+Defines detailed target semantics for person variables, influences, exposure, development, and related feedback mechanisms.
+
+Tests and serialized fixtures provide the executable behavioral contract.
+
+---
+
+# Getting Started
+
+Install dependencies:
+
+```powershell
+pnpm install
+```
+
+Run the development server:
+
+```powershell
+pnpm dev
+```
+
+Run unit and regression tests:
+
+```powershell
+pnpm test
+```
+
+Run type checking:
+
+```powershell
+pnpm typecheck
+```
+
+Build the application:
+
+```powershell
+pnpm build
+```
+
+Run end-to-end tests:
+
+```powershell
+pnpm test:e2e
+```
+
+---
+
+# Long-Term Direction
+
+The intended long-term simulator is not a scripted story generator.
+
+It is a system where complex outcomes can emerge from understandable lower-level mechanisms:
+
+```text
+world
+  -> people
+  -> behavior
+  -> relationships
+  -> households
+  -> exposure
+  -> development
+  -> communities
+  -> institutions
+  -> societies
+  -> history
+```
+
+Complexity should be earned incrementally.
+
+Each new layer should be grounded in systems already capable of producing evidence for it.
