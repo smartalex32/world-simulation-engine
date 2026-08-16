@@ -1,4 +1,6 @@
 import type { MapProjectionRequest } from '../projection'
+import type { WorldCreationDraft } from '../simulation/domain/types'
+import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
 import { requestId, type SimulationCommand, type SimulationResponse, type WorkbenchSnapshotEnvelope } from './protocol'
 
 type Listener = (response: SimulationResponse) => void
@@ -43,7 +45,7 @@ export class SimulationWorkerClient {
     return () => this.listeners.delete(listener)
   }
 
-  create(seed: string): void { this.send({ type: 'CREATE_RUN', requestId: requestId(), seed }) }
+  create(creation: WorldCreationDraft | string): void { this.send({ type: 'CREATE_RUN', requestId: requestId(), creation: typeof creation === 'string' ? defaultWorldCreationRequest(creation) : creation }) }
   load(snapshot: WorkbenchSnapshotEnvelope): void { this.send({ type: 'LOAD_RUN', requestId: requestId(), snapshot }) }
   step(count = 1): void { this.send({ type: 'STEP', requestId: requestId(), count }) }
   play(ticksPerBatch: number): void { this.send({ type: 'PLAY', requestId: requestId(), ticksPerBatch }) }

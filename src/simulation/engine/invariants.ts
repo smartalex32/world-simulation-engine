@@ -98,6 +98,7 @@ export function validateHouseholdActivityState(state: SimulationState): void {
     validateDevelopmentState(person, state, expectedParentIds ?? [], peopleById, household)
   }
   if (memberships.size !== state.people.length) throw new Error('Not every person belongs to exactly one household')
+  validateInitialPopulationPlacement(state)
 
   const activityCounters = state.dailyActivityCounters
   if (!activityCounters || Object.values(activityCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily activity counters are invalid')
@@ -107,6 +108,28 @@ export function validateHouseholdActivityState(state: SimulationState): void {
   }
   const developmentCounters = state.dailyDevelopmentCounters
   if (!developmentCounters || Object.values(developmentCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily development counters are invalid')
+}
+
+/** Homes are immutable in the current model, so authored initial-zone totals remain inspectable after people travel. */
+function validateInitialPopulationPlacement(state: SimulationState): void {
+  const creation = state.config.worldCreation
+  if (!creation || state.people.length !== creation.initialPopulationCount) throw new Error('Population does not match world creation request')
+  const zoneByCellId = new Map<string, string>()
+  const expected = new Map<string, number>()
+  for (const zone of creation.populationZones) {
+    expected.set(zone.id, zone.populationCount)
+    for (const cellId of zone.cellIds) {
+      if (zoneByCellId.has(cellId)) throw new Error(`Population creation zones overlap at ${cellId}`)
+      zoneByCellId.set(cellId, zone.id)
+    }
+  }
+  const actual = new Map<string, number>()
+  for (const person of state.people) {
+    const zoneId = zoneByCellId.get(person.homeCellId)
+    if (!zoneId) throw new Error(`Person ${person.id} home is outside all population creation zones`)
+    actual.set(zoneId, (actual.get(zoneId) ?? 0) + 1)
+  }
+  for (const [zoneId, populationCount] of expected) if ((actual.get(zoneId) ?? 0) !== populationCount) throw new Error(`Population zone ${zoneId} does not match its requested allocation`)
 }
 
 function validateDevelopmentState(

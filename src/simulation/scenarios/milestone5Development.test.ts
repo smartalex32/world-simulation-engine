@@ -34,6 +34,14 @@ async function controlledEngine(options: ControlledOptions = {}): Promise<Simula
 
   const retainedIds = new Set(['person-0001', 'person-0051', 'person-0101', 'person-0151'])
   state.people = state.people.filter(({ id }) => retainedIds.has(id))
+  state.config.worldCreation = {
+    ...state.config.worldCreation,
+    width: 2,
+    height: 1,
+    initialPopulationCount: state.people.length,
+    populationZones: [{ id: 'population-zone-0001', name: 'Controlled population', cellIds: [homeCell.id], populationCount: state.people.length }],
+    settlements: [],
+  }
   const peopleById = new Map(state.people.map((person) => [person.id, person]))
   const parentA = requiredPerson(peopleById, 'person-0001')
   const parentB = requiredPerson(peopleById, 'person-0051')

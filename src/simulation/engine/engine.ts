@@ -7,6 +7,8 @@ import {
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
+  WORLD_GENERATOR_VERSION,
+  type WorldCreationDraft,
   type SimulationEvent,
   type SimulationState,
   type ActionName,
@@ -15,6 +17,7 @@ import {
   type StatisticSample,
   type WorldProjection,
 } from '../domain/types'
+import { defaultWorldCreationRequest, normalizeWorldCreationRequest, validateWorldCreationDraftLimits } from '../domain/worldCreation'
 import {
   COMMUNITY_EMERGENT_IDS,
   COMMUNITY_FEEDBACK_DEFINITIONS,
@@ -129,11 +132,17 @@ export class SimulationEngine {
     this.parentIdsByChildId = new Map([...parentIdsByChildId.entries()].sort(([first], [second]) => compareIds(first, second)))
   }
 
-  static create(seed: string, width = 32, height = 24): SimulationEngine {
-    const normalizedSeed = seed.trim() || 'valley-001'
-    const { world, random } = generateValley(normalizedSeed, width, height)
-    const generatedPopulation = generatePopulation(world.grid.cells, random)
-    const catchments = createTwoCatchmentGeography({ cells: world.grid.cells, width, height })
+  static create(seedOrDraft: string | WorldCreationDraft, width = 32, height = 24): SimulationEngine {
+    const draft = typeof seedOrDraft === 'string' ? defaultWorldCreationRequest(seedOrDraft, width, height) : seedOrDraft
+    validateWorldCreationDraftLimits(draft)
+    // Terrain generation is pure for a seed, so resolve presets before starting the authoritative RNG provider.
+    const preliminary = generateValley(draft.seed.trim() || 'valley-001', draft.width, draft.height)
+    const creation = normalizeWorldCreationRequest(draft, preliminary.world.grid.cells)
+    const creationKey = JSON.stringify(creation)
+    const { world, random } = generateValley(creation.seed, creation.width, creation.height, { name: creation.name, settlements: creation.settlements, idSuffix: creationKey })
+    const preserveLegacyHomePlacement = typeof seedOrDraft === 'string' || (draft.populationZones.length === 0 && draft.initialPopulationCount === 200)
+    const generatedPopulation = generatePopulation(world.grid.cells, creation.populationZones, random, preserveLegacyHomePlacement)
+    const catchments = createTwoCatchmentGeography({ cells: world.grid.cells, width: creation.width, height: creation.height })
     const worldCellById = new Map(world.grid.cells.map((cell) => [cell.id, cell]))
     const communities: CommunitySimulationState[] = catchments.map((catchment) => {
       const cells = catchment.cellIds.map((cellId) => worldCellById.get(cellId)).filter((cell): cell is NonNullable<typeof cell> => cell !== undefined)
@@ -142,15 +151,17 @@ export class SimulationEngine {
       const foodSecurity = capacity === 0 ? 0 : symmetricRoundDivision(amount * 1000, capacity)
       return { ...createCommunityState(catchment, 500, foodSecurity), lastUpdatedTick: 0, latestTraces: [] }
     })
-    const runId = `run-${world.id.slice(6)}-${width}x${height}`
+    const runId = `run-${world.id.slice(6)}-${creation.width}x${creation.height}`
     return new SimulationEngine({
       runId,
       tick: 0,
       nextEventSequence: 1,
       config: {
-        seed: normalizedSeed,
-        worldWidth: width,
-        worldHeight: height,
+        seed: creation.seed,
+        worldWidth: creation.width,
+        worldHeight: creation.height,
+        worldGeneratorVersion: WORLD_GENERATOR_VERSION,
+        worldCreation: creation,
         baseTickHours: BASE_TICK_HOURS,
         variableRegistryVersion: VARIABLE_REGISTRY_VERSION,
         influenceRegistryVersion: INFLUENCE_REGISTRY_VERSION,
@@ -301,6 +312,7 @@ export class SimulationEngine {
       seed: this.state.config.seed,
       engineVersion: ENGINE_VERSION,
       world: this.state.world,
+      populationZones: this.state.config.worldCreation.populationZones,
       people: this.state.people,
       households: this.state.households,
       parentChildLinks: this.state.parentChildLinks,

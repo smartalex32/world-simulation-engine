@@ -2,7 +2,8 @@
 
 import { SimulationEngine } from '../simulation/engine/engine'
 import { WorkbenchProjectionBuilder, type MapProjectionRequest } from '../projection'
-import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
+import type { SimulationEvent, StatisticSample, WorldCreationDraft } from '../simulation/domain/types'
+import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
 import type { SimulationCommand, SimulationResponse, WorkbenchSnapshotEnvelope } from './protocol'
 import { MAX_TICKS_PER_WORKER_TURN, SimulationBatchScheduler, TelemetryBuffer, validateWorkerContinuation, type WorkerContinuationState } from './frameScheduler'
 
@@ -11,7 +12,7 @@ let engine: SimulationEngine | undefined
 let projectionBuilder: WorkbenchProjectionBuilder | undefined
 let viewportRequest: MapProjectionRequest | undefined
 let projectionEpoch = 0
-let initialSeed = 'valley-001'
+let initialCreation: WorldCreationDraft = defaultWorldCreationRequest('valley-001')
 let playing = false
 let ticksPerBatch = 24
 let loopScheduled = false
@@ -27,13 +28,13 @@ function respond(response: SimulationResponse): void {
   worker.postMessage(response)
 }
 
-async function create(seed: string, requestId?: string): Promise<void> {
-  initialSeed = seed.trim() || 'valley-001'
-  engine = SimulationEngine.create(initialSeed)
+async function create(creation: WorldCreationDraft, requestId?: string): Promise<void> {
+  initialCreation = creation
+  engine = SimulationEngine.create(initialCreation)
   installProjectionBuilder()
   const snapshot = await engine.snapshot()
   clearPendingTelemetry()
-  sendFrame(requestId, snapshot.digest, [engine.event('RUN_CREATED', { seed: initialSeed })], [], 0)
+  sendFrame(requestId, snapshot.digest, [engine.event('RUN_CREATED', { seed: snapshot.state.config.seed, width: snapshot.state.config.worldWidth, height: snapshot.state.config.worldHeight, population: snapshot.state.people.length, worldName: snapshot.state.world.name })], [], 0)
   respond({ type: 'STATUS', requestId, status: 'paused', ticksPerBatch })
 }
 
@@ -140,12 +141,12 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
       switch (command.type) {
         case 'CREATE_RUN':
           playing = false
-          await create(command.seed, command.requestId)
+          await create(command.creation, command.requestId)
           break
         case 'LOAD_RUN': {
           playing = false
           engine = await SimulationEngine.restore(command.snapshot)
-          initialSeed = command.snapshot.state.config.seed
+          initialCreation = command.snapshot.state.config.worldCreation
           installProjectionBuilder()
           restoreWorkerContinuation(command.snapshot.workerContinuation)
           clearPendingTelemetry()
@@ -202,7 +203,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           break
         case 'RESET':
           playing = false
-          await create(initialSeed, command.requestId)
+          await create(initialCreation, command.requestId)
           break
         case 'DISPOSE':
           playing = false

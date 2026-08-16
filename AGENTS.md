@@ -32,7 +32,7 @@ When code and a design document differ, do not silently choose one. Preserve cur
 - Canvas map and workbench UI in `src/ui/` and `src/App.tsx`.
 - Vitest unit/regression tests and Playwright Chromium/Firefox/WebKit end-to-end tests.
 - One-hour base ticks, PCG32 random streams, snapshot schemas, registry versions, engine versions, and canonical state digests.
-- Engine `0.8.0`, snapshot schema `8`, variable-registry version `1`, influence-registry version `1`, household-model version `1`, activity-registry version `1`, development-registry version `1`, and community-registry version `1`; schema-7 snapshots are rejected rather than migrated.
+- Engine `0.9.0`, snapshot schema `9`, world-generator version `1`, variable-registry version `1`, influence-registry version `1`, household-model version `2`, activity-registry version `1`, development-registry version `1`, and community-registry version `1`; schema-8 snapshots are rejected rather than migrated.
 
 Milestones 0–7 are implemented. In addition to the deterministic engine, spatial behavior, relationships, variable/influence registries, households, activities, exposure, experiences, development, and community feedback, the repository now provides a bounded viewport projection protocol, aligned geographic aggregation, level-of-detail rendering, screen-bounded markers, responsive worker tick quanta, and hook-preserving large-world inspection.
 
@@ -138,11 +138,22 @@ Schema-5 snapshots are explicitly rejected rather than migrated. Person-array or
 - The renderer can fit and request bounded data for an 8,192×8,192 world descriptor. Authoritative dense-grid storage, population paging/cohorts, dirty chunk deltas, and OffscreenCanvas remain deferred scaling limits.
 - This milestone does not change simulation rules, RNG, engine `0.8.0`, or snapshot schema `8`.
 
-### Milestone 8 — World Creation Tools
+### Milestone 8A — Reproducible World Creation (Implemented in engine 0.9.0)
 
-- Introduce a small editable/test-world workflow before a full map editor.
-- Add terrain, elevation, water, resources, roads, settlements, import/export, and seeded generation incrementally.
-- Defer detailed hydrology, climate, ecosystems, political borders, and collaborative editing until the simulation core proves their need.
+- A versioned creation request owns the world name, seed, dimensions, fixed physical scale, initial population, named settlements, and disjoint population-placement zones.
+- The creator supports 8–128 cells per axis with at most 16,384 dense authoritative cells, a fixed one-kilometre pointy-axial hex radius, and 1–500 initial people.
+- West/center/east placement presets resolve only after seeded terrain generation, so the UI never guesses passability. Zone allocations are exact and homes remain inspectably attributable after people travel.
+- Variable deterministic household generation preserves the 200-person 50-family/50-single default while supporting smaller and larger configured populations.
+- Settlements are named spatial places only. They are separate from households and emergent community catchments and carry no government, political ownership, economy, or membership semantics.
+- The worker create/reset contract retains the complete normalized request; projection frames expose bounded settlement and population-zone summaries without returning zone cell arrays.
+- Engine `0.9.0`, schema `9`, household model `2`, and world-generator version `1` deliberately replace the prior initialization contract. Schema 8 is rejected rather than migrated.
+
+### Milestone 8B — Draft Map Authoring (Next)
+
+- Add a worker-owned draft/preview workflow before mutating authoritative simulation state.
+- Introduce user-drawn placement-zone geometry, terrain/elevation/water/resource painting, roads, and settlement editing incrementally.
+- Keep import/export versioned and reproducible; do not let presentation code mutate a live world.
+- Defer detailed hydrology, climate, ecosystems, political borders, kingdoms, and collaborative editing until current simulation systems require them.
 
 Politics, warfare, religion, language, detailed economics, technology trees, narrative generation, multiplayer, and massive cohort simulation remain later product areas. Create abstractions for them only when a current slice requires a boundary.
 

@@ -1,5 +1,5 @@
 import type { CommunityAggregationTrace, CommunityEmergentValues, CommunityStructuralId, CommunityVariableDefinition, CommunityVariableId, CommunityFeedbackEdgeDefinition } from '../simulation/community/types'
-import type { GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipState, Terrain } from '../simulation/domain/types'
+import type { GeographicCell, HouseholdState, ParentChildLink, PersonState, PopulationPlacementZone, RelationshipState, SettlementState, Terrain, WorldScale } from '../simulation/domain/types'
 import type { PersonVariableDefinition } from '../simulation/variables/types'
 
 export const PROJECTION_PROTOCOL_VERSION = 1
@@ -118,7 +118,11 @@ export interface WorldDescriptor {
   width: number
   height: number
   cellCount: number
+  scale: WorldScale
 }
+
+export interface ProjectedSettlement { id: string; name: string; anchorCellId: string }
+export interface ProjectedPopulationZone { id: string; name: string; populationCount: number; cellCount: number; settlementId?: string }
 
 export interface ProjectedCommunityCatchment {
   id: string
@@ -160,6 +164,8 @@ export interface WorkbenchProjection {
   seed: string
   engineVersion: string
   world: WorldDescriptor
+  settlements: ProjectedSettlement[]
+  populationZones: ProjectedPopulationZone[]
   map: MapProjection
   people: PersonState[]
   households: HouseholdState[]

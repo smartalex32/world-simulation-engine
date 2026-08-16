@@ -1,8 +1,12 @@
-import type { GeographicCell, WorldState } from '../domain/types'
+import { WORLD_CREATION_LIMITS, fixedWorldScale } from '../domain/worldCreation'
+import type { GeographicCell, SettlementState, WorldState } from '../domain/types'
 import { RandomProvider } from '../rng/pcg32'
 import { cellId } from './hex'
 
-export function generateValley(seed: string, width = 32, height = 24): { world: WorldState; random: RandomProvider } {
+export function generateValley(seed: string, width = 32, height = 24, options: { name?: string; settlements?: readonly SettlementState[]; idSuffix?: string } = {}): { world: WorldState; random: RandomProvider } {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width * height > WORLD_CREATION_LIMITS.maximumCellCount) {
+    throw new RangeError(`Valley dimensions must be positive safe integers totaling at most ${WORLD_CREATION_LIMITS.maximumCellCount} cells`)
+  }
   const random = new RandomProvider(seed)
   const rng = random.stream('worldgen')
   const cells: GeographicCell[] = []
@@ -38,9 +42,11 @@ export function generateValley(seed: string, width = 32, height = 24): { world: 
 
   return {
     world: {
-      id: `world-${hashShort(seed)}`,
-      name: 'Seeded Valley',
+      id: `world-${hashShort(`${seed}\u001f${options.idSuffix ?? `${width}x${height}`}`)}`,
+      name: options.name ?? 'Seeded Valley',
+      scale: fixedWorldScale(),
       grid: { width, height, cells },
+      settlements: [...(options.settlements ?? [])],
     },
     random,
   }

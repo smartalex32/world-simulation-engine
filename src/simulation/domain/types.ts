@@ -7,15 +7,17 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.8.0'
-export const SNAPSHOT_SCHEMA_VERSION = 8
+export const ENGINE_VERSION = '0.9.0'
+export const SNAPSHOT_SCHEMA_VERSION = 9
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
-export const HOUSEHOLD_MODEL_VERSION = 1
+export const HOUSEHOLD_MODEL_VERSION = 2
 export const ACTIVITY_REGISTRY_VERSION = 1
 export const DEVELOPMENT_REGISTRY_VERSION = 1
 export const COMMUNITY_REGISTRY_VERSION = 1
+export const WORLD_GENERATOR_VERSION = 1
+export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
 
@@ -41,10 +43,74 @@ export interface HexGrid {
   cells: GeographicCell[]
 }
 
+/** Physical interpretation of the pointy axial grid. It is fixed for the first creator. */
+export interface WorldScale {
+  layout: 'axial-pointy'
+  hexRadiusMeters: number
+}
+
+/** A named spatial place. It has no political or demographic behavior in Milestone 8A. */
+export interface SettlementState {
+  id: string
+  name: string
+  anchorCellId: string
+}
+
+/** Exact initial resident allocation for a disjoint set of passable cells. */
+export interface PopulationPlacementZone {
+  id: string
+  name: string
+  cellIds: string[]
+  populationCount: number
+  settlementId?: string
+}
+
+export type WorldPlacementPreset = 'west' | 'center' | 'central' | 'east'
+
+/** UI-friendly pre-generation placement. The engine resolves it to passable cell IDs. */
+export interface PopulationPlacementZoneDraft {
+  id: string
+  name: string
+  populationCount: number
+  settlementId?: string
+  cellIds?: string[]
+  preset?: WorldPlacementPreset
+  radiusCells?: number
+}
+
+export interface SettlementDraft {
+  id: string
+  name: string
+  anchorCellId?: string
+  preset?: WorldPlacementPreset
+}
+
+export interface WorldCreationDraft {
+  seed: string
+  name: string
+  width: number
+  height: number
+  initialPopulationCount: number
+  populationZones: PopulationPlacementZoneDraft[]
+  settlements: SettlementDraft[]
+}
+
+export interface WorldCreationRequest {
+  seed: string
+  name: string
+  width: number
+  height: number
+  initialPopulationCount: number
+  populationZones: PopulationPlacementZone[]
+  settlements: SettlementState[]
+}
+
 export interface WorldState {
   id: string
   name: string
+  scale: WorldScale
   grid: HexGrid
+  settlements: SettlementState[]
 }
 
 export type HouseholdId = string
@@ -295,6 +361,8 @@ export interface RunConfiguration {
   seed: string
   worldWidth: number
   worldHeight: number
+  worldGeneratorVersion: number
+  worldCreation: WorldCreationRequest
   baseTickHours: number
   variableRegistryVersion: number
   influenceRegistryVersion: number
@@ -369,6 +437,7 @@ export interface WorldProjection {
   seed: string
   engineVersion: string
   world: WorldState
+  populationZones: PopulationPlacementZone[]
   people: PersonState[]
   households: HouseholdState[]
   parentChildLinks: ParentChildLink[]

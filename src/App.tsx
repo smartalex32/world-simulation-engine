@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
 import type { CommunityVariableDefinition, CommunityVariableId } from './simulation/community/types'
-import type { DevelopmentExperienceType, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, UtilityContribution } from './simulation/domain/types'
+import type { DevelopmentExperienceType, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, UtilityContribution, WorldCreationRequest } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
 import type { ProjectedCommunityState, WorkbenchProjection } from './projection'
 import { HexMap, type MapOverlay } from './ui/HexMap'
 import { ActionExplanation } from './ui/ActionExplanation'
 import { PersonVariableSections } from './ui/PersonVariableSections'
 import { CommunityInspector, CommunitySignals } from './ui/CommunityPanels'
+import { WorldSetup, type WorldSetupValues } from './ui/WorldSetup'
 import { mergeWorkbenchProjection } from './ui/projectionFrame'
 import type { ContributionView, VariableDefinitionView } from './ui/personVariables'
 import { SimulationWorkerClient } from './worker/client'
@@ -24,6 +25,12 @@ export default function App() {
   const client = useMemo(() => new SimulationWorkerClient(), [])
   const database = useMemo(() => new WorkbenchDatabase(), [])
   const [seed, setSeed] = useState('valley-001')
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [activeMode, setActiveMode] = useState<'world' | 'simulation' | 'analytics' | 'entities'>('world')
+  const [worldSetup, setWorldSetup] = useState<WorldSetupValues>({
+    name: 'The Seeded Valley', seed: 'valley-001', width: 32, height: 24, population: 200,
+    placements: [{ name: 'Westhaven', region: 'west', allocation: 100 }, { name: 'Eastwatch', region: 'east', allocation: 100 }],
+  })
   const [projection, setProjection] = useState<WorkbenchProjection>()
   const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
   const [status, setStatus] = useState<'starting' | 'idle' | 'paused' | 'playing'>('starting')
@@ -63,12 +70,18 @@ export default function App() {
         client.create(seed)
       } else if (response.type === 'FRAME') {
         const previousProjection = projectionRef.current
+        const startedNewProjection = previousProjection !== undefined && previousProjection.projectionEpoch !== response.projection.projectionEpoch
         const nextProjection = { ...mergeWorkbenchProjection(previousProjection, response.projection), digest: response.projection.digest ?? previousProjection?.digest }
         projectionRef.current = nextProjection
         setProjection(nextProjection)
         setProcessingMs(response.processingMs)
-        if (response.events.length) setEvents((current) => [...response.events].reverse().concat(current).slice(0, 150))
-        if (response.statistics.length) setStatistics((current) => [...response.statistics, ...current].slice(0, 150))
+        if (startedNewProjection) {
+          setEvents([...response.events].reverse())
+          setStatistics([...response.statistics])
+        } else {
+          if (response.events.length) setEvents((current) => [...response.events].reverse().concat(current).slice(0, 150))
+          if (response.statistics.length) setStatistics((current) => [...response.statistics, ...current].slice(0, 150))
+        }
         try { await database.appendTelemetry(response.events, response.statistics) } catch (reason) { setError(messageOf(reason)) }
       } else if (response.type === 'STATUS') {
         setStatus(response.status)
@@ -135,6 +148,7 @@ export default function App() {
       const saved = await database.importBundle(value)
       client.load(saved.snapshot)
       setSeed(saved.snapshot.state.config.seed)
+      setWorldSetup(worldSetupFromCreation(saved.snapshot.state.config.worldCreation))
       setEvents([])
       setStatistics([])
       setSelectedCellId(undefined)
@@ -145,8 +159,18 @@ export default function App() {
     if (importRef.current) importRef.current.value = ''
   }
 
-  function createRun() {
-    client.create(seed)
+  function createFromSetup() {
+    setSeed(worldSetup.seed)
+    client.create({
+      seed: worldSetup.seed,
+      name: worldSetup.name,
+      width: worldSetup.width,
+      height: worldSetup.height,
+      initialPopulationCount: worldSetup.population,
+      settlements: worldSetup.placements.map((placement, index) => ({ id: `settlement-${index + 1}`, name: placement.name, preset: placement.region })),
+      populationZones: worldSetup.placements.map((placement, index) => ({ id: `population-zone-${index + 1}`, name: `${placement.name} residents`, populationCount: placement.allocation, settlementId: `settlement-${index + 1}`, preset: placement.region, radiusCells: 3 })),
+    })
+    setSetupOpen(false)
     setEvents([])
     setStatistics([])
     setSelectedCellId(undefined)
@@ -185,6 +209,9 @@ export default function App() {
           <div className="mark" aria-hidden="true">⬡</div>
           <div><h1>World Simulation</h1><span>deterministic engine workbench</span></div>
         </div>
+        <nav className="mode-navigation" aria-label="Workbench modes">
+          {(['world', 'simulation', 'analytics', 'entities'] as const).map((mode) => <button key={mode} aria-current={activeMode === mode ? 'page' : undefined} className={activeMode === mode ? 'active' : ''} onClick={() => setActiveMode(mode)}>{mode}</button>)}
+        </nav>
         <div className="run-facts">
           <Fact label="SEED" value={projection?.seed ?? '—'} />
           <Fact label="TIME" value={`Day ${day} · ${hour.toString().padStart(2, '0')}:00`} />
@@ -195,8 +222,8 @@ export default function App() {
       </header>
 
       <section className="controlbar" aria-label="Simulation controls">
-        <label className="seed-control"><span>World seed</span><input value={seed} onChange={(event) => setSeed(event.target.value)} /></label>
-        <button className="secondary" onClick={createRun}>New world</button>
+        <button className="secondary" onClick={() => setSetupOpen(true)}>Create world</button>
+        <span className="active-world-seed">Seed <strong>{projection?.seed ?? seed}</strong></span>
         <div className="divider" />
         <button className="icon-button" onClick={() => client.step()} disabled={status === 'playing'} title="Advance one hour">Step +1h</button>
         {status === 'playing'
@@ -216,7 +243,9 @@ export default function App() {
 
       <section className="workspace">
         <aside className="left-panel panel">
-          <PanelTitle title="Map layers" subtitle={`${projection?.world.cellCount ?? 0} hex cells`} />
+          {(activeMode === 'world') && <section className="world-overview"><span className="eyebrow">WORLD OVERVIEW</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{projection ? `${projection.world.width} × ${projection.world.height} hexes · ${projection.world.scale.hexRadiusMeters / 1000} km radius` : 'Awaiting authoritative world'}</small><div><span>People</span><b>{projection?.summary.populationCount ?? 0}</b><span>Households</span><b>{projection?.summary.householdCount ?? 0}</b></div></section>}
+          {(activeMode === 'world' || activeMode === 'entities') && <section className="entity-catalog" aria-label="Entity categories"><span className="eyebrow">ENTITIES</span><button onClick={() => setActiveMode('entities')}>People <b>{projection?.summary.populationCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Households <b>{projection?.summary.householdCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Communities <b>{projection?.communities.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Settlements <b>{projection?.settlements.length ?? 0}</b></button>{projection && <div className="settlement-list">{projection.settlements.map((settlement) => <span key={settlement.id}>{settlement.name}<small>{projection.populationZones.find((zone) => zone.settlementId === settlement.id)?.populationCount ?? 0} people</small></span>)}</div>}<small>Communities are geographic exposure measures, not memberships.</small></section>}
+          {(activeMode === 'world' || activeMode === 'simulation') && <><PanelTitle title="Map layers" subtitle={`${projection?.world.cellCount ?? 0} hex cells`} />
           <div className="overlay-list">
             {(['terrain', 'elevation', 'habitability', 'movement', 'food', 'population', 'community'] as MapOverlay[]).map((entry) => (
               <button key={entry} aria-pressed={overlay === entry} className={overlay === entry ? 'active' : ''} onClick={() => setOverlay(entry)}><span className={`swatch ${entry}`} />{entry}</button>
@@ -225,8 +254,8 @@ export default function App() {
           {projection && <div className="map-annotation-toggles" aria-label="Map annotations">
             <button aria-label="Activity locations" aria-pressed={showActivityLocations} className={showActivityLocations ? 'active' : ''} onClick={() => setShowActivityLocations((current) => !current)}>Activity locations</button>
             <button aria-label="Households" aria-pressed={showHouseholds} className={showHouseholds ? 'active' : ''} onClick={() => setShowHouseholds((current) => !current)}>Households</button>
-          </div>}
-          <PanelTitle title="Daily samples" subtitle="Latest aggregates" />
+          </div>}</>}
+          {(activeMode === 'world' || activeMode === 'analytics') && <><PanelTitle title="Daily samples" subtitle="Latest aggregates" />
           <div className="metric-list">
             <Metric label="Cells" value={recentMetrics['world.cellCount'] ?? projection?.world.cellCount ?? 0} />
             <Metric label="Habitable" value={recentMetrics['world.habitableCells'] ?? '—'} />
@@ -254,12 +283,12 @@ export default function App() {
             selectedMeasureId={communityMeasureId}
             onSelectMeasure={(id) => { setCommunityMeasureId(id); setOverlay('community') }}
             onInspect={inspectCommunity}
-          />}
+          />}</>}
         </aside>
 
         <section className="map-panel panel">
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {projection?.map.overlay ?? overlay}{projection && projection.map.overlay !== overlay ? ' · updating…' : ''}</span></div>
-          {projection ? <HexMap world={projection.world} map={projection.map} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selectedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelectedCellId(cell.id); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onFocusCell={(cellId) => { setSelectedCellId(cellId); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onViewportRequest={requestViewport} /> : <div className="loading">Starting simulation worker…</div>}
+          {projection ? <HexMap world={projection.world} settlements={projection.settlements} map={projection.map} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selectedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelectedCellId(cell.id); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onFocusCell={(cellId) => { setSelectedCellId(cellId); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onViewportRequest={requestViewport} /> : <div className="loading">Starting simulation worker…</div>}
         </section>
 
         <aside className="right-panel panel">
@@ -295,6 +324,7 @@ export default function App() {
           {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
       </section>
+      {setupOpen && <WorldSetup value={worldSetup} onChange={setWorldSetup} onClose={() => setSetupOpen(false)} onCreate={createFromSetup} />}
     </main>
   )
 }
@@ -302,6 +332,27 @@ export default function App() {
 function Fact({ label, value, mono }: { label: string; value: string; mono?: boolean }) { return <div className="fact"><span>{label}</span><strong className={mono ? 'mono' : ''}>{value}</strong></div> }
 function PanelTitle({ title, subtitle }: { title: string; subtitle: string }) { return <div className="panel-title"><div><h2>{title}</h2><span>{subtitle}</span></div></div> }
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
+
+function worldSetupFromCreation(creation: WorldCreationRequest): WorldSetupValues {
+  const first = creation.populationZones[0]
+  const second = creation.populationZones[1]
+  const settlementName = (zone: typeof first, fallback: string) => creation.settlements.find((settlement) => settlement.id === zone?.settlementId)?.name ?? zone?.name.replace(/ residents$/, '') ?? fallback
+  const firstPopulation = first?.populationCount ?? Math.floor(creation.initialPopulationCount / 2)
+  const remainingPopulation = creation.initialPopulationCount - firstPopulation
+  return {
+    name: creation.name,
+    seed: creation.seed,
+    width: creation.width,
+    height: creation.height,
+    population: creation.initialPopulationCount,
+    // Imported snapshots store resolved cells rather than their draft preset;
+    // retain their names/counts and choose distinct editable presets.
+    placements: [
+      { name: settlementName(first, 'Westhaven'), region: 'west', allocation: firstPopulation },
+      { name: creation.populationZones.length > 2 ? 'Other starting places' : settlementName(second, 'Eastwatch'), region: 'east', allocation: remainingPopulation },
+    ],
+  }
+}
 
 function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell; people: PersonState[]; onSelectPerson: (id: string) => void }) {
   return <div className="inspector-grid">

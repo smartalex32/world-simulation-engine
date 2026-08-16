@@ -198,10 +198,10 @@ describe('Milestone 6 authoritative integration', () => {
     expect(namesAfterThousand.some((name) => name.includes('community'))).toBe(false)
   }, 30_000)
 
-  it('matches the canonical engine-0.8 1000-tick digest', async () => {
+  it('matches the canonical engine-0.9 1000-tick digest', async () => {
     const engine = SimulationEngine.create('milestone-6-canonical')
     engine.step(1000)
-    expect((await engine.snapshot()).digest).toBe('1126cf8c108b5531ff7e3f76b95d13bc6370f2f5ccd61a9b2f34844b80164b0b')
+    expect((await engine.snapshot()).digest).toBe('cf8f2c69a828d0539fde8aa0e5f91a15df34a3e3ce2d77ee3181e8ce4a1efe01')
   }, 30_000)
 
   it('rejects malformed catchments and explanation traces', async () => {

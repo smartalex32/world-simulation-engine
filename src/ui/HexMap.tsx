@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CommunityVariableDefinition, CommunityVariableId } from '../simulation/community/types'
 import type { GeographicCell } from '../simulation/domain/types'
-import type { MapProjection, ProjectedMapCell, ProjectionOverlay, ProjectedCommunityState, WorldDescriptor } from '../projection'
+import type { MapProjection, ProjectedMapCell, ProjectedSettlement, ProjectionOverlay, ProjectedCommunityState, WorldDescriptor } from '../projection'
 import { axialToPixel, pixelToAxial } from '../simulation/spatial/hex'
 import { aggregateRegionPolygon, fitWorld, mapProjectionRequest, type MapViewportState } from './mapViewport'
 
@@ -9,6 +9,7 @@ export type MapOverlay = ProjectionOverlay
 
 interface HexMapProps {
   world: WorldDescriptor
+  settlements: readonly ProjectedSettlement[]
   map: MapProjection
   overlay: MapOverlay
   communityMeasureId: CommunityVariableId
@@ -26,7 +27,7 @@ interface HexMapProps {
 
 const HEX_SIZE = 18
 
-export function HexMap({ world, map, overlay, communityMeasureId, communities, communityVariableDefinitions, selectedCellId, selectedCommunityId, showActivityLocations, showHouseholds, selectedPersonId, onSelect, onFocusCell, onViewportRequest }: HexMapProps) {
+export function HexMap({ world, settlements = [], map, overlay, communityMeasureId, communities, communityVariableDefinitions, selectedCellId, selectedCommunityId, showActivityLocations, showHouseholds, selectedPersonId, onSelect, onFocusCell, onViewportRequest }: HexMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState<MapViewportState>({ width: 0, height: 0, scale: 0.86, x: 34, y: 42 })
@@ -93,8 +94,9 @@ export function HexMap({ world, map, overlay, communityMeasureId, communities, c
     drawPopulation(context, map, viewport.scale)
     if (showActivityLocations) drawLocationMarkers(context, map.activityMarkers, viewport.scale, 'activity')
     if (showHouseholds) drawLocationMarkers(context, map.householdMarkers, viewport.scale, 'household')
+    drawSettlementMarkers(context, settlements, viewport, HEX_SIZE)
     context.restore()
-  }, [communityMeasureId, map, overlay, selectedCell, selectedCellId, showActivityLocations, showHouseholds, viewport])
+  }, [communityMeasureId, map, overlay, selectedCell, selectedCellId, settlements, showActivityLocations, showHouseholds, viewport])
 
   function focusAt(clientX: number, clientY: number): void {
     const bounds = canvasRef.current?.getBoundingClientRect()
@@ -213,6 +215,40 @@ function drawLocationMarkers(context: CanvasRenderingContext2D, markers: readonl
     else { context.moveTo(center.x, center.y - radius); context.lineTo(center.x + radius, center.y + radius); context.lineTo(center.x - radius, center.y + radius); context.closePath() }
     context.fillStyle = kind === 'activity' ? (marker.selected ? 'rgba(120, 215, 255, .95)' : 'rgba(104, 185, 210, .7)') : (marker.selected ? 'rgba(255, 225, 126, .95)' : 'rgba(226, 172, 83, .72)')
     context.fill()
+  }
+}
+
+function drawSettlementMarkers(context: CanvasRenderingContext2D, settlements: readonly ProjectedSettlement[], viewport: MapViewportState, radius: number): void {
+  const scale = Math.max(viewport.scale, .001)
+  const labelSize = Math.max(9, Math.min(13, 12 / scale))
+  for (const settlement of settlements) {
+    const comma = settlement.anchorCellId.indexOf(',')
+    if (comma <= 0) continue
+    const q = Number(settlement.anchorCellId.slice(0, comma))
+    const r = Number(settlement.anchorCellId.slice(comma + 1))
+    if (!Number.isSafeInteger(q) || !Number.isSafeInteger(r)) continue
+    const center = axialToPixel({ q, r }, radius)
+    const screenX = viewport.x + center.x * viewport.scale
+    const screenY = viewport.y + center.y * viewport.scale
+    if (screenX < -80 || screenY < -30 || screenX > viewport.width + 80 || screenY > viewport.height + 30) continue
+    const markerRadius = 5 / scale
+    context.beginPath()
+    context.arc(center.x, center.y, markerRadius, 0, Math.PI * 2)
+    context.fillStyle = '#f2c94c'
+    context.fill()
+    context.strokeStyle = '#17231f'
+    context.lineWidth = 1.2 / scale
+    context.stroke()
+    context.font = `600 ${labelSize / scale}px Inter, sans-serif`
+    context.textAlign = 'center'
+    context.textBaseline = 'bottom'
+    const labelY = center.y - markerRadius - 4 / scale
+    const padding = 4 / scale
+    const width = context.measureText(settlement.name).width + padding * 2
+    context.fillStyle = 'rgba(7, 14, 16, .82)'
+    context.fillRect(center.x - width / 2, labelY - labelSize / scale - padding / 2, width, labelSize / scale + padding)
+    context.fillStyle = '#f4f0dc'
+    context.fillText(settlement.name, center.x, labelY)
   }
 }
 

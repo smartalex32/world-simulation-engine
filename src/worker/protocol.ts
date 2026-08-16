@@ -1,11 +1,11 @@
 import type { MapProjectionRequest, WorkbenchProjection } from '../projection'
-import type { SimulationEvent, SnapshotEnvelope, StatisticSample } from '../simulation/domain/types'
+import type { SimulationEvent, SnapshotEnvelope, StatisticSample, WorldCreationDraft } from '../simulation/domain/types'
 import type { WorkerContinuationState } from './frameScheduler'
 
 export type WorkbenchSnapshotEnvelope = SnapshotEnvelope & { workerContinuation?: WorkerContinuationState }
 
 export type SimulationCommand =
-  | { type: 'CREATE_RUN'; requestId: string; seed: string }
+  | { type: 'CREATE_RUN'; requestId: string; creation: WorldCreationDraft }
   | { type: 'LOAD_RUN'; requestId: string; snapshot: WorkbenchSnapshotEnvelope }
   | { type: 'STEP'; requestId: string; count?: number }
   | { type: 'PLAY'; requestId: string; ticksPerBatch: number }
