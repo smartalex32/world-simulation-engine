@@ -29,10 +29,16 @@ export interface ContributionView {
   sourceLayer?: string
   kind?: string
   label?: string
+  edgeId?: string
+  targetId?: string
+  sourceValue?: number
+  centeredSourceValue?: number
+  weightPermille?: number
+  communityId?: string
 }
 
 export interface ContributionGroup<T extends ContributionView = ContributionView> {
-  id: 'baseline' | 'dispositions' | 'current-state' | 'needs' | 'environment-opportunity' | 'other'
+  id: 'baseline' | 'dispositions' | 'current-state' | 'needs' | 'community-exposure' | 'environment-opportunity' | 'other'
   label: string
   contributions: T[]
 }
@@ -42,6 +48,7 @@ const CONTRIBUTION_GROUPS: ReadonlyArray<Pick<ContributionGroup, 'id' | 'label'>
   { id: 'dispositions', label: 'Dispositions' },
   { id: 'current-state', label: 'Current state' },
   { id: 'needs', label: 'Needs' },
+  { id: 'community-exposure', label: 'Community exposure' },
   { id: 'environment-opportunity', label: 'Environment / opportunity' },
   { id: 'other', label: 'Other sources' },
 ]
@@ -87,6 +94,7 @@ export function contributionGroups<T extends ContributionView>(contributions: re
 
 function contributionGroupId(contribution: ContributionView): ContributionGroup['id'] {
   if (contribution.kind === 'baseline' || contribution.kind === 'base') return 'baseline'
+  if (contribution.kind === 'communityInfluence') return 'community-exposure'
   if (contribution.sourceLayer === 'trait') return 'dispositions'
   if (contribution.sourceLayer === 'state') return 'current-state'
   if (contribution.sourceLayer === 'need') return 'needs'

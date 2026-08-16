@@ -1,6 +1,7 @@
 import {
   BASE_TICK_HOURS,
   ACTIVITY_REGISTRY_VERSION,
+  COMMUNITY_REGISTRY_VERSION,
   DEVELOPMENT_REGISTRY_VERSION,
   ENGINE_VERSION,
   HOUSEHOLD_MODEL_VERSION,
@@ -8,11 +9,27 @@ import {
   VARIABLE_REGISTRY_VERSION,
   type SimulationEvent,
   type SimulationState,
+  type ActionName,
   type ParentCuriosityModelingExperience,
   type SnapshotEnvelope,
   type StatisticSample,
   type WorldProjection,
 } from '../domain/types'
+import {
+  COMMUNITY_EMERGENT_IDS,
+  COMMUNITY_FEEDBACK_DEFINITIONS,
+  COMMUNITY_STRUCTURAL_FOOD_SECURITY_ID,
+  COMMUNITY_VARIABLE_DEFINITIONS,
+  aggregateCommunityDaily,
+  createCommunityState,
+  createTwoCatchmentGeography,
+  symmetricRoundDivision,
+  type CommunityAggregationTrace,
+  type CommunityDailyCounterState,
+  type CommunitySimulationState,
+  type DailyCommunityCounters,
+  validateCommunitySimulationState,
+} from '../community'
 import { resolveCurrentActivity } from '../activities/model'
 import { scheduleForAge } from '../activities/config'
 import { advanceJourney, chooseAction, resolveAction, type ActionContext, type ActionOutcome, type JourneyOutcome } from '../agents/actions'
@@ -39,6 +56,32 @@ import {
 } from '../exposure/model'
 import { applyParentCuriosityDevelopment } from '../development/apply'
 
+interface RuntimeCommunityCounters {
+  communityId: string
+  windowStartTick: number
+  windowEndTick: number
+  exposedPersonIds: Set<string>
+  encounterParticipantIds: Set<string>
+  encounteredRelationshipIds: Set<string>
+  exposedPersonHours: number
+  commonsPersonHours: number
+  curiosityPersonHourSum: number
+  socializeSelections: number
+  exploreSelections: number
+  explorationArrivals: number
+  mealAttempts: number
+  failedMeals: number
+  encounters: number
+  positiveEncounters: number
+  neutralEncounters: number
+  tenseEncounters: number
+  postEncounterDirectionalTrustPermilleSum: number
+  postEncounterDirectionalFamiliarityPermilleSum: number
+  postEncounterDirectionalFearPermilleSum: number
+  foodAmountBeforeRegeneration: number
+  foodCapacity: number
+}
+
 export interface StepResult {
   projection: WorldProjection
   events: SimulationEvent[]
@@ -53,6 +96,8 @@ export class SimulationEngine {
   private readonly householdById: Map<string, SimulationState['households'][number]>
   private readonly activityLocationById: Map<string, SimulationState['activityLocations'][number]>
   private readonly parentIdsByChildId: Map<string, readonly string[]>
+  private readonly communityByCellId: Map<string, CommunitySimulationState>
+  private readonly communityCountersById: Map<string, RuntimeCommunityCounters>
 
   private constructor(private state: SimulationState, random: RandomProvider) {
     this.random = random
@@ -61,6 +106,9 @@ export class SimulationEngine {
     this.relationshipById = new Map(state.relationships.map((relationship) => [relationship.id, relationship]))
     this.householdById = new Map(state.households.map((household) => [household.id, household]))
     this.activityLocationById = new Map(state.activityLocations.map((location) => [location.id, location]))
+    this.communityByCellId = new Map()
+    for (const community of state.communities) for (const cellId of community.catchment.cellIds) this.communityByCellId.set(cellId, community)
+    this.communityCountersById = new Map(state.dailyCommunityCounters.map(({ communityId, counters }) => [communityId, runtimeCommunityCounters(communityId, counters)]))
     const parentIdsByChildId = new Map<string, string[]>()
     for (const link of state.parentChildLinks) {
       const parentIds = parentIdsByChildId.get(link.childId)
@@ -75,6 +123,15 @@ export class SimulationEngine {
     const normalizedSeed = seed.trim() || 'valley-001'
     const { world, random } = generateValley(normalizedSeed, width, height)
     const generatedPopulation = generatePopulation(world.grid.cells, random)
+    const catchments = createTwoCatchmentGeography({ cells: world.grid.cells, width, height })
+    const worldCellById = new Map(world.grid.cells.map((cell) => [cell.id, cell]))
+    const communities: CommunitySimulationState[] = catchments.map((catchment) => {
+      const cells = catchment.cellIds.map((cellId) => worldCellById.get(cellId)).filter((cell): cell is NonNullable<typeof cell> => cell !== undefined)
+      const capacity = cells.reduce((sum, cell) => sum + cell.resourceCapacity, 0)
+      const amount = cells.reduce((sum, cell) => sum + cell.foodAmount, 0)
+      const foodSecurity = capacity === 0 ? 0 : symmetricRoundDivision(amount * 1000, capacity)
+      return { ...createCommunityState(catchment, 500, foodSecurity), lastUpdatedTick: 0, latestTraces: [] }
+    })
     const runId = `run-${world.id.slice(6)}-${width}x${height}`
     return new SimulationEngine({
       runId,
@@ -90,12 +147,15 @@ export class SimulationEngine {
         householdModelVersion: HOUSEHOLD_MODEL_VERSION,
         activityRegistryVersion: ACTIVITY_REGISTRY_VERSION,
         developmentRegistryVersion: DEVELOPMENT_REGISTRY_VERSION,
+        communityRegistryVersion: COMMUNITY_REGISTRY_VERSION,
       },
       world,
       people: generatedPopulation.people,
       households: generatedPopulation.households,
       parentChildLinks: generatedPopulation.parentChildLinks,
       activityLocations: generatedPopulation.activityLocations,
+      communities,
+      dailyCommunityCounters: communities.map(({ catchment }) => emptyCommunityCounterState(catchment.id, 1)),
       relationships: [],
       dailySpatialCounters: { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 },
       dailySocialCounters: { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 },
@@ -135,6 +195,7 @@ export class SimulationEngine {
         const journey = advanceJourney(person, HOURLY_TRAVEL_BUDGET)
         if (journey?.arrived) {
           this.recordTravel(journey.travelCost)
+          if (journey.kind === 'explore') this.recordCommunityExplorationArrival(journey.targetCellId)
           pushEvent(this.journeyEvent(person.id, journey))
         }
       }
@@ -143,7 +204,7 @@ export class SimulationEngine {
 
       const occupantsByCell = this.buildOccupancy(true)
       const occupantsByActivityLocation = this.buildActivityOccupancy()
-      const context: ActionContext = { tick: this.state.tick, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation }
+      const context: ActionContext = { tick: this.state.tick, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId }
       const actionRng = this.random.stream('actions')
       const decisions = this.state.people
         .filter((person) => !person.journey)
@@ -153,6 +214,8 @@ export class SimulationEngine {
         if (outcome.arrived) this.recordTravel(outcome.travelCost)
         this.state.dailySpatialCounters.foodConsumed += outcome.foodConsumed
         if (outcome.failedMeal) this.state.dailySpatialCounters.failedMeals += 1
+        this.recordCommunityAction(decision.action, outcome)
+        if (decision.action === 'explore' && outcome.arrived && decision.targetCellId) this.recordCommunityExplorationArrival(decision.targetCellId)
         pushEvent(this.actionEvent(person.id, decision, outcome))
       }
       this.resolveActivities(pushEvent)
@@ -169,6 +232,7 @@ export class SimulationEngine {
       }, this.random.stream('encounters'))
       for (const encounter of encounters) {
         const formed = this.applyEncounter(encounter)
+        this.recordCommunityEncounter(encounter)
         if (formed) pushEvent(this.relationshipFormedEvent(encounter))
         pushEvent(this.encounterEvent(encounter))
       }
@@ -176,10 +240,12 @@ export class SimulationEngine {
         this.state.relationships = [...this.relationshipById.values()].sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
       }
       this.recordActivityPersonHours()
+      this.recordCommunityPersonHours()
       this.accumulateDevelopmentExposure()
       if (this.state.tick % 720 === 0) this.processDevelopment(pushEvent)
       this.advanceAges(pushEvent)
       if (this.state.tick % 24 === 0) {
+        this.aggregateCommunities(pushEvent)
         this.regenerateFood()
         statistics.push(...this.sampleDailyStatistics())
         this.decayRelationshipFrequencies()
@@ -187,9 +253,11 @@ export class SimulationEngine {
         this.state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
         this.state.dailyActivityCounters = { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 }
         this.state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0 }
+        this.resetCommunityCounters(this.state.tick + 1)
       }
     }
     this.state.randomStreams = this.random.snapshot()
+    this.syncCommunityCounterState()
     const clockEvent = this.event('CLOCK_ADVANCED', { hours: count, currentTick: this.state.tick })
     pushEvent(clockEvent)
     if (events.length === 500 && eventWriteIndex > 0) {
@@ -211,14 +279,18 @@ export class SimulationEngine {
       households: this.state.households,
       parentChildLinks: this.state.parentChildLinks,
       activityLocations: this.state.activityLocations,
+      communities: this.state.communities,
       relationships: this.state.relationships,
       variableDefinitions: PERSON_VARIABLE_DEFINITIONS,
+      communityVariableDefinitions: COMMUNITY_VARIABLE_DEFINITIONS,
+      communityFeedbackDefinitions: COMMUNITY_FEEDBACK_DEFINITIONS,
       digest,
     }
   }
 
   async snapshot(): Promise<SnapshotEnvelope> {
     this.state.randomStreams = this.random.snapshot()
+    this.syncCommunityCounterState()
     return createSnapshot(this.state)
   }
 
@@ -244,7 +316,7 @@ export class SimulationEngine {
       ? Math.round(this.state.relationships.reduce((sum, relationship) => sum + relationship.familiarity, 0) / relationshipCount)
       : 0
     const base = { runId: this.state.runId, tick: this.state.tick, metricVersion: 1 as const, scope: 'world' as const }
-    return [
+    const worldSamples: StatisticSample[] = [
       { ...base, metricId: 'world.cellCount', value: cells.length },
       { ...base, metricId: 'world.habitableCells', value: cells.filter((cell) => cell.habitability > 0).length },
       { ...base, metricId: 'engine.simulatedDays', value: this.state.tick / 24 },
@@ -270,6 +342,24 @@ export class SimulationEngine {
       { ...base, metricId: 'development.curiosityChanges', value: this.state.dailyDevelopmentCounters.developmentChanges },
       { ...base, metricId: 'development.absoluteCuriosityChange', value: this.state.dailyDevelopmentCounters.absoluteCuriosityChange },
     ]
+    const countersById = new Map(this.state.dailyCommunityCounters.map((entry) => [entry.communityId, entry.counters]))
+    const communitySamples: StatisticSample[] = this.state.communities.flatMap((community) => {
+      const scopeId = community.catchment.id
+      const counters = countersById.get(scopeId)
+      if (!counters) throw new Error(`Missing daily community counters for ${scopeId}`)
+      const communityBase = { runId: this.state.runId, tick: this.state.tick, metricVersion: 1 as const, scope: 'community' as const, scopeId }
+      return [
+        { ...communityBase, metricId: 'community.emergent.socialTrust' as const, value: community.emergent['community.emergent.socialTrust'] },
+        { ...communityBase, metricId: 'community.emergent.cohesion' as const, value: community.emergent['community.emergent.cohesion'] },
+        { ...communityBase, metricId: 'community.emergent.cooperation' as const, value: community.emergent['community.emergent.cooperation'] },
+        { ...communityBase, metricId: 'community.emergent.conflict' as const, value: community.emergent['community.emergent.conflict'] },
+        { ...communityBase, metricId: 'community.emergent.innovationClimate' as const, value: community.emergent['community.emergent.innovationClimate'] },
+        { ...communityBase, metricId: 'community.structural.foodSecurity' as const, value: community.structural[COMMUNITY_STRUCTURAL_FOOD_SECURITY_ID] },
+        { ...communityBase, metricId: 'community.exposedPersonHours' as const, value: counters.exposedPersonHours },
+        { ...communityBase, metricId: 'community.encounters' as const, value: counters.encounters },
+      ]
+    })
+    return [...worldSamples, ...communitySamples]
   }
 
   private regenerateFood(): void {
@@ -281,6 +371,130 @@ export class SimulationEngine {
   private recordTravel(cost: number): void {
     this.state.dailySpatialCounters.travelCost += cost
     this.state.dailySpatialCounters.completedMoves += 1
+  }
+
+  private recordCommunityAction(action: ActionName, outcome: ActionOutcome): void {
+    const counters = this.communityCountersForCell(outcome.fromCellId)
+    if (action === 'socialize') counters.socializeSelections += 1
+    else if (action === 'explore') counters.exploreSelections += 1
+    else if (action === 'eat') {
+      counters.mealAttempts += 1
+      if (outcome.failedMeal) counters.failedMeals += 1
+    }
+  }
+
+  private recordCommunityExplorationArrival(cellId: string): void {
+    this.communityCountersForCell(cellId).explorationArrivals += 1
+  }
+
+  private recordCommunityEncounter(encounter: ResolvedEncounter): void {
+    const counters = this.communityCountersForCell(encounter.cellId)
+    const id = relationshipId(encounter.initiatorId, encounter.participantId)
+    const relationship = this.relationshipById.get(id)
+    if (!relationship) throw new Error(`Community encounter ${id} has no relationship state`)
+    counters.encounters += 1
+    if (encounter.outcome === 'positive') counters.positiveEncounters += 1
+    else if (encounter.outcome === 'neutral') counters.neutralEncounters += 1
+    else counters.tenseEncounters += 1
+    counters.encounterParticipantIds.add(encounter.initiatorId)
+    counters.encounterParticipantIds.add(encounter.participantId)
+    counters.encounteredRelationshipIds.add(id)
+    counters.postEncounterDirectionalTrustPermilleSum += symmetricRoundDivision(relationship.aToB.trust + relationship.bToA.trust, 2)
+    counters.postEncounterDirectionalFamiliarityPermilleSum += relationship.familiarity
+    counters.postEncounterDirectionalFearPermilleSum += symmetricRoundDivision(relationship.aToB.fear + relationship.bToA.fear, 2)
+  }
+
+  private recordCommunityPersonHours(): void {
+    for (const person of this.state.people) {
+      const counters = this.communityCountersForCell(person.locationCellId)
+      counters.exposedPersonIds.add(person.id)
+      counters.exposedPersonHours += 1
+      if (person.currentActivity.kind === 'commons') counters.commonsPersonHours += 1
+      counters.curiosityPersonHourSum += getPersonVariable(person.variables, PERSON_VARIABLE_ID.curiosity)
+    }
+  }
+
+  private aggregateCommunities(pushEvent: (event: SimulationEvent) => void): void {
+    for (const counters of this.communityCountersById.values()) {
+      counters.foodAmountBeforeRegeneration = 0
+      counters.foodCapacity = 0
+    }
+    for (const cell of this.state.world.grid.cells) {
+      const counters = this.communityCountersForCell(cell.id)
+      counters.foodAmountBeforeRegeneration += cell.foodAmount
+      counters.foodCapacity += cell.resourceCapacity
+    }
+    this.syncCommunityCounterState()
+    const counterStateById = new Map(this.state.dailyCommunityCounters.map((entry) => [entry.communityId, entry.counters]))
+    const nextCommunities: CommunitySimulationState[] = []
+    for (const community of this.state.communities) {
+      const counters = counterStateById.get(community.catchment.id)
+      if (!counters) throw new Error(`Missing daily community evidence for ${community.catchment.id}`)
+      const aggregated = aggregateCommunityDaily(community, counters)
+      const next: CommunitySimulationState = {
+        ...aggregated.state,
+        lastUpdatedTick: this.state.tick,
+        latestTraces: [...aggregated.traces],
+      }
+      nextCommunities.push(next)
+      if (counters.exposedPersonHours > 0) pushEvent(this.communityUpdatedEvent(community, next, aggregated.traces, counters))
+    }
+    this.state.communities = nextCommunities
+    this.communityByCellId.clear()
+    for (const community of this.state.communities) {
+      for (const cellId of community.catchment.cellIds) this.communityByCellId.set(cellId, community)
+    }
+  }
+
+  private communityUpdatedEvent(
+    previous: CommunitySimulationState,
+    current: CommunitySimulationState,
+    traces: readonly CommunityAggregationTrace[],
+    counters: DailyCommunityCounters,
+  ): SimulationEvent {
+    const traceById = new Map(traces.map((trace) => [trace.variableId, trace]))
+    const payload: SimulationEvent['payload'] = {
+      communityId: current.catchment.id,
+      communityName: current.catchment.displayName,
+      windowStartTick: counters.windowStartTick,
+      windowEndTick: counters.windowEndTick,
+      exposedPersonHours: counters.exposedPersonHours,
+      encounters: counters.encounters,
+      foodSecurityPermille: current.structural[COMMUNITY_STRUCTURAL_FOOD_SECURITY_ID],
+      foodSecurityDeltaPermille: current.structural[COMMUNITY_STRUCTURAL_FOOD_SECURITY_ID] - previous.structural[COMMUNITY_STRUCTURAL_FOOD_SECURITY_ID],
+    }
+    for (const id of COMMUNITY_EMERGENT_IDS) {
+      const name = id.slice('community.emergent.'.length)
+      payload[`${name}Permille`] = current.emergent[id]
+      payload[`${name}DeltaPermille`] = current.emergent[id] - previous.emergent[id]
+      const trace = traceById.get(id)
+      if (!trace || trace.nextValuePermille !== current.emergent[id]) throw new Error(`Community update trace is missing ${id}`)
+    }
+    return this.event('COMMUNITY_MEASURES_UPDATED', payload)
+  }
+
+  private resetCommunityCounters(windowStartTick: number): void {
+    this.communityCountersById.clear()
+    for (const community of this.state.communities) {
+      this.communityCountersById.set(community.catchment.id, emptyRuntimeCommunityCounters(community.catchment.id, windowStartTick))
+    }
+    this.syncCommunityCounterState()
+  }
+
+  private syncCommunityCounterState(): void {
+    this.state.dailyCommunityCounters = this.state.communities.map((community) => {
+      const runtime = this.communityCountersById.get(community.catchment.id)
+      if (!runtime) throw new Error(`Community ${community.catchment.id} has no daily counters`)
+      return serializeRuntimeCommunityCounters(runtime)
+    })
+  }
+
+  private communityCountersForCell(cellId: string): RuntimeCommunityCounters {
+    const community = this.communityByCellId.get(cellId)
+    if (!community) throw new Error(`Cell ${cellId} does not belong to a community catchment`)
+    const counters = this.communityCountersById.get(community.catchment.id)
+    if (!counters) throw new Error(`Community ${community.catchment.id} has no daily counters`)
+    return counters
   }
 
   private buildOccupancy(excludeTravelers = false): Map<string, string[]> {
@@ -566,6 +780,7 @@ export class SimulationEngine {
 
   private assertInvariants(): void {
     validateHouseholdActivityState(this.state)
+    validateCommunitySimulationState(this.state)
     const { width, height, cells } = this.state.world.grid
     if (cells.length !== width * height) throw new Error('World cell count does not match bounds')
     if (new Set(cells.map((cell) => cell.id)).size !== cells.length) throw new Error('World contains duplicate cell IDs')
@@ -610,4 +825,94 @@ export class SimulationEngine {
 
 function compareIds(first: string, second: string): number {
   return first < second ? -1 : first > second ? 1 : 0
+}
+
+function emptyCommunityCounterState(communityId: string, windowStartTick: number): CommunityDailyCounterState {
+  return serializeRuntimeCommunityCounters(emptyRuntimeCommunityCounters(communityId, windowStartTick))
+}
+
+function emptyRuntimeCommunityCounters(communityId: string, windowStartTick: number): RuntimeCommunityCounters {
+  return {
+    communityId,
+    windowStartTick,
+    windowEndTick: windowStartTick + 23,
+    exposedPersonIds: new Set(),
+    encounterParticipantIds: new Set(),
+    encounteredRelationshipIds: new Set(),
+    exposedPersonHours: 0,
+    commonsPersonHours: 0,
+    curiosityPersonHourSum: 0,
+    socializeSelections: 0,
+    exploreSelections: 0,
+    explorationArrivals: 0,
+    mealAttempts: 0,
+    failedMeals: 0,
+    encounters: 0,
+    positiveEncounters: 0,
+    neutralEncounters: 0,
+    tenseEncounters: 0,
+    postEncounterDirectionalTrustPermilleSum: 0,
+    postEncounterDirectionalFamiliarityPermilleSum: 0,
+    postEncounterDirectionalFearPermilleSum: 0,
+    foodAmountBeforeRegeneration: 0,
+    foodCapacity: 0,
+  }
+}
+
+function runtimeCommunityCounters(communityId: string, counters: DailyCommunityCounters): RuntimeCommunityCounters {
+  return {
+    communityId,
+    windowStartTick: counters.windowStartTick,
+    windowEndTick: counters.windowEndTick,
+    exposedPersonIds: new Set(counters.exposedPersonIds),
+    encounterParticipantIds: new Set(counters.encounterParticipantIds),
+    encounteredRelationshipIds: new Set(counters.encounteredRelationshipIds),
+    exposedPersonHours: counters.exposedPersonHours,
+    commonsPersonHours: counters.commonsPersonHours,
+    curiosityPersonHourSum: counters.curiosityPersonHourSum,
+    socializeSelections: counters.socializeSelections,
+    exploreSelections: counters.exploreSelections,
+    explorationArrivals: counters.explorationArrivals,
+    mealAttempts: counters.mealAttempts,
+    failedMeals: counters.failedMeals,
+    encounters: counters.encounters,
+    positiveEncounters: counters.positiveEncounters,
+    neutralEncounters: counters.neutralEncounters,
+    tenseEncounters: counters.tenseEncounters,
+    postEncounterDirectionalTrustPermilleSum: counters.postEncounterDirectionalTrustPermilleSum,
+    postEncounterDirectionalFamiliarityPermilleSum: counters.postEncounterDirectionalFamiliarityPermilleSum,
+    postEncounterDirectionalFearPermilleSum: counters.postEncounterDirectionalFearPermilleSum,
+    foodAmountBeforeRegeneration: counters.foodAmountBeforeRegeneration,
+    foodCapacity: counters.foodCapacity,
+  }
+}
+
+function serializeRuntimeCommunityCounters(runtime: RuntimeCommunityCounters): CommunityDailyCounterState {
+  return {
+    communityId: runtime.communityId,
+    counters: {
+      windowStartTick: runtime.windowStartTick,
+      windowEndTick: runtime.windowEndTick,
+      exposedPersonIds: [...runtime.exposedPersonIds].sort(compareIds),
+      encounterParticipantIds: [...runtime.encounterParticipantIds].sort(compareIds),
+      encounteredRelationshipIds: [...runtime.encounteredRelationshipIds].sort(compareIds),
+      exposedPersonHours: runtime.exposedPersonHours,
+      commonsPersonHours: runtime.commonsPersonHours,
+      curiosityPersonHourSum: runtime.curiosityPersonHourSum,
+      socializeSelections: runtime.socializeSelections,
+      exploreSelections: runtime.exploreSelections,
+      explorationArrivals: runtime.explorationArrivals,
+      mealAttempts: runtime.mealAttempts,
+      failedMeals: runtime.failedMeals,
+      encounters: runtime.encounters,
+      positiveEncounters: runtime.positiveEncounters,
+      neutralEncounters: runtime.neutralEncounters,
+      tenseEncounters: runtime.tenseEncounters,
+      postEncounterDirectionalTrustPermilleSum: runtime.postEncounterDirectionalTrustPermilleSum,
+      postEncounterDirectionalFamiliarityPermilleSum: runtime.postEncounterDirectionalFamiliarityPermilleSum,
+      postEncounterDirectionalFearPermilleSum: runtime.postEncounterDirectionalFearPermilleSum,
+      foodAmountBeforeRegeneration: runtime.foodAmountBeforeRegeneration,
+      foodCapacity: runtime.foodCapacity,
+    },
+  }
 }

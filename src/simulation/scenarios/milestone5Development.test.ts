@@ -8,6 +8,7 @@ import { createParentCuriosityExposureAccumulator, PARENT_CURIOSITY_EXPOSURE_CHA
 import { createSnapshot } from '../serialization/snapshot'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { getPersonVariable, setPersonVariable } from '../variables/storage'
+import { createCommunityState, createDailyCommunityCounters, createTwoCatchmentGeography } from '../community'
 
 interface ControlledOptions {
   secondParentAway?: boolean
@@ -73,6 +74,12 @@ async function controlledEngine(options: ControlledOptions = {}): Promise<Simula
   state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
   state.dailyActivityCounters = { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 }
   state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0 }
+  const catchments = createTwoCatchmentGeography({ cells: state.world.grid.cells, width: 2, height: 1 })
+  state.communities = catchments.map((catchment) => ({ ...createCommunityState(catchment, 500, 0), lastUpdatedTick: 0, latestTraces: [] }))
+  state.dailyCommunityCounters = state.communities.map((community) => ({
+    communityId: community.catchment.id,
+    counters: { ...createDailyCommunityCounters(), windowStartTick: 1, windowEndTick: 24 },
+  }))
   return SimulationEngine.restore(await createSnapshot(state))
 }
 

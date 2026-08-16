@@ -23,7 +23,7 @@ export interface SavedSnapshot {
 }
 
 interface StoredEvent extends SimulationEvent { storageKey: string }
-interface StoredStatistic extends StatisticSample { storageKey: string }
+type StoredStatistic = StatisticSample & { storageKey: string }
 
 export interface ExportBundle {
   format: 'world-simulation-bundle'
@@ -74,7 +74,7 @@ export class WorkbenchDatabase {
     for (const event of events) eventStore.put({ ...event, storageKey: event.id } satisfies StoredEvent)
     const statisticStore = transaction.objectStore('statistics')
     for (const sample of statistics) {
-      const storageKey = `${sample.runId}:${sample.metricId}:${sample.tick}`
+      const storageKey = statisticStorageKey(sample)
       statisticStore.put({ ...sample, storageKey } satisfies StoredStatistic)
     }
     await transactionDone(transaction)
@@ -150,6 +150,12 @@ export class WorkbenchDatabase {
     }
     return this.databasePromise
   }
+}
+
+/** Community scope is part of identity so two catchments cannot overwrite one another. */
+export function statisticStorageKey(sample: StatisticSample): string {
+  const scopeId = sample.scope === 'community' ? sample.scopeId : 'world'
+  return `${sample.runId}:${sample.scope}:${scopeId}:${sample.metricId}:${sample.tick}`
 }
 
 function request<T>(operation: IDBRequest<T>): Promise<T> {

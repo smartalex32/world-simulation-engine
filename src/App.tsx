@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
+import type { CommunitySimulationState, CommunityVariableDefinition, CommunityVariableId } from './simulation/community/types'
 import type { DevelopmentExperienceType, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, UtilityContribution, WorldProjection } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
 import { findPath } from './simulation/spatial/pathfinding'
 import { HexMap, type MapOverlay } from './ui/HexMap'
 import { ActionExplanation } from './ui/ActionExplanation'
 import { PersonVariableSections } from './ui/PersonVariableSections'
+import { CommunityInspector, CommunitySignals } from './ui/CommunityPanels'
 import type { ContributionView, VariableDefinitionView } from './ui/personVariables'
 import { SimulationWorkerClient } from './worker/client'
 import type { SimulationResponse } from './worker/protocol'
@@ -29,7 +31,9 @@ export default function App() {
   const [statistics, setStatistics] = useState<StatisticSample[]>([])
   const [selected, setSelected] = useState<GeographicCell>()
   const [selectedPersonId, setSelectedPersonId] = useState<string>()
+  const [selectedCommunityId, setSelectedCommunityId] = useState<string>()
   const [overlay, setOverlay] = useState<MapOverlay>('terrain')
+  const [communityMeasureId, setCommunityMeasureId] = useState<CommunityVariableId>('community.emergent.socialTrust')
   const [showActivityLocations, setShowActivityLocations] = useState(false)
   const [showHouseholds, setShowHouseholds] = useState(false)
   const [snapshots, setSnapshots] = useState<SavedSnapshot[]>([])
@@ -132,6 +136,7 @@ export default function App() {
       setStatistics([])
       setSelected(undefined)
       setSelectedPersonId(undefined)
+      setSelectedCommunityId(undefined)
       await refreshSnapshots(saved.runId)
     } catch (reason) { setError(`Import failed: ${messageOf(reason)}`) }
     if (importRef.current) importRef.current.value = ''
@@ -143,6 +148,7 @@ export default function App() {
     setStatistics([])
     setSelected(undefined)
     setSelectedPersonId(undefined)
+    setSelectedCommunityId(undefined)
     setError(undefined)
     lastAutosavedTick.current = -1
   }
@@ -153,6 +159,12 @@ export default function App() {
     const cell = projectionRef.current?.world.grid.cells.find((candidate) => candidate.id === person.locationCellId)
     setSelected(cell)
     setSelectedPersonId(personId)
+    setSelectedCommunityId(undefined)
+  }
+
+  function inspectCommunity(communityId: string) {
+    if (!projectionRef.current?.communities.some((community) => community.catchment.id === communityId)) return
+    setSelectedCommunityId(communityId)
   }
 
   const tick = projection?.tick ?? 0
@@ -160,6 +172,7 @@ export default function App() {
   const hour = tick % 24
   const recentMetrics = newestMetrics(statistics)
   const selectedPerson = projection?.people.find((person) => person.id === selectedPersonId)
+  const selectedCommunity = projection?.communities.find((community) => community.catchment.id === selectedCommunityId)
   const selectedRelationships = selectedPerson ? relationshipViews(selectedPerson.id, projection?.relationships ?? []) : []
 
   return (
@@ -202,8 +215,8 @@ export default function App() {
         <aside className="left-panel panel">
           <PanelTitle title="Map layers" subtitle={`${projection?.world.grid.cells.length ?? 0} hex cells`} />
           <div className="overlay-list">
-            {(['terrain', 'elevation', 'habitability', 'movement', 'food', 'population'] as MapOverlay[]).map((entry) => (
-              <button key={entry} className={overlay === entry ? 'active' : ''} onClick={() => setOverlay(entry)}><span className={`swatch ${entry}`} />{entry}</button>
+            {(['terrain', 'elevation', 'habitability', 'movement', 'food', 'population', 'community'] as MapOverlay[]).map((entry) => (
+              <button key={entry} aria-pressed={overlay === entry} className={overlay === entry ? 'active' : ''} onClick={() => setOverlay(entry)}><span className={`swatch ${entry}`} />{entry}</button>
             ))}
           </div>
           {projection && <div className="map-annotation-toggles" aria-label="Map annotations">
@@ -232,17 +245,26 @@ export default function App() {
             <Metric label="Avg familiarity" value={`${((recentMetrics['social.averageFamiliarity'] ?? averageFamiliarity(projection)) / 10).toFixed(1)}%`} />
             <Metric label="Tense encounters" value={recentMetrics['social.tenseEncounters'] ?? 0} />
           </div>
+          {projection && <CommunitySignals
+            communities={projection.communities}
+            definitions={projection.communityVariableDefinitions}
+            selectedMeasureId={communityMeasureId}
+            onSelectMeasure={(id) => { setCommunityMeasureId(id); setOverlay('community') }}
+            onInspect={inspectCommunity}
+          />}
         </aside>
 
         <section className="map-panel panel">
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {overlay}</span></div>
-          {projection ? <HexMap grid={projection.world.grid} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selected?.id} people={projection.people} relationships={projection.relationships} activityLocations={projection.activityLocations} households={projection.households} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelected(cell); setSelectedPersonId(undefined) }} /> : <div className="loading">Starting simulation worker…</div>}
+          {projection ? <HexMap grid={projection.world.grid} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selected?.id} people={projection.people} relationships={projection.relationships} activityLocations={projection.activityLocations} households={projection.households} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelected(cell); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} /> : <div className="loading">Starting simulation worker…</div>}
         </section>
 
         <aside className="right-panel panel">
-          <PanelTitle title={selectedPerson ? 'Person inspector' : 'Cell inspector'} subtitle={selectedPerson ? selectedPerson.id : selected ? `Cell ${selected.id}` : 'Select a cell'} />
-          {selectedPerson
-            ? <PersonInspector person={selectedPerson} tick={projection?.tick ?? 0} grid={projection?.world.grid} variableDefinitions={projection?.variableDefinitions ?? []} relationships={selectedRelationships} households={projection?.households ?? []} parentChildLinks={projection?.parentChildLinks ?? []} people={projection?.people ?? []} onHookPerson={inspectPerson} onRelease={() => {
+          <PanelTitle title={selectedCommunity ? 'Community inspector' : selectedPerson ? 'Person inspector' : 'Cell inspector'} subtitle={selectedCommunity ? selectedCommunity.catchment.displayName : selectedPerson ? selectedPerson.id : selected ? `Cell ${selected.id}` : 'Select a cell'} />
+          {selectedCommunity
+            ? <CommunityInspector community={selectedCommunity} definitions={projection?.communityVariableDefinitions ?? []} hasHookedPerson={selectedPerson !== undefined} onReturnToPerson={() => setSelectedCommunityId(undefined)} />
+            : selectedPerson
+            ? <PersonInspector person={selectedPerson} tick={projection?.tick ?? 0} grid={projection?.world.grid} variableDefinitions={projection?.variableDefinitions ?? []} communityVariableDefinitions={projection?.communityVariableDefinitions ?? []} communities={projection?.communities ?? []} relationships={selectedRelationships} households={projection?.households ?? []} parentChildLinks={projection?.parentChildLinks ?? []} people={projection?.people ?? []} onHookPerson={inspectPerson} onRelease={() => {
                 const currentCell = projection?.world.grid.cells.find((cell) => cell.id === selectedPerson.locationCellId)
                 setSelected(currentCell)
                 setSelectedPersonId(undefined)
@@ -268,7 +290,7 @@ export default function App() {
         <div className="event-table" role="log">
           <div className="event-header"><span>Tick</span><span>Type</span><span>Details</span></div>
           {events.length === 0 && <div className="event-empty">No events recorded yet.</div>}
-          {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} /></span></div>)}
+          {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
       </section>
     </main>
@@ -293,13 +315,14 @@ function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell;
   </div>
 }
 
-function PersonInspector({ person, tick, grid, variableDefinitions, relationships, households, parentChildLinks, people, onHookPerson, onRelease }: { person: PersonState; tick: number; grid?: WorldProjection['world']['grid']; variableDefinitions: readonly VariableDefinitionView[]; relationships: RelationshipView[]; households: readonly HouseholdState[]; parentChildLinks: readonly ParentChildLink[]; people: readonly PersonState[]; onHookPerson: (id: string) => void; onRelease: () => void }) {
+function PersonInspector({ person, tick, grid, variableDefinitions, communityVariableDefinitions, communities, relationships, households, parentChildLinks, people, onHookPerson, onRelease }: { person: PersonState; tick: number; grid?: WorldProjection['world']['grid']; variableDefinitions: readonly VariableDefinitionView[]; communityVariableDefinitions: readonly CommunityVariableDefinition[]; communities: readonly CommunitySimulationState[]; relationships: RelationshipView[]; households: readonly HouseholdState[]; parentChildLinks: readonly ParentChildLink[]; people: readonly PersonState[]; onHookPerson: (id: string) => void; onRelease: () => void }) {
   const [showDevelopmentInputs, setShowDevelopmentInputs] = useState(false)
   const decision = person.lastDecision
   const homePath = grid ? findPath(grid, person.locationCellId, person.homeCellId) : undefined
   const household = households.find((candidate) => candidate.id === person.householdId)
   const householdMembers = householdMemberViews(person, household, parentChildLinks, people)
   const firstOriginTrace = person.originTraces[0]
+  const geographicCommunity = communities.find((community) => community.catchment.cellIds.includes(person.locationCellId))
   return <div className="person-inspector">
     <div className="tracking-row"><span><i />Person hooked</span><button className="back-button" onClick={onRelease}>Release to current cell</button></div>
     <div className="inspector-grid">
@@ -317,6 +340,14 @@ function PersonInspector({ person, tick, grid, variableDefinitions, relationship
         <Metric label="Cell" value={person.locationCellId} />
         <Metric label="Since tick" value={person.currentActivity.sinceTick} />
       </div>
+    </section>
+    <section className="community-exposure-panel" aria-labelledby="geographic-exposure-heading">
+      <div className="section-heading"><h3 id="geographic-exposure-heading">Current geographic exposure</h3><span>Actual current cell</span></div>
+      {geographicCommunity ? <div className="activity-details">
+        <Metric label="Catchment" value={geographicCommunity.catchment.displayName} />
+        <Metric label="Community ID" value={geographicCommunity.catchment.id} />
+        <Metric label="Cell" value={person.locationCellId} />
+      </div> : <p>No community catchment covers the current cell.</p>}
     </section>
     <PersonVariableSections definitions={variableDefinitions} values={variableValues(person)} layers={['state', 'need']} />
     <section className="household-panel" aria-labelledby="household-heading">
@@ -350,7 +381,7 @@ function PersonInspector({ person, tick, grid, variableDefinitions, relationship
     </section>
     <DevelopmentInspector person={person} tick={tick} variableDefinitions={variableDefinitions} onHookPerson={onHookPerson} showInputs={showDevelopmentInputs} onToggleInputs={() => setShowDevelopmentInputs((current) => !current)} />
     <PersonVariableSections definitions={variableDefinitions} values={variableValues(person)} layers={['trait']} />
-    <ActionExplanation action={decision?.action} probabilityPermille={decision?.probabilityPermille} targetCellId={decision?.targetCellId} contributions={decision ? contributionViews(decision.contributions, variableDefinitions) : []} alternatives={decision?.alternatives ?? []} labelForSource={(sourceId, fallback) => sourceLabel(sourceId, fallback, variableDefinitions)} />
+    <ActionExplanation action={decision?.action} probabilityPermille={decision?.probabilityPermille} targetCellId={decision?.targetCellId} contributions={decision ? contributionViews(decision.contributions, variableDefinitions) : []} alternatives={decision?.alternatives ?? []} labelForSource={(sourceId, fallback) => sourceLabel(sourceId, fallback, variableDefinitions, communityVariableDefinitions)} />
   </div>
 }
 
@@ -425,7 +456,18 @@ function DevelopmentSources({ ids, onHookPerson }: { ids: readonly string[]; onH
 function formatPermille(value: number): string { return `${(value / 10).toFixed(1)}% · ${value} permille` }
 function signed(value: number): string { return value > 0 ? `+${value}` : String(value) }
 
-function EventParticipants({ event, onInspect }: { event: SimulationEvent; onInspect: (id: string) => void }) {
+function EventParticipants({ event, onInspect, onInspectCommunity }: { event: SimulationEvent; onInspect: (id: string) => void; onInspectCommunity: (id: string) => void }) {
+  if (event.type === 'COMMUNITY_MEASURES_UPDATED') {
+    const communityId = event.payload.communityId
+    const communityName = event.payload.communityName
+    const values = ['socialTrust', 'cohesion', 'cooperation', 'conflict', 'innovationClimate']
+      .flatMap((name) => typeof event.payload[`${name}Permille`] === 'number' ? [`${communityEventLabel(name)} ${(Number(event.payload[`${name}Permille`]) / 10).toFixed(1)}%`] : [])
+    const window = typeof event.payload.windowStartTick === 'number' && typeof event.payload.windowEndTick === 'number' ? `ticks ${event.payload.windowStartTick}–${event.payload.windowEndTick}` : undefined
+    return <span className="event-participants community-event">
+      {typeof communityId === 'string' && <button className="event-person" onClick={() => onInspectCommunity(communityId)} aria-label={`Inspect ${String(communityName ?? communityId)} community`}>Inspect {String(communityName ?? communityId)}</button>}
+      <small>{[window, ...values].filter(Boolean).join(' · ')}</small>
+    </span>
+  }
   const ids = ['personId', 'otherPersonId', 'personAId', 'personBId']
     .map((key) => event.payload[key])
     .filter((value): value is string => typeof value === 'string')
@@ -434,6 +476,12 @@ function EventParticipants({ event, onInspect }: { event: SimulationEvent; onIns
   const details = ['outcome', 'cellId', 'targetId', 'appliedDelta', 'recipientHours', 'sourceHours', 'probabilityPermille', 'exposureStrengthPermille']
     .flatMap((key) => event.payload[key] === undefined ? [] : [`${key === 'probabilityPermille' ? 'probability' : key}: ${key === 'probabilityPermille' ? `${(Number(event.payload[key]) / 10).toFixed(1)}%` : String(event.payload[key])}`])
   return <span className="event-participants">{ids.map((personId) => <button key={personId} className="event-person" onClick={() => onInspect(personId)} aria-label={`Inspect ${personId}`}>Inspect {personId}</button>)}{details.length > 0 && <small>{details.join(' · ')}</small>}</span>
+}
+
+function communityEventLabel(value: string): string {
+  if (value === 'socialTrust') return 'trust'
+  if (value === 'innovationClimate') return 'innovation'
+  return value
 }
 
 function newestMetrics(samples: StatisticSample[]): Record<string, number> {
@@ -516,11 +564,17 @@ function contributionViews(contributions: readonly UtilityContribution[], defini
     sourceLayer: contribution.sourceId ? layerById.get(contribution.sourceId) : undefined,
     kind: contribution.kind,
     label: contribution.factor,
+    edgeId: contribution.edgeId,
+    targetId: contribution.targetId,
+    sourceValue: contribution.sourceValue,
+    centeredSourceValue: contribution.kind === 'communityInfluence' ? contribution.centeredSourceValue : undefined,
+    weightPermille: contribution.weightPermille,
+    communityId: contribution.kind === 'communityInfluence' ? contribution.communityId : undefined,
   }))
 }
 
-function sourceLabel(sourceId: string | undefined, fallback: string | undefined, definitions: readonly VariableDefinitionView[]): string {
-  if (sourceId) return definitions.find((definition) => definition.id === sourceId)?.label ?? `Unknown source (${sourceId})`
+function sourceLabel(sourceId: string | undefined, fallback: string | undefined, definitions: readonly VariableDefinitionView[], communityDefinitions: readonly CommunityVariableDefinition[]): string {
+  if (sourceId) return definitions.find((definition) => definition.id === sourceId)?.label ?? communityDefinitions.find((definition) => definition.id === sourceId)?.label ?? `Unknown source (${sourceId})`
   return fallback || 'Unattributed source'
 }
 

@@ -1,5 +1,6 @@
 import {
   ACTIVITY_REGISTRY_VERSION,
+  COMMUNITY_REGISTRY_VERSION,
   DEVELOPMENT_REGISTRY_VERSION,
   ENGINE_VERSION,
   HOUSEHOLD_MODEL_VERSION,
@@ -12,6 +13,7 @@ import {
 import { HOUSEHOLD_GENERATION_STREAM } from '../households/config'
 import { validateHouseholdActivityState } from '../engine/invariants'
 import { validatePersonVariableValues } from '../variables/storage'
+import { validateCommunitySimulationState } from '../community/invariants'
 
 export function canonicalStringify(value: unknown): string {
   return JSON.stringify(sortValue(value))
@@ -69,9 +71,13 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   if (snapshot.state.config.developmentRegistryVersion !== DEVELOPMENT_REGISTRY_VERSION) {
     throw new Error(`Unsupported development registry version: ${String(snapshot.state.config.developmentRegistryVersion)}`)
   }
+  if (snapshot.state.config.communityRegistryVersion !== COMMUNITY_REGISTRY_VERSION) {
+    throw new Error(`Unsupported community registry version: ${String(snapshot.state.config.communityRegistryVersion)}`)
+  }
   if (!Array.isArray(snapshot.state.people)) throw new Error('Snapshot contains an invalid population')
   for (const person of snapshot.state.people) validatePersonVariableValues(person.variables)
   validateHouseholdActivityState(snapshot.state)
+  validateCommunitySimulationState(snapshot.state)
   validateRandomStreams(snapshot.state.randomStreams)
   const actual = await stateDigest(snapshot.state)
   if (actual !== snapshot.digest) throw new Error('Snapshot digest does not match its contents')
