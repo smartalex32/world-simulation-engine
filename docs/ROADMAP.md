@@ -581,23 +581,32 @@ editing operations remain later slices.
 
 ## Milestone 8B.2 — Placement Zone Authoring
 
-Status: Planned
+Status: Partially Implemented
 
 ### Goal
 
 Allow the user to define where populations may initially be placed.
 
-### Capabilities
+### Implemented 8B.2A — Deterministic Preset Zones
 
-- Draw zones
-- Edit zones
-- Delete zones
-- Name zones
-- Assign population allocation
-- Validate geometry
-- Validate overlap rules
-- Validate passability constraints
-- Preview placement effects
+- Add and remove named placement zones
+- Retain stable zone IDs across draft edits, reset, persistence, and hydration
+- Assign exact population allocations
+- Choose west, central, or east deterministic presets and an integer radius
+- Optionally associate an independent settlement marker
+- Preserve imported/resolved canonical cell IDs without silently changing geometry
+- Show per-zone resolved-cell counts only for the currently accepted draft
+- Block stale-preview commits and obvious preset overlap before worker updates
+- Validate canonical geometry, passability, overlap, anchors, and exact totals in
+  the worker before a draft is accepted or committed
+
+### Remaining 8B.2B — Direct Zone Drawing
+
+- Render a bounded non-authoritative draft-map viewport
+- Draw and edit explicit zone-cell geometry in that viewport
+- Surface worker validation against the specific drawn geometry
+- Preview placement effects spatially, rather than only through accepted
+  canonical-cell counts
 
 ### Requirements
 
@@ -1443,7 +1452,7 @@ Development-agent rules belong in `AGENTS.md`.
 Completed:
 
 ```text
-Milestones 0–8B.1
+Milestones 0–8B.2A
 ```
 
 Current milestone:
@@ -1455,13 +1464,13 @@ Milestone 8B — Draft Map Authoring
 Next independently reviewable slice:
 
 ```text
-Milestone 8B.2 — Placement Zone Authoring
+Milestone 8B.2B — Direct Placement-Zone Drawing
 ```
 
 The intended immediate sequence is:
 
 ```text
-8B.2 Placement Zone Authoring
+8B.2B Direct Placement-Zone Drawing
   -> 8B.3 Terrain Painting
   -> 8B.4 Settlement Editing
   -> 8B.5 Roads

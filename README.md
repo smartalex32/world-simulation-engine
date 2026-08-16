@@ -33,10 +33,12 @@ Implemented milestones:
 - Milestone 6 — Emergent Community Feedback
 - Milestone 7 — Large-World Rendering and Simulation Scale
 - Milestone 8A — Reproducible World Creation
+- Milestone 8B.1 — Draft World Lifecycle
+- Milestone 8B.2A — Preset Placement Zone Authoring
 
 Current next milestone:
 
-- Milestone 8B — Draft Map Authoring
+- Milestone 8B.2B — Direct Placement-Zone Drawing
 
 See `docs/ROADMAP.md` for planned sequencing and future systems.
 
@@ -630,7 +632,13 @@ These are intentionally deferred until measurements justify them.
 
 # Draft Map Authoring
 
-Milestone 8B.1 introduces a worker-owned draft world lifecycle.
+Milestone 8B.1 introduces a worker-owned draft world lifecycle. Milestone
+8B.2A adds a dynamic placement-zone editor on top of that boundary: authors
+can add or remove named zones, give each an exact population allocation,
+choose a deterministic west/central/east preset and radius, and optionally
+associate a settlement marker. Zone IDs are monotonic within the editor, and
+the worker remains the sole authority that resolves presets into canonical,
+sorted cells.
 
 The ownership model is:
 
@@ -650,9 +658,16 @@ rehydrated, committed, or discarded. The generated preview is a bounded,
 non-authoritative summary; committing delegates to the same creation boundary
 used for a new authoritative run.
 
-The current implementation deliberately does not yet provide terrain painting,
-user-drawn zones, settlement editing, roads, or draft import/export. See
-`docs/ROADMAP.md` for the next incremental slices.
+The editor preserves already-resolved zone cells from imported creation state
+instead of silently converting them into a different preset. It blocks stale
+previews and obvious preset overlaps before commit; the worker validates the
+authoritative passability, overlap, anchor, and allocation rules before it
+accepts a draft.
+
+The current implementation deliberately does not yet provide a draft-map
+viewport or direct map-drawn zones, terrain painting, settlement editing,
+roads, or draft import/export. See `docs/ROADMAP.md` for the next incremental
+slices.
 
 ---
 

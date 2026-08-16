@@ -8,7 +8,7 @@ import { HexMap, type MapOverlay } from './ui/HexMap'
 import { ActionExplanation } from './ui/ActionExplanation'
 import { PersonVariableSections } from './ui/PersonVariableSections'
 import { CommunityInspector, CommunitySignals } from './ui/CommunityPanels'
-import { WorldSetup, type WorldSetupValues } from './ui/WorldSetup'
+import { WorldSetup, isWorldSetupGeometryValid, regionForPreset, type WorldSetupValues } from './ui/WorldSetup'
 import { mergeWorkbenchProjection } from './ui/projectionFrame'
 import type { ContributionView, VariableDefinitionView } from './ui/personVariables'
 import { SimulationWorkerClient } from './worker/client'
@@ -31,10 +31,15 @@ export default function App() {
   const [activeMode, setActiveMode] = useState<'world' | 'simulation' | 'analytics' | 'entities'>('world')
   const [worldSetup, setWorldSetup] = useState<WorldSetupValues>({
     name: 'The Seeded Valley', seed: 'valley-001', width: 32, height: 24, population: 200,
-    placements: [{ name: 'Westhaven', region: 'west', allocation: 100 }, { name: 'Eastwatch', region: 'east', allocation: 100 }],
+    placements: [
+      { id: 'population-zone-1', name: 'Westhaven residents', region: 'west', preset: 'west', radiusCells: 3, allocation: 100, settlementId: 'settlement-1', settlementName: 'Westhaven' },
+      { id: 'population-zone-2', name: 'Eastwatch residents', region: 'east', preset: 'east', radiusCells: 3, allocation: 100, settlementId: 'settlement-2', settlementName: 'Eastwatch' },
+    ],
+    nextPlacementId: 1,
   })
   const [worldDraft, setWorldDraft] = useState<WorldDraftRecord>()
   const [draftPreview, setDraftPreview] = useState<WorldDraftPreview>()
+  const [acceptedDraftSignature, setAcceptedDraftSignature] = useState<string>()
   const [draftBusy, setDraftBusy] = useState(false)
   const worldDraftRef = useRef<WorldDraftRecord | undefined>(undefined)
   const draftBusyRef = useRef(false)
@@ -124,6 +129,7 @@ export default function App() {
           worldDraftRef.current = undefined
           setWorldDraft(undefined)
           setDraftPreview(undefined)
+          setAcceptedDraftSignature(undefined)
           setDraftOperationBusy(false)
           if (response.action === 'committed') {
             if (discarded) setSeed(discarded.draft.seed)
@@ -137,8 +143,10 @@ export default function App() {
           worldDraftRef.current = response.draft
           setWorldDraft(response.draft)
           if (response.preview) setDraftPreview(response.preview)
-          if (response.action === 'reset') setWorldSetup(worldSetupFromDraft(response.draft.draft))
-          if (response.action === 'hydrated') setWorldSetup(worldSetupFromDraft(response.draft.draft))
+          const acceptedSetup = worldSetupFromDraft(response.draft.draft)
+          setAcceptedDraftSignature(worldSetupSignature(acceptedSetup))
+          if (response.action === 'reset') setWorldSetup(acceptedSetup)
+          if (response.action === 'hydrated') setWorldSetup(acceptedSetup)
           setDraftOperationBusy(true)
           try {
             await database.saveWorldDraft(response.draft)
@@ -227,6 +235,7 @@ export default function App() {
     worldDraftRef.current = undefined
     setWorldDraft(undefined)
     setDraftPreview(undefined)
+    setAcceptedDraftSignature(undefined)
     setDraftOperationBusy(true)
     try {
       const saved = await database.loadWorldDraft(WORLD_SETUP_DRAFT_ID)
@@ -243,6 +252,11 @@ export default function App() {
     const currentDraft = worldDraftRef.current
     if (!currentDraft || draftBusyRef.current) return
     setWorldSetup(next)
+    // Keep invalid intermediate form values in the UI only. The worker owns
+    // drafts and validates them as complete creation requests, so sending a
+    // partially edited allocation would reject the detached draft instead of
+    // allowing the user to finish the edit.
+    if (!isCommitReadyWorldSetup(next)) return
     setDraftOperationBusy(true)
     // The worker command queue serializes this single-editor flow. Retaining
     // revision checks in the protocol protects future concurrent editors,
@@ -423,7 +437,7 @@ export default function App() {
           {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
       </section>
-      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} busy={draftBusy} />}
+      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} />}
     </main>
   )
 }
@@ -433,23 +447,20 @@ function PanelTitle({ title, subtitle }: { title: string; subtitle: string }) { 
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 
 function worldSetupFromCreation(creation: WorldCreationRequest): WorldSetupValues {
-  const first = creation.populationZones[0]
-  const second = creation.populationZones[1]
-  const settlementName = (zone: typeof first, fallback: string) => creation.settlements.find((settlement) => settlement.id === zone?.settlementId)?.name ?? zone?.name.replace(/ residents$/, '') ?? fallback
-  const firstPopulation = first?.populationCount ?? Math.floor(creation.initialPopulationCount / 2)
-  const remainingPopulation = creation.initialPopulationCount - firstPopulation
   return {
     name: creation.name,
     seed: creation.seed,
     width: creation.width,
     height: creation.height,
     population: creation.initialPopulationCount,
-    // Imported snapshots store resolved cells rather than their draft preset;
-    // retain their names/counts and choose distinct editable presets.
-    placements: [
-      { name: settlementName(first, 'Westhaven'), region: 'west', allocation: firstPopulation },
-      { name: creation.populationZones.length > 2 ? 'Other starting places' : settlementName(second, 'Eastwatch'), region: 'east', allocation: remainingPopulation },
-    ],
+    // Resolved imports remain resolved. This editor intentionally does not
+    // expose freehand cell editing or silently convert them to presets.
+    placements: creation.populationZones.map((zone, index) => {
+      const settlement = creation.settlements.find((candidate) => candidate.id === zone.settlementId)
+      const region = index === 0 ? 'west' : index === 1 ? 'east' : 'center'
+      return { id: zone.id, name: zone.name, region, preset: region, radiusCells: 3, allocation: zone.populationCount, settlementId: zone.settlementId, settlementName: settlement?.name, cellIds: [...zone.cellIds] }
+    }),
+    nextPlacementId: nextDraftSequence(creation.populationZones.map((zone) => zone.id), creation.settlements.map((settlement) => settlement.id)),
   }
 }
 
@@ -460,39 +471,49 @@ function creationDraftFromSetup(setup: WorldSetupValues): WorldCreationDraft {
     width: setup.width,
     height: setup.height,
     initialPopulationCount: setup.population,
-    settlements: setup.placements.map((placement, index) => ({ id: `settlement-${index + 1}`, name: placement.name, preset: placement.region })),
-    populationZones: setup.placements.map((placement, index) => ({
-      id: `population-zone-${index + 1}`,
-      name: `${placement.name} residents`,
+    settlements: [...new Map(setup.placements.flatMap((placement) => placement.settlementId && placement.settlementName ? [[placement.settlementId, { id: placement.settlementId, name: placement.settlementName, ...(placement.cellIds === undefined ? { preset: placement.preset } : {}) }] as const] : [])).values()],
+    populationZones: setup.placements.map((placement) => ({
+      id: placement.id,
+      name: placement.name,
       populationCount: placement.allocation,
-      settlementId: `settlement-${index + 1}`,
-      preset: placement.region,
-      radiusCells: 3,
+      ...(placement.settlementId ? { settlementId: placement.settlementId } : {}),
+      ...(placement.cellIds !== undefined ? { cellIds: [...placement.cellIds] } : { preset: placement.preset, radiusCells: placement.radiusCells }),
     })),
   }
 }
 
+function isCommitReadyWorldSetup(setup: WorldSetupValues): boolean {
+  return setup.name.trim().length > 0
+    && setup.placements.length > 0
+    && setup.placements.every((placement) => placement.name.trim().length > 0
+      && (placement.cellIds !== undefined || (Number.isInteger(placement.radiusCells) && placement.radiusCells >= 0 && placement.radiusCells <= 32))
+      && (!placement.settlementId || Boolean(placement.settlementName?.trim())))
+    && setup.placements.reduce((total, placement) => total + placement.allocation, 0) === setup.population
+    && isWorldSetupGeometryValid(setup)
+}
+
 function worldSetupFromDraft(draft: WorldCreationDraft): WorldSetupValues {
-  const first = draft.populationZones[0]
-  const second = draft.populationZones[1]
-  const settlementName = (zone: typeof first, fallback: string) => draft.settlements.find((settlement) => settlement.id === zone?.settlementId)?.name ?? zone?.name.replace(/ residents$/, '') ?? fallback
-  const firstPopulation = first?.populationCount ?? Math.floor(draft.initialPopulationCount / 2)
   return {
     name: draft.name,
     seed: draft.seed,
     width: draft.width,
     height: draft.height,
     population: draft.initialPopulationCount,
-    placements: [
-      { name: settlementName(first, 'Westhaven'), region: setupRegion(first?.preset, 'west'), allocation: firstPopulation },
-      { name: settlementName(second, 'Eastwatch'), region: setupRegion(second?.preset, 'east'), allocation: draft.initialPopulationCount - firstPopulation },
-    ],
+    placements: draft.populationZones.map((zone, index) => {
+      const settlement = draft.settlements.find((candidate) => candidate.id === zone.settlementId)
+      const preset = zone.preset ?? (index === 0 ? 'west' : index === 1 ? 'east' : 'center')
+      return { id: zone.id, name: zone.name, region: regionForPreset(preset), preset, radiusCells: zone.radiusCells ?? 3, allocation: zone.populationCount, settlementId: zone.settlementId, settlementName: settlement?.name, ...(zone.cellIds !== undefined ? { cellIds: [...zone.cellIds] } : {}) }
+    }),
+    nextPlacementId: nextDraftSequence(draft.populationZones.map((zone) => zone.id), draft.settlements.map((settlement) => settlement.id)),
   }
 }
 
-function setupRegion(preset: WorldCreationDraft['populationZones'][number]['preset'], fallback: 'west' | 'center' | 'east'): 'west' | 'center' | 'east' {
-  if (preset === 'central') return 'center'
-  return preset ?? fallback
+function nextDraftSequence(...groups: readonly string[][]): number {
+  return groups.flat().reduce((next, id) => Math.max(next, Number(/-draft-(\d+)$/.exec(id)?.[1] ?? 0) + 1), 1)
+}
+
+function worldSetupSignature(setup: WorldSetupValues): string {
+  return JSON.stringify({ ...setup, placements: setup.placements.map(({ cellIds, ...placement }) => ({ ...placement, ...(cellIds === undefined ? {} : { cellIds: [...cellIds].sort() }) })) })
 }
 
 function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell; people: PersonState[]; onSelectPerson: (id: string) => void }) {
