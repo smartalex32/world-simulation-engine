@@ -34,6 +34,7 @@ export function HexMap({ world, settlements = [], map, overlay, communityMeasure
   const drag = useRef<{ x: number; y: number; originX: number; originY: number; moved: boolean } | undefined>(undefined)
   const fittedWorld = useRef('')
   const revision = useRef(map.revision)
+  const [requestedRevision, setRequestedRevision] = useState(map.revision)
   const sendFrame = useRef<number | undefined>(undefined)
   const selectedCell = useMemo(() => map.exactCells.find((cell) => cell.id === selectedCellId) ?? (map.focusCell?.id === selectedCellId ? map.focusCell : undefined), [map.exactCells, map.focusCell, selectedCellId])
 
@@ -60,6 +61,7 @@ export function HexMap({ world, settlements = [], map, overlay, communityMeasure
     if (sendFrame.current !== undefined) cancelAnimationFrame(sendFrame.current)
     sendFrame.current = requestAnimationFrame(() => {
       revision.current += 1
+      setRequestedRevision(revision.current)
       onViewportRequest(mapProjectionRequest(world, viewport, HEX_SIZE, revision.current, overlay, {
         communityMeasureId: overlay === 'community' ? communityMeasureId : undefined,
         focusCellId: selectedCellId,
@@ -120,6 +122,7 @@ export function HexMap({ world, settlements = [], map, overlay, communityMeasure
       tabIndex={0}
       data-map-viewport={`${viewport.x.toFixed(3)},${viewport.y.toFixed(3)},${viewport.scale.toFixed(5)}`}
       data-map-revision={map.revision}
+      data-map-request-revision={requestedRevision}
       data-map-lod={map.lod}
       data-map-region-size={map.regionSize}
       data-map-border-alpha={map.borderAlpha}

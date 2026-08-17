@@ -12,6 +12,19 @@ import { setPersonVariable } from '../../src/simulation/variables/storage'
 
 test.describe.configure({ timeout: 60_000 })
 
+async function advanceOneHour(page: import('@playwright/test').Page, tick: number): Promise<void> {
+  await page.getByTitle('Advance one hour').click()
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', String(tick))
+}
+
+async function waitForMapSettled(canvas: import('@playwright/test').Locator): Promise<void> {
+  await expect.poll(async () => {
+    const requested = await canvas.getAttribute('data-map-request-revision')
+    const rendered = await canvas.getAttribute('data-map-revision')
+    return requested !== null && requested === rendered
+  }).toBe(true)
+}
+
 test('opens the world setup surface with explicit scale and placement allocations', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
@@ -174,11 +187,7 @@ test('settles an idle viewport request and supports keyboard map navigation', as
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const canvas = page.getByLabel('Hex world map')
-  await expect.poll(async () => canvas.getAttribute('data-map-revision')).not.toBeNull()
-  await page.waitForTimeout(300)
-  const settledRevision = await canvas.getAttribute('data-map-revision')
-  await page.waitForTimeout(300)
-  await expect(canvas).toHaveAttribute('data-map-revision', settledRevision ?? '')
+  await waitForMapSettled(canvas)
   const before = await canvas.getAttribute('data-map-viewport')
   await canvas.focus()
   await page.keyboard.press('ArrowRight')
@@ -302,8 +311,8 @@ test('the same seed and step count produce the same digest', async ({ page }) =>
 test('encounter events navigate between hooked people and their relationships', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
-  for (let hour = 0; hour < 24; hour += 1) await page.getByTitle('Advance one hour').click()
-  await expect(page.getByText('Day 1 · 00:00')).toBeVisible()
+  for (let hour = 1; hour <= 24; hour += 1) await advanceOneHour(page, hour)
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '24')
   const encounter = page.locator('.event-row').filter({ hasText: 'PERSON ENCOUNTERED' }).first()
   await expect(encounter).toBeVisible()
   await expect(encounter.getByRole('button')).toHaveCount(2)

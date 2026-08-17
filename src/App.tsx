@@ -371,7 +371,7 @@ export default function App() {
         </nav>
         <div className="run-facts">
           <Fact label="SEED" value={projection?.seed ?? '—'} />
-          <Fact label="TIME" value={`Day ${day} · ${hour.toString().padStart(2, '0')}:00`} />
+          <div className="fact" data-simulation-tick={projection?.tick ?? 0}><span>TIME</span><strong>{`Day ${day} · ${hour.toString().padStart(2, '0')}:00`}</strong></div>
           <Fact label="ENGINE" value={`v${projection?.engineVersion ?? '—'}`} />
           <Fact label="SAVED HASH" value={projection?.digest?.slice(0, 10) ?? 'computing…'} mono />
         </div>
