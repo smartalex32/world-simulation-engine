@@ -4,7 +4,7 @@
 
 Build the application incrementally into an explainable, reproducible, spatial, stochastic agent-based world simulator.
 
-The core product hypothesis is:
+The core product loop is:
 
 ```text
 geography and environment
@@ -15,700 +15,308 @@ geography and environment
   -> new exposure for current and future people
 ```
 
-The application must eventually support very large worlds and long time spans, but each change should validate one small part of this loop before adding more scope.
+The application may eventually support very large worlds and long time spans, but development should proceed through small, independently testable vertical slices.
 
-Favor small, independently testable vertical slices over broad implementations.
+Unless the user explicitly requests a larger scope, complete one coherent, independently reviewable slice per task.
 
 ---
 
 # Canonical Sources
 
-Use these sources according to their responsibilities:
+Use project documents according to their responsibilities:
 
-- `AGENTS.md` defines engineering rules, agent behavior, delegation, validation, and implementation constraints.
-- `README.md` describes the currently implemented architecture, repository structure, runtime model, and current system boundaries.
-- `docs/ROADMAP.md` defines milestone status, planned sequencing, future capabilities, and explicitly deferred areas.
-- `docs/TRAIT_AND_INFLUENCE_SYSTEM.md` defines the target person-variable, sparse influence, exposure, behavior, development, and community-feedback model.
-- Tests and serialized fixtures define the executable reproducibility and compatibility contract.
+* `AGENTS.md` — development rules, agent behavior, validation, and implementation constraints.
+* `README.md` — currently implemented architecture, runtime model, and system boundaries.
+* `docs/ROADMAP.md` — milestone status, planned sequencing, future capabilities, and deferred scope.
+* `docs/TRAIT_AND_INFLUENCE_SYSTEM.md` — detailed person-variable, influence, exposure, development, and community-feedback semantics.
+* Tests and serialized fixtures — executable reproducibility and compatibility contract.
 
-Do not assume planned roadmap behavior is already implemented.
+Do not assume roadmap features are already implemented.
 
-Do not assume design documentation automatically overrides implemented behavior.
+Do not assume design documentation silently overrides current supported behavior.
 
-When implementation, documentation, roadmap status, and tests disagree:
+When implementation, tests, and documentation disagree:
 
-1. Preserve existing supported behavior unless the requested change intentionally modifies it.
-2. Identify the mismatch.
-3. Determine which source is stale or whether an intentional behavioral migration is required.
-4. Update affected documentation as part of the completed change.
-5. Never silently reinterpret serialized simulation state or reproducibility semantics.
+1. Determine the actual supported behavior.
+2. Preserve it unless the requested change intentionally modifies it.
+3. Identify which documentation or contract is stale.
+4. Update affected documentation as part of the change.
+5. Never silently reinterpret persisted simulation state.
+
+Read only the documentation relevant to the current task.
 
 ---
 
-# Core Engineering Contracts
-
-These rules are non-negotiable unless the user explicitly requests an intentional architectural or simulation-contract migration.
+# Non-Negotiable Simulation Contracts
 
 ## No Generative AI in Simulation Behavior
 
-Do not add:
+Do not add LLM calls, generated agent decisions, external AI-service dependencies, or AI-generated authoritative simulation state.
 
-- LLM-based agent decisions
-- Generated runtime behavior
-- External AI-service dependencies used by the simulation
-- AI-generated authoritative simulation state
-
-AI may assist software development but must not participate in authoritative simulation execution.
-
----
+AI may assist development but must not participate in authoritative simulation execution.
 
 ## Reproducibility
 
-Identical:
+Identical versioned inputs and seed must produce identical canonical simulation output.
 
-- Initial state
-- Configuration
-- Engine version
-- World-generator version
-- Registry versions
-- Seed
+Authoritative outcomes must not depend on:
 
-must produce identical canonical simulation output.
-
-Rendering timing, browser timing, worker scheduling, and wall-clock timing must not affect authoritative simulation results.
-
----
+* Wall-clock time
+* Browser timing
+* Rendering timing
+* Worker scheduling
+* Machine performance
 
 ## Centralized Randomness
 
-Simulation randomness must come exclusively from:
+Simulation randomness must come only from named, seeded, snapshot-restorable RNG streams.
 
-- Named RNG streams
-- Seeded generators
-- Snapshot-restorable RNG state
+Never use `Math.random()` or another untracked random source for authoritative simulation behavior.
 
-Never use:
+Random draws must have explicit ownership.
 
-- `Math.random()`
-- Wall-clock time
-- Browser timing
-- Rendering timing
-- Untracked pseudo-random sources
-
-for authoritative simulation outcomes.
-
-Random draws must have clear ownership.
-
-Adding, removing, or reordering random draws is a simulation-contract change and must be treated deliberately.
-
----
+Adding, removing, or reordering random draws is a simulation-contract change and must be handled deliberately.
 
 ## Explainability
 
-Important decisions, interactions, and developmental changes must expose enough structured information to explain why they occurred.
+Important decisions, interactions, and developmental changes should retain structured explanation data where applicable, including:
 
-Where applicable retain:
-
-- Base value
-- Context contributions
-- Influence contributions
-- Source identifiers
-- Edge identifiers
-- Final score
-- Probability
-- Random result
-- Selected outcome
-- Development delta
-- Clamp or rounding behavior
+* Base value
+* Contributing factors
+* Modifier sources
+* Final score
+* Probability
+* Random result
+* Selected outcome
+* Development delta
+* Relevant rounding or clamping
 
 Prefer structured traces over formatted explanation strings.
 
-The UI may format structured traces for people, but the authoritative explanation data should remain machine-readable.
-
----
-
 ## Semantic Separation
 
-Keep conceptually different state separate.
+Keep conceptually different state distinct, including:
 
-Do not collapse the following into a generic undifferentiated value system:
+* Traits and dispositions
+* Values, attitudes, and beliefs
+* Short-term states
+* Needs
+* Skills
+* Relationships
+* Experiences
+* Community conditions
+* Structural conditions
+* Environment
 
-- Traits
-- Dispositions
-- Values
-- Attitudes
-- Beliefs
-- Short-term states
-- Needs
-- Relationships
-- Experiences
-- Skills
-- Community conditions
-- Structural conditions
-- Environment
-
-Shared registry/storage infrastructure is acceptable where appropriate, but semantics and ownership must remain explicit.
-
----
+Shared infrastructure is acceptable, but semantics and ownership must remain explicit.
 
 ## Exposure Over Membership
 
-A person is influenced by:
+Influence should generally arise from actual exposure:
 
-- Where they spend time
-- What they experience
-- Who they encounter
-- The strength and duration of those exposures
+* Where people spend time
+* What they experience
+* Who they encounter
+* How strong and persistent that exposure is
 
-Do not automatically assign every property of a named settlement, community, household, organization, or future political unit to a person merely because they are associated with it.
+Do not automatically transfer properties from a community, settlement, household, organization, or future political unit into a person simply because they are associated with it.
 
-Membership and exposure are distinct concepts.
+## Sparse Influences
 
----
-
-## Sparse Influence Graphs
-
-Use explicit typed influence edges.
+Use explicit, typed, sparse influence edges.
 
 Do not create a complete pairwise variable matrix.
 
-Influence relationships should be:
-
-- Named
-- Typed
-- Sparse
-- Inspectable
-- Versioned when necessary
-- Indexed by target or another efficient access path
-
----
-
 ## Simulation/UI Separation
 
-The UI:
+The UI may:
 
-- Sends commands
-- Requests projections
-- Displays projected state
-- Presents diagnostics
-- Provides authoring controls
+* Send commands
+* Request projections
+* Display projected state
+* Present diagnostics
+* Provide authoring controls
 
 The UI must not directly mutate authoritative simulation state.
 
-Authoritative simulation and draft-world mutation belong behind the worker-owned simulation boundary.
-
----
+Authoritative simulation and draft-world mutation remain behind the worker boundary.
 
 ## Stable Serialization
 
-Maintain:
+Preserve:
 
-- Explicit snapshot schema versions
-- Engine versions
-- World-generator versions
-- Registry versions
-- Stable ordering
-- Explicit units
-- Validation boundaries
-- Explicit migration or rejection behavior
+* Explicit schema versions
+* Engine/model versions
+* Stable ordering
+* Explicit units
+* Validation boundaries
+* Explicit migration or rejection behavior
 
-Do not silently reinterpret older serialized state.
-
-If old formats are unsupported, reject them clearly.
-
-If migration is implemented, make it explicit and test it.
-
----
+Never silently reinterpret an incompatible serialized format.
 
 ## Incremental Scope
 
 Do not implement future systems merely because they may eventually be useful.
 
-Create an abstraction for a future capability only when the current change requires a real architectural boundary.
-
-Avoid speculative frameworks for:
-
-- Politics
-- Warfare
-- Religion
-- Language
-- Detailed economics
-- Technology
-- Disease
-- Genetics
-- Narrative generation
-- Multiplayer
-- Massive cohort simulation
-
-until current simulation requirements create a concrete need.
+Avoid speculative architecture for distant systems such as politics, warfare, religion, language, detailed economics, technology, disease, genetics, narrative generation, multiplayer, or massive cohort simulation unless a current requirement needs a concrete boundary.
 
 ---
 
-# Architectural Boundaries
+# Architectural Rules
 
-Keep responsibilities separated.
+`README.md` is the authoritative description of the current architecture.
 
-## `src/simulation/domain`
+Before modifying an unfamiliar subsystem, inspect its current ownership and interfaces.
 
-Owns:
+Always preserve these boundaries:
 
-- Serializable authoritative state
-- Typed identifiers
-- Core domain structures
-- Versioned simulation-state contracts
+* Authoritative simulation state remains outside the UI.
+* The worker owns authoritative simulation execution.
+* Draft-world mutation remains worker-owned.
+* RNG behavior belongs to the RNG subsystem.
+* Variables, influences, relationships, exposure, development, and community state are changed through their owning systems.
+* Persistence owns snapshot/import/export validation and migration behavior.
+* Projection and rendering state are non-authoritative.
+* Rendering behavior must not affect canonical simulation results.
 
----
-
-## `src/simulation/rng`
-
-Owns:
-
-- Seeded RNG streams
-- RNG state
-- Stream naming
-- Deterministic random selection
-- Snapshot restoration of RNG state
+Do not bypass subsystem ownership merely because direct mutation would be easier.
 
 ---
 
-## `src/simulation/spatial`
+# Roadmap and Scope
 
-Owns:
+`docs/ROADMAP.md` is authoritative for milestone sequencing.
 
-- Coordinates
-- Hex geometry
-- Spatial indexing
-- Neighborhood queries
-- Effective distance
-- Pathing
-- Spatial partitioning
-- Passability calculations
+When the user requests a specific change:
 
----
+* The requested change takes priority over roadmap order.
+* Consult the roadmap only when its scope or prerequisites matter.
+* Implement only the support necessary to complete the requested change.
 
-## `src/simulation/agents`
+When the user says to continue development without specifying a feature:
 
-Owns:
+1. Read the current relevant roadmap section.
+2. Verify milestone status against the implementation and tests.
+3. Select the next unfinished independently reviewable slice.
+4. Do not reimplement already completed work.
+5. Do not skip ahead without a concrete dependency or user direction.
 
-- Opportunity generation
-- Decision evaluation
-- Action utility
-- Probabilistic selection
-- Action execution
-- Action explanation traces
-
----
-
-## `src/simulation/variables`
-
-Owns:
-
-- Namespaced variable definitions
-- Variable registry ordering
-- Variable metadata
-- Bounded person-variable storage
-- Variable initialization contracts
-
----
-
-## `src/simulation/influences`
-
-Owns:
-
-- Sparse influence definitions
-- Influence indexes
-- Modifier evaluation
-- Influence-edge metadata
-- Influence traces
-
----
-
-## `src/simulation/exposure`
-
-Owns:
-
-- Exposure accumulation
-- Exposure windows
-- Co-presence evidence
-- Source-hour accounting
-- Structured experiences
-
----
-
-## `src/simulation/relationships`
-
-Owns:
-
-- Encounter resolution
-- Relationship dimensions
-- Relationship updates
-- Relationship decay
-- Social interaction evidence
-
----
-
-## `src/simulation/development`
-
-Owns:
-
-- Plasticity
-- Experience-driven development
-- Development formulas
-- Development traces
-- Age-dependent developmental effects
-
----
-
-## `src/simulation/community`
-
-Owns:
-
-- Geographic catchments
-- Evidence aggregation
-- Emergent social measures
-- Structural conditions
-- Community feedback
-- Contributor traces
-
----
-
-## `src/projection` or projection-related modules
-
-Owns:
-
-- Non-authoritative viewport projections
-- Level-of-detail aggregation
-- Marker budgets
-- Bounded inspection summaries
-- Projection spatial indexes
-- Regional summaries
-- Draft-world preview projections where appropriate
-
-Projection state must not affect canonical simulation output.
-
----
-
-## `src/worker`
-
-Owns:
-
-- Simulation engine execution
-- Authoritative engine ownership
-- Typed commands
-- Simulation advancement
-- Projection transport
-- Draft-world ownership
-- Worker continuation behavior
-
----
-
-## `src/persistence`
-
-Owns:
-
-- Snapshots
-- Imports
-- Exports
-- Validation
-- Migrations
-- Meaningful events
-- Sampled statistics
-- Serialized draft formats where appropriate
-
----
-
-## `src/ui` and `src/App.tsx`
-
-Owns:
-
-- Visualization
-- Controls
-- Inspectors
-- Map interaction
-- Overlays
-- Diagnostics
-- Draft authoring UI
-
-UI code must not bypass owning simulation systems.
-
----
-
-# Current Development Priority
-
-`docs/ROADMAP.md` is the authoritative source for milestone status and planned sequencing.
-
-When the user supplies a specific change request:
-
-- The requested change takes priority.
-- Do not redirect the task to the next roadmap milestone.
-- Use `docs/ROADMAP.md` to understand surrounding scope, prerequisites, and deferred systems.
-- Implement only the support necessary to complete the requested behavior.
-
-When the user asks to continue development without naming a feature:
-
-- Identify the next unfinished roadmap slice.
-- Prefer the smallest independently reviewable vertical slice.
-- Do not skip ahead to later milestones without a concrete dependency or explicit user direction.
-
-Do not opportunistically implement future roadmap systems.
+If implementation proves that roadmap status is stale, update the roadmap.
 
 ---
 
 # Agent Strategy
 
-The primary development session is expected to use:
+The primary agent is expected to use:
 
 ```text
 GPT-5.6 Terra
 Reasoning: Medium
 ```
 
-The primary agent owns:
+The primary agent should normally perform:
 
-- Understanding the user's request
-- Scope control
-- Integration
-- Implementation strategy
-- Engineering judgment
-- Final completion decision
+* Routine repository exploration
+* Planning
+* Implementation
+* Targeted validation
+* Integration
+* Self-review
+* Documentation updates
 
-Use subagents selectively.
+Do not spawn a subagent by default.
 
-Do not create agents simply because agents are available.
+A cheaper agent still consumes context and credits. Delegate only when doing so provides meaningful leverage.
 
-Delegation should reduce cost, context usage, or task complexity.
+## Subagents
 
----
+* `explorer` — Luna Low. Use for substantial cross-repository investigation, unfamiliar execution paths, or impact analysis. Do not use for simple searches.
+* `tester` — Luna Medium. Use for non-trivial test-failure investigation, flaky/browser-specific failures, reproducibility regressions, or broad validation analysis. Do not use merely to run known commands.
+* `worker` — Terra Medium. Use only for substantial, genuinely independent implementation work with little overlapping file ownership.
+* `reviewer` — Terra High. Use when independent review materially reduces risk for high-impact changes.
+* `architect` — Sol High. Use only for difficult architectural or correctness problems that Terra cannot resolve reliably.
 
-# Available Custom Agents
+Do not use subagents merely to make the workflow look more agentic.
 
-## `explorer`
+Do not create several agents to solve the same problem unless competing analyses are explicitly valuable.
 
-Expected configuration:
-
-```text
-GPT-5.6 Luna
-Reasoning: Low
-```
-
-Use for:
-
-- Locating relevant files
-- Finding symbols
-- Tracing code paths
-- Finding callers and consumers
-- Finding existing implementation patterns
-- Finding relevant tests
-- Dependency exploration
-- Determining affected subsystems
-- Inspecting repository configuration
-
-Prefer `explorer` for non-trivial read-heavy repository investigation.
-
-The explorer should return concise findings rather than large file dumps.
-
-Do not use `explorer` for implementation.
+Do not create unnecessary recursive agent trees.
 
 ---
 
-## `tester`
-
-Expected configuration:
-
-```text
-GPT-5.6 Luna
-Reasoning: Medium
-```
-
-Use for:
-
-- Running targeted tests
-- Reproducibility validation
-- Type checking
-- Build validation
-- Lint validation
-- Straightforward test-failure investigation
-- Finding missing test coverage
-- Running controlled validation scenarios
-
-Prefer `tester` for routine validation rather than spending primary-agent reasoning on test execution.
-
----
+# When to Use Higher-Cost Agents
 
 ## `worker`
 
-Expected configuration:
+The primary Terra agent should normally implement changes itself.
 
-```text
-GPT-5.6 Terra
-Reasoning: Medium
-```
+Use a worker only when work can be divided into clearly independent pieces, such as:
 
-Use for clearly separable implementation work.
+* Independent frontend and backend work behind an established interface
+* Independent worker and UI work after the protocol is already defined
+* Separate migration tooling
+* Independent subsystems with stable boundaries
 
-Good uses include:
-
-- Independent frontend and backend portions
-- Independent worker and UI implementation
-- Separate simulation subsystems with stable interfaces
-- Well-bounded migrations
-- Large mechanical implementations that still require engineering judgment
-
-Do not spawn `worker` when the primary Terra agent can efficiently implement the change directly.
-
-Avoid multiple agents modifying the same files concurrently.
-
----
+Avoid multiple agents modifying tightly coupled files concurrently.
 
 ## `reviewer`
 
-Expected configuration:
+Primary-agent self-review is sufficient for ordinary changes.
 
-```text
-GPT-5.6 Terra
-Reasoning: High
-```
+Use an independent reviewer for higher-risk work such as:
 
-Use for independent review of substantial or high-risk changes.
-
-Examples:
-
-- Simulation-rule changes
-- RNG changes
-- Snapshot/schema changes
-- Persistent-state changes
-- World-generation changes
-- Major worker-protocol changes
-- Cross-cutting features
-- Large refactors
-- Data-integrity-sensitive changes
-
-The reviewer should focus on:
-
-- Correctness
-- Missing requirements
-- Regressions
-- Determinism
-- RNG ownership
-- Serialization compatibility
-- Data integrity
-- Architecture violations
-- Edge cases
-- Missing tests
-
-Small changes do not automatically require an independent reviewer.
-
----
+* RNG stream or draw-order changes
+* Snapshot/schema changes
+* Migrations
+* Persistence compatibility changes
+* World-generation contract changes
+* Cross-cutting authoritative simulation changes
+* Complex worker concurrency or continuation behavior
+* Large deterministic refactors
+* Data-integrity-sensitive changes
 
 ## `architect`
 
-Expected configuration:
+Use Sol only when:
 
-```text
-GPT-5.6 Sol
-Reasoning: High
-```
+* A major architectural choice has substantial long-term consequences.
+* Several approaches have materially different tradeoffs.
+* A difficult deterministic, concurrency, or serialization problem remains unresolved.
+* Terra has made reasonable attempts without reaching a reliable solution.
 
-`architect` is an escalation resource.
-
-Use only when:
-
-- A major architectural decision has significant long-term consequences.
-- Several approaches have materially different tradeoffs.
-- A difficult deterministic, concurrency, or worker-boundary problem remains unresolved.
-- Serialization or data-integrity correctness remains unclear.
-- Terra has made reasonable attempts without reaching a reliable solution.
-- The change presents unusually high technical risk.
-
-Prefer asking `architect` to:
-
-```text
-Analyze the problem and recommend an implementation strategy.
-```
-
-rather than:
-
-```text
-Implement the entire feature.
-```
-
-Terra should normally perform the implementation after receiving the architectural recommendation.
-
-Do not use Sol for:
-
-- Repository exploration
-- Routine implementation
-- Tests
-- Documentation
-- Formatting
-- Mechanical refactoring
-- Straightforward debugging
-- Additional reassurance
-
----
-
-# Delegation Rules
-
-Before spawning an agent, determine:
-
-1. Is the task clearly bounded?
-2. Does delegation avoid loading significant unnecessary context into the parent?
-3. Can the result be returned concisely?
-4. Can the agent work without conflicting with another active agent?
-5. Is delegation cheaper or more efficient than doing the work directly?
-
-If not, perform the work directly.
-
-Prefer:
-
-```text
-Primary Terra
-├── Luna explorer
-└── Luna tester
-```
-
-over a large agent swarm.
-
-Parallelize only genuinely independent tasks.
-
-Do not spawn several agents to solve the same problem unless competing analyses are explicitly useful.
-
-Do not recursively create unnecessary agent trees.
+Prefer asking the architect to analyze and recommend an approach. Terra should normally implement the result.
 
 ---
 
 # Context Efficiency
 
-Protect the primary Terra context.
+Protect the primary context.
 
-Do not automatically read the entire repository.
+Do not automatically read:
 
-Before implementation:
+* The entire repository
+* The entire README
+* The entire roadmap
+* Every design document
+* Large test logs
+
+Instead:
 
 1. Inspect `git status`.
-2. Understand the user's request.
-3. Read the relevant portion of `README.md`.
-4. Read the relevant roadmap section only when planning or scope context matters.
-5. Read the detailed trait/influence design only when the change touches that system.
-6. Search for affected implementation.
-7. Inspect nearby tests.
+2. Understand the requested behavior.
+3. Search for the affected implementation.
+4. Read nearby code and tests.
+5. Read relevant architecture or design documentation only when needed.
 
-Use `explorer` when repository discovery is non-trivial.
+Use `explorer` only when repository investigation becomes substantial.
 
 Search before opening large files.
 
 Avoid repeatedly reading files already understood.
 
-Subagents should summarize:
+For failures, prefer the relevant assertion and nearby error context over complete logs.
 
-- Relevant filenames
-- Important symbols
-- Existing conventions
-- Dependencies
-- Risks
-- Recommended next steps
-
-Do not return large raw command output unless directly necessary.
+Subagents should return concise findings rather than raw output dumps.
 
 ---
 
@@ -716,41 +324,33 @@ Do not return large raw command output unless directly necessary.
 
 Before implementation, determine whether the change affects authoritative simulation behavior.
 
-A change is simulation-affecting if it changes any of the following:
+Treat a change as simulation-affecting if it alters:
 
-- Simulation rules
-- Tick ordering
-- Opportunity generation
-- Action evaluation
-- Random draws
-- RNG stream ownership
-- Coefficients
-- Fixed-point calculations
-- Units
-- Authoritative state
-- Serialization
-- Snapshot restoration
-- World generation
-- Registry ordering
-- Canonical digest output
+* Simulation rules
+* Tick ordering
+* Opportunity generation
+* Action evaluation
+* RNG draws or ownership
+* Coefficients or units
+* Fixed-point calculations
+* Authoritative state
+* Serialization
+* Snapshot restoration
+* World generation
+* Registry ordering
+* Canonical digests
 
-For simulation-affecting changes, explicitly determine whether the following must change:
+For simulation-affecting changes, explicitly determine whether any of these must change:
 
-- `ENGINE_VERSION`
-- `SNAPSHOT_SCHEMA_VERSION`
-- World-generator version
-- Variable-registry version
-- Influence-registry version
-- Household-model version
-- Activity-registry version
-- Development-registry version
-- Community-registry version
-- Other versioned subsystem contracts
-- Canonical digest fixtures
+* `ENGINE_VERSION`
+* `SNAPSHOT_SCHEMA_VERSION`
+* World-generator version
+* Registry/model versions
+* Canonical digest fixtures
 
-Do not automatically increment versions.
+Do not increment versions automatically.
 
-Increment only when the corresponding compatibility or behavioral contract changes.
+Increment only when the corresponding behavioral or compatibility contract changes.
 
 ---
 
@@ -760,35 +360,25 @@ Increment only when the corresponding compatibility or behavioral contract chang
 
 Determine:
 
-- Requested behavior
-- Existing behavior
-- Smallest complete implementation
-- Affected architectural boundaries
-- Whether authoritative simulation output changes
-- Whether serialization compatibility changes
+* Existing behavior
+* Requested behavior
+* Smallest complete implementation
+* Affected subsystem boundaries
+* Whether authoritative output changes
+* Whether persistence or versioning changes
+* Appropriate validation level
 
-Do not broaden the task unnecessarily.
+## 2. Inspect
 
----
+Read the relevant implementation, existing patterns, interfaces, and nearby tests.
 
-## 2. Explore
+Perform simple repository exploration directly.
 
-Inspect:
-
-- Relevant implementation
-- Existing patterns
-- Tests
-- Interfaces
-- Versioned contracts
-- Persistence boundaries if applicable
-
-Delegate substantial repository exploration to `explorer`.
-
----
+Delegate only when investigation becomes substantial.
 
 ## 3. Plan
 
-For non-trivial work, establish a concise implementation plan.
+For non-trivial changes, establish a concise plan.
 
 Prefer a vertical slice:
 
@@ -796,122 +386,88 @@ Prefer a vertical slice:
 domain/configuration
   -> simulation behavior
   -> worker/persistence if required
-  -> projection/UI inspection if required
+  -> projection/UI if required
   -> tests
 ```
 
-Do not produce elaborate plans for trivial changes.
-
----
+Do not produce elaborate plans for trivial work.
 
 ## 4. Implement
 
 Prefer:
 
-- Pure functions
-- Explicit inputs
-- Stable ordering
-- Deterministic tie-breaking
-- Typed identifiers
-- Fixed-point arithmetic where authoritative behavior requires it
-- Named configuration
-- Explicit units
-- Versioned registries where appropriate
+* Pure functions
+* Explicit inputs
+* Stable ordering
+* Deterministic tie-breaking
+* Typed identifiers
+* Fixed-point authoritative calculations where appropriate
+* Named configuration
+* Explicit units
 
-Put meaningful coefficients into:
+Centralize meaningful coefficients in registries, configuration, or versioned model definitions.
 
-- Registries
-- Named configuration
-- Versioned model definitions
+Avoid:
 
-Do not scatter unexplained constants throughout simulation code.
+* Scattered unexplained constants
+* Direct mutation across subsystem boundaries
+* Unrelated refactors
+* Future-roadmap implementation not required by the task
 
-Do not let unrelated modules directly mutate owned simulation values.
+## 5. Make Behavior Inspectable
 
----
+Important behavior should be observable through appropriate:
 
-## 5. Add Observability
+* Structured events
+* Explanation traces
+* Metrics/statistics
+* Inspector data
+* Diagnostic projections
 
-Important behavior should be inspectable through the application where practical.
-
-Prefer:
-
-- Structured events
-- Structured traces
-- Metrics
-- Sampled statistics
-- Inspector data
-- Diagnostic projections
-
-Do not rely only on console logging.
-
----
+Do not rely solely on console logs.
 
 ## 6. Validate
 
-Run targeted validation during implementation.
+Run the narrowest useful validation while iterating.
 
-Escalate validation according to risk.
-
----
+Fix targeted failures before broadening the test scope.
 
 ## 7. Review
 
 Inspect the complete final diff.
 
-Use `reviewer` when independent review provides meaningful value.
+For ordinary changes, self-review is sufficient.
 
-Fix substantive findings before completion.
-
----
+Use an independent reviewer only when risk justifies the additional model work.
 
 ## 8. Document
 
-Update documentation according to responsibility:
+Update documentation according to ownership:
 
-- Implemented architecture or current system boundaries → `README.md`
-- Milestone status, sequencing, future scope, or deferred work → `docs/ROADMAP.md`
-- Trait, influence, exposure, development, or community model semantics → relevant design document
-- Simulation formulas or contracts → relevant canonical technical documentation
-- Version/persistence contracts → all affected references
+* Current architecture or boundaries → `README.md`
+* Roadmap status or future scope → `docs/ROADMAP.md`
+* Detailed simulation model semantics → relevant design documentation
+* Persistence/version contracts → relevant docs and tests
 
-Do not duplicate detailed roadmap content in `AGENTS.md`.
-
----
-
-# Testing Strategy
-
-Testing should be proportional to the change.
-
-## During Development
-
-Run the smallest useful validation first.
-
-Examples:
-
-```powershell
-pnpm vitest <relevant-test>
-```
-
-or the equivalent targeted Vitest invocation supported by the project.
-
-Prefer targeted tests while iterating.
-
-Do not repeatedly run the entire test and E2E suite for every small edit.
+Do not duplicate detailed architecture or roadmap content in `AGENTS.md`.
 
 ---
 
-# Validation Levels
+# Validation Strategy
 
-## Level 1 — Local or Mechanical Change
+Testing should be proportional to risk.
+
+Do not run every test suite after every small edit.
+
+## Level 1 — Local or Mechanical
 
 Examples:
 
-- Documentation
-- Labels
-- Styling
-- Isolated presentational UI changes
-- Mechanical refactors that cannot affect simulation output
+* Documentation
+* Styling
+* Labels
+* Isolated presentational changes
+* Mechanical non-behavioral refactors
 
 Typical validation:
 
@@ -919,84 +475,65 @@ Typical validation:
 pnpm typecheck
 ```
 
-Add directly relevant tests when available.
+Run relevant targeted tests or `pnpm build` when necessary.
+
+Do not automatically run the complete unit or E2E suite.
+
+## Level 2 — Application Behavior
+
+Examples:
+
+* UI interaction
+* Projection behavior
+* Worker command handling
+* Draft-map interaction
+* Non-authoritative application logic
+
+During iteration:
+
+* Run directly affected tests.
+* Run targeted Playwright flows when relevant.
+* Run `pnpm typecheck`.
+* Run `pnpm build` when integration may be affected.
+
+Broaden validation only when the change has wider regression risk.
+
+## Level 3 — Simulation Contract
+
+Examples:
+
+* Simulation rules
+* RNG behavior
+* Variables or influences
+* Activities or relationships
+* Exposure or development
+* Community calculations
+* World generation
+* Serialization or snapshots
+
+During implementation, use the relevant combination of:
+
+* Targeted unit tests
+* Fixed-seed regression tests
+* Controlled scenarios
+* Statistical multi-seed tests
+* Invariant tests
+* Persistence tests
+* Relevant E2E tests
+
+Before handoff, validation generally includes:
+
+```powershell
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+Run the full E2E suite when broad browser/worker integration or milestone-level regression risk justifies it.
+
+## Level 4 — Milestone or Release
 
 Run:
-
-```powershell
-pnpm build
-```
-
-when bundling or compilation behavior may be affected.
-
-Do not automatically run the complete Playwright suite.
-
----
-
-## Level 2 — Application Behavior Change
-
-Examples:
-
-- UI interactions
-- Projection behavior
-- Worker command handling
-- Persistence UI
-- Draft-map interaction
-- Non-authoritative application logic
-
-Typical validation:
-
-```powershell
-pnpm typecheck
-pnpm test
-pnpm build
-```
-
-Run targeted Playwright tests for affected workflows.
-
----
-
-## Level 3 — Simulation Contract Change
-
-Examples:
-
-- Simulation rules
-- RNG behavior
-- Tick ordering
-- Variables
-- Influences
-- Activities
-- Relationships
-- Exposure
-- Development
-- Community calculations
-- World generation
-- Serialization
-- Snapshot behavior
-
-Required validation generally includes:
-
-```powershell
-pnpm typecheck
-pnpm test
-pnpm build
-```
-
-Also run:
-
-- Relevant deterministic regression tests
-- Controlled scenario tests
-- Statistical tests where probabilistic tendency changed
-- Snapshot compatibility tests when persistence is affected
-- Relevant E2E flows
-
-Run the complete E2E suite when the change has broad application impact.
-
----
-
-## Level 4 — Milestone or Release Validation
-
-For milestone completion, major integration work, or broad system changes run:
 
 ```powershell
 pnpm typecheck
@@ -1005,199 +542,108 @@ pnpm build
 pnpm test:e2e
 ```
 
-Do not repeatedly run the entire suite while iterating unless necessary.
+Do not repeatedly run the full suite during iteration.
 
 ---
 
-# Simulation Test Expectations
+# Test Rules
 
-Add tests proportional to changed semantics.
+Use the test type appropriate to the behavior.
 
-## Exact Unit Tests
+* Exact unit tests — formulas, fixed-point calculations, bounds, deterministic transforms, utility logic.
+* Fixed-seed tests — exact reproducibility contracts.
+* Controlled scenarios — isolate one causal difference.
+* Multi-seed statistical tests — probabilistic tendencies.
+* Invariant tests — legal bounds, valid references, conservation, impossible states/actions.
+* Persistence tests — round trip, validation, migration/rejection, RNG restoration, compatibility.
+* Playwright tests — important UI, worker, rendering, persistence, world-creation, and authoring workflows.
 
-Use for:
+Do not infer probabilistic tendencies from one seed.
 
-- Formulas
-- Fixed-point arithmetic
-- Bounds
-- Curves
-- Availability
-- Utility components
-- Action execution
-- Deterministic transforms
+Do not regenerate fixtures merely to make tests pass without understanding the output change.
 
----
+For asynchronous worker/UI tests:
 
-## Fixed-Seed Regression Tests
+* Prefer waiting on observable application state.
+* Avoid fixed-time sleeps when a meaningful completion signal exists.
+* Do not increase timeouts merely to hide synchronization bugs.
 
-Use when exact seeded output forms part of the reproducibility contract.
+When debugging failures:
 
-Update fixtures deliberately.
-
-Never regenerate canonical fixtures simply to make tests pass without understanding the behavioral change.
-
----
-
-## Controlled Scenario Tests
-
-Construct scenarios where one causal factor differs and unrelated factors remain controlled.
-
-Use these to verify causal behavior.
-
----
-
-## Statistical Multi-Seed Tests
-
-Use for probabilistic tendencies.
-
-Do not claim a probabilistic tendency based on a single seed.
-
-Statistical tests should generally verify robust directional behavior rather than fragile exact distributions unless the distribution itself is contractual.
-
----
-
-## Invariant Tests
-
-Verify properties such as:
-
-- Legal bounds
-- Valid probabilities
-- Location uniqueness
-- Resource conservation
-- Impossible actions remain impossible
-- Stable identifiers
-- Valid references
-- Registry consistency
-- Catchment invariants
-- Household invariants
-- Spatial invariants
-
----
-
-## Persistence Tests
-
-When persisted state changes, test:
-
-- Snapshot round trip
-- Validation
-- Schema compatibility
-- Explicit migration or rejection
-- RNG restoration
-- Version compatibility
-- Canonical digest behavior
-
----
-
-## UI and End-to-End Tests
-
-Use Playwright for important workbench flows.
-
-Cross-browser coverage is especially important for:
-
-- Persistence
-- Worker behavior
-- Rendering
-- World creation
-- Draft authoring
-- Simulation controls
-- Reproducibility-sensitive browser interactions
+1. Reproduce the narrowest failure.
+2. Identify the root cause.
+3. Fix it.
+4. Rerun the targeted test.
+5. Broaden validation after targeted tests pass.
 
 ---
 
 # Reproducibility Checklist
 
-For every simulation-affecting change:
+For every simulation-affecting change, verify as applicable:
 
-- Determine whether canonical engine output changes.
-- Determine whether RNG draw count changes.
-- Determine whether RNG draw ordering changes.
-- Determine whether named RNG stream ownership changes.
-- Verify RNG state survives snapshot restoration.
-- Determine whether canonical digests must change.
-- Determine whether engine or schema versions must change.
-- Determine whether registry/model versions must change.
-- Verify deterministic collection ordering.
-- Verify deterministic tie-breaking.
-- Verify fixed-point conversion.
-- Verify rounding semantics.
-- Ensure explanation traces describe the new calculation.
-- Ensure incompatible snapshots are explicitly migrated or rejected.
+* Canonical output impact
+* RNG draw count
+* RNG draw ordering
+* RNG stream ownership
+* Snapshot-restored RNG state
+* Canonical digest impact
+* Engine/schema/model version impact
+* Stable collection ordering
+* Deterministic tie-breaking
+* Fixed-point conversion
+* Rounding semantics
+* Explanation trace correctness
+* Explicit migration or rejection of incompatible state
 
 Never silently accept incompatible serialized state.
 
 ---
 
-# Performance Expectations
+# Performance and Rendering
 
-The simulator should eventually support significantly larger worlds and populations, but optimization should be driven by measured constraints rather than speculative future scale.
+Detailed architecture belongs in `README.md`.
 
-For current validation worlds:
+Preserve these general rules:
 
-- Avoid global O(N²) agent interaction.
-- Prefer spatial indexes and bounded queries.
-- Keep viewport projections bounded.
-- Keep simulation fidelity independent from rendering fidelity.
-- Avoid transferring authoritative world-scale arrays when projections suffice.
-- Preserve responsive worker execution.
-- Avoid unnecessary per-tick allocations in hot paths where measurable.
+* Avoid global O(N²) agent interaction where bounded/indexed approaches are available.
+* Prefer spatial indexes and bounded queries.
+* Keep viewport projections bounded.
+* Keep rendering fidelity separate from simulation fidelity.
+* Avoid transferring authoritative world-scale data when projections suffice.
+* Preserve responsive worker execution.
+* Keep person markers bounded in screen space.
+* Do not let draft edits mutate a live authoritative world before explicit commit.
 
-When performance work is requested:
+When optimizing performance:
 
-1. Measure.
+1. Measure first.
 2. Identify the actual bottleneck.
 3. Optimize that bottleneck.
-4. Verify reproducibility remains intact.
+4. Verify reproducibility.
 5. Add regression coverage where appropriate.
 
----
-
-# UI and Map Expectations
-
-The map architecture must remain capable of representing extremely large worlds.
-
-Maintain these principles:
-
-- Hex outlines are a local-detail representation.
-- Reduce or remove outlines as the camera zooms out.
-- Aggregate people, resources, statistics, events, and boundaries according to level of detail.
-- Person markers remain bounded in screen space.
-- Markers should cluster, aggregate, or disappear when individual representation becomes inappropriate.
-- Hooked people remain inspectable as they move.
-- Hooking a person does not automatically move the camera.
-- Simulation fidelity and rendering fidelity remain independent.
-- Draft edits must not mutate a running authoritative world before explicit commit.
-
-Preserve important diagnostics such as:
-
-- Seed
-- Tick/date
-- Simulation speed
-- Events
-- Metrics
-- Cell inspection
-- Person history
-- Decision explanations
-- Development traces
-- Community traces
-- World-generation information
+Do not build speculative scaling infrastructure without demonstrated need.
 
 ---
 
 # Scope Control
 
-Implement the requested feature and whatever support is necessary to make it complete.
+Implement the requested behavior and the support required to make it complete.
 
 Do not automatically expand the task into:
 
-- Broad refactors
-- Framework replacements
-- Dependency migrations
-- New simulation systems
-- Future roadmap milestones
-- Performance redesign
-- General architectural cleanup
+* Broad refactors
+* Framework replacements
+* Dependency migrations
+* New simulation systems
+* Future roadmap milestones
+* Unrequested performance redesign
+* General architectural cleanup
 
 If a larger improvement would be useful but is not required, mention it after completing the requested work rather than implementing it automatically.
+
+If a task is too large for one independently verifiable slice, complete the smallest coherent slice unless the user explicitly requested the entire larger scope.
 
 ---
 
@@ -1213,13 +659,13 @@ Treat existing modifications as intentional user work.
 
 Do not:
 
-- Discard unrelated changes
-- Reset files
-- Force checkout files over modifications
-- Rewrite history
-- Force push
-- Commit unless requested
-- Push unless requested
+* Discard unrelated changes
+* Reset files
+* Force checkout over modifications
+* Rewrite history
+* Force push
+* Commit unless requested
+* Push unless requested
 
 Keep modifications scoped to the requested work.
 
@@ -1227,24 +673,24 @@ Keep modifications scoped to the requested work.
 
 # User Interaction
 
-Prefer resolving engineering details from:
+Prefer resolving routine engineering decisions from:
 
-- The user's request
-- Existing architecture
-- Existing conventions
-- Tests
-- Canonical documentation
+* The user's request
+* Existing architecture
+* Existing conventions
+* Tests
+* Canonical documentation
 
-Do not repeatedly ask questions that can safely be resolved from the repository.
+Do not ask the user for information that can safely be inferred from the repository.
 
 Ask only when a decision:
 
-- Cannot reasonably be inferred
-- Materially changes product behavior
-- Has multiple significantly different valid outcomes
-- Requires information unavailable in the repository
+* Cannot reasonably be inferred
+* Materially changes product behavior
+* Has several meaningfully different valid outcomes
+* Requires unavailable information
 
-For minor and reversible uncertainty, follow the closest existing convention and continue.
+For minor, reversible uncertainty, follow the closest established pattern and continue.
 
 If the user requests planning only, do not implement.
 
@@ -1256,22 +702,23 @@ The user's explicit current instructions override roadmap priority and general g
 
 A change is complete when:
 
-- Requested behavior is implemented.
-- Necessary supporting changes are included.
-- Architectural ownership remains correct.
-- Authoritative simulation ownership remains outside the UI.
-- Relevant behavior is inspectable where appropriate.
-- Required tests are added or updated.
-- Validation proportional to the change passes.
-- Reproducibility remains intact or an intentional versioned contract change has been made.
-- Persistence compatibility is explicit.
-- The final diff has been reviewed.
-- No known regression caused by the change remains.
-- No unnecessary unrelated changes are included.
-- Documentation reflects meaningful changes.
-- Deferred systems remain deferred unless explicitly requested.
+* Requested behavior is implemented.
+* Necessary supporting changes are included.
+* Architectural ownership remains correct.
+* Authoritative simulation ownership remains outside the UI.
+* Important behavior is inspectable where appropriate.
+* Relevant tests are added or updated.
+* Targeted validation passes.
+* Broader validation proportional to risk passes.
+* Reproducibility remains intact or an intentional versioned change has been made.
+* Persistence compatibility is explicit when affected.
+* The final diff has been reviewed.
+* No known regression caused by the change remains.
+* No unnecessary unrelated changes are included.
+* Relevant documentation is current.
+* Deferred systems remain deferred unless explicitly requested.
 
-If the proposed change is too large to satisfy these criteria independently, divide it into smaller vertical slices.
+Primary-agent self-review satisfies the review requirement for ordinary changes.
 
 ---
 
@@ -1281,12 +728,14 @@ Keep the final report concise.
 
 Include:
 
-- What changed
-- Important implementation decisions
-- Tests and validation performed
-- Engine/schema/model/version changes, if any
-- Migration impact, if any
-- Known limitations or pre-existing failures
-- What intentionally remains deferred
+* What changed
+* Important implementation decisions
+* Tests and validation performed
+* Version or migration impact, if any
+* Reproducibility impact, if any
+* Known limitations or pre-existing failures
+* What intentionally remains deferred
 
-Do not narrate routine repository exploration or every command executed.
+Include the next roadmap slice only when relevant.
+
+Do not narrate routine searches, every file read, every command executed, or large raw test logs.
