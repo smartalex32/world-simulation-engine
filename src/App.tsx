@@ -9,6 +9,7 @@ import { ActionExplanation } from './ui/ActionExplanation'
 import { PersonVariableSections } from './ui/PersonVariableSections'
 import { CommunityInspector, CommunitySignals } from './ui/CommunityPanels'
 import { WorldSetup, isWorldSetupGeometryValid, regionForPreset, type WorldSetupValues } from './ui/WorldSetup'
+import type { DraftZoneViewportRequest } from './ui/DraftZoneMap'
 import { mergeWorkbenchProjection } from './ui/projectionFrame'
 import type { ContributionView, VariableDefinitionView } from './ui/personVariables'
 import { SimulationWorkerClient } from './worker/client'
@@ -39,10 +40,14 @@ export default function App() {
   })
   const [worldDraft, setWorldDraft] = useState<WorldDraftRecord>()
   const [draftPreview, setDraftPreview] = useState<WorldDraftPreview>()
+  const [draftViewport, setDraftViewport] = useState<import('./simulation/domain/types').DraftViewportProjection>()
   const [acceptedDraftSignature, setAcceptedDraftSignature] = useState<string>()
   const [draftBusy, setDraftBusy] = useState(false)
   const worldDraftRef = useRef<WorldDraftRecord | undefined>(undefined)
   const draftBusyRef = useRef(false)
+  const latestDraftViewportRequestRevision = useRef(0)
+  const minimumDraftViewportRevision = useRef(0)
+  const pendingDraftZoneCells = useRef<{ zoneId: string; cellIds: string[] } | undefined>(undefined)
   const commitAfterDraftUpdateRef = useRef(false)
   const [projection, setProjection] = useState<WorkbenchProjection>()
   const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
@@ -110,6 +115,8 @@ export default function App() {
         setStatus('paused')
         commitAfterDraftUpdateRef.current = false
         setDraftOperationBusy(false)
+      } else if (response.type === 'DRAFT_VIEWPORT') {
+        if (response.viewport.draftId === WORLD_SETUP_DRAFT_ID && response.viewport.revision >= minimumDraftViewportRevision.current && response.viewport.revision >= latestDraftViewportRequestRevision.current) setDraftViewport(response.viewport)
       } else if (response.type === 'DRAFT') {
         if (response.action === 'committing') {
           // This arrives before the new run's FRAME so its RUN_CREATED event
@@ -129,6 +136,7 @@ export default function App() {
           worldDraftRef.current = undefined
           setWorldDraft(undefined)
           setDraftPreview(undefined)
+          setDraftViewport(undefined)
           setAcceptedDraftSignature(undefined)
           setDraftOperationBusy(false)
           if (response.action === 'committed') {
@@ -140,11 +148,18 @@ export default function App() {
             setSetupOpen(false)
           }
         } else if (response.draft) {
+          if (response.action === 'zoneCellsUpdated') setError(undefined)
           worldDraftRef.current = response.draft
           setWorldDraft(response.draft)
           if (response.preview) setDraftPreview(response.preview)
           const acceptedSetup = worldSetupFromDraft(response.draft.draft)
           setAcceptedDraftSignature(worldSetupSignature(acceptedSetup))
+          if (response.action === 'zoneCellsUpdated') {
+            // The worker canonicalizes selected cell IDs. Rehydrate the form
+            // from that accepted draft before asking for a fresh terrain slice.
+            setWorldSetup(acceptedSetup)
+            setDraftViewport(undefined)
+          }
           if (response.action === 'reset') setWorldSetup(acceptedSetup)
           if (response.action === 'hydrated') setWorldSetup(acceptedSetup)
           setDraftOperationBusy(true)
@@ -155,6 +170,12 @@ export default function App() {
               client.commitDraft(WORLD_SETUP_DRAFT_ID)
             } else {
               setDraftOperationBusy(false)
+              const pending = pendingDraftZoneCells.current
+              if (pending) {
+                pendingDraftZoneCells.current = undefined
+                setDraftOperationBusy(true)
+                client.updateDraftZoneCells(WORLD_SETUP_DRAFT_ID, pending.zoneId, pending.cellIds)
+              }
             }
           } catch (reason) {
             setError(messageOf(reason))
@@ -235,7 +256,10 @@ export default function App() {
     worldDraftRef.current = undefined
     setWorldDraft(undefined)
     setDraftPreview(undefined)
+    setDraftViewport(undefined)
     setAcceptedDraftSignature(undefined)
+    latestDraftViewportRequestRevision.current = 0
+    minimumDraftViewportRevision.current = 0
     setDraftOperationBusy(true)
     try {
       const saved = await database.loadWorldDraft(WORLD_SETUP_DRAFT_ID)
@@ -264,6 +288,26 @@ export default function App() {
     // valid queued edit immediately before a commit.
     client.updateDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(next))
   }
+
+  const requestDraftViewport = useCallback((viewport: DraftZoneViewportRequest) => {
+    if (!worldDraftRef.current || draftBusyRef.current) return
+    latestDraftViewportRequestRevision.current = Math.max(latestDraftViewportRequestRevision.current, viewport.revision)
+    client.requestDraftViewport(WORLD_SETUP_DRAFT_ID, viewport)
+  }, [client])
+
+  const updateDraftZoneCells = useCallback((zoneId: string, cellIds: readonly string[]) => {
+    if (!worldDraftRef.current) return
+    if (draftBusyRef.current) {
+      pendingDraftZoneCells.current = { zoneId, cellIds: [...cellIds] }
+      return
+    }
+    // Ignore any in-flight terrain response. DraftZoneMap will issue its next
+    // monotonically newer request once the accepted draft revision arrives.
+    minimumDraftViewportRevision.current = latestDraftViewportRequestRevision.current + 1
+    setDraftViewport(undefined)
+    setDraftOperationBusy(true)
+    client.updateDraftZoneCells(WORLD_SETUP_DRAFT_ID, zoneId, [...cellIds])
+  }, [client])
 
   function discardWorldSetup() {
     if (!worldDraftRef.current) {
@@ -437,7 +481,7 @@ export default function App() {
           {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
       </section>
-      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} />}
+      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} error={error} />}
     </main>
   )
 }

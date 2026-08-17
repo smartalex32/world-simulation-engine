@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SimulationEngine } from '../engine/engine'
 import { defaultWorldCreationRequest } from './worldCreation'
-import { createWorldDraftRecord, previewWorldDraft, resetWorldDraftRecord, updateWorldDraftRecord, validateWorldDraftRecord } from './worldDraft'
+import { createWorldDraftRecord, previewWorldDraft, projectWorldDraftViewport, resetWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from './worldDraft'
 
 describe('world draft lifecycle domain contract', () => {
   it('produces a stable bounded preview without changing the draft', () => {
@@ -91,5 +91,48 @@ describe('world draft lifecycle domain contract', () => {
     expect(() => previewWorldDraft(candidate)).toThrow(/overlap/)
     expect(active.revision).toBe(0)
     expect(active.draft.populationZones).toHaveLength(1)
+  })
+
+  it('atomically patches independent zone cells in canonical order after generated-terrain validation', () => {
+    const active = createWorldDraftRecord('draft-zone-cells', {
+      ...defaultWorldCreationRequest('zone-cell-seed'), initialPopulationCount: 10,
+      populationZones: [{ id: 'population-zone-0001', name: 'Initial', preset: 'center', populationCount: 10 }],
+    })
+    const acceptedCellIds = previewWorldDraft(active).creation.populationZones[0]!.cellIds
+    const patched = updateWorldDraftZoneCells(active, 'population-zone-0001', [...acceptedCellIds].reverse(), active.revision)
+
+    expect(patched.revision).toBe(1)
+    expect(patched.draft.populationZones[0]!.cellIds).toEqual([...acceptedCellIds].sort())
+    expect(active.draft.populationZones[0]!.cellIds).toBeUndefined()
+    expect(() => updateWorldDraftZoneCells(active, 'population-zone-0001', [acceptedCellIds[0]!, acceptedCellIds[0]!])).toThrow(/invalid cells/)
+    expect(() => updateWorldDraftZoneCells(active, 'population-zone-0001', ['unknown-cell'])).toThrow(/invalid home cell/)
+  })
+
+  it('rejects settlement-linked zone cell edits without changing settlement anchors', () => {
+    const active = createWorldDraftRecord('draft-linked-zone', {
+      ...defaultWorldCreationRequest('linked-zone-seed'), initialPopulationCount: 10,
+      settlements: [{ id: 'settlement-0001', name: 'Anchor', preset: 'center' }],
+      populationZones: [{ id: 'population-zone-0001', name: 'Initial', preset: 'center', radiusCells: 3, populationCount: 10, settlementId: 'settlement-0001' }],
+    })
+    const cellId = previewWorldDraft(active).creation.populationZones[0]!.cellIds[0]!
+    expect(() => updateWorldDraftZoneCells(active, 'population-zone-0001', [cellId])).toThrow(/settlement-linked/)
+    expect(active.revision).toBe(0)
+  })
+
+  it('returns a deterministic bounded read-only terrain viewport tied to the draft revision', () => {
+    const record = createWorldDraftRecord('draft-viewport', {
+      ...defaultWorldCreationRequest('viewport-seed'), initialPopulationCount: 12,
+      populationZones: [{ id: 'population-zone-0001', name: 'Initial', preset: 'center', populationCount: 12 }],
+    })
+    const request = { revision: 7, bounds: { minQ: 0, maxQ: 31, minR: 0, maxR: 23 }, selectedZoneId: 'population-zone-0001' }
+    const first = projectWorldDraftViewport(record, request)
+    const second = projectWorldDraftViewport(record, request)
+
+    expect(second).toEqual(first)
+    expect(first.draftId).toBe(record.draftId)
+    expect(first.draftRevision).toBe(record.revision)
+    expect(first.cells).toHaveLength(32 * 24)
+    expect(first.cells.some((cell) => cell.selected)).toBe(true)
+    expect(() => projectWorldDraftViewport(record, { ...request, bounds: { minQ: 0, maxQ: 127, minR: 0, maxR: 127 } })).toThrow(/at most 4096/)
   })
 })

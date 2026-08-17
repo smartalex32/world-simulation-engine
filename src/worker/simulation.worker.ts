@@ -4,7 +4,7 @@ import { SimulationEngine } from '../simulation/engine/engine'
 import { WorkbenchProjectionBuilder, type MapProjectionRequest } from '../projection'
 import type { SimulationEvent, StatisticSample, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
-import { createWorldDraftRecord, previewWorldDraft, resetWorldDraftRecord, updateWorldDraftRecord, validateWorldDraftRecord } from '../simulation/domain/worldDraft'
+import { createWorldDraftRecord, previewWorldDraft, projectWorldDraftViewport, resetWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from '../simulation/domain/worldDraft'
 import type { SimulationCommand, SimulationResponse, WorkbenchSnapshotEnvelope } from './protocol'
 import { MAX_TICKS_PER_WORKER_TURN, SimulationBatchScheduler, TelemetryBuffer, validateWorkerContinuation, type WorkerContinuationState } from './frameScheduler'
 
@@ -170,6 +170,14 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           respond({ type: 'DRAFT', requestId: command.requestId, action: 'updated', draft: candidate, preview })
           break
         }
+        case 'UPDATE_DRAFT_ZONE_CELLS': {
+          const draft = requiredDraft(command.draftId)
+          const candidate = updateWorldDraftZoneCells(draft, command.zoneId, command.cellIds, command.expectedRevision)
+          const preview = previewWorldDraft(candidate)
+          activeDraft = candidate
+          respond({ type: 'DRAFT', requestId: command.requestId, action: 'zoneCellsUpdated', draft: candidate, preview })
+          break
+        }
         case 'RESET_DRAFT': {
           const draft = requiredDraft(command.draftId)
           const candidate = resetWorldDraftRecord(draft, command.expectedRevision)
@@ -181,6 +189,12 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
         case 'REQUEST_DRAFT_PREVIEW': {
           const draft = requiredDraft(command.draftId)
           respond({ type: 'DRAFT', requestId: command.requestId, action: 'previewed', draft, preview: previewWorldDraft(draft) })
+          break
+        }
+        case 'REQUEST_DRAFT_VIEWPORT': {
+          const draft = requiredDraft(command.draftId)
+          // This is authoring-only terrain data, intentionally not a live FRAME.
+          respond({ type: 'DRAFT_VIEWPORT', requestId: command.requestId, viewport: projectWorldDraftViewport(draft, command.viewport) })
           break
         }
         case 'COMMIT_DRAFT': {

@@ -1,5 +1,5 @@
 import { generateValley } from '../spatial/worldGenerator'
-import type { Terrain, WorldCreationDraft, WorldDraftPreview, WorldDraftRecord } from './types'
+import type { DraftViewportProjection, DraftViewportRequest, Terrain, WorldCreationDraft, WorldDraftPreview, WorldDraftRecord } from './types'
 import { normalizeWorldCreationRequest, validateWorldCreationDraftLimits } from './worldCreation'
 
 export const WORLD_DRAFT_RECORD_VERSION = 2 as const
@@ -29,6 +29,65 @@ export function resetWorldDraftRecord(record: WorldDraftRecord, expectedRevision
     throw new Error(`World draft revision conflict: expected ${expectedRevision}, current ${current.revision}`)
   }
   return { ...current, revision: current.revision + 1, draft: cloneDraft(current.initialDraft) }
+}
+
+/**
+ * Atomically replaces one independent population zone's cells. The complete
+ * generated-terrain normalization happens before the returned record is made
+ * available, so bad cells, duplicates, overlap, and allocation errors leave
+ * the active draft unchanged at the worker boundary.
+ */
+export function updateWorldDraftZoneCells(record: WorldDraftRecord, zoneId: string, cellIds: readonly string[], expectedRevision?: number): WorldDraftRecord {
+  const current = validateWorldDraftRecord(record)
+  if (expectedRevision !== undefined && expectedRevision !== current.revision) {
+    throw new Error(`World draft revision conflict: expected ${expectedRevision}, current ${current.revision}`)
+  }
+  if (!Array.isArray(cellIds)) throw new Error('Population zone cells are invalid')
+  const zone = current.draft.populationZones.find((candidate) => candidate.id === zoneId)
+  if (!zone) throw new Error(`Population zone is unknown: ${zoneId}`)
+  if (zone.settlementId !== undefined) throw new Error(`Population zone ${zoneId} is settlement-linked and its cells cannot be edited without moving its anchor`)
+  const canonicalCellIds = [...cellIds].sort(compareText)
+  const patchedDraft: WorldCreationDraft = {
+    ...cloneDraft(current.draft),
+    populationZones: current.draft.populationZones.map((candidate) => candidate.id === zoneId
+      ? { id: candidate.id, name: candidate.name, populationCount: candidate.populationCount, cellIds: canonicalCellIds }
+      : { ...candidate, cellIds: candidate.cellIds ? [...candidate.cellIds] : undefined }),
+  }
+  validateWorldCreationDraftLimits(patchedDraft)
+  const generated = generateValley(patchedDraft.seed.trim() || 'valley-001', patchedDraft.width, patchedDraft.height)
+  const normalized = normalizeWorldCreationRequest(patchedDraft, generated.world.grid.cells)
+  const normalizedZone = normalized.populationZones.find((candidate) => candidate.id === zoneId)
+  if (!normalizedZone) throw new Error(`Population zone is unknown: ${zoneId}`)
+  return {
+    ...current,
+    revision: current.revision + 1,
+    draft: {
+      ...patchedDraft,
+      populationZones: patchedDraft.populationZones.map((candidate) => candidate.id === zoneId
+        ? { id: candidate.id, name: candidate.name, populationCount: candidate.populationCount, cellIds: [...normalizedZone.cellIds] }
+        : candidate),
+    },
+  }
+}
+
+/** Builds a deterministic bounded terrain-only projection for draft editing. */
+export function projectWorldDraftViewport(record: WorldDraftRecord, request: DraftViewportRequest): DraftViewportProjection {
+  const current = validateWorldDraftRecord(record)
+  const bounds = request?.bounds
+  if (!Number.isSafeInteger(request?.revision) || request.revision < 0) throw new Error('Draft viewport revision is invalid')
+  if (!bounds || !Number.isSafeInteger(bounds.minQ) || !Number.isSafeInteger(bounds.maxQ) || !Number.isSafeInteger(bounds.minR) || !Number.isSafeInteger(bounds.maxR) || bounds.minQ > bounds.maxQ || bounds.minR > bounds.maxR) throw new Error('Draft viewport bounds are invalid')
+  const requestedCellCount = (bounds.maxQ - bounds.minQ + 1) * (bounds.maxR - bounds.minR + 1)
+  if (!Number.isSafeInteger(requestedCellCount) || requestedCellCount > 4096) throw new RangeError('Draft viewport may contain at most 4096 cells')
+  const generated = generateValley(current.draft.seed.trim() || 'valley-001', current.draft.width, current.draft.height)
+  const normalized = normalizeWorldCreationRequest(current.draft, generated.world.grid.cells)
+  const zone = request.selectedZoneId === undefined ? undefined : normalized.populationZones.find((candidate) => candidate.id === request.selectedZoneId)
+  if (request.selectedZoneId !== undefined && !zone) throw new Error(`Population zone is unknown: ${request.selectedZoneId}`)
+  const selectedCellIds = new Set(zone?.cellIds ?? [])
+  const cells = generated.world.grid.cells
+    .filter((cell) => cell.q >= bounds.minQ && cell.q <= bounds.maxQ && cell.r >= bounds.minR && cell.r <= bounds.maxR)
+    .sort((first, second) => compareText(first.id, second.id))
+    .map((cell) => ({ ...cell, selected: selectedCellIds.has(cell.id) }))
+  return { version: 1, draftId: current.draftId, draftRevision: current.revision, revision: request.revision, ...(request.selectedZoneId === undefined ? {} : { selectedZoneId: request.selectedZoneId }), cells }
 }
 
 /** Validates untrusted persisted data and returns a detached normalized copy. */
@@ -86,4 +145,8 @@ function cloneDraft(value: WorldCreationDraft): WorldCreationDraft {
     populationZones: value.populationZones.map((zone) => ({ ...zone, cellIds: zone.cellIds ? [...zone.cellIds] : undefined })),
     settlements: value.settlements.map((settlement) => ({ ...settlement })),
   }
+}
+
+function compareText(first: string, second: string): number {
+  return first < second ? -1 : first > second ? 1 : 0
 }

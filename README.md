@@ -35,10 +35,11 @@ Implemented milestones:
 - Milestone 8A — Reproducible World Creation
 - Milestone 8B.1 — Draft World Lifecycle
 - Milestone 8B.2A — Preset Placement Zone Authoring
+- Milestone 8B.2B — Direct Placement-Zone Drawing
 
 Current next milestone:
 
-- Milestone 8B.2B — Direct Placement-Zone Drawing
+- Milestone 8B.3 — Terrain Painting
 
 See `docs/ROADMAP.md` for planned sequencing and future systems.
 
@@ -664,10 +665,14 @@ previews and obvious preset overlaps before commit; the worker validates the
 authoritative passability, overlap, anchor, and allocation rules before it
 accepts a draft.
 
-The current implementation deliberately does not yet provide a draft-map
-viewport or direct map-drawn zones, terrain painting, settlement editing,
-roads, or draft import/export. See `docs/ROADMAP.md` for the next incremental
-slices.
+Direct drawing now uses a bounded generated-terrain viewport. It can select
+only habitable, non-settlement-zone cells; an explicit Apply action submits
+the complete canonical selection to the worker, which validates and persists
+it before a later commit. Drawing never changes terrain or moves settlement
+anchors.
+
+Terrain painting, settlement editing, roads, and draft import/export remain
+later slices. See `docs/ROADMAP.md` for the next incremental work.
 
 ---
 

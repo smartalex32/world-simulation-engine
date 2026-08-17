@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import type { WorldDraftPreview, WorldPlacementPreset } from '../simulation/domain/types'
+import { DraftZoneMap, type DraftZoneViewport, type DraftZoneViewportRequest } from './DraftZoneMap'
 
 export type PlacementRegion = 'west' | 'center' | 'east'
 
@@ -38,6 +40,10 @@ interface WorldSetupProps {
   preview?: WorldDraftPreview
   previewCurrent?: boolean
   busy?: boolean
+  draftViewport?: DraftZoneViewport
+  onDraftViewportRequest?: (request: DraftZoneViewportRequest) => void
+  onZoneCellsCommit?: (zoneId: string, cellIds: readonly string[]) => void
+  error?: string
 }
 
 const DIMENSIONS = [
@@ -75,7 +81,12 @@ export function isWorldSetupGeometryValid(value: Pick<WorldSetupValues, 'placeme
     && presetZonesDoNotOverlap(value.placements, value.width)
 }
 
-export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draftRevision, preview, previewCurrent = false, busy = false }: WorldSetupProps) {
+export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draftRevision, preview, previewCurrent = false, busy = false, draftViewport, onDraftViewportRequest, onZoneCellsCommit, error }: WorldSetupProps) {
+  const editablePlacements = value.placements.filter((placement) => placement.settlementId === undefined)
+  const [selectedZoneId, setSelectedZoneId] = useState<string>()
+  useEffect(() => {
+    if (!editablePlacements.some((placement) => placement.id === selectedZoneId)) setSelectedZoneId(editablePlacements[0]?.id)
+  }, [editablePlacements, selectedZoneId])
   const update = <K extends keyof WorldSetupValues>(key: K, next: WorldSetupValues[K]) => onChange({ ...value, [key]: next })
   const updatePlacement = (id: string, patch: Partial<WorldSetupPlacement>) => onChange({ ...value, placements: value.placements.map((placement) => placement.id === id ? { ...placement, ...patch } : placement) })
   const addPlacement = () => {
@@ -101,6 +112,7 @@ export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draft
     <section className="world-setup" role="dialog" aria-modal="true" aria-labelledby="world-setup-title">
       <header><div><span className="eyebrow">WORLD DRAFT</span><h2 id="world-setup-title">Shape a new world</h2><p>This is a detached draft. Your active simulation remains unchanged until you commit it.</p></div><button className="setup-close" aria-label="Discard world draft" disabled={busy} onClick={onCancel}>×</button></header>
       <fieldset className="setup-fields" disabled={busy}>
+        {error && <p className="draft-rejection" role="alert">Draft update rejected: {error}</p>}
         <div className="setup-grid">
           <label><span>World name</span><input autoFocus aria-label="World name" maxLength={80} value={value.name} onChange={(event) => update('name', event.target.value)} /></label>
           <label><span>Seed</span><input aria-label="World seed" maxLength={160} value={value.seed} onChange={(event) => update('seed', event.target.value)} /></label>
@@ -118,6 +130,15 @@ export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draft
             </section>)}
           </div>
           <button type="button" className="secondary add-zone" onClick={addPlacement}>Add placement zone</button>
+          <section className="placement-drawing" aria-labelledby="zone-drawing-title">
+            <div><span className="eyebrow">OPTIONAL DIRECT PLACEMENT</span><h3 id="zone-drawing-title">Draw a population zone</h3><p>Only zones without settlement markers can be drawn. Drawing replaces that zone’s preset with explicit generated cell IDs after worker validation.</p></div>
+            {editablePlacements.length === 0 ? <small className="drawing-unavailable">Disable a settlement marker on a placement zone to draw it directly.</small> : <>
+              <label><span>Zone to draw</span><select aria-label="Zone to draw" value={selectedZoneId ?? ''} onChange={(event) => setSelectedZoneId(event.target.value)}>{editablePlacements.map((placement) => <option key={placement.id} value={placement.id}>{placement.name || placement.id}</option>)}</select></label>
+              {draftRevision !== undefined && selectedZoneId && onDraftViewportRequest && onZoneCellsCommit
+                ? <DraftZoneMap world={{ width: value.width, height: value.height }} viewport={draftViewport} draftRevision={draftRevision} selectedZoneId={selectedZoneId} disabled={busy} onViewportRequest={onDraftViewportRequest} onSelectionCommit={onZoneCellsCommit} />
+                : <small className="drawing-unavailable">Preparing the worker-owned draft…</small>}
+            </>}
+          </section>
           <div className={canCommit ? 'allocation valid' : 'allocation'}><span>Allocated</span><strong>{allocated} / {value.population}</strong>{allocated !== value.population && <small>Adjust zone allocations to match the starting population exactly.</small>}{value.placements.length === 0 && <small>Add at least one placement zone.</small>}{!namesValid && <small>Name the world, each zone, and every enabled settlement marker.</small>}{!zonesValid && <small>Zone radii must be whole values from 0 through 32.</small>}{zonesValid && !geometryValid && <small>Preset zones overlap. Choose different regions or smaller radii.</small>}</div>
         </section>
       </fieldset>

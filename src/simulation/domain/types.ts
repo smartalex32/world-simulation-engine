@@ -131,6 +131,28 @@ export interface WorldDraftPreview {
   terrainCounts: Record<Terrain, number>
 }
 
+/** A bounded spatial request for read-only, generated draft terrain. */
+export interface DraftViewportRequest {
+  revision: number
+  bounds: { minQ: number; maxQ: number; minR: number; maxR: number }
+  selectedZoneId?: string
+}
+
+/** A generated terrain cell annotated only with membership in the requested zone. */
+export interface DraftViewportCell extends GeographicCell {
+  selected: boolean
+}
+
+/** Non-authoritative draft terrain projection; it must never be treated as a live frame. */
+export interface DraftViewportProjection {
+  version: 1
+  draftId: string
+  draftRevision: number
+  revision: number
+  selectedZoneId?: string
+  cells: DraftViewportCell[]
+}
+
 export interface WorldState {
   id: string
   name: string

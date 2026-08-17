@@ -600,13 +600,19 @@ Allow the user to define where populations may initially be placed.
 - Validate canonical geometry, passability, overlap, anchors, and exact totals in
   the worker before a draft is accepted or committed
 
-### Remaining 8B.2B — Direct Zone Drawing
+### Implemented 8B.2B — Direct Zone Drawing
 
 - Render a bounded non-authoritative draft-map viewport
 - Draw and edit explicit zone-cell geometry in that viewport
 - Surface worker validation against the specific drawn geometry
 - Preview placement effects spatially, rather than only through accepted
   canonical-cell counts
+
+Drawing is restricted to habitable cells in zones without settlement markers.
+An explicit apply action sends the complete selection to the worker, which
+canonicalizes it and validates it against generated terrain before persisting
+the draft. Terrain changes and settlement-anchor movement are deliberately
+deferred to their own slices.
 
 ### Requirements
 
@@ -1452,7 +1458,7 @@ Development-agent rules belong in `AGENTS.md`.
 Completed:
 
 ```text
-Milestones 0–8B.2A
+Milestones 0–8B.2B
 ```
 
 Current milestone:
@@ -1464,14 +1470,13 @@ Milestone 8B — Draft Map Authoring
 Next independently reviewable slice:
 
 ```text
-Milestone 8B.2B — Direct Placement-Zone Drawing
+Milestone 8B.3 — Terrain Painting
 ```
 
 The intended immediate sequence is:
 
 ```text
-8B.2B Direct Placement-Zone Drawing
-  -> 8B.3 Terrain Painting
+8B.3 Terrain Painting
   -> 8B.4 Settlement Editing
   -> 8B.5 Roads
   -> 8B.6 Draft Import/Export
