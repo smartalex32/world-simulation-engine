@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
 import type { CommunityVariableDefinition, CommunityVariableId } from './simulation/community/types'
-import type { DevelopmentExperienceType, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, UtilityContribution, WorldCreationDraft, WorldCreationRequest, WorldDraftPreview, WorldDraftRecord } from './simulation/domain/types'
+import type { DevelopmentExperienceType, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, Terrain, UtilityContribution, WorldCreationDraft, WorldCreationRequest, WorldDraftPreview, WorldDraftRecord } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
 import type { ProjectedCommunityState, WorkbenchProjection } from './projection'
 import { HexMap, type MapOverlay } from './ui/HexMap'
@@ -36,7 +36,7 @@ export default function App() {
       { id: 'population-zone-1', name: 'Westhaven residents', region: 'west', preset: 'west', radiusCells: 3, allocation: 100, settlementId: 'settlement-1', settlementName: 'Westhaven' },
       { id: 'population-zone-2', name: 'Eastwatch residents', region: 'east', preset: 'east', radiusCells: 3, allocation: 100, settlementId: 'settlement-2', settlementName: 'Eastwatch' },
     ],
-    nextPlacementId: 1,
+    nextPlacementId: 1, terrainOverrides: [],
   })
   const [worldDraft, setWorldDraft] = useState<WorldDraftRecord>()
   const [draftPreview, setDraftPreview] = useState<WorldDraftPreview>()
@@ -48,6 +48,7 @@ export default function App() {
   const latestDraftViewportRequestRevision = useRef(0)
   const minimumDraftViewportRevision = useRef(0)
   const pendingDraftZoneCells = useRef<{ zoneId: string; cellIds: string[] } | undefined>(undefined)
+  const pendingTerrainPaint = useRef<{ terrain: Terrain; cellIds: string[] } | undefined>(undefined)
   const commitAfterDraftUpdateRef = useRef(false)
   const [projection, setProjection] = useState<WorkbenchProjection>()
   const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
@@ -148,13 +149,13 @@ export default function App() {
             setSetupOpen(false)
           }
         } else if (response.draft) {
-          if (response.action === 'zoneCellsUpdated') setError(undefined)
+          if (response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted') setError(undefined)
           worldDraftRef.current = response.draft
           setWorldDraft(response.draft)
           if (response.preview) setDraftPreview(response.preview)
           const acceptedSetup = worldSetupFromDraft(response.draft.draft)
           setAcceptedDraftSignature(worldSetupSignature(acceptedSetup))
-          if (response.action === 'zoneCellsUpdated') {
+          if (response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted') {
             // The worker canonicalizes selected cell IDs. Rehydrate the form
             // from that accepted draft before asking for a fresh terrain slice.
             setWorldSetup(acceptedSetup)
@@ -175,6 +176,13 @@ export default function App() {
                 pendingDraftZoneCells.current = undefined
                 setDraftOperationBusy(true)
                 client.updateDraftZoneCells(WORLD_SETUP_DRAFT_ID, pending.zoneId, pending.cellIds)
+              } else {
+                const terrain = pendingTerrainPaint.current
+                if (terrain) {
+                  pendingTerrainPaint.current = undefined
+                  setDraftOperationBusy(true)
+                  client.paintDraftTerrain(WORLD_SETUP_DRAFT_ID, terrain.cellIds, terrain.terrain)
+                }
               }
             }
           } catch (reason) {
@@ -307,6 +315,15 @@ export default function App() {
     setDraftViewport(undefined)
     setDraftOperationBusy(true)
     client.updateDraftZoneCells(WORLD_SETUP_DRAFT_ID, zoneId, [...cellIds])
+  }, [client])
+
+  const paintDraftTerrain = useCallback((terrain: Terrain, cellIds: readonly string[]) => {
+    if (!worldDraftRef.current) return
+    if (draftBusyRef.current) { pendingTerrainPaint.current = { terrain, cellIds: [...cellIds] }; return }
+    minimumDraftViewportRevision.current = latestDraftViewportRequestRevision.current + 1
+    setDraftViewport(undefined)
+    setDraftOperationBusy(true)
+    client.paintDraftTerrain(WORLD_SETUP_DRAFT_ID, [...cellIds], terrain)
   }, [client])
 
   function discardWorldSetup() {
@@ -481,7 +498,7 @@ export default function App() {
           {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
       </section>
-      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} error={error} />}
+      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} error={error} />}
     </main>
   )
 }
@@ -505,6 +522,7 @@ function worldSetupFromCreation(creation: WorldCreationRequest): WorldSetupValue
       return { id: zone.id, name: zone.name, region, preset: region, radiusCells: 3, allocation: zone.populationCount, settlementId: zone.settlementId, settlementName: settlement?.name, cellIds: [...zone.cellIds] }
     }),
     nextPlacementId: nextDraftSequence(creation.populationZones.map((zone) => zone.id), creation.settlements.map((settlement) => settlement.id)),
+    terrainOverrides: creation.terrainOverrides.map((override) => ({ ...override })),
   }
 }
 
@@ -515,6 +533,7 @@ function creationDraftFromSetup(setup: WorldSetupValues): WorldCreationDraft {
     width: setup.width,
     height: setup.height,
     initialPopulationCount: setup.population,
+    terrainOverrides: setup.terrainOverrides.map((override) => ({ ...override })),
     settlements: [...new Map(setup.placements.flatMap((placement) => placement.settlementId && placement.settlementName ? [[placement.settlementId, { id: placement.settlementId, name: placement.settlementName, ...(placement.cellIds === undefined ? { preset: placement.preset } : {}) }] as const] : [])).values()],
     populationZones: setup.placements.map((placement) => ({
       id: placement.id,
@@ -549,6 +568,7 @@ function worldSetupFromDraft(draft: WorldCreationDraft): WorldSetupValues {
       return { id: zone.id, name: zone.name, region: regionForPreset(preset), preset, radiusCells: zone.radiusCells ?? 3, allocation: zone.populationCount, settlementId: zone.settlementId, settlementName: settlement?.name, ...(zone.cellIds !== undefined ? { cellIds: [...zone.cellIds] } : {}) }
     }),
     nextPlacementId: nextDraftSequence(draft.populationZones.map((zone) => zone.id), draft.settlements.map((settlement) => settlement.id)),
+    terrainOverrides: (draft.terrainOverrides ?? []).map((override) => ({ ...override })),
   }
 }
 

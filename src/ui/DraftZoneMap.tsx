@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DraftViewportProjection, DraftViewportRequest, GeographicCell } from '../simulation/domain/types'
+import type { DraftViewportProjection, DraftViewportRequest, GeographicCell, Terrain } from '../simulation/domain/types'
 import { axialToPixel, pixelToAxial } from '../simulation/spatial/hex'
 import { fitWorld, type MapViewportState, type WorldDimensions } from './mapViewport'
 
@@ -18,9 +18,12 @@ interface DraftZoneMapProps {
   disabled?: boolean
   onViewportRequest: (request: DraftZoneViewportRequest) => void
   onSelectionCommit: (zoneId: string, cellIds: readonly string[]) => void
+  terrainPaint?: Terrain
+  onTerrainPaintCommit?: (terrain: Terrain, cellIds: readonly string[]) => void
 }
 
-export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, disabled = false, onViewportRequest, onSelectionCommit }: DraftZoneMapProps) {
+export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, disabled = false, onViewportRequest, onSelectionCommit, terrainPaint, onTerrainPaintCommit }: DraftZoneMapProps) {
+  const terrainMode = terrainPaint !== undefined && onTerrainPaintCommit !== undefined
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [camera, setCamera] = useState<MapViewportState>({ width: 0, height: 0, scale: 1, x: 0, y: 0 })
@@ -52,23 +55,23 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, d
     setCamera(fitWorld(world, camera.width, camera.height, HEX_SIZE, 20))
   }, [camera.height, camera.width, world.height, world.width])
 
-  const currentViewport = viewport && viewport.revision >= latestRequestedRevision.current ? viewport : undefined
+  const currentViewport = viewport && viewport.revision >= latestRequestedRevision.current && (terrainMode || viewport.selectedZoneId === selectedZoneId) ? viewport : undefined
   const firstPassableCenter = currentViewport?.cells.find(isEligibleHomeCell)
   const firstPassableScreenPoint = firstPassableCenter ? axialToPixel(firstPassableCenter, HEX_SIZE) : undefined
 
   useEffect(() => {
-    if (!currentViewport || currentViewport.selectedZoneId !== selectedZoneId || drag.current?.changed) return
+    if (terrainMode || !currentViewport || currentViewport.selectedZoneId !== selectedZoneId || drag.current?.changed) return
     selection.current = new Set(currentViewport.cells.filter((cell) => cell.selected).map((cell) => cell.id))
     setPaintRevision((current) => current + 1)
   }, [currentViewport, selectedZoneId])
 
   useEffect(() => {
-    if (!camera.width || !camera.height || !selectedZoneId || disabled) return
+    if (!camera.width || !camera.height || (!terrainMode && !selectedZoneId) || disabled) return
     if (requestFrame.current !== undefined) cancelAnimationFrame(requestFrame.current)
     requestFrame.current = requestAnimationFrame(() => {
       revision.current += 1
       latestRequestedRevision.current = revision.current
-      onViewportRequest({ revision: revision.current, selectedZoneId, bounds: draftViewportBounds(world, camera) })
+      onViewportRequest({ revision: revision.current, ...(terrainMode ? {} : { selectedZoneId }), bounds: draftViewportBounds(world, camera) })
       requestFrame.current = undefined
     })
     return () => { if (requestFrame.current !== undefined) cancelAnimationFrame(requestFrame.current) }
@@ -110,7 +113,7 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, d
 
   function paint(clientX: number, clientY: number): boolean {
     const cell = cellAt(clientX, clientY)
-    if (!cell || !isEligibleHomeCell(cell)) return false
+    if (!cell || (!terrainMode && !isEligibleHomeCell(cell))) return false
     const current = drag.current
     if (!current || current.selected.has(cell.id)) return false
     current.selected.add(cell.id)
@@ -122,30 +125,35 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, d
   }
 
   function commitSelection(): void {
-    if (!selectedZoneId) return
+    if (!terrainMode && !selectedZoneId) return
     const cellIds = [...selection.current].sort()
     const signature = cellIds.join(',')
     if (signature === lastCommittedSelection.current) return
     lastCommittedSelection.current = signature
     if (disabled) {
-      pendingSelectionCommit.current = { zoneId: selectedZoneId, cellIds }
+      if (!terrainMode && selectedZoneId) pendingSelectionCommit.current = { zoneId: selectedZoneId, cellIds }
       return
     }
-    onSelectionCommit(selectedZoneId, cellIds)
+    if (terrainMode && terrainPaint && onTerrainPaintCommit) {
+      selection.current.clear()
+      setPaintRevision((value) => value + 1)
+      onTerrainPaintCommit(terrainPaint, cellIds)
+    }
+    else if (selectedZoneId) onSelectionCommit(selectedZoneId, cellIds)
   }
 
-  return <section className="draft-zone-map" aria-label="Draw placement zone">
-    <div className="draft-zone-map-heading"><div><span className="eyebrow">DIRECT ZONE DRAWING</span><h4>Habitable cells only</h4></div><small>{selection.current.size} selected</small></div>
-    <p>Drag across habitable cells to toggle this non-settlement zone. Terrain and settlement anchors are read-only.</p>
+  return <section className="draft-zone-map" aria-label={terrainMode ? 'Paint draft terrain' : 'Draw placement zone'}>
+    <div className="draft-zone-map-heading"><div><span className="eyebrow">{terrainMode ? 'TERRAIN PAINTING' : 'DIRECT ZONE DRAWING'}</span><h4>{terrainMode ? `Paint ${terrainPaint} terrain` : 'Habitable cells only'}</h4></div><small>{selection.current.size} selected</small></div>
+    <p>{terrainMode ? 'Drag across up to 512 generated cells, then apply this deterministic draft-only terrain edit.' : 'Drag across habitable cells to toggle this non-settlement zone. Terrain and settlement anchors are read-only.'}</p>
     <div className="draft-zone-canvas-wrap" ref={containerRef}>
       <canvas
         ref={canvasRef}
-        aria-label="Draft placement zone map"
+        aria-label={terrainMode ? 'Draft terrain paint map' : 'Draft placement zone map'}
         tabIndex={0}
         data-draft-map-revision={currentViewport?.revision}
         data-draft-map-cell-count={currentViewport?.cells.length}
         data-draft-map-viewport={`${camera.x.toFixed(2)},${camera.y.toFixed(2)},${camera.scale.toFixed(4)}`}
-        data-draft-zone-id={selectedZoneId}
+        data-draft-zone-id={terrainMode ? undefined : selectedZoneId}
         data-draft-map-first-passable-center={firstPassableScreenPoint ? `${(camera.x + firstPassableScreenPoint.x * camera.scale).toFixed(2)},${(camera.y + firstPassableScreenPoint.y * camera.scale).toFixed(2)}` : undefined}
         onPointerDown={(event) => {
           if (disabled) return
@@ -183,7 +191,7 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, d
       {!currentViewport && <span className="draft-map-loading">Loading generated terrain…</span>}
     </div>
     <small className="draft-map-key"><i className="plain" /> plain <i className="hill" /> hill <i className="water" /> water / blocked <i className="selected" /> selected</small>
-    <button type="button" className="secondary draft-zone-apply" disabled={disabled} onClick={commitSelection}>Apply drawn cells</button>
+    <button type="button" className="secondary draft-zone-apply" disabled={disabled || selection.current.size === 0} onClick={commitSelection}>{terrainMode ? `Paint ${terrainPaint}` : 'Apply drawn cells'}</button>
   </section>
 }
 

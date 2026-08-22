@@ -114,7 +114,7 @@ Do not implement distant systems merely because they appear later in this roadma
 
 ## Next Slice
 
-* Milestone 8B.3 — Terrain Painting
+* Milestone 8B.3B — Elevation Painting
 
 Detailed current implementation is documented in `README.md`.
 
@@ -374,7 +374,7 @@ Current drawing:
 
 ## Milestone 8B.3 — Terrain Painting
 
-Status: Next
+Status: In Progress
 
 ### Goal
 
@@ -407,6 +407,8 @@ Editing operations must:
 Prefer implementing Terrain Painting incrementally rather than as one large editor.
 
 #### 8B.3A — Terrain-Type Painting
+
+Status: Implemented
 
 Add:
 
@@ -1224,7 +1226,7 @@ Milestone 8B — Draft Map Authoring
 Next independently reviewable slice:
 
 ```text
-Milestone 8B.3 — Terrain Painting
+Milestone 8B.3B — Elevation Painting
 ```
 
 Intended immediate sequence:

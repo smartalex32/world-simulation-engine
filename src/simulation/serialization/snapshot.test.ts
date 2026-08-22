@@ -9,13 +9,13 @@ describe('canonical serialization', () => {
     )
   })
 
-  it('round-trips schema 9 households, communities, development, and named streams', async () => {
+  it('round-trips schema 10 households, communities, development, and named streams', async () => {
     const snapshot = await SimulationEngine.create('schema-6-round-trip').snapshot()
     const validated = await validateSnapshot(structuredClone(snapshot))
 
     expect(validated).toEqual(snapshot)
-    expect(validated.schemaVersion).toBe(9)
-    expect(validated.engineVersion).toBe('0.9.0')
+    expect(validated.schemaVersion).toBe(10)
+    expect(validated.engineVersion).toBe('0.10.0')
     expect(validated.state.households).toHaveLength(100)
     expect(validated.state.parentChildLinks).toHaveLength(100)
     expect(validated.state.communities).toHaveLength(2)

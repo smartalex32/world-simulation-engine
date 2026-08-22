@@ -62,9 +62,9 @@ describe('Milestone 8A world creation validation', () => {
     expect(fixedWorldScale()).toEqual({ layout: 'axial-pointy', hexRadiusMeters: 1_000 })
   })
 
-  it('round-trips schema 9 and rejects the prior schema explicitly', async () => {
+  it('round-trips schema 10 and rejects the prior schema explicitly', async () => {
     const snapshot = await SimulationEngine.create('m8a-schema-round-trip').snapshot()
-    expect(snapshot.schemaVersion).toBe(9)
+    expect(snapshot.schemaVersion).toBe(10)
     expect((await validateSnapshot(structuredClone(snapshot))).digest).toBe(snapshot.digest)
     const unsupported = structuredClone(snapshot)
     unsupported.schemaVersion = 8

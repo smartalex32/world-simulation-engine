@@ -39,7 +39,7 @@ Implemented:
 
 Next:
 
-* Milestone 8B.3 — Terrain Painting
+* Milestone 8B.3B — Elevation Painting
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 
@@ -703,9 +703,13 @@ Drawing:
 * Does not move settlement anchors
 * Cannot silently commit stale preview state
 
+## Terrain-Type Painting
+
+Terrain painting stores sparse, canonically ordered cell overrides in the worker-owned draft. A bounded paint command updates terrain-derived passability and preview validation deterministically. The same overrides are applied by the authoritative creation path only when the draft is explicitly committed.
+
 Next:
 
-* Milestone 8B.3 — Terrain Painting
+* Milestone 8B.3A — Terrain-Type Painting
 
 See `docs/ROADMAP.md` for subsequent settlement editing, roads, import/export, and later authoring work.
 

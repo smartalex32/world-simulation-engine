@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { WorldDraftPreview, WorldPlacementPreset } from '../simulation/domain/types'
+import type { Terrain, TerrainTypeOverride, WorldDraftPreview, WorldPlacementPreset } from '../simulation/domain/types'
 import { DraftZoneMap, type DraftZoneViewport, type DraftZoneViewportRequest } from './DraftZoneMap'
 
 export type PlacementRegion = 'west' | 'center' | 'east'
@@ -28,6 +28,7 @@ export interface WorldSetupValues {
   placements: WorldSetupPlacement[]
   /** Monotonic UI-only allocation sequence; removed rows never make an ID reusable. */
   nextPlacementId: number
+  terrainOverrides: TerrainTypeOverride[]
 }
 
 interface WorldSetupProps {
@@ -43,6 +44,7 @@ interface WorldSetupProps {
   draftViewport?: DraftZoneViewport
   onDraftViewportRequest?: (request: DraftZoneViewportRequest) => void
   onZoneCellsCommit?: (zoneId: string, cellIds: readonly string[]) => void
+  onTerrainPaintCommit?: (terrain: Terrain, cellIds: readonly string[]) => void
   error?: string
 }
 
@@ -81,9 +83,11 @@ export function isWorldSetupGeometryValid(value: Pick<WorldSetupValues, 'placeme
     && presetZonesDoNotOverlap(value.placements, value.width)
 }
 
-export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draftRevision, preview, previewCurrent = false, busy = false, draftViewport, onDraftViewportRequest, onZoneCellsCommit, error }: WorldSetupProps) {
+export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draftRevision, preview, previewCurrent = false, busy = false, draftViewport, onDraftViewportRequest, onZoneCellsCommit, onTerrainPaintCommit, error }: WorldSetupProps) {
   const editablePlacements = value.placements.filter((placement) => placement.settlementId === undefined)
   const [selectedZoneId, setSelectedZoneId] = useState<string>()
+  const [terrainPaint, setTerrainPaint] = useState<Terrain>('plain')
+  const [authoringLayer, setAuthoringLayer] = useState<'zones' | 'terrain'>('zones')
   useEffect(() => {
     if (!editablePlacements.some((placement) => placement.id === selectedZoneId)) setSelectedZoneId(editablePlacements[0]?.id)
   }, [editablePlacements, selectedZoneId])
@@ -130,7 +134,8 @@ export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draft
             </section>)}
           </div>
           <button type="button" className="secondary add-zone" onClick={addPlacement}>Add placement zone</button>
-          <section className="placement-drawing" aria-labelledby="zone-drawing-title">
+          <div className="authoring-layer-toggle" role="group" aria-label="Draft map editor"><button type="button" className={authoringLayer === 'zones' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('zones')}>Placement zones</button><button type="button" className={authoringLayer === 'terrain' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('terrain')}>Terrain</button></div>
+          {authoringLayer === 'zones' && <section className="placement-drawing" aria-labelledby="zone-drawing-title">
             <div><span className="eyebrow">OPTIONAL DIRECT PLACEMENT</span><h3 id="zone-drawing-title">Draw a population zone</h3><p>Only zones without settlement markers can be drawn. Drawing replaces that zone’s preset with explicit generated cell IDs after worker validation.</p></div>
             {editablePlacements.length === 0 ? <small className="drawing-unavailable">Disable a settlement marker on a placement zone to draw it directly.</small> : <>
               <label><span>Zone to draw</span><select aria-label="Zone to draw" value={selectedZoneId ?? ''} onChange={(event) => setSelectedZoneId(event.target.value)}>{editablePlacements.map((placement) => <option key={placement.id} value={placement.id}>{placement.name || placement.id}</option>)}</select></label>
@@ -138,7 +143,15 @@ export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draft
                 ? <DraftZoneMap world={{ width: value.width, height: value.height }} viewport={draftViewport} draftRevision={draftRevision} selectedZoneId={selectedZoneId} disabled={busy} onViewportRequest={onDraftViewportRequest} onSelectionCommit={onZoneCellsCommit} />
                 : <small className="drawing-unavailable">Preparing the worker-owned draft…</small>}
             </>}
-          </section>
+          </section>}
+          {authoringLayer === 'terrain' && <section className="placement-drawing" aria-labelledby="terrain-painting-title">
+            <div><span className="eyebrow">TERRAIN TYPE</span><h3 id="terrain-painting-title">Paint generated terrain</h3><p>Terrain changes are sparse, deterministic draft edits. They update placement validation and only enter the live simulation on commit.</p></div>
+            <label><span>Paint type</span><select aria-label="Terrain paint type" value={terrainPaint} onChange={(event) => setTerrainPaint(event.target.value as Terrain)}><option value="plain">Plain</option><option value="hill">Hill</option><option value="water">Water</option></select></label>
+            {draftRevision !== undefined && onDraftViewportRequest && onZoneCellsCommit && onTerrainPaintCommit
+              ? <DraftZoneMap world={{ width: value.width, height: value.height }} viewport={draftViewport} draftRevision={draftRevision} disabled={busy} onViewportRequest={onDraftViewportRequest} onSelectionCommit={onZoneCellsCommit} terrainPaint={terrainPaint} onTerrainPaintCommit={onTerrainPaintCommit} />
+              : <small className="drawing-unavailable">Preparing the worker-owned draft…</small>}
+            <small className="placement-meta">{value.terrainOverrides.length} active terrain override{value.terrainOverrides.length === 1 ? '' : 's'}</small>
+          </section>}
           <div className={canCommit ? 'allocation valid' : 'allocation'}><span>Allocated</span><strong>{allocated} / {value.population}</strong>{allocated !== value.population && <small>Adjust zone allocations to match the starting population exactly.</small>}{value.placements.length === 0 && <small>Add at least one placement zone.</small>}{!namesValid && <small>Name the world, each zone, and every enabled settlement marker.</small>}{!zonesValid && <small>Zone radii must be whole values from 0 through 32.</small>}{zonesValid && !geometryValid && <small>Preset zones overlap. Choose different regions or smaller radii.</small>}</div>
         </section>
       </fieldset>

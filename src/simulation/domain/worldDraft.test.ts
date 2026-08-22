@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SimulationEngine } from '../engine/engine'
 import { defaultWorldCreationRequest } from './worldCreation'
-import { createWorldDraftRecord, previewWorldDraft, projectWorldDraftViewport, resetWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from './worldDraft'
+import { createWorldDraftRecord, paintWorldDraftTerrain, previewWorldDraft, projectWorldDraftViewport, resetWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from './worldDraft'
 
 describe('world draft lifecycle domain contract', () => {
   it('produces a stable bounded preview without changing the draft', () => {
@@ -134,5 +134,22 @@ describe('world draft lifecycle domain contract', () => {
     expect(first.cells).toHaveLength(32 * 24)
     expect(first.cells.some((cell) => cell.selected)).toBe(true)
     expect(() => projectWorldDraftViewport(record, { ...request, bounds: { minQ: 0, maxQ: 127, minR: 0, maxR: 127 } })).toThrow(/at most 4096/)
+  })
+
+  it('paints a bounded canonical terrain override that preview and commit both use', async () => {
+    const active = createWorldDraftRecord('draft-terrain', {
+      ...defaultWorldCreationRequest('terrain-paint-seed'), initialPopulationCount: 10,
+      populationZones: [{ id: 'population-zone-0001', name: 'Initial', preset: 'center', populationCount: 10 }],
+    })
+    const target = projectWorldDraftViewport(active, { revision: 1, bounds: { minQ: 0, maxQ: 31, minR: 0, maxR: 23 } }).cells.find((cell) => cell.terrain === 'plain')!
+    const painted = paintWorldDraftTerrain(active, [target.id], 'water', active.revision)
+
+    expect(painted.revision).toBe(1)
+    expect(painted.draft.terrainOverrides).toEqual([{ cellId: target.id, terrain: 'water' }])
+    expect(projectWorldDraftViewport(painted, { revision: 2, bounds: { minQ: target.q, maxQ: target.q, minR: target.r, maxR: target.r } }).cells[0]).toMatchObject({ terrain: 'water', movementCost: 0 })
+    const snapshot = await SimulationEngine.create(painted.draft).snapshot()
+    expect(snapshot.state.world.grid.cells.find((cell) => cell.id === target.id)).toMatchObject({ terrain: 'water', movementCost: 0 })
+    expect(snapshot.state.config.worldCreation.terrainOverrides).toEqual(painted.draft.terrainOverrides)
+    expect(() => paintWorldDraftTerrain(active, Array(513).fill(target.id), 'hill')).toThrow(/1 through 512/)
   })
 })

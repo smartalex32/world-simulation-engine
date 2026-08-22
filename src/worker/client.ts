@@ -1,5 +1,5 @@
 import type { MapProjectionRequest } from '../projection'
-import type { DraftViewportRequest, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
+import type { DraftViewportRequest, Terrain, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
 import { requestId, type SimulationCommand, type SimulationResponse, type WorkbenchSnapshotEnvelope } from './protocol'
 
@@ -50,6 +50,7 @@ export class SimulationWorkerClient {
   hydrateDraft(draft: WorldDraftRecord): void { this.send({ type: 'HYDRATE_DRAFT', requestId: requestId(), draft }) }
   updateDraft(draftId: string, draft: WorldCreationDraft, expectedRevision?: number): void { this.send({ type: 'UPDATE_DRAFT', requestId: requestId(), draftId, draft, expectedRevision }) }
   updateDraftZoneCells(draftId: string, zoneId: string, cellIds: string[], expectedRevision?: number): void { this.send({ type: 'UPDATE_DRAFT_ZONE_CELLS', requestId: requestId(), draftId, zoneId, cellIds, expectedRevision }) }
+  paintDraftTerrain(draftId: string, cellIds: string[], terrain: Terrain, expectedRevision?: number): void { this.send({ type: 'PAINT_DRAFT_TERRAIN', requestId: requestId(), draftId, cellIds, terrain, expectedRevision }) }
   resetDraft(draftId: string, expectedRevision?: number): void { this.send({ type: 'RESET_DRAFT', requestId: requestId(), draftId, expectedRevision }) }
   previewDraft(draftId: string): void { this.send({ type: 'REQUEST_DRAFT_PREVIEW', requestId: requestId(), draftId }) }
   requestDraftViewport(draftId: string, viewport: DraftViewportRequest): void { this.send({ type: 'REQUEST_DRAFT_VIEWPORT', requestId: requestId(), draftId, viewport }) }

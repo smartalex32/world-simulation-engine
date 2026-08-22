@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.9.0'
-export const SNAPSHOT_SCHEMA_VERSION = 9
+export const ENGINE_VERSION = '0.10.0'
+export const SNAPSHOT_SCHEMA_VERSION = 10
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -20,6 +20,12 @@ export const WORLD_GENERATOR_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
+
+/** A deliberate terrain-type edit retained in a draft and creation request. */
+export interface TerrainTypeOverride {
+  cellId: string
+  terrain: Terrain
+}
 
 export interface HexCoord {
   q: number
@@ -93,6 +99,8 @@ export interface WorldCreationDraft {
   initialPopulationCount: number
   populationZones: PopulationPlacementZoneDraft[]
   settlements: SettlementDraft[]
+  /** Canonically sorted sparse terrain edits; absent means seeded terrain only. */
+  terrainOverrides?: TerrainTypeOverride[]
 }
 
 export interface WorldCreationRequest {
@@ -103,6 +111,7 @@ export interface WorldCreationRequest {
   initialPopulationCount: number
   populationZones: PopulationPlacementZone[]
   settlements: SettlementState[]
+  terrainOverrides: TerrainTypeOverride[]
 }
 
 /**
