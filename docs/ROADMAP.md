@@ -114,7 +114,7 @@ Do not implement distant systems merely because they appear later in this roadma
 
 ## Next Slice
 
-* Milestone 8B.3C — Water Editing
+* Milestone 8B.4 — Settlement Editing
 
 Detailed current implementation is documented in `README.md`.
 
@@ -374,7 +374,7 @@ Current drawing:
 
 ## Milestone 8B.3 — Terrain Painting
 
-Status: In Progress
+Status: Implemented
 
 ### Goal
 
@@ -428,9 +428,13 @@ Add controlled elevation editing after terrain-type mutation is stable.
 
 #### 8B.3C — Water Editing
 
+Status: Implemented through the terrain-type painting command's explicit `water` option.
+
 Introduce water editing only after terrain/elevation semantics are established.
 
 #### 8B.3D — Resource Painting
+
+Status: Implemented
 
 Add initial resource-value editing after the environmental representation required by it is defined.
 
@@ -1228,7 +1232,7 @@ Milestone 8B — Draft Map Authoring
 Next independently reviewable slice:
 
 ```text
-Milestone 8B.3C — Water Editing
+Milestone 8B.4 — Settlement Editing
 ```
 
 Intended immediate sequence:

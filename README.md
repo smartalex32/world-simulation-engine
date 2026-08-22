@@ -39,7 +39,7 @@ Implemented:
 
 Next:
 
-* Milestone 8B.3C — Water Editing
+* Milestone 8B.4 — Settlement Editing
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 
@@ -709,7 +709,7 @@ Terrain and elevation painting store sparse, canonically ordered cell overrides 
 
 Next:
 
-* Milestone 8B.3C — Water Editing
+* Milestone 8B.4 — Settlement Editing
 
 See `docs/ROADMAP.md` for subsequent settlement editing, roads, import/export, and later authoring work.
 
