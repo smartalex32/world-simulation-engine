@@ -4,7 +4,7 @@ import { SimulationEngine } from '../simulation/engine/engine'
 import { WorkbenchProjectionBuilder, type MapProjectionRequest } from '../projection'
 import type { SimulationEvent, StatisticSample, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
-import { createWorldDraftRecord, paintWorldDraftElevation, paintWorldDraftTerrain, previewWorldDraft, projectWorldDraftViewport, resetWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from '../simulation/domain/worldDraft'
+import { createWorldDraftRecord, paintWorldDraftElevation, paintWorldDraftResources, paintWorldDraftTerrain, previewWorldDraft, projectWorldDraftViewport, resetWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from '../simulation/domain/worldDraft'
 import type { SimulationCommand, SimulationResponse, WorkbenchSnapshotEnvelope } from './protocol'
 import { MAX_TICKS_PER_WORKER_TURN, SimulationBatchScheduler, TelemetryBuffer, validateWorkerContinuation, type WorkerContinuationState } from './frameScheduler'
 
@@ -192,6 +192,13 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           const preview = previewWorldDraft(candidate)
           activeDraft = candidate
           respond({ type: 'DRAFT', requestId: command.requestId, action: 'elevationPainted', draft: candidate, preview })
+          break
+        }
+        case 'PAINT_DRAFT_RESOURCES': {
+          const draft = requiredDraft(command.draftId)
+          const candidate = paintWorldDraftResources(draft, command.cellIds, command.resourceCapacity, command.expectedRevision)
+          activeDraft = candidate
+          respond({ type: 'DRAFT', requestId: command.requestId, action: 'resourcesPainted', draft: candidate, preview: previewWorldDraft(candidate) })
           break
         }
         case 'RESET_DRAFT': {

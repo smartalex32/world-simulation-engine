@@ -22,13 +22,16 @@ interface DraftZoneMapProps {
   onTerrainPaintCommit?: (terrain: Terrain, cellIds: readonly string[]) => void
   elevationPaint?: number
   onElevationPaintCommit?: (elevation: number, cellIds: readonly string[]) => void
+  resourcePaint?: number
+  onResourcePaintCommit?: (resourceCapacity: number, cellIds: readonly string[]) => void
 }
 
-export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, disabled = false, onViewportRequest, onSelectionCommit, terrainPaint, onTerrainPaintCommit, elevationPaint, onElevationPaintCommit }: DraftZoneMapProps) {
+export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, disabled = false, onViewportRequest, onSelectionCommit, terrainPaint, onTerrainPaintCommit, elevationPaint, onElevationPaintCommit, resourcePaint, onResourcePaintCommit }: DraftZoneMapProps) {
   const terrainMode = terrainPaint !== undefined && onTerrainPaintCommit !== undefined
   const elevationMode = elevationPaint !== undefined && onElevationPaintCommit !== undefined
-  const paintMode = terrainMode || elevationMode
-  const paintLabel = terrainMode ? `Paint ${terrainPaint} terrain` : `Set elevation to ${elevationPaint}`
+  const resourceMode = resourcePaint !== undefined && onResourcePaintCommit !== undefined
+  const paintMode = terrainMode || elevationMode || resourceMode
+  const paintLabel = terrainMode ? `Paint ${terrainPaint} terrain` : elevationMode ? `Set elevation to ${elevationPaint}` : `Set resource capacity to ${resourcePaint}`
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [camera, setCamera] = useState<MapViewportState>({ width: 0, height: 0, scale: 1, x: 0, y: 0 })
@@ -147,12 +150,16 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, d
       selection.current.clear()
       setPaintRevision((value) => value + 1)
       onElevationPaintCommit(elevationPaint, cellIds)
+    } else if (resourceMode && resourcePaint !== undefined && onResourcePaintCommit) {
+      selection.current.clear()
+      setPaintRevision((value) => value + 1)
+      onResourcePaintCommit(resourcePaint, cellIds)
     }
     else if (selectedZoneId) onSelectionCommit(selectedZoneId, cellIds)
   }
 
   return <section className="draft-zone-map" aria-label={paintMode ? 'Paint draft terrain' : 'Draw placement zone'}>
-    <div className="draft-zone-map-heading"><div><span className="eyebrow">{elevationMode ? 'ELEVATION PAINTING' : terrainMode ? 'TERRAIN PAINTING' : 'DIRECT ZONE DRAWING'}</span><h4>{paintMode ? paintLabel : 'Habitable cells only'}</h4></div><small>{selection.current.size} selected</small></div>
+    <div className="draft-zone-map-heading"><div><span className="eyebrow">{resourceMode ? 'RESOURCE PAINTING' : elevationMode ? 'ELEVATION PAINTING' : terrainMode ? 'TERRAIN PAINTING' : 'DIRECT ZONE DRAWING'}</span><h4>{paintMode ? paintLabel : 'Habitable cells only'}</h4></div><small>{selection.current.size} selected</small></div>
     <p>{paintMode ? 'Drag across up to 512 generated cells, then apply this deterministic draft-only terrain edit.' : 'Drag across habitable cells to toggle this non-settlement zone. Terrain and settlement anchors are read-only.'}</p>
     <div className="draft-zone-canvas-wrap" ref={containerRef}>
       <canvas

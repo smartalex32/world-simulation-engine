@@ -9,6 +9,7 @@ import {
   type WorldPlacementPreset,
   type Terrain,
   type TerrainTypeOverride,
+  type ResourceCapacityOverride,
 } from './types'
 
 export const WORLD_CREATION_LIMITS = Object.freeze({
@@ -35,6 +36,7 @@ export function defaultWorldCreationRequest(seed: string, width = 32, height = 2
     settlements: [],
     terrainOverrides: [],
     elevationOverrides: [],
+    resourceCapacityOverrides: [],
   }
 }
 
@@ -47,7 +49,7 @@ export function validateWorldCreationDraftLimits(value: WorldCreationDraft): voi
   const height = boundedInteger(value.height, WORLD_CREATION_LIMITS.minimumHeight, WORLD_CREATION_LIMITS.maximumHeight, 'World height')
   if (width * height > WORLD_CREATION_LIMITS.maximumCellCount) throw new RangeError('World cell count exceeds the 8A creation limit')
   boundedInteger(value.initialPopulationCount, WORLD_CREATION_LIMITS.minimumPopulation, WORLD_CREATION_LIMITS.maximumPopulation, 'Initial population')
-  if (!Array.isArray(value.populationZones) || !Array.isArray(value.settlements) || (value.terrainOverrides !== undefined && !Array.isArray(value.terrainOverrides)) || (value.elevationOverrides !== undefined && !Array.isArray(value.elevationOverrides))) throw new Error('World creation collections are invalid')
+  if (!Array.isArray(value.populationZones) || !Array.isArray(value.settlements) || (value.terrainOverrides !== undefined && !Array.isArray(value.terrainOverrides)) || (value.elevationOverrides !== undefined && !Array.isArray(value.elevationOverrides)) || (value.resourceCapacityOverrides !== undefined && !Array.isArray(value.resourceCapacityOverrides))) throw new Error('World creation collections are invalid')
 }
 
 /** Normalizes authored creation data after terrain is generated, without consuming randomness. */
@@ -62,7 +64,8 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
   const initialPopulationCount = boundedInteger(value.initialPopulationCount, WORLD_CREATION_LIMITS.minimumPopulation, enforceCreatorLimits ? WORLD_CREATION_LIMITS.maximumPopulation : Number.MAX_SAFE_INTEGER, 'Initial population')
   const elevationOverrides = normalizeElevationOverrides(value.elevationOverrides, cells)
   const terrainOverrides = normalizeTerrainOverrides(value.terrainOverrides, cells)
-  const editedCells = applyTerrainOverrides(applyElevationOverrides(cells, elevationOverrides), terrainOverrides)
+  const resourceCapacityOverrides = normalizeResourceCapacityOverrides(value.resourceCapacityOverrides, cells)
+  const editedCells = applyResourceCapacityOverrides(applyTerrainOverrides(applyElevationOverrides(cells, elevationOverrides), terrainOverrides), resourceCapacityOverrides)
   const defaultCells = editedCells.filter((cell) => cell.habitability >= 500 && cell.movementCost > 0).map((cell) => cell.id).sort(compareText)
   const submittedZones = value.populationZones.length > 0 ? value.populationZones : [{
     id: 'population-zone-0001', name: 'Initial population', cellIds: defaultCells, populationCount: initialPopulationCount,
@@ -95,7 +98,7 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
       : { id: zone.id, name: zoneName, cellIds, populationCount, settlementId: zone.settlementId }
   }).sort((a, b) => compareText(a.id, b.id))
   if (zones.reduce((sum, zone) => sum + zone.populationCount, 0) !== initialPopulationCount) throw new Error('Population zone allocations must equal the initial population')
-  return { seed, name, width, height, initialPopulationCount, populationZones: zones, settlements, terrainOverrides, elevationOverrides }
+  return { seed, name, width, height, initialPopulationCount, populationZones: zones, settlements, terrainOverrides, elevationOverrides, resourceCapacityOverrides }
 }
 
 /** Applies sparse terrain edits without randomness; derived cell values remain coherent. */
@@ -113,6 +116,16 @@ export function applyElevationOverrides(cells: readonly GeographicCell[], overri
   return cells.map((cell) => {
     const elevation = elevationByCellId.get(cell.id)
     return elevation === undefined ? { ...cell } : withTerrainAndElevation(cell, cell.terrain, elevation)
+  })
+}
+
+export function applyResourceCapacityOverrides(cells: readonly GeographicCell[], overrides: readonly ResourceCapacityOverride[]): GeographicCell[] {
+  const capacityByCellId = new Map(overrides.map((override) => [override.cellId, override.resourceCapacity]))
+  return cells.map((cell) => {
+    const resourceCapacity = capacityByCellId.get(cell.id)
+    if (resourceCapacity === undefined) return { ...cell }
+    if (cell.terrain === 'water') throw new Error(`Resource override targets water cell ${cell.id}`)
+    return { ...cell, resourceCapacity, foodAmount: Math.min(cell.foodAmount, resourceCapacity), foodRegenerationPerDay: resourceCapacity === 0 ? 0 : Math.max(1, Math.floor(resourceCapacity / 12)) }
   })
 }
 
@@ -141,6 +154,20 @@ function normalizeElevationOverrides(value: readonly ElevationOverride[] | undef
     if (ids.has(override.cellId)) throw new Error(`Duplicate elevation override for ${override.cellId}`)
     ids.add(override.cellId)
     return { cellId: override.cellId, elevation: override.elevation }
+  }).sort((first, second) => compareText(first.cellId, second.cellId))
+}
+
+function normalizeResourceCapacityOverrides(value: readonly ResourceCapacityOverride[] | undefined, cells: readonly GeographicCell[]): ResourceCapacityOverride[] {
+  if (value === undefined) return []
+  if (value.length > cells.length) throw new Error('Resource override count exceeds world cell count')
+  const validCellIds = new Set(cells.map((cell) => cell.id))
+  const ids = new Set<string>()
+  return value.map((override) => {
+    if (!override || typeof override !== 'object' || typeof override.cellId !== 'string' || !validCellIds.has(override.cellId)) throw new Error('Resource override has an unknown cell')
+    if (!Number.isSafeInteger(override.resourceCapacity) || override.resourceCapacity < 0 || override.resourceCapacity > 1000) throw new Error('Resource override value is invalid')
+    if (ids.has(override.cellId)) throw new Error(`Duplicate resource override for ${override.cellId}`)
+    ids.add(override.cellId)
+    return { cellId: override.cellId, resourceCapacity: override.resourceCapacity }
   }).sort((first, second) => compareText(first.cellId, second.cellId))
 }
 

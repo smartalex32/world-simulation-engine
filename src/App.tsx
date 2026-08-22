@@ -36,7 +36,7 @@ export default function App() {
       { id: 'population-zone-1', name: 'Westhaven residents', region: 'west', preset: 'west', radiusCells: 3, allocation: 100, settlementId: 'settlement-1', settlementName: 'Westhaven' },
       { id: 'population-zone-2', name: 'Eastwatch residents', region: 'east', preset: 'east', radiusCells: 3, allocation: 100, settlementId: 'settlement-2', settlementName: 'Eastwatch' },
     ],
-    nextPlacementId: 1, terrainOverrides: [], elevationOverrides: [],
+    nextPlacementId: 1, terrainOverrides: [], elevationOverrides: [], resourceCapacityOverrides: [],
   })
   const [worldDraft, setWorldDraft] = useState<WorldDraftRecord>()
   const [draftPreview, setDraftPreview] = useState<WorldDraftPreview>()
@@ -150,13 +150,13 @@ export default function App() {
             setSetupOpen(false)
           }
         } else if (response.draft) {
-          if (response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted' || response.action === 'elevationPainted') setError(undefined)
+          if (response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted' || response.action === 'elevationPainted' || response.action === 'resourcesPainted') setError(undefined)
           worldDraftRef.current = response.draft
           setWorldDraft(response.draft)
           if (response.preview) setDraftPreview(response.preview)
           const acceptedSetup = worldSetupFromDraft(response.draft.draft)
           setAcceptedDraftSignature(worldSetupSignature(acceptedSetup))
-          if (response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted' || response.action === 'elevationPainted') {
+          if (response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted' || response.action === 'elevationPainted' || response.action === 'resourcesPainted') {
             // The worker canonicalizes selected cell IDs. Rehydrate the form
             // from that accepted draft before asking for a fresh terrain slice.
             setWorldSetup(acceptedSetup)
@@ -343,6 +343,14 @@ export default function App() {
     client.paintDraftElevation(WORLD_SETUP_DRAFT_ID, [...cellIds], elevation)
   }, [client])
 
+  const paintDraftResources = useCallback((resourceCapacity: number, cellIds: readonly string[]) => {
+    if (!worldDraftRef.current || draftBusyRef.current) return
+    minimumDraftViewportRevision.current = latestDraftViewportRequestRevision.current + 1
+    setDraftViewport(undefined)
+    setDraftOperationBusy(true)
+    client.paintDraftResources(WORLD_SETUP_DRAFT_ID, [...cellIds], resourceCapacity)
+  }, [client])
+
   function discardWorldSetup() {
     if (!worldDraftRef.current) {
       setSetupOpen(false)
@@ -515,7 +523,7 @@ export default function App() {
           {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
       </section>
-      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} onElevationPaintCommit={paintDraftElevation} error={error} />}
+      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} onElevationPaintCommit={paintDraftElevation} onResourcePaintCommit={paintDraftResources} error={error} />}
     </main>
   )
 }
@@ -541,6 +549,7 @@ function worldSetupFromCreation(creation: WorldCreationRequest): WorldSetupValue
     nextPlacementId: nextDraftSequence(creation.populationZones.map((zone) => zone.id), creation.settlements.map((settlement) => settlement.id)),
     terrainOverrides: creation.terrainOverrides.map((override) => ({ ...override })),
     elevationOverrides: creation.elevationOverrides.map((override) => ({ ...override })),
+    resourceCapacityOverrides: creation.resourceCapacityOverrides.map((override) => ({ ...override })),
   }
 }
 
@@ -553,6 +562,7 @@ function creationDraftFromSetup(setup: WorldSetupValues): WorldCreationDraft {
     initialPopulationCount: setup.population,
     terrainOverrides: setup.terrainOverrides.map((override) => ({ ...override })),
     elevationOverrides: setup.elevationOverrides.map((override) => ({ ...override })),
+    resourceCapacityOverrides: setup.resourceCapacityOverrides.map((override) => ({ ...override })),
     settlements: [...new Map(setup.placements.flatMap((placement) => placement.settlementId && placement.settlementName ? [[placement.settlementId, { id: placement.settlementId, name: placement.settlementName, ...(placement.cellIds === undefined ? { preset: placement.preset } : {}) }] as const] : [])).values()],
     populationZones: setup.placements.map((placement) => ({
       id: placement.id,
@@ -589,6 +599,7 @@ function worldSetupFromDraft(draft: WorldCreationDraft): WorldSetupValues {
     nextPlacementId: nextDraftSequence(draft.populationZones.map((zone) => zone.id), draft.settlements.map((settlement) => settlement.id)),
     terrainOverrides: (draft.terrainOverrides ?? []).map((override) => ({ ...override })),
     elevationOverrides: (draft.elevationOverrides ?? []).map((override) => ({ ...override })),
+    resourceCapacityOverrides: (draft.resourceCapacityOverrides ?? []).map((override) => ({ ...override })),
   }
 }
 

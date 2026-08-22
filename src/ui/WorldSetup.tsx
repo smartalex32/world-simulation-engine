@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ElevationOverride, Terrain, TerrainTypeOverride, WorldDraftPreview, WorldPlacementPreset } from '../simulation/domain/types'
+import type { ElevationOverride, ResourceCapacityOverride, Terrain, TerrainTypeOverride, WorldDraftPreview, WorldPlacementPreset } from '../simulation/domain/types'
 import { DraftZoneMap, type DraftZoneViewport, type DraftZoneViewportRequest } from './DraftZoneMap'
 
 export type PlacementRegion = 'west' | 'center' | 'east'
@@ -30,6 +30,7 @@ export interface WorldSetupValues {
   nextPlacementId: number
   terrainOverrides: TerrainTypeOverride[]
   elevationOverrides: ElevationOverride[]
+  resourceCapacityOverrides: ResourceCapacityOverride[]
 }
 
 interface WorldSetupProps {
@@ -47,6 +48,7 @@ interface WorldSetupProps {
   onZoneCellsCommit?: (zoneId: string, cellIds: readonly string[]) => void
   onTerrainPaintCommit?: (terrain: Terrain, cellIds: readonly string[]) => void
   onElevationPaintCommit?: (elevation: number, cellIds: readonly string[]) => void
+  onResourcePaintCommit?: (resourceCapacity: number, cellIds: readonly string[]) => void
   error?: string
 }
 
@@ -85,12 +87,13 @@ export function isWorldSetupGeometryValid(value: Pick<WorldSetupValues, 'placeme
     && presetZonesDoNotOverlap(value.placements, value.width)
 }
 
-export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draftRevision, preview, previewCurrent = false, busy = false, draftViewport, onDraftViewportRequest, onZoneCellsCommit, onTerrainPaintCommit, onElevationPaintCommit, error }: WorldSetupProps) {
+export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draftRevision, preview, previewCurrent = false, busy = false, draftViewport, onDraftViewportRequest, onZoneCellsCommit, onTerrainPaintCommit, onElevationPaintCommit, onResourcePaintCommit, error }: WorldSetupProps) {
   const editablePlacements = value.placements.filter((placement) => placement.settlementId === undefined)
   const [selectedZoneId, setSelectedZoneId] = useState<string>()
   const [terrainPaint, setTerrainPaint] = useState<Terrain>('plain')
   const [elevationPaint, setElevationPaint] = useState(300)
-  const [authoringLayer, setAuthoringLayer] = useState<'zones' | 'terrain' | 'elevation'>('zones')
+  const [resourcePaint, setResourcePaint] = useState(100)
+  const [authoringLayer, setAuthoringLayer] = useState<'zones' | 'terrain' | 'elevation' | 'resources'>('zones')
   useEffect(() => {
     if (!editablePlacements.some((placement) => placement.id === selectedZoneId)) setSelectedZoneId(editablePlacements[0]?.id)
   }, [editablePlacements, selectedZoneId])
@@ -137,7 +140,7 @@ export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draft
             </section>)}
           </div>
           <button type="button" className="secondary add-zone" onClick={addPlacement}>Add placement zone</button>
-          <div className="authoring-layer-toggle" role="group" aria-label="Draft map editor"><button type="button" className={authoringLayer === 'zones' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('zones')}>Placement zones</button><button type="button" className={authoringLayer === 'terrain' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('terrain')}>Terrain</button><button type="button" className={authoringLayer === 'elevation' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('elevation')}>Elevation</button></div>
+          <div className="authoring-layer-toggle" role="group" aria-label="Draft map editor"><button type="button" className={authoringLayer === 'zones' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('zones')}>Placement zones</button><button type="button" className={authoringLayer === 'terrain' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('terrain')}>Terrain</button><button type="button" className={authoringLayer === 'elevation' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('elevation')}>Elevation</button><button type="button" className={authoringLayer === 'resources' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('resources')}>Resources</button></div>
           {authoringLayer === 'zones' && <section className="placement-drawing" aria-labelledby="zone-drawing-title">
             <div><span className="eyebrow">OPTIONAL DIRECT PLACEMENT</span><h3 id="zone-drawing-title">Draw a population zone</h3><p>Only zones without settlement markers can be drawn. Drawing replaces that zone’s preset with explicit generated cell IDs after worker validation.</p></div>
             {editablePlacements.length === 0 ? <small className="drawing-unavailable">Disable a settlement marker on a placement zone to draw it directly.</small> : <>
@@ -162,6 +165,12 @@ export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draft
               ? <DraftZoneMap world={{ width: value.width, height: value.height }} viewport={draftViewport} draftRevision={draftRevision} disabled={busy} onViewportRequest={onDraftViewportRequest} onSelectionCommit={onZoneCellsCommit} elevationPaint={elevationPaint} onElevationPaintCommit={onElevationPaintCommit} />
               : <small className="drawing-unavailable">Preparing the worker-owned draft…</small>}
             <small className="placement-meta">{value.elevationOverrides.length} active elevation override{value.elevationOverrides.length === 1 ? '' : 's'}</small>
+          </section>}
+          {authoringLayer === 'resources' && <section className="placement-drawing" aria-labelledby="resource-painting-title">
+            <div><span className="eyebrow">RESOURCE CAPACITY</span><h3 id="resource-painting-title">Set renewable food capacity</h3><p>Water cells cannot receive a resource edit. Capacity is an explicit whole-unit starting value.</p></div>
+            <label><span>Capacity</span><input aria-label="Resource paint value" type="number" min={0} max={1000} value={resourcePaint} onChange={(event) => setResourcePaint(Math.min(1000, Math.max(0, Number(event.target.value) || 0)))} /></label>
+            {draftRevision !== undefined && onDraftViewportRequest && onZoneCellsCommit && onResourcePaintCommit ? <DraftZoneMap world={{ width: value.width, height: value.height }} viewport={draftViewport} draftRevision={draftRevision} disabled={busy} onViewportRequest={onDraftViewportRequest} onSelectionCommit={onZoneCellsCommit} resourcePaint={resourcePaint} onResourcePaintCommit={onResourcePaintCommit} /> : <small className="drawing-unavailable">Preparing the worker-owned draft…</small>}
+            <small className="placement-meta">{value.resourceCapacityOverrides.length} active resource override{value.resourceCapacityOverrides.length === 1 ? '' : 's'}</small>
           </section>}
           <div className={canCommit ? 'allocation valid' : 'allocation'}><span>Allocated</span><strong>{allocated} / {value.population}</strong>{allocated !== value.population && <small>Adjust zone allocations to match the starting population exactly.</small>}{value.placements.length === 0 && <small>Add at least one placement zone.</small>}{!namesValid && <small>Name the world, each zone, and every enabled settlement marker.</small>}{!zonesValid && <small>Zone radii must be whole values from 0 through 32.</small>}{zonesValid && !geometryValid && <small>Preset zones overlap. Choose different regions or smaller radii.</small>}</div>
         </section>

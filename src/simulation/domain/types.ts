@@ -33,6 +33,12 @@ export interface ElevationOverride {
   elevation: number
 }
 
+/** A deliberate resource-capacity edit in whole resource units. */
+export interface ResourceCapacityOverride {
+  cellId: string
+  resourceCapacity: number
+}
+
 export interface HexCoord {
   q: number
   r: number
@@ -108,6 +114,7 @@ export interface WorldCreationDraft {
   /** Canonically sorted sparse terrain edits; absent means seeded terrain only. */
   terrainOverrides?: TerrainTypeOverride[]
   elevationOverrides?: ElevationOverride[]
+  resourceCapacityOverrides?: ResourceCapacityOverride[]
 }
 
 export interface WorldCreationRequest {
@@ -120,6 +127,7 @@ export interface WorldCreationRequest {
   settlements: SettlementState[]
   terrainOverrides: TerrainTypeOverride[]
   elevationOverrides: ElevationOverride[]
+  resourceCapacityOverrides: ResourceCapacityOverride[]
 }
 
 /**
