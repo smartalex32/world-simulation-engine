@@ -15,9 +15,15 @@ interface DraftZoneMapProps {
   /** The accepted draft revision owning the terrain selection. */
   draftRevision?: number
   selectedZoneId?: string
+  selectedSettlementId?: string
+  settlementAnchorCellId?: string
   disabled?: boolean
   onViewportRequest: (request: DraftZoneViewportRequest) => void
   onSelectionCommit: (zoneId: string, cellIds: readonly string[]) => void
+  onSettlementAnchorCommit?: (settlementId: string, cellId: string) => void
+  selectedRoadId?: string
+  roadCellIds?: readonly string[]
+  onRoadCellsCommit?: (roadId: string, cellIds: readonly string[]) => void
   terrainPaint?: Terrain
   onTerrainPaintCommit?: (terrain: Terrain, cellIds: readonly string[]) => void
   elevationPaint?: number
@@ -26,11 +32,13 @@ interface DraftZoneMapProps {
   onResourcePaintCommit?: (resourceCapacity: number, cellIds: readonly string[]) => void
 }
 
-export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, disabled = false, onViewportRequest, onSelectionCommit, terrainPaint, onTerrainPaintCommit, elevationPaint, onElevationPaintCommit, resourcePaint, onResourcePaintCommit }: DraftZoneMapProps) {
+export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, selectedSettlementId, settlementAnchorCellId, selectedRoadId, roadCellIds, disabled = false, onViewportRequest, onSelectionCommit, onSettlementAnchorCommit, onRoadCellsCommit, terrainPaint, onTerrainPaintCommit, elevationPaint, onElevationPaintCommit, resourcePaint, onResourcePaintCommit }: DraftZoneMapProps) {
   const terrainMode = terrainPaint !== undefined && onTerrainPaintCommit !== undefined
   const elevationMode = elevationPaint !== undefined && onElevationPaintCommit !== undefined
   const resourceMode = resourcePaint !== undefined && onResourcePaintCommit !== undefined
   const paintMode = terrainMode || elevationMode || resourceMode
+  const settlementMode = selectedSettlementId !== undefined && onSettlementAnchorCommit !== undefined
+  const roadMode = selectedRoadId !== undefined && onRoadCellsCommit !== undefined
   const paintLabel = terrainMode ? `Paint ${terrainPaint} terrain` : elevationMode ? `Set elevation to ${elevationPaint}` : `Set resource capacity to ${resourcePaint}`
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -63,7 +71,7 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, d
     setCamera(fitWorld(world, camera.width, camera.height, HEX_SIZE, 20))
   }, [camera.height, camera.width, world.height, world.width])
 
-  const currentViewport = viewport && viewport.revision >= latestRequestedRevision.current && (paintMode || viewport.selectedZoneId === selectedZoneId) ? viewport : undefined
+  const currentViewport = viewport && viewport.revision >= latestRequestedRevision.current && (paintMode || settlementMode || roadMode || viewport.selectedZoneId === selectedZoneId) ? viewport : undefined
   const firstPassableCenter = currentViewport?.cells.find(isEligibleHomeCell)
   const firstPassableScreenPoint = firstPassableCenter ? axialToPixel(firstPassableCenter, HEX_SIZE) : undefined
 
@@ -74,7 +82,19 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, d
   }, [currentViewport, selectedZoneId])
 
   useEffect(() => {
-    if (!camera.width || !camera.height || (!paintMode && !selectedZoneId) || disabled) return
+    if (!settlementMode || !currentViewport || drag.current?.changed) return
+    selection.current = new Set(settlementAnchorCellId ? [settlementAnchorCellId] : [])
+    setPaintRevision((current) => current + 1)
+  }, [currentViewport, settlementAnchorCellId, settlementMode])
+
+  useEffect(() => {
+    if (!roadMode || !currentViewport || drag.current?.changed) return
+    selection.current = new Set(roadCellIds ?? [])
+    setPaintRevision((current) => current + 1)
+  }, [currentViewport, roadCellIds, roadMode])
+
+  useEffect(() => {
+    if (!camera.width || !camera.height || (!paintMode && !selectedZoneId && !settlementMode && !roadMode) || disabled) return
     if (requestFrame.current !== undefined) cancelAnimationFrame(requestFrame.current)
     requestFrame.current = requestAnimationFrame(() => {
       revision.current += 1
@@ -121,11 +141,21 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, d
 
   function paint(clientX: number, clientY: number): boolean {
     const cell = cellAt(clientX, clientY)
-    if (!cell || (!paintMode && !isEligibleHomeCell(cell))) return false
+    if (!cell || ((settlementMode || roadMode) ? cell.movementCost <= 0 : !paintMode && !isEligibleHomeCell(cell))) return false
     const current = drag.current
     if (!current || current.selected.has(cell.id)) return false
     current.selected.add(cell.id)
-    if (selection.current.has(cell.id)) selection.current.delete(cell.id)
+    if (settlementMode) {
+      selection.current = new Set([cell.id])
+    } else if (roadMode) {
+      if (current.selected.size === 0) selection.current = new Set([cell.id])
+      else {
+        const previousId = [...selection.current].at(-1)
+        const previous = currentViewport?.cells.find((candidate) => candidate.id === previousId)
+        if (!previous || Math.max(Math.abs(cell.q - previous.q), Math.abs(cell.r - previous.r), Math.abs((cell.q + cell.r) - (previous.q + previous.r))) !== 1) return false
+        selection.current.add(cell.id)
+      }
+    } else if (selection.current.has(cell.id)) selection.current.delete(cell.id)
     else selection.current.add(cell.id)
     current.changed = true
     setPaintRevision((value) => value + 1)
@@ -133,7 +163,7 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, d
   }
 
   function commitSelection(): void {
-    if (!paintMode && !selectedZoneId) return
+    if (!paintMode && !selectedZoneId && !settlementMode && !roadMode) return
     const cellIds = [...selection.current].sort()
     const signature = cellIds.join(',')
     if (signature === lastCommittedSelection.current) return
@@ -155,21 +185,24 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, d
       setPaintRevision((value) => value + 1)
       onResourcePaintCommit(resourcePaint, cellIds)
     }
+    else if (settlementMode && selectedSettlementId && cellIds[0]) onSettlementAnchorCommit?.(selectedSettlementId, cellIds[0])
+    else if (roadMode && selectedRoadId && cellIds.length >= 2) onRoadCellsCommit?.(selectedRoadId, [...selection.current])
     else if (selectedZoneId) onSelectionCommit(selectedZoneId, cellIds)
   }
 
-  return <section className="draft-zone-map" aria-label={paintMode ? 'Paint draft terrain' : 'Draw placement zone'}>
-    <div className="draft-zone-map-heading"><div><span className="eyebrow">{resourceMode ? 'RESOURCE PAINTING' : elevationMode ? 'ELEVATION PAINTING' : terrainMode ? 'TERRAIN PAINTING' : 'DIRECT ZONE DRAWING'}</span><h4>{paintMode ? paintLabel : 'Habitable cells only'}</h4></div><small>{selection.current.size} selected</small></div>
-    <p>{paintMode ? 'Drag across up to 512 generated cells, then apply this deterministic draft-only terrain edit.' : 'Drag across habitable cells to toggle this non-settlement zone. Terrain and settlement anchors are read-only.'}</p>
+  return <section className="draft-zone-map" aria-label={paintMode ? 'Paint draft terrain' : settlementMode ? 'Place settlement marker' : roadMode ? 'Draw draft road' : 'Draw placement zone'}>
+    <div className="draft-zone-map-heading"><div><span className="eyebrow">{resourceMode ? 'RESOURCE PAINTING' : elevationMode ? 'ELEVATION PAINTING' : terrainMode ? 'TERRAIN PAINTING' : settlementMode ? 'SETTLEMENT PLACEMENT' : roadMode ? 'ROAD DRAWING' : 'DIRECT ZONE DRAWING'}</span><h4>{paintMode ? paintLabel : settlementMode ? 'Choose one passable anchor cell' : roadMode ? 'Draw a contiguous passable segment' : 'Habitable cells only'}</h4></div><small>{selection.current.size} selected</small></div>
+    <p>{paintMode ? 'Drag across up to 512 generated cells, then apply this deterministic draft-only terrain edit.' : settlementMode ? 'Click a passable cell, then apply this geographic settlement anchor. Worker validation preserves linked-zone constraints.' : roadMode ? 'Drag across adjoining passable cells, then apply the ordered road segment. Roads currently provide explicit map structure only; transport behavior remains deferred.' : 'Drag across habitable cells to toggle this non-settlement zone. Terrain and settlement anchors are read-only.'}</p>
     <div className="draft-zone-canvas-wrap" ref={containerRef}>
       <canvas
         ref={canvasRef}
-        aria-label={paintMode ? 'Draft terrain paint map' : 'Draft placement zone map'}
+        aria-label={paintMode ? 'Draft terrain paint map' : settlementMode ? 'Draft settlement placement map' : roadMode ? 'Draft road map' : 'Draft placement zone map'}
         tabIndex={0}
         data-draft-map-revision={currentViewport?.revision}
         data-draft-map-cell-count={currentViewport?.cells.length}
         data-draft-map-viewport={`${camera.x.toFixed(2)},${camera.y.toFixed(2)},${camera.scale.toFixed(4)}`}
-        data-draft-zone-id={paintMode ? undefined : selectedZoneId}
+        data-draft-zone-id={paintMode || settlementMode ? undefined : selectedZoneId}
+        data-draft-settlement-id={settlementMode ? selectedSettlementId : undefined}
         data-draft-map-first-passable-center={firstPassableScreenPoint ? `${(camera.x + firstPassableScreenPoint.x * camera.scale).toFixed(2)},${(camera.y + firstPassableScreenPoint.y * camera.scale).toFixed(2)}` : undefined}
         onPointerDown={(event) => {
           if (disabled) return
@@ -207,7 +240,7 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, d
       {!currentViewport && <span className="draft-map-loading">Loading generated terrain…</span>}
     </div>
     <small className="draft-map-key"><i className="plain" /> plain <i className="hill" /> hill <i className="water" /> water / blocked <i className="selected" /> selected</small>
-    <button type="button" className="secondary draft-zone-apply" disabled={disabled || selection.current.size === 0} onClick={commitSelection}>{paintMode ? paintLabel : 'Apply drawn cells'}</button>
+    <button type="button" className="secondary draft-zone-apply" disabled={disabled || selection.current.size === 0 || (roadMode && selection.current.size < 2)} onClick={commitSelection}>{paintMode ? paintLabel : settlementMode ? 'Place settlement' : roadMode ? 'Apply road segment' : 'Apply drawn cells'}</button>
   </section>
 }
 

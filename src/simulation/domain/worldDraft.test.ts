@@ -119,6 +119,37 @@ describe('world draft lifecycle domain contract', () => {
     expect(active.revision).toBe(0)
   })
 
+  it('preserves independently authored settlement anchors through preview and commit', async () => {
+    const active = createWorldDraftRecord('draft-settlement-anchor', {
+      ...defaultWorldCreationRequest('settlement-anchor-seed'), initialPopulationCount: 10,
+      populationZones: [{ id: 'population-zone-0001', name: 'Initial', preset: 'center', populationCount: 10 }],
+    })
+    const target = projectWorldDraftViewport(active, { revision: 1, bounds: { minQ: 0, maxQ: 31, minR: 0, maxR: 23 } }).cells.find((cell) => cell.movementCost > 0)!
+    const updated = updateWorldDraftRecord(active, {
+      ...active.draft,
+      settlements: [{ id: 'northwatch', name: 'Northwatch', anchorCellId: target.id }],
+    }, active.revision)
+
+    expect(previewWorldDraft(updated).creation.settlements).toEqual([{ id: 'northwatch', name: 'Northwatch', anchorCellId: target.id }])
+    expect((await SimulationEngine.create(updated.draft).snapshot()).state.world.settlements).toEqual([{ id: 'northwatch', name: 'Northwatch', anchorCellId: target.id }])
+    expect(() => previewWorldDraft(updateWorldDraftRecord(active, { ...active.draft, settlements: [{ id: 'bad-anchor', name: 'Bad anchor', anchorCellId: 'unknown-cell' }] }))).toThrow(/invalid anchor cell/)
+  })
+
+  it('normalizes an ordered contiguous draft road and rejects invalid geometry', async () => {
+    const active = createWorldDraftRecord('draft-road', {
+      ...defaultWorldCreationRequest('road-seed'), initialPopulationCount: 10,
+      populationZones: [{ id: 'population-zone-0001', name: 'Initial', preset: 'center', populationCount: 10 }],
+    })
+    const cells = projectWorldDraftViewport(active, { revision: 1, bounds: { minQ: 0, maxQ: 31, minR: 0, maxR: 23 } }).cells
+    const first = cells.find((cell) => cell.movementCost > 0 && cells.some((other) => other.q === cell.q + 1 && other.r === cell.r && other.movementCost > 0))!
+    const second = cells.find((cell) => cell.q === first.q + 1 && cell.r === first.r)!
+    const updated = updateWorldDraftRecord(active, { ...active.draft, roads: [{ id: 'east-road', cellIds: [first.id, second.id] }] })
+
+    expect(previewWorldDraft(updated).creation.roads).toEqual([{ id: 'east-road', cellIds: [first.id, second.id] }])
+    expect((await SimulationEngine.create(updated.draft).snapshot()).state.world.roads).toEqual([{ id: 'east-road', cellIds: [first.id, second.id] }])
+    expect(() => previewWorldDraft(updateWorldDraftRecord(active, { ...active.draft, roads: [{ id: 'bad-road', cellIds: [first.id, '0,0'] }] }))).toThrow(/contiguous|invalid cell/)
+  })
+
   it('returns a deterministic bounded read-only terrain viewport tied to the draft revision', () => {
     const record = createWorldDraftRecord('draft-viewport', {
       ...defaultWorldCreationRequest('viewport-seed'), initialPopulationCount: 12,

@@ -219,6 +219,7 @@ function cloneDraft(value: WorldCreationDraft): WorldCreationDraft {
     ...value,
     populationZones: value.populationZones.map((zone) => ({ ...zone, cellIds: zone.cellIds ? [...zone.cellIds] : undefined })),
     settlements: value.settlements.map((settlement) => ({ ...settlement })),
+    roads: value.roads?.map((road) => ({ id: road.id, cellIds: [...road.cellIds] })),
     terrainOverrides: value.terrainOverrides?.map((override) => ({ ...override })),
     elevationOverrides: value.elevationOverrides?.map((override) => ({ ...override })),
     resourceCapacityOverrides: value.resourceCapacityOverrides?.map((override) => ({ ...override })),

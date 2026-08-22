@@ -107,14 +107,14 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 8B.1 — Draft World Lifecycle
 * Milestone 8B.2A — Deterministic Preset Placement Zones
 * Milestone 8B.2B — Direct Placement-Zone Drawing
-
-## Current
-
-* Milestone 8B — Draft Map Authoring
+* Milestone 8B.3 — Terrain Painting
+* Milestone 8B.4 — Settlement Editing
+* Milestone 8B.5 — Roads
+* Milestone 8B.6 — Draft Import and Export
 
 ## Next Slice
 
-* Milestone 8B.4 — Settlement Editing
+* Milestone 9 — Environmental and Resource Dynamics
 
 Detailed current implementation is documented in `README.md`.
 
@@ -290,7 +290,7 @@ Settlements remain named geographic places without implied government, culture, 
 
 # Milestone 8B — Draft Map Authoring
 
-Status: In Progress
+Status: Implemented
 
 ## Goal
 
@@ -455,7 +455,7 @@ Do not include yet:
 
 ## Milestone 8B.4 — Settlement Editing
 
-Status: Planned
+Status: Implemented
 
 ### Goal
 
@@ -484,7 +484,7 @@ Do not attach:
 
 ## Milestone 8B.5 — Roads
 
-Status: Planned
+Status: Implemented
 
 ### Goal
 
@@ -500,7 +500,12 @@ Introduce a minimal deterministic transportation structure.
 
 ### Initial Simulation Effects
 
-Only add behavior explicitly required by the slice, such as:
+No travel-rule change is included yet. The current engine selects and resolves
+single-neighbor movement rather than route-planned journeys, so a road cost
+modifier would be misleading until that prerequisite exists. Roads are
+authoritative, validated map geometry and are rendered at exact-cell detail.
+
+When route planning is introduced, it may add behavior such as:
 
 * Effective travel cost
 * Path preference
@@ -518,7 +523,7 @@ Do not introduce:
 
 ## Milestone 8B.6 — Draft Import and Export
 
-Status: Planned
+Status: Implemented
 
 ### Goal
 
@@ -1220,7 +1225,7 @@ Deep simulation semantics belong in focused design documents.
 Completed through:
 
 ```text
-Milestone 8B.2B — Direct Placement-Zone Drawing
+Milestone 8B.6 — Draft Import and Export
 ```
 
 Current milestone:
@@ -1232,7 +1237,7 @@ Milestone 8B — Draft Map Authoring
 Next independently reviewable slice:
 
 ```text
-Milestone 8B.4 — Settlement Editing
+Milestone 9 — Environmental and Resource Dynamics
 ```
 
 Intended immediate sequence:
@@ -1242,6 +1247,7 @@ Intended immediate sequence:
   -> 8B.4 Settlement Editing
   -> 8B.5 Roads
   -> 8B.6 Draft Import and Export
+  -> 9 Environmental and Resource Dynamics
 ```
 
 Within 8B.3, prefer the smallest safe editing slice rather than implementing every terrain dimension simultaneously.

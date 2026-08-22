@@ -36,10 +36,20 @@ Implemented:
 * Milestone 8B.1 — Draft World Lifecycle
 * Milestone 8B.2A — Preset Placement Zone Authoring
 * Milestone 8B.2B — Direct Placement-Zone Drawing
+* Milestone 8B.3 — Terrain Painting
+* Milestone 8B.4 — Settlement Editing
+* Milestone 8B.5 — Roads
+* Milestone 8B.6 — Draft Import and Export
+
+Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. Linked population zones retain their existing anchor-containment validation.
+
+Draft roads are ordered, contiguous passable-cell segments. They are validated by the worker, serialize with authored worlds, and render on exact-cell map projections. Current agent movement is intentionally unchanged: route-aware road travel is deferred until a route-planned movement system exists.
+
+Drafts can also be imported and exported as a versioned JSON bundle. Bundles include the draft record, generator version, dimensions, scale, seed, terrain/resource edits, population zones, settlements, and roads; incompatible versions are rejected rather than silently reinterpreted.
 
 Next:
 
-* Milestone 8B.4 — Settlement Editing
+* Milestone 9 — Environmental and Resource Dynamics
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 
@@ -709,7 +719,7 @@ Terrain and elevation painting store sparse, canonically ordered cell overrides 
 
 Next:
 
-* Milestone 8B.4 — Settlement Editing
+* Milestone 9 — Environmental and Resource Dynamics
 
 See `docs/ROADMAP.md` for subsequent settlement editing, roads, import/export, and later authoring work.
 

@@ -10,6 +10,7 @@ import {
   type Terrain,
   type TerrainTypeOverride,
   type ResourceCapacityOverride,
+  type RoadState,
 } from './types'
 
 export const WORLD_CREATION_LIMITS = Object.freeze({
@@ -34,6 +35,7 @@ export function defaultWorldCreationRequest(seed: string, width = 32, height = 2
     // Empty zones intentionally request the canonical all-habitable default once terrain exists.
     populationZones: [],
     settlements: [],
+    roads: [],
     terrainOverrides: [],
     elevationOverrides: [],
     resourceCapacityOverrides: [],
@@ -49,7 +51,7 @@ export function validateWorldCreationDraftLimits(value: WorldCreationDraft): voi
   const height = boundedInteger(value.height, WORLD_CREATION_LIMITS.minimumHeight, WORLD_CREATION_LIMITS.maximumHeight, 'World height')
   if (width * height > WORLD_CREATION_LIMITS.maximumCellCount) throw new RangeError('World cell count exceeds the 8A creation limit')
   boundedInteger(value.initialPopulationCount, WORLD_CREATION_LIMITS.minimumPopulation, WORLD_CREATION_LIMITS.maximumPopulation, 'Initial population')
-  if (!Array.isArray(value.populationZones) || !Array.isArray(value.settlements) || (value.terrainOverrides !== undefined && !Array.isArray(value.terrainOverrides)) || (value.elevationOverrides !== undefined && !Array.isArray(value.elevationOverrides)) || (value.resourceCapacityOverrides !== undefined && !Array.isArray(value.resourceCapacityOverrides))) throw new Error('World creation collections are invalid')
+  if (!Array.isArray(value.populationZones) || !Array.isArray(value.settlements) || (value.roads !== undefined && !Array.isArray(value.roads)) || (value.terrainOverrides !== undefined && !Array.isArray(value.terrainOverrides)) || (value.elevationOverrides !== undefined && !Array.isArray(value.elevationOverrides)) || (value.resourceCapacityOverrides !== undefined && !Array.isArray(value.resourceCapacityOverrides))) throw new Error('World creation collections are invalid')
 }
 
 /** Normalizes authored creation data after terrain is generated, without consuming randomness. */
@@ -71,6 +73,7 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
     id: 'population-zone-0001', name: 'Initial population', cellIds: defaultCells, populationCount: initialPopulationCount,
   }]
   const settlements = normalizeSettlements(value.settlements, editedCells, width, height)
+  const roads = normalizeRoads(value.roads, editedCells)
   const settlementIds = new Set(settlements.map((settlement) => settlement.id))
   const cellsById = new Map(editedCells.map((cell) => [cell.id, cell]))
   const assignedCells = new Set<string>()
@@ -98,7 +101,7 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
       : { id: zone.id, name: zoneName, cellIds, populationCount, settlementId: zone.settlementId }
   }).sort((a, b) => compareText(a.id, b.id))
   if (zones.reduce((sum, zone) => sum + zone.populationCount, 0) !== initialPopulationCount) throw new Error('Population zone allocations must equal the initial population')
-  return { seed, name, width, height, initialPopulationCount, populationZones: zones, settlements, terrainOverrides, elevationOverrides, resourceCapacityOverrides }
+  return { seed, name, width, height, initialPopulationCount, populationZones: zones, settlements, ...(roads.length ? { roads } : {}), terrainOverrides, elevationOverrides, resourceCapacityOverrides }
 }
 
 /** Applies sparse terrain edits without randomness; derived cell values remain coherent. */
@@ -193,6 +196,32 @@ function normalizeSettlements(value: readonly { id: string; name: string; anchor
     if (!anchor?.movementCost) throw new Error(`Settlement ${settlement.id} has an invalid anchor cell`)
     return { id: settlement.id, name: requiredText(settlement.name, `Settlement ${settlement.id} name`, 80), anchorCellId }
   }).sort((a, b) => compareText(a.id, b.id))
+}
+
+function normalizeRoads(value: readonly { id: string; cellIds: string[] }[] | undefined, cells: readonly GeographicCell[]): RoadState[] {
+  if (value === undefined) return []
+  const cellsById = new Map(cells.map((cell) => [cell.id, cell]))
+  const ids = new Set<string>()
+  return value.map((road) => {
+    validIdentifier(road.id, 'Road ID')
+    if (ids.has(road.id)) throw new Error(`Duplicate road ID: ${road.id}`)
+    ids.add(road.id)
+    if (!Array.isArray(road.cellIds) || road.cellIds.length < 2 || road.cellIds.length > cells.length) throw new Error(`Road ${road.id} must contain from 2 through ${cells.length} cells`)
+    const cellIds = [...road.cellIds]
+    const seen = new Set<string>()
+    for (let index = 0; index < cellIds.length; index += 1) {
+      const cellId = cellIds[index]!
+      const cell = cellsById.get(cellId)
+      if (!cell?.movementCost) throw new Error(`Road ${road.id} contains an invalid cell`)
+      if (seen.has(cellId)) throw new Error(`Road ${road.id} contains a repeated cell`)
+      seen.add(cellId)
+      if (index > 0) {
+        const previous = cellsById.get(cellIds[index - 1]!)!
+        if (axialDistance(cell.q, cell.r, previous.q, previous.r) !== 1) throw new Error(`Road ${road.id} cells must be contiguous`)
+      }
+    }
+    return { id: road.id, cellIds }
+  }).sort((first, second) => compareText(first.id, second.id))
 }
 
 function resolveZoneCellIds(zone: { cellIds?: string[]; preset?: WorldPlacementPreset; radiusCells?: number }, cells: readonly GeographicCell[], width: number, height: number): string[] {

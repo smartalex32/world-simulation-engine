@@ -3,6 +3,7 @@ import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
 import type { CommunityVariableDefinition, CommunityVariableId } from './simulation/community/types'
 import type { DevelopmentExperienceType, ElevationOverride, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, Terrain, UtilityContribution, WorldCreationDraft, WorldCreationRequest, WorldDraftPreview, WorldDraftRecord } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
+import { exportWorldDraftBundle, importWorldDraftBundle } from './simulation/domain/worldDraftBundle'
 import type { ProjectedCommunityState, WorkbenchProjection } from './projection'
 import { HexMap, type MapOverlay } from './ui/HexMap'
 import { ActionExplanation } from './ui/ActionExplanation'
@@ -36,8 +37,14 @@ export default function App() {
       { id: 'population-zone-1', name: 'Westhaven residents', region: 'west', preset: 'west', radiusCells: 3, allocation: 100, settlementId: 'settlement-1', settlementName: 'Westhaven' },
       { id: 'population-zone-2', name: 'Eastwatch residents', region: 'east', preset: 'east', radiusCells: 3, allocation: 100, settlementId: 'settlement-2', settlementName: 'Eastwatch' },
     ],
-    nextPlacementId: 1, terrainOverrides: [], elevationOverrides: [], resourceCapacityOverrides: [],
+    nextPlacementId: 1, nextSettlementId: 1, nextRoadId: 1, roads: [],
+    settlements: [
+      { id: 'settlement-1', name: 'Westhaven', preset: 'west' },
+      { id: 'settlement-2', name: 'Eastwatch', preset: 'east' },
+    ],
+    terrainOverrides: [], elevationOverrides: [], resourceCapacityOverrides: [],
   })
+  const worldSetupRef = useRef<WorldSetupValues>(worldSetup)
   const [worldDraft, setWorldDraft] = useState<WorldDraftRecord>()
   const [draftPreview, setDraftPreview] = useState<WorldDraftPreview>()
   const [draftViewport, setDraftViewport] = useState<import('./simulation/domain/types').DraftViewportProjection>()
@@ -50,7 +57,10 @@ export default function App() {
   const pendingDraftZoneCells = useRef<{ zoneId: string; cellIds: string[] } | undefined>(undefined)
   const pendingTerrainPaint = useRef<{ terrain: Terrain; cellIds: string[] } | undefined>(undefined)
   const pendingElevationPaint = useRef<{ elevation: number; cellIds: string[] } | undefined>(undefined)
+  const pendingDraftUpdate = useRef<WorldSetupValues | undefined>(undefined)
+  const draftPersistenceChain = useRef<Promise<unknown>>(Promise.resolve())
   const commitAfterDraftUpdateRef = useRef(false)
+  const commitAfterDraftSignatureRef = useRef<string | undefined>(undefined)
   const [projection, setProjection] = useState<WorkbenchProjection>()
   const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
   const [status, setStatus] = useState<'starting' | 'idle' | 'paused' | 'playing'>('starting')
@@ -116,7 +126,19 @@ export default function App() {
         setError(response.message)
         setStatus('paused')
         commitAfterDraftUpdateRef.current = false
-        setDraftOperationBusy(false)
+        // A draft edit may briefly be invalid while a user is changing a
+        // coordinated set of fields (for example, adding a zone before
+        // reallocating population). If a later complete form state arrived
+        // while that request was in flight, submit that latest state rather
+        // than dropping it with the rejected intermediate request.
+        const pending = pendingDraftUpdate.current
+        if (pending) {
+          pendingDraftUpdate.current = undefined
+          setDraftOperationBusy(true)
+          client.updateDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(pending))
+        } else {
+          setDraftOperationBusy(false)
+        }
       } else if (response.type === 'DRAFT_VIEWPORT') {
         if (response.viewport.draftId === WORLD_SETUP_DRAFT_ID && response.viewport.revision >= minimumDraftViewportRevision.current && response.viewport.revision >= latestDraftViewportRequestRevision.current) setDraftViewport(response.viewport)
       } else if (response.type === 'DRAFT') {
@@ -150,7 +172,10 @@ export default function App() {
             setSetupOpen(false)
           }
         } else if (response.draft) {
-          if (response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted' || response.action === 'elevationPainted' || response.action === 'resourcesPainted') setError(undefined)
+          // IndexedDB writes are asynchronous; ignore an older worker reply
+          // that resumes after a newer accepted draft has already arrived.
+          if (worldDraftRef.current && response.draft.revision < worldDraftRef.current.revision) return
+          if (response.action === 'updated' || response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted' || response.action === 'elevationPainted' || response.action === 'resourcesPainted') setError(undefined)
           worldDraftRef.current = response.draft
           setWorldDraft(response.draft)
           if (response.preview) setDraftPreview(response.preview)
@@ -159,20 +184,40 @@ export default function App() {
           if (response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted' || response.action === 'elevationPainted' || response.action === 'resourcesPainted') {
             // The worker canonicalizes selected cell IDs. Rehydrate the form
             // from that accepted draft before asking for a fresh terrain slice.
+            worldSetupRef.current = acceptedSetup
             setWorldSetup(acceptedSetup)
             setDraftViewport(undefined)
           }
-          if (response.action === 'reset') setWorldSetup(acceptedSetup)
-          if (response.action === 'hydrated') setWorldSetup(acceptedSetup)
+          if (response.action === 'reset' || response.action === 'hydrated') {
+            worldSetupRef.current = acceptedSetup
+            setWorldSetup(acceptedSetup)
+          }
           setDraftOperationBusy(true)
           try {
-            await database.saveWorldDraft(response.draft)
-            if (response.action === 'updated' && commitAfterDraftUpdateRef.current) {
+            // Persist accepted revisions in worker order. IndexedDB requests
+            // from overlapping response handlers can otherwise finish out of
+            // order and resurrect an older draft after a reload.
+            draftPersistenceChain.current = draftPersistenceChain.current.then(() => database.saveWorldDraft(response.draft!))
+            await draftPersistenceChain.current
+            if (response.action === 'updated' && commitAfterDraftUpdateRef.current && commitAfterDraftSignatureRef.current === worldSetupSignature(acceptedSetup)) {
               commitAfterDraftUpdateRef.current = false
+              commitAfterDraftSignatureRef.current = undefined
               client.commitDraft(WORLD_SETUP_DRAFT_ID)
             } else {
-              setDraftOperationBusy(false)
-              const pending = pendingDraftZoneCells.current
+              const pendingUpdate = pendingDraftUpdate.current
+              // Keep the worker draft convergent with the latest form state,
+              // even when a response races a burst of React input events.
+              // The explicit comparison is the acknowledgement boundary used
+              // by both persistence and the enabled commit control.
+              const desiredSetup = worldSetupRef.current
+              if (pendingUpdate || (isCommitReadyWorldSetup(desiredSetup) && worldSetupSignature(desiredSetup) !== worldSetupSignature(acceptedSetup))) {
+                const nextDraft = pendingUpdate ?? desiredSetup
+                pendingDraftUpdate.current = undefined
+                setDraftOperationBusy(true)
+                client.updateDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(nextDraft))
+              } else {
+                setDraftOperationBusy(false)
+                const pending = pendingDraftZoneCells.current
               if (pending) {
                 pendingDraftZoneCells.current = undefined
                 setDraftOperationBusy(true)
@@ -190,6 +235,7 @@ export default function App() {
                     setDraftOperationBusy(true)
                     client.paintDraftElevation(WORLD_SETUP_DRAFT_ID, elevation.cellIds, elevation.elevation)
                   }
+                }
                 }
               }
             }
@@ -256,7 +302,9 @@ export default function App() {
       const saved = await database.importBundle(value)
       client.load(saved.snapshot)
       setSeed(saved.snapshot.state.config.seed)
-      setWorldSetup(worldSetupFromCreation(saved.snapshot.state.config.worldCreation))
+      const setup = worldSetupFromCreation(saved.snapshot.state.config.worldCreation)
+      worldSetupRef.current = setup
+      setWorldSetup(setup)
       setEvents([])
       setStatistics([])
       setSelectedCellId(undefined)
@@ -268,6 +316,7 @@ export default function App() {
   }
 
   async function openWorldSetup() {
+    worldSetupRef.current = worldSetup
     setSetupOpen(true)
     worldDraftRef.current = undefined
     setWorldDraft(undefined)
@@ -288,15 +337,21 @@ export default function App() {
     }
   }
 
-  function updateWorldSetup(next: WorldSetupValues) {
+  function updateWorldSetup(update: WorldSetupValues | ((current: WorldSetupValues) => WorldSetupValues)) {
+    const next = typeof update === 'function' ? update(worldSetupRef.current) : update
+    worldSetupRef.current = next
     const currentDraft = worldDraftRef.current
-    if (!currentDraft || draftBusyRef.current) return
+    if (!currentDraft) return
     setWorldSetup(next)
     // Keep invalid intermediate form values in the UI only. The worker owns
     // drafts and validates them as complete creation requests, so sending a
     // partially edited allocation would reject the detached draft instead of
     // allowing the user to finish the edit.
     if (!isCommitReadyWorldSetup(next)) return
+    if (draftBusyRef.current) {
+      pendingDraftUpdate.current = next
+      return
+    }
     setDraftOperationBusy(true)
     // The worker command queue serializes this single-editor flow. Retaining
     // revision checks in the protocol protects future concurrent editors,
@@ -368,13 +423,33 @@ export default function App() {
     client.resetDraft(WORLD_SETUP_DRAFT_ID)
   }
 
+  function exportWorldSetupDraft() {
+    const draft = worldDraftRef.current
+    if (!draft) return
+    const blob = new Blob([JSON.stringify(exportWorldDraftBundle(draft), null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${draft.draft.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'world-draft'}.draft.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function importWorldSetupDraft(file: File | undefined) {
+    if (!file || draftBusyRef.current) return
+    try {
+      const imported = importWorldDraftBundle(JSON.parse(await file.text()))
+      const draft: WorldDraftRecord = { ...imported, draftId: WORLD_SETUP_DRAFT_ID }
+      setDraftOperationBusy(true)
+      client.hydrateDraft(draft)
+    } catch (reason) {
+      setError(`Draft import failed: ${messageOf(reason)}`)
+    }
+  }
+
   function commitWorldSetup() {
     const currentDraft = worldDraftRef.current
     if (!currentDraft) return
-    if (draftBusyRef.current) {
-      commitAfterDraftUpdateRef.current = true
-      return
-    }
     setDraftOperationBusy(true)
     client.commitDraft(WORLD_SETUP_DRAFT_ID)
   }
@@ -487,7 +562,7 @@ export default function App() {
 
         <section className="map-panel panel">
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {projection?.map.overlay ?? overlay}{projection && projection.map.overlay !== overlay ? ' · updating…' : ''}</span></div>
-          {projection ? <HexMap world={projection.world} settlements={projection.settlements} map={projection.map} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selectedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelectedCellId(cell.id); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onFocusCell={(cellId) => { setSelectedCellId(cellId); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onViewportRequest={requestViewport} /> : <div className="loading">Starting simulation worker…</div>}
+          {projection ? <HexMap world={projection.world} settlements={projection.settlements} roads={projection.roads} map={projection.map} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selectedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelectedCellId(cell.id); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onFocusCell={(cellId) => { setSelectedCellId(cellId); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onViewportRequest={requestViewport} /> : <div className="loading">Starting simulation worker…</div>}
         </section>
 
         <aside className="right-panel panel">
@@ -523,7 +598,7 @@ export default function App() {
           {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
       </section>
-      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} onElevationPaintCommit={paintDraftElevation} onResourcePaintCommit={paintDraftResources} error={error} />}
+      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={!draftBusy && acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} onElevationPaintCommit={paintDraftElevation} onResourcePaintCommit={paintDraftResources} onExportDraft={exportWorldSetupDraft} onImportDraft={importWorldSetupDraft} error={error} />}
     </main>
   )
 }
@@ -547,6 +622,10 @@ function worldSetupFromCreation(creation: WorldCreationRequest): WorldSetupValue
       return { id: zone.id, name: zone.name, region, preset: region, radiusCells: 3, allocation: zone.populationCount, settlementId: zone.settlementId, settlementName: settlement?.name, cellIds: [...zone.cellIds] }
     }),
     nextPlacementId: nextDraftSequence(creation.populationZones.map((zone) => zone.id), creation.settlements.map((settlement) => settlement.id)),
+    nextSettlementId: nextDraftSequence(creation.settlements.map((settlement) => settlement.id)),
+    settlements: creation.settlements.map((settlement) => ({ id: settlement.id, name: settlement.name, anchorCellId: settlement.anchorCellId })),
+    nextRoadId: nextDraftSequence((creation.roads ?? []).map((road) => road.id)),
+    roads: (creation.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })),
     terrainOverrides: creation.terrainOverrides.map((override) => ({ ...override })),
     elevationOverrides: creation.elevationOverrides.map((override) => ({ ...override })),
     resourceCapacityOverrides: creation.resourceCapacityOverrides.map((override) => ({ ...override })),
@@ -563,7 +642,8 @@ function creationDraftFromSetup(setup: WorldSetupValues): WorldCreationDraft {
     terrainOverrides: setup.terrainOverrides.map((override) => ({ ...override })),
     elevationOverrides: setup.elevationOverrides.map((override) => ({ ...override })),
     resourceCapacityOverrides: setup.resourceCapacityOverrides.map((override) => ({ ...override })),
-    settlements: [...new Map(setup.placements.flatMap((placement) => placement.settlementId && placement.settlementName ? [[placement.settlementId, { id: placement.settlementId, name: placement.settlementName, ...(placement.cellIds === undefined ? { preset: placement.preset } : {}) }] as const] : [])).values()],
+    settlements: setup.settlements.map((settlement) => ({ ...settlement })),
+    roads: setup.roads.map((road) => ({ id: road.id, cellIds: [...road.cellIds] })),
     populationZones: setup.placements.map((placement) => ({
       id: placement.id,
       name: placement.name,
@@ -580,6 +660,7 @@ function isCommitReadyWorldSetup(setup: WorldSetupValues): boolean {
     && setup.placements.every((placement) => placement.name.trim().length > 0
       && (placement.cellIds !== undefined || (Number.isInteger(placement.radiusCells) && placement.radiusCells >= 0 && placement.radiusCells <= 32))
       && (!placement.settlementId || Boolean(placement.settlementName?.trim())))
+    && setup.settlements.every((settlement) => settlement.name.trim().length > 0)
     && setup.placements.reduce((total, placement) => total + placement.allocation, 0) === setup.population
     && isWorldSetupGeometryValid(setup)
 }
@@ -597,6 +678,10 @@ function worldSetupFromDraft(draft: WorldCreationDraft): WorldSetupValues {
       return { id: zone.id, name: zone.name, region: regionForPreset(preset), preset, radiusCells: zone.radiusCells ?? 3, allocation: zone.populationCount, settlementId: zone.settlementId, settlementName: settlement?.name, ...(zone.cellIds !== undefined ? { cellIds: [...zone.cellIds] } : {}) }
     }),
     nextPlacementId: nextDraftSequence(draft.populationZones.map((zone) => zone.id), draft.settlements.map((settlement) => settlement.id)),
+    nextSettlementId: nextDraftSequence(draft.settlements.map((settlement) => settlement.id)),
+    settlements: draft.settlements.map((settlement) => ({ ...settlement })),
+    nextRoadId: nextDraftSequence((draft.roads ?? []).map((road) => road.id)),
+    roads: (draft.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })),
     terrainOverrides: (draft.terrainOverrides ?? []).map((override) => ({ ...override })),
     elevationOverrides: (draft.elevationOverrides ?? []).map((override) => ({ ...override })),
     resourceCapacityOverrides: (draft.resourceCapacityOverrides ?? []).map((override) => ({ ...override })),
@@ -608,7 +693,9 @@ function nextDraftSequence(...groups: readonly string[][]): number {
 }
 
 function worldSetupSignature(setup: WorldSetupValues): string {
-  return JSON.stringify({ ...setup, placements: setup.placements.map(({ cellIds, ...placement }) => ({ ...placement, ...(cellIds === undefined ? {} : { cellIds: [...cellIds].sort() }) })) })
+  // Compare only the authoritative creation input, never UI-only allocation
+  // counters or object insertion order from a hydrated/imported record.
+  return JSON.stringify(creationDraftFromSetup(setup))
 }
 
 function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell; people: PersonState[]; onSelectPerson: (id: string) => void }) {

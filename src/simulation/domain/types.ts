@@ -103,6 +103,18 @@ export interface SettlementDraft {
   preset?: WorldPlacementPreset
 }
 
+/** Ordered, contiguous passable cell geometry for a draft-only road segment. */
+export interface RoadDraft {
+  id: string
+  cellIds: string[]
+}
+
+/** A named-free transportation segment. Roads have no ownership or economic meaning. */
+export interface RoadState {
+  id: string
+  cellIds: string[]
+}
+
 export interface WorldCreationDraft {
   seed: string
   name: string
@@ -111,6 +123,7 @@ export interface WorldCreationDraft {
   initialPopulationCount: number
   populationZones: PopulationPlacementZoneDraft[]
   settlements: SettlementDraft[]
+  roads?: RoadDraft[]
   /** Canonically sorted sparse terrain edits; absent means seeded terrain only. */
   terrainOverrides?: TerrainTypeOverride[]
   elevationOverrides?: ElevationOverride[]
@@ -125,6 +138,8 @@ export interface WorldCreationRequest {
   initialPopulationCount: number
   populationZones: PopulationPlacementZone[]
   settlements: SettlementState[]
+  /** Omitted when no authored roads exist, preserving legacy canonical worlds. */
+  roads?: RoadState[]
   terrainOverrides: TerrainTypeOverride[]
   elevationOverrides: ElevationOverride[]
   resourceCapacityOverrides: ResourceCapacityOverride[]
@@ -184,6 +199,8 @@ export interface WorldState {
   scale: WorldScale
   grid: HexGrid
   settlements: SettlementState[]
+  /** Omitted for legacy worlds without authored roads. */
+  roads?: RoadState[]
 }
 
 export type HouseholdId = string

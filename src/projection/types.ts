@@ -122,6 +122,8 @@ export interface WorldDescriptor {
 }
 
 export interface ProjectedSettlement { id: string; name: string; anchorCellId: string }
+/** Bounded metadata; geometry is drawn only where the active cell projection is exact. */
+export interface ProjectedRoad { id: string; cellIds: string[] }
 export interface ProjectedPopulationZone { id: string; name: string; populationCount: number; cellCount: number; settlementId?: string }
 
 export interface ProjectedCommunityCatchment {
@@ -165,6 +167,7 @@ export interface WorkbenchProjection {
   engineVersion: string
   world: WorldDescriptor
   settlements: ProjectedSettlement[]
+  roads: ProjectedRoad[]
   populationZones: ProjectedPopulationZone[]
   map: MapProjection
   people: PersonState[]

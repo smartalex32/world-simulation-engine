@@ -1,9 +1,9 @@
 import { applyElevationOverrides, applyResourceCapacityOverrides, applyTerrainOverrides, WORLD_CREATION_LIMITS, fixedWorldScale } from '../domain/worldCreation'
-import type { ElevationOverride, GeographicCell, ResourceCapacityOverride, SettlementState, TerrainTypeOverride, WorldState } from '../domain/types'
+import type { ElevationOverride, GeographicCell, ResourceCapacityOverride, RoadState, SettlementState, TerrainTypeOverride, WorldState } from '../domain/types'
 import { RandomProvider } from '../rng/pcg32'
 import { cellId } from './hex'
 
-export function generateValley(seed: string, width = 32, height = 24, options: { name?: string; settlements?: readonly SettlementState[]; terrainOverrides?: readonly TerrainTypeOverride[]; elevationOverrides?: readonly ElevationOverride[]; resourceCapacityOverrides?: readonly ResourceCapacityOverride[]; idSuffix?: string } = {}): { world: WorldState; random: RandomProvider } {
+export function generateValley(seed: string, width = 32, height = 24, options: { name?: string; settlements?: readonly SettlementState[]; roads?: readonly RoadState[]; terrainOverrides?: readonly TerrainTypeOverride[]; elevationOverrides?: readonly ElevationOverride[]; resourceCapacityOverrides?: readonly ResourceCapacityOverride[]; idSuffix?: string } = {}): { world: WorldState; random: RandomProvider } {
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width * height > WORLD_CREATION_LIMITS.maximumCellCount) {
     throw new RangeError(`Valley dimensions must be positive safe integers totaling at most ${WORLD_CREATION_LIMITS.maximumCellCount} cells`)
   }
@@ -47,6 +47,7 @@ export function generateValley(seed: string, width = 32, height = 24, options: {
       scale: fixedWorldScale(),
       grid: { width, height, cells: applyResourceCapacityOverrides(applyTerrainOverrides(applyElevationOverrides(cells, options.elevationOverrides ?? []), options.terrainOverrides ?? []), options.resourceCapacityOverrides ?? []) },
       settlements: [...(options.settlements ?? [])],
+      ...(options.roads?.length ? { roads: options.roads.map((road) => ({ id: road.id, cellIds: [...road.cellIds] })) } : {}),
     },
     random,
   }
