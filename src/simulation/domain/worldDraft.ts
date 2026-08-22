@@ -1,9 +1,10 @@
 import { generateValley } from '../spatial/worldGenerator'
-import type { DraftViewportProjection, DraftViewportRequest, Terrain, TerrainTypeOverride, WorldCreationDraft, WorldDraftPreview, WorldDraftRecord } from './types'
+import type { DraftViewportProjection, DraftViewportRequest, ElevationOverride, Terrain, TerrainTypeOverride, WorldCreationDraft, WorldDraftPreview, WorldDraftRecord } from './types'
 import { normalizeWorldCreationRequest, validateWorldCreationDraftLimits } from './worldCreation'
 
 export const WORLD_DRAFT_RECORD_VERSION = 2 as const
 export const MAX_TERRAIN_PAINT_CELLS = 512
+export const MAX_ELEVATION_PAINT_CELLS = 512
 
 /** Creates a detached, serializable draft record. This is never simulation state. */
 export function createWorldDraftRecord(draftId: string, draft: WorldCreationDraft): WorldDraftRecord {
@@ -55,7 +56,7 @@ export function updateWorldDraftZoneCells(record: WorldDraftRecord, zoneId: stri
       : { ...candidate, cellIds: candidate.cellIds ? [...candidate.cellIds] : undefined }),
   }
   validateWorldCreationDraftLimits(patchedDraft)
-  const generated = generateValley(patchedDraft.seed.trim() || 'valley-001', patchedDraft.width, patchedDraft.height, { terrainOverrides: patchedDraft.terrainOverrides })
+  const generated = generateDraftTerrain(patchedDraft)
   const normalized = normalizeWorldCreationRequest(patchedDraft, generated.world.grid.cells)
   const normalizedZone = normalized.populationZones.find((candidate) => candidate.id === zoneId)
   if (!normalizedZone) throw new Error(`Population zone is unknown: ${zoneId}`)
@@ -94,6 +95,28 @@ export function paintWorldDraftTerrain(record: WorldDraftRecord, cellIds: readon
   return { ...current, revision: current.revision + 1, draft }
 }
 
+/** Atomically paints one bounded batch of cells with an absolute elevation. */
+export function paintWorldDraftElevation(record: WorldDraftRecord, cellIds: readonly string[], elevation: number, expectedRevision?: number): WorldDraftRecord {
+  const current = validateWorldDraftRecord(record)
+  if (expectedRevision !== undefined && expectedRevision !== current.revision) throw new Error(`World draft revision conflict: expected ${expectedRevision}, current ${current.revision}`)
+  if (!Array.isArray(cellIds) || cellIds.length === 0 || cellIds.length > MAX_ELEVATION_PAINT_CELLS) throw new Error(`Elevation paint must contain from 1 through ${MAX_ELEVATION_PAINT_CELLS} cells`)
+  if (!Number.isSafeInteger(elevation) || elevation < 0 || elevation > 1000) throw new Error('Elevation paint value must be an integer from 0 through 1000')
+  const base = generateValley(current.draft.seed.trim() || 'valley-001', current.draft.width, current.draft.height)
+  const baseElevationByCellId = new Map(base.world.grid.cells.map((cell) => [cell.id, cell.elevation]))
+  const next = new Map((current.draft.elevationOverrides ?? []).map((override) => [override.cellId, override.elevation]))
+  for (const cellId of [...cellIds].sort(compareText)) {
+    const baseElevation = baseElevationByCellId.get(cellId)
+    if (baseElevation === undefined) throw new Error(`Elevation paint contains an unknown cell: ${cellId}`)
+    if (elevation === baseElevation) next.delete(cellId)
+    else next.set(cellId, elevation)
+  }
+  const elevationOverrides: ElevationOverride[] = [...next.entries()].map(([cellId, paintedElevation]) => ({ cellId, elevation: paintedElevation })).sort((first, second) => compareText(first.cellId, second.cellId))
+  const draft = cloneDraft({ ...current.draft, elevationOverrides })
+  validateWorldCreationDraftLimits(draft)
+  previewWorldDraft({ ...current, revision: current.revision + 1, draft })
+  return { ...current, revision: current.revision + 1, draft }
+}
+
 /** Builds a deterministic bounded terrain-only projection for draft editing. */
 export function projectWorldDraftViewport(record: WorldDraftRecord, request: DraftViewportRequest): DraftViewportProjection {
   const current = validateWorldDraftRecord(record)
@@ -102,7 +125,7 @@ export function projectWorldDraftViewport(record: WorldDraftRecord, request: Dra
   if (!bounds || !Number.isSafeInteger(bounds.minQ) || !Number.isSafeInteger(bounds.maxQ) || !Number.isSafeInteger(bounds.minR) || !Number.isSafeInteger(bounds.maxR) || bounds.minQ > bounds.maxQ || bounds.minR > bounds.maxR) throw new Error('Draft viewport bounds are invalid')
   const requestedCellCount = (bounds.maxQ - bounds.minQ + 1) * (bounds.maxR - bounds.minR + 1)
   if (!Number.isSafeInteger(requestedCellCount) || requestedCellCount > 4096) throw new RangeError('Draft viewport may contain at most 4096 cells')
-  const generated = generateValley(current.draft.seed.trim() || 'valley-001', current.draft.width, current.draft.height, { terrainOverrides: current.draft.terrainOverrides })
+  const generated = generateDraftTerrain(current.draft)
   const normalized = normalizeWorldCreationRequest(current.draft, generated.world.grid.cells)
   const zone = request.selectedZoneId === undefined ? undefined : normalized.populationZones.find((candidate) => candidate.id === request.selectedZoneId)
   if (request.selectedZoneId !== undefined && !zone) throw new Error(`Population zone is unknown: ${request.selectedZoneId}`)
@@ -139,7 +162,7 @@ export function validateWorldDraftRecord(value: unknown): WorldDraftRecord {
  */
 export function previewWorldDraft(record: WorldDraftRecord): WorldDraftPreview {
   const current = validateWorldDraftRecord(record)
-  const generated = generateValley(current.draft.seed.trim() || 'valley-001', current.draft.width, current.draft.height, { terrainOverrides: current.draft.terrainOverrides })
+  const generated = generateDraftTerrain(current.draft)
   const creation = normalizeWorldCreationRequest(current.draft, generated.world.grid.cells)
   const terrainCounts: Record<Terrain, number> = { water: 0, plain: 0, hill: 0 }
   let passableCellCount = 0
@@ -169,7 +192,12 @@ function cloneDraft(value: WorldCreationDraft): WorldCreationDraft {
     populationZones: value.populationZones.map((zone) => ({ ...zone, cellIds: zone.cellIds ? [...zone.cellIds] : undefined })),
     settlements: value.settlements.map((settlement) => ({ ...settlement })),
     terrainOverrides: value.terrainOverrides?.map((override) => ({ ...override })),
+    elevationOverrides: value.elevationOverrides?.map((override) => ({ ...override })),
   }
+}
+
+function generateDraftTerrain(draft: WorldCreationDraft) {
+  return generateValley(draft.seed.trim() || 'valley-001', draft.width, draft.height, { terrainOverrides: draft.terrainOverrides, elevationOverrides: draft.elevationOverrides })
 }
 
 function compareText(first: string, second: string): number {

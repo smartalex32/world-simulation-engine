@@ -51,6 +51,7 @@ export class SimulationWorkerClient {
   updateDraft(draftId: string, draft: WorldCreationDraft, expectedRevision?: number): void { this.send({ type: 'UPDATE_DRAFT', requestId: requestId(), draftId, draft, expectedRevision }) }
   updateDraftZoneCells(draftId: string, zoneId: string, cellIds: string[], expectedRevision?: number): void { this.send({ type: 'UPDATE_DRAFT_ZONE_CELLS', requestId: requestId(), draftId, zoneId, cellIds, expectedRevision }) }
   paintDraftTerrain(draftId: string, cellIds: string[], terrain: Terrain, expectedRevision?: number): void { this.send({ type: 'PAINT_DRAFT_TERRAIN', requestId: requestId(), draftId, cellIds, terrain, expectedRevision }) }
+  paintDraftElevation(draftId: string, cellIds: string[], elevation: number, expectedRevision?: number): void { this.send({ type: 'PAINT_DRAFT_ELEVATION', requestId: requestId(), draftId, cellIds, elevation, expectedRevision }) }
   resetDraft(draftId: string, expectedRevision?: number): void { this.send({ type: 'RESET_DRAFT', requestId: requestId(), draftId, expectedRevision }) }
   previewDraft(draftId: string): void { this.send({ type: 'REQUEST_DRAFT_PREVIEW', requestId: requestId(), draftId }) }
   requestDraftViewport(draftId: string, viewport: DraftViewportRequest): void { this.send({ type: 'REQUEST_DRAFT_VIEWPORT', requestId: requestId(), draftId, viewport }) }

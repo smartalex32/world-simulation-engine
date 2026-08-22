@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SimulationEngine } from '../engine/engine'
 import { defaultWorldCreationRequest } from './worldCreation'
-import { createWorldDraftRecord, paintWorldDraftTerrain, previewWorldDraft, projectWorldDraftViewport, resetWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from './worldDraft'
+import { createWorldDraftRecord, paintWorldDraftElevation, paintWorldDraftTerrain, previewWorldDraft, projectWorldDraftViewport, resetWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from './worldDraft'
 
 describe('world draft lifecycle domain contract', () => {
   it('produces a stable bounded preview without changing the draft', () => {
@@ -151,5 +151,20 @@ describe('world draft lifecycle domain contract', () => {
     expect(snapshot.state.world.grid.cells.find((cell) => cell.id === target.id)).toMatchObject({ terrain: 'water', movementCost: 0 })
     expect(snapshot.state.config.worldCreation.terrainOverrides).toEqual(painted.draft.terrainOverrides)
     expect(() => paintWorldDraftTerrain(active, Array(513).fill(target.id), 'hill')).toThrow(/1 through 512/)
+  })
+
+  it('paints a bounded elevation override without overriding an explicit terrain type', async () => {
+    const active = createWorldDraftRecord('draft-elevation', {
+      ...defaultWorldCreationRequest('elevation-paint-seed'), initialPopulationCount: 10,
+      populationZones: [{ id: 'population-zone-0001', name: 'Initial', preset: 'center', populationCount: 10 }],
+    })
+    const target = projectWorldDraftViewport(active, { revision: 1, bounds: { minQ: 0, maxQ: 31, minR: 0, maxR: 23 } }).cells.find((cell) => cell.terrain === 'plain')!
+    const withTerrain = paintWorldDraftTerrain(active, [target.id], 'hill')
+    const painted = paintWorldDraftElevation(withTerrain, [target.id], 700, withTerrain.revision)
+
+    expect(painted.draft.elevationOverrides).toEqual([{ cellId: target.id, elevation: 700 }])
+    expect(projectWorldDraftViewport(painted, { revision: 2, bounds: { minQ: target.q, maxQ: target.q, minR: target.r, maxR: target.r } }).cells[0]).toMatchObject({ terrain: 'hill', elevation: 700, movementCost: 1800 })
+    expect((await SimulationEngine.create(painted.draft).snapshot()).state.config.worldCreation.elevationOverrides).toEqual(painted.draft.elevationOverrides)
+    expect(() => paintWorldDraftElevation(active, [target.id], 1001)).toThrow(/0 through 1000/)
   })
 })

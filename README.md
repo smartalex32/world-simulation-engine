@@ -39,7 +39,7 @@ Implemented:
 
 Next:
 
-* Milestone 8B.3B — Elevation Painting
+* Milestone 8B.3C — Water Editing
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 
@@ -705,11 +705,11 @@ Drawing:
 
 ## Terrain-Type Painting
 
-Terrain painting stores sparse, canonically ordered cell overrides in the worker-owned draft. A bounded paint command updates terrain-derived passability and preview validation deterministically. The same overrides are applied by the authoritative creation path only when the draft is explicitly committed.
+Terrain and elevation painting store sparse, canonically ordered cell overrides in the worker-owned draft. Bounded paint commands update terrain-derived passability and preview validation deterministically. Elevation uses the generator's explicit 0–1000 cell scale; an explicit terrain-type edit remains authoritative when both edit the same cell. The same overrides are applied by the authoritative creation path only when the draft is explicitly committed.
 
 Next:
 
-* Milestone 8B.3A — Terrain-Type Painting
+* Milestone 8B.3C — Water Editing
 
 See `docs/ROADMAP.md` for subsequent settlement editing, roads, import/export, and later authoring work.
 

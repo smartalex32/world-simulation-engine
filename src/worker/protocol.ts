@@ -11,6 +11,7 @@ export type SimulationCommand =
   | { type: 'UPDATE_DRAFT'; requestId: string; draftId: string; draft: WorldCreationDraft; expectedRevision?: number }
   | { type: 'UPDATE_DRAFT_ZONE_CELLS'; requestId: string; draftId: string; zoneId: string; cellIds: string[]; expectedRevision?: number }
   | { type: 'PAINT_DRAFT_TERRAIN'; requestId: string; draftId: string; cellIds: string[]; terrain: Terrain; expectedRevision?: number }
+  | { type: 'PAINT_DRAFT_ELEVATION'; requestId: string; draftId: string; cellIds: string[]; elevation: number; expectedRevision?: number }
   | { type: 'RESET_DRAFT'; requestId: string; draftId: string; expectedRevision?: number }
   | { type: 'REQUEST_DRAFT_PREVIEW'; requestId: string; draftId: string }
   | { type: 'REQUEST_DRAFT_VIEWPORT'; requestId: string; draftId: string; viewport: DraftViewportRequest }
@@ -30,7 +31,7 @@ export type SimulationResponse =
   | { type: 'READY' }
   | { type: 'FRAME'; requestId?: string; projection: WorkbenchProjection; events: SimulationEvent[]; statistics: StatisticSample[]; processingMs: number }
   | { type: 'STATUS'; requestId?: string; status: 'idle' | 'paused' | 'playing'; ticksPerBatch: number }
-  | { type: 'DRAFT'; requestId: string; action: 'created' | 'hydrated' | 'updated' | 'zoneCellsUpdated' | 'terrainPainted' | 'reset' | 'previewed' | 'committing' | 'committed' | 'discarded'; draft?: WorldDraftRecord; preview?: WorldDraftPreview }
+  | { type: 'DRAFT'; requestId: string; action: 'created' | 'hydrated' | 'updated' | 'zoneCellsUpdated' | 'terrainPainted' | 'elevationPainted' | 'reset' | 'previewed' | 'committing' | 'committed' | 'discarded'; draft?: WorldDraftRecord; preview?: WorldDraftPreview }
   | { type: 'DRAFT_VIEWPORT'; requestId: string; viewport: DraftViewportProjection }
   | { type: 'SNAPSHOT'; requestId: string; snapshot: WorkbenchSnapshotEnvelope }
   | { type: 'ERROR'; requestId?: string; message: string; stack?: string }

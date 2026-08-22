@@ -114,7 +114,7 @@ Do not implement distant systems merely because they appear later in this roadma
 
 ## Next Slice
 
-* Milestone 8B.3B — Elevation Painting
+* Milestone 8B.3C — Water Editing
 
 Detailed current implementation is documented in `README.md`.
 
@@ -421,6 +421,8 @@ Add:
 * Deterministic tests
 
 #### 8B.3B — Elevation Painting
+
+Status: Implemented
 
 Add controlled elevation editing after terrain-type mutation is stable.
 
@@ -1226,7 +1228,7 @@ Milestone 8B — Draft Map Authoring
 Next independently reviewable slice:
 
 ```text
-Milestone 8B.3B — Elevation Painting
+Milestone 8B.3C — Water Editing
 ```
 
 Intended immediate sequence:

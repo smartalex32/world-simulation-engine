@@ -1,6 +1,7 @@
 import {
   WORLD_CELL_RADIUS_METERS,
   type GeographicCell,
+  type ElevationOverride,
   type PopulationPlacementZone,
   type SettlementState,
   type WorldCreationDraft,
@@ -33,6 +34,7 @@ export function defaultWorldCreationRequest(seed: string, width = 32, height = 2
     populationZones: [],
     settlements: [],
     terrainOverrides: [],
+    elevationOverrides: [],
   }
 }
 
@@ -45,7 +47,7 @@ export function validateWorldCreationDraftLimits(value: WorldCreationDraft): voi
   const height = boundedInteger(value.height, WORLD_CREATION_LIMITS.minimumHeight, WORLD_CREATION_LIMITS.maximumHeight, 'World height')
   if (width * height > WORLD_CREATION_LIMITS.maximumCellCount) throw new RangeError('World cell count exceeds the 8A creation limit')
   boundedInteger(value.initialPopulationCount, WORLD_CREATION_LIMITS.minimumPopulation, WORLD_CREATION_LIMITS.maximumPopulation, 'Initial population')
-  if (!Array.isArray(value.populationZones) || !Array.isArray(value.settlements) || (value.terrainOverrides !== undefined && !Array.isArray(value.terrainOverrides))) throw new Error('World creation collections are invalid')
+  if (!Array.isArray(value.populationZones) || !Array.isArray(value.settlements) || (value.terrainOverrides !== undefined && !Array.isArray(value.terrainOverrides)) || (value.elevationOverrides !== undefined && !Array.isArray(value.elevationOverrides))) throw new Error('World creation collections are invalid')
 }
 
 /** Normalizes authored creation data after terrain is generated, without consuming randomness. */
@@ -58,8 +60,9 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
   if (enforceCreatorLimits && width * height > WORLD_CREATION_LIMITS.maximumCellCount) throw new RangeError('World cell count exceeds the 8A creation limit')
   if (cells.length !== width * height) throw new Error('Generated world dimensions do not match creation request')
   const initialPopulationCount = boundedInteger(value.initialPopulationCount, WORLD_CREATION_LIMITS.minimumPopulation, enforceCreatorLimits ? WORLD_CREATION_LIMITS.maximumPopulation : Number.MAX_SAFE_INTEGER, 'Initial population')
+  const elevationOverrides = normalizeElevationOverrides(value.elevationOverrides, cells)
   const terrainOverrides = normalizeTerrainOverrides(value.terrainOverrides, cells)
-  const editedCells = applyTerrainOverrides(cells, terrainOverrides)
+  const editedCells = applyTerrainOverrides(applyElevationOverrides(cells, elevationOverrides), terrainOverrides)
   const defaultCells = editedCells.filter((cell) => cell.habitability >= 500 && cell.movementCost > 0).map((cell) => cell.id).sort(compareText)
   const submittedZones = value.populationZones.length > 0 ? value.populationZones : [{
     id: 'population-zone-0001', name: 'Initial population', cellIds: defaultCells, populationCount: initialPopulationCount,
@@ -92,7 +95,7 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
       : { id: zone.id, name: zoneName, cellIds, populationCount, settlementId: zone.settlementId }
   }).sort((a, b) => compareText(a.id, b.id))
   if (zones.reduce((sum, zone) => sum + zone.populationCount, 0) !== initialPopulationCount) throw new Error('Population zone allocations must equal the initial population')
-  return { seed, name, width, height, initialPopulationCount, populationZones: zones, settlements, terrainOverrides }
+  return { seed, name, width, height, initialPopulationCount, populationZones: zones, settlements, terrainOverrides, elevationOverrides }
 }
 
 /** Applies sparse terrain edits without randomness; derived cell values remain coherent. */
@@ -100,10 +103,16 @@ export function applyTerrainOverrides(cells: readonly GeographicCell[], override
   const terrainByCellId = new Map(overrides.map((override) => [override.cellId, override.terrain]))
   return cells.map((cell) => {
     const terrain = terrainByCellId.get(cell.id)
-    if (!terrain || terrain === cell.terrain) return { ...cell }
-    const habitability = terrain === 'water' ? 0 : terrain === 'hill' ? Math.max(150, 780 - cell.elevation) : Math.max(450, 900 - Math.abs(cell.elevation - 300))
-    const resourceCapacity = terrain === 'water' ? 0 : cell.resourceCapacity
-    return { ...cell, terrain, habitability, movementCost: terrain === 'water' ? 0 : terrain === 'hill' ? 1800 : 1000, resourceCapacity, foodAmount: terrain === 'water' ? 0 : Math.min(cell.foodAmount, resourceCapacity), foodRegenerationPerDay: terrain === 'water' || resourceCapacity === 0 ? 0 : Math.max(1, Math.floor(resourceCapacity / 12)) }
+    return terrain ? withTerrainAndElevation(cell, terrain, cell.elevation) : { ...cell }
+  })
+}
+
+/** Applies absolute elevation edits, recalculating the current terrain's derived geography. */
+export function applyElevationOverrides(cells: readonly GeographicCell[], overrides: readonly ElevationOverride[]): GeographicCell[] {
+  const elevationByCellId = new Map(overrides.map((override) => [override.cellId, override.elevation]))
+  return cells.map((cell) => {
+    const elevation = elevationByCellId.get(cell.id)
+    return elevation === undefined ? { ...cell } : withTerrainAndElevation(cell, cell.terrain, elevation)
   })
 }
 
@@ -119,6 +128,26 @@ function normalizeTerrainOverrides(value: readonly TerrainTypeOverride[] | undef
     ids.add(override.cellId)
     return { cellId: override.cellId, terrain: override.terrain }
   }).sort((first, second) => compareText(first.cellId, second.cellId))
+}
+
+function normalizeElevationOverrides(value: readonly ElevationOverride[] | undefined, cells: readonly GeographicCell[]): ElevationOverride[] {
+  if (value === undefined) return []
+  if (value.length > cells.length) throw new Error('Elevation override count exceeds world cell count')
+  const validCellIds = new Set(cells.map((cell) => cell.id))
+  const ids = new Set<string>()
+  return value.map((override) => {
+    if (!override || typeof override !== 'object' || typeof override.cellId !== 'string' || !validCellIds.has(override.cellId)) throw new Error('Elevation override has an unknown cell')
+    if (!Number.isSafeInteger(override.elevation) || override.elevation < 0 || override.elevation > 1000) throw new Error('Elevation override value is invalid')
+    if (ids.has(override.cellId)) throw new Error(`Duplicate elevation override for ${override.cellId}`)
+    ids.add(override.cellId)
+    return { cellId: override.cellId, elevation: override.elevation }
+  }).sort((first, second) => compareText(first.cellId, second.cellId))
+}
+
+function withTerrainAndElevation(cell: GeographicCell, terrain: Terrain, elevation: number): GeographicCell {
+  const habitability = terrain === 'water' ? 0 : terrain === 'hill' ? Math.max(150, 780 - elevation) : Math.max(450, 900 - Math.abs(elevation - 300))
+  const resourceCapacity = terrain === 'water' ? 0 : cell.resourceCapacity
+  return { ...cell, terrain, elevation, habitability, movementCost: terrain === 'water' ? 0 : terrain === 'hill' ? 1800 : 1000, resourceCapacity, foodAmount: terrain === 'water' ? 0 : Math.min(cell.foodAmount, resourceCapacity), foodRegenerationPerDay: terrain === 'water' || resourceCapacity === 0 ? 0 : Math.max(1, Math.floor(resourceCapacity / 12)) }
 }
 
 export function fixedWorldScale() {
