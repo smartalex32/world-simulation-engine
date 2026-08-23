@@ -84,6 +84,10 @@ test('persists an accepted drawn zone through reload and commits its authoritati
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
   let setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  // The dialog becomes visible before its worker-owned draft is fully
+  // accepted and persisted. Wait for the explicit acknowledgement boundary
+  // before changing a controlled form field.
+  await expect(setup.getByRole('button', { name: 'Commit & create world', exact: true })).toBeEnabled()
   await setup.getByLabel('Zone 1 has settlement').uncheck()
   let map = setup.getByLabel('Draft placement zone map')
   await expect.poll(async () => map.getAttribute('data-draft-map-revision')).toMatch(/^\d+$/)
