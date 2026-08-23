@@ -51,6 +51,9 @@ Implemented:
 * Milestone 15 — Language
 * Milestone 16 — Local Governance Foundation
 * Milestone 17 — Interpersonal Conflict Foundation
+* Milestone 18 — Politics and Government Foundations
+* Milestone 19 — Massive Simulation Scale (bounded inspection transport foundation)
+* Milestone 20 — Historical Inspection (evidence history foundation)
 
 Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. Linked population zones retain their existing anchor-containment validation.
 
@@ -58,7 +61,9 @@ Draft roads are ordered, contiguous passable-cell segments. They are validated b
 
 Drafts can also be imported and exported as a versioned JSON bundle. Bundles include the draft record, generator version, dimensions, scale, seed, terrain/resource edits, population zones, settlements, and roads; incompatible versions are rejected rather than silently reinterpreted.
 
-Next: Milestone 13 — Institutions and Organizations.
+Historical inspection reads bounded, indexed event and sampled-metric evidence from IndexedDB. The History workspace offers selected-person timelines, curated major recorded-event highlights, and population/resource/social trends. It never invents events or mutates authoritative simulation state. Household and settlement history views, time-lapse replay, and richer causal drill-down remain future slices.
+
+Next: Milestone 21 — Optional Narrative Presentation, or Milestone 22 — Simulation Workbench Experience if presentation work is prioritized over optional narrative.
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 

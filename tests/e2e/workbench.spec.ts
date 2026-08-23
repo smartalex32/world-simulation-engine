@@ -59,6 +59,16 @@ test('opens the world setup surface with explicit scale and placement allocation
   await expect(page.locator('.world-overview strong')).toHaveText('Ardentia')
 })
 
+test('loads persisted historical evidence without changing the active world', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  await page.getByRole('button', { name: 'history', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Recorded evidence over time' })).toBeVisible()
+  await expect(page.getByText('Major recorded events')).toBeVisible()
+  await expect(page.getByText('Person timeline')).toBeVisible()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+})
+
 test('shows a bounded generated map only for a non-settlement draft zone', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
