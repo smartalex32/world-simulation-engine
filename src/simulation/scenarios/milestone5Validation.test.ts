@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { PersonState, SimulationState } from '../domain/types'
+import { SNAPSHOT_SCHEMA_VERSION, type PersonState, type SimulationState } from '../domain/types'
 import { SimulationEngine } from '../engine/engine'
 import { validateHouseholdActivityState } from '../engine/invariants'
 import { resolveCurrentActivity, commonsActivityId } from '../activities/model'
@@ -124,7 +124,7 @@ describe('Milestone 5 bounded validation', () => {
     const firstSnapshot = await first.snapshot()
     const secondSnapshot = await second.snapshot()
     expect(firstSnapshot).toEqual(secondSnapshot)
-    expect(firstSnapshot.schemaVersion).toBe(22)
+    expect(firstSnapshot.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION)
     expect(firstSnapshot.state.randomStreams.map(({ name }) => name)).toEqual([...firstSnapshot.state.randomStreams.map(({ name }) => name)].sort())
 
     const restored = await SimulationEngine.restore(firstSnapshot)

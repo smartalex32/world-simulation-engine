@@ -8,7 +8,7 @@ import {
   fixedWorldScale,
   normalizeWorldCreationRequest,
 } from '../domain/worldCreation'
-import type { WorldCreationDraft } from '../domain/types'
+import { SNAPSHOT_SCHEMA_VERSION, type WorldCreationDraft } from '../domain/types'
 
 describe('Milestone 8A world creation validation', () => {
   it('normalizes authored requests without consuming randomness', () => {
@@ -64,7 +64,7 @@ describe('Milestone 8A world creation validation', () => {
 
   it('round-trips schema 12 and rejects the prior schema explicitly', async () => {
     const snapshot = await SimulationEngine.create('m8a-schema-round-trip').snapshot()
-    expect(snapshot.schemaVersion).toBe(22)
+    expect(snapshot.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION)
     expect((await validateSnapshot(structuredClone(snapshot))).digest).toBe(snapshot.digest)
     const unsupported = structuredClone(snapshot)
     unsupported.schemaVersion = 8
