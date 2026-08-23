@@ -9,6 +9,7 @@ import {
   ECONOMY_MODEL_VERSION,
   ORGANIZATION_MODEL_VERSION,
   CULTURE_MODEL_VERSION,
+  LANGUAGE_MODEL_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
@@ -71,6 +72,7 @@ import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STR
 import { resolveFoodShares } from '../economy/model'
 import { createInitialSchools } from '../organizations/model'
 import { createCulturalState, transmitCulture } from '../culture/model'
+import { acquireLanguage, initialLanguage } from '../language/model'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -188,6 +190,7 @@ export class SimulationEngine {
         economyModelVersion: ECONOMY_MODEL_VERSION,
         organizationModelVersion: ORGANIZATION_MODEL_VERSION,
         cultureModelVersion: CULTURE_MODEL_VERSION,
+        languageModelVersion: LANGUAGE_MODEL_VERSION,
       },
       world,
       people: generatedPopulation.people,
@@ -991,6 +994,7 @@ export class SimulationEngine {
       locationCellId: household.homeCellId, homeCellId: household.homeCellId, householdId: household.id,
       occupation: 'dependent',
       culture: createCulturalState(),
+      language: initialLanguage(this.cellById.get(household.homeCellId)?.q ?? 0),
       activityScheduleId: scheduleForAge(0), currentActivity: { kind: 'home', locationId: household.homeActivityLocationId, sinceTick: this.state.tick },
       originTraces: [inheritance.trace], development: { exposures: [{ ...createParentCuriosityExposureAccumulator(Math.floor(this.state.tick / 720) * 720 + 1), sourcePersonIds: [] }], broader: createBroaderDevelopmentState(Math.floor(this.state.tick / 720) * 720 + 1) },
       environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0 }, variables, knownCellIds: [household.homeCellId],
@@ -1043,6 +1047,8 @@ export class SimulationEngine {
     if (encounter.outcome === 'positive') {
       transmitCulture(initiator, participant, updated, this.state.tick)
       transmitCulture(participant, initiator, updated, this.state.tick)
+      acquireLanguage(initiator, participant, this.state.tick)
+      acquireLanguage(participant, initiator, this.state.tick)
     }
     this.recordPeerDevelopmentExposure(initiator, participant, updated)
     return !existing

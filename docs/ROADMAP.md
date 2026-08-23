@@ -963,7 +963,7 @@ Implemented: each person has a separate bounded learned-belief state for explora
 
 # Milestone 15 — Language
 
-Status: Future
+Status: Implemented
 
 ## Goal
 
@@ -981,6 +981,8 @@ Potential capabilities:
 * Language divergence
 
 Language should emerge through social and geographic mechanisms rather than static faction identity.
+
+Implemented: people hold bounded fluency in two initial geographic language varieties. Shared fluency changes encounter outcome weights, and children can acquire additional fluency only through real positive encounters. Language state is separate from culture, traits, and community membership.
 
 ---
 
