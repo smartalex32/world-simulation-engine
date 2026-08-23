@@ -462,6 +462,10 @@ These categories remain semantically distinct even if they share registry or sto
 
 Bounded integer permille values are used where appropriate.
 
+## Knowledge
+
+Knowledge is person-owned learned state, separate from traits and skills. The first version includes foraging and local-terrain knowledge. Completed exploration adds local-terrain knowledge; positive, co-present encounters may transfer a bounded portion of a knowledge gap according to the recipient's directional relationship trust. Foraging knowledge produces a bounded harvest-yield improvement. These outcomes are visible in per-person traces and meaningful events. No global technology tree or automatic organization-membership transfer exists.
+
 ---
 
 # Influence System

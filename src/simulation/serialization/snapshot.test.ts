@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SimulationEngine } from '../engine/engine'
+import { KNOWLEDGE_MODEL_VERSION } from '../domain/types'
 import { createSnapshot, canonicalStringify, validateSnapshot } from './snapshot'
 
 describe('canonical serialization', () => {
@@ -9,13 +10,14 @@ describe('canonical serialization', () => {
     )
   })
 
-  it('round-trips schema 21 including interpersonal disputes', async () => {
+  it('round-trips schema 22 including person knowledge', async () => {
     const snapshot = await SimulationEngine.create('schema-6-round-trip').snapshot()
     const validated = await validateSnapshot(structuredClone(snapshot))
 
     expect(validated).toEqual(snapshot)
-    expect(validated.schemaVersion).toBe(21)
-    expect(validated.engineVersion).toBe('0.21.0')
+    expect(validated.schemaVersion).toBe(22)
+    expect(validated.engineVersion).toBe('0.22.0')
+    expect(validated.state.people[0]?.knowledge).toEqual(expect.objectContaining({ 'knowledge.foraging': expect.any(Number), 'knowledge.localTerrain': expect.any(Number) }))
     expect(validated.state.households).toHaveLength(100)
     expect(validated.state.parentChildLinks).toHaveLength(100)
     expect(validated.state.communities).toHaveLength(2)
@@ -48,6 +50,23 @@ describe('canonical serialization', () => {
     const lifeCycleMismatch = structuredClone(base.state)
     lifeCycleMismatch.config.lifeCycleModelVersion += 1
     await expect(validateSnapshot(await createSnapshot(lifeCycleMismatch))).rejects.toThrow('Unsupported life-cycle model version')
+
+    const knowledgeMismatch = structuredClone(base.state)
+    knowledgeMismatch.config.knowledgeModelVersion = KNOWLEDGE_MODEL_VERSION + 1
+    await expect(validateSnapshot(await createSnapshot(knowledgeMismatch))).rejects.toThrow('Unsupported knowledge model version')
+  })
+
+  it('rejects missing or out-of-range person knowledge', async () => {
+    const base = await SimulationEngine.create('schema-22-knowledge-rejection').snapshot()
+    const missing = structuredClone(base.state)
+    if (!missing.people[0]) throw new Error('Missing controlled person fixture')
+    delete missing.people[0].knowledge
+    await expect(validateSnapshot(await createSnapshot(missing))).rejects.toThrow('invalid knowledge records')
+
+    const outOfRange = structuredClone(base.state)
+    if (!outOfRange.people[0]?.knowledge) throw new Error('Missing controlled knowledge fixture')
+    outOfRange.people[0].knowledge['knowledge.foraging'] = 1001
+    await expect(validateSnapshot(await createSnapshot(outOfRange))).rejects.toThrow('invalid knowledge values')
   })
 
   it('rejects malformed household membership, links, locations, and inheritance sources', async () => {

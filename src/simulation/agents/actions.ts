@@ -26,6 +26,7 @@ import {
   WORK_FATIGUE_COST,
 } from './actionConfig'
 import { consumeHouseholdFood, harvestFood } from '../economy/model'
+import { harvestEfficiencyPermille } from '../knowledge/model'
 
 export interface Candidate {
   action: ActionName
@@ -188,7 +189,7 @@ export function resolveAction(person: PersonState, decision: ActionDecision, con
     const household = context.householdById?.get(person.householdId)
     const cell = context.cellById.get(person.locationCellId)
     if (household?.inventory && cell && person.occupation === 'forager') {
-      outcome.foodProduced = harvestFood(cell, household.inventory)
+      outcome.foodProduced = harvestFood(cell, household.inventory, harvestEfficiencyPermille(person.knowledge ?? { 'knowledge.foraging': 0, 'knowledge.localTerrain': 0 }))
       adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, WORK_FATIGUE_COST)
     }
   }

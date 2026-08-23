@@ -12,6 +12,7 @@ import {
   LANGUAGE_MODEL_VERSION,
   GOVERNANCE_MODEL_VERSION,
   CONFLICT_MODEL_VERSION,
+  KNOWLEDGE_MODEL_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
@@ -77,6 +78,7 @@ import { createCulturalState, transmitCulture } from '../culture/model'
 import { acquireLanguage, initialLanguage } from '../language/model'
 import { createLocalGovernance, updateLegitimacy } from '../governance/model'
 import { applyDispute, disputeId } from '../conflict/model'
+import { discoverLocalTerrain, initialKnowledge, transmitKnowledge } from '../knowledge/model'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -200,6 +202,7 @@ export class SimulationEngine {
         languageModelVersion: LANGUAGE_MODEL_VERSION,
         governanceModelVersion: GOVERNANCE_MODEL_VERSION,
         conflictModelVersion: CONFLICT_MODEL_VERSION,
+        knowledgeModelVersion: KNOWLEDGE_MODEL_VERSION,
       },
       world,
       people: generatedPopulation.people,
@@ -265,6 +268,7 @@ export class SimulationEngine {
           if (journey.kind === 'explore') {
             this.recordCommunityExplorationArrival(journey.targetCellId)
             this.recordActivityDevelopment(person)
+            this.recordKnowledgeDiscovery(person, pushEvent)
           }
           pushEvent(this.journeyEvent(person.id, journey))
         }
@@ -288,7 +292,10 @@ export class SimulationEngine {
         if (decision.action === 'work') this.economicCounters().productiveHours += 1
         if (outcome.failedMeal) this.state.dailySpatialCounters.failedMeals += 1
         this.recordCommunityAction(decision.action, outcome)
-        if (decision.action === 'explore' && outcome.arrived) this.recordActivityDevelopment(person)
+        if (decision.action === 'explore' && outcome.arrived) {
+          this.recordActivityDevelopment(person)
+          this.recordKnowledgeDiscovery(person, pushEvent)
+        }
         if (decision.action === 'explore' && outcome.arrived && decision.targetCellId) this.recordCommunityExplorationArrival(decision.targetCellId)
         pushEvent(this.actionEvent(person.id, decision, outcome))
       }
@@ -305,7 +312,7 @@ export class SimulationEngine {
         relationshipsById: this.relationshipById,
       }, this.random.stream('encounters'))
       for (const encounter of encounters) {
-        const formed = this.applyEncounter(encounter)
+        const formed = this.applyEncounter(encounter, pushEvent)
         this.recordCommunityEncounter(encounter)
         if (formed) pushEvent(this.relationshipFormedEvent(encounter))
         pushEvent(this.encounterEvent(encounter))
@@ -941,6 +948,18 @@ export class SimulationEngine {
     this.replaceBroaderExposure(person, accumulateBroaderExposure({ accumulator, tick: this.state.tick, sourceValuePermille: 1000, sourceContextId: 'action.explore' }))
   }
 
+  private recordKnowledgeDiscovery(person: SimulationState['people'][number], pushEvent: (event: SimulationEvent) => void): void {
+    const trace = discoverLocalTerrain(person, getPersonVariable(person.variables, PERSON_VARIABLE_ID.curiosity), this.state.tick)
+    if (trace.gain > 0) pushEvent(this.event('PERSON_KNOWLEDGE_DISCOVERED', { personId: person.id, knowledgeId: trace.knowledgeId, source: trace.source, previousValue: trace.previousValue, gain: trace.gain, currentValue: trace.currentValue }))
+  }
+
+  private recordKnowledgeTransmission(source: SimulationState['people'][number], recipient: SimulationState['people'][number], relationshipTrust: number, pushEvent: (event: SimulationEvent) => void): void {
+    for (const knowledgeId of ['knowledge.foraging', 'knowledge.localTerrain'] as const) {
+      const trace = transmitKnowledge(source, recipient, knowledgeId, relationshipTrust, this.state.tick)
+      if (trace) pushEvent(this.event('PERSON_KNOWLEDGE_SHARED', { personId: recipient.id, sourcePersonId: source.id, knowledgeId, previousValue: trace.previousValue, sourceValue: trace.sourceValue ?? 0, relationshipTrust, gain: trace.gain, currentValue: trace.currentValue }))
+    }
+  }
+
   private replaceBroaderExposure(person: SimulationState['people'][number], updated: NonNullable<SimulationState['people'][number]['development']['broader']>['exposures'][number]): void {
     const broader = person.development.broader
     if (!broader) throw new Error(`Person ${person.id} is missing broader development state`)
@@ -1012,6 +1031,7 @@ export class SimulationEngine {
       occupation: 'dependent',
       culture: createCulturalState(),
       language: initialLanguage(this.cellById.get(household.homeCellId)?.q ?? 0),
+      knowledge: initialKnowledge(0, 'dependent'),
       activityScheduleId: scheduleForAge(0), currentActivity: { kind: 'home', locationId: household.homeActivityLocationId, sinceTick: this.state.tick },
       originTraces: [inheritance.trace], development: { exposures: [{ ...createParentCuriosityExposureAccumulator(Math.floor(this.state.tick / 720) * 720 + 1), sourcePersonIds: [] }], broader: createBroaderDevelopmentState(Math.floor(this.state.tick / 720) * 720 + 1) },
       environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0 }, variables, knownCellIds: [household.homeCellId],
@@ -1032,7 +1052,7 @@ export class SimulationEngine {
     return this.state.people.filter((person) => person.lifeStatus !== 'dead')
   }
 
-  private applyEncounter(encounter: ResolvedEncounter): boolean {
+  private applyEncounter(encounter: ResolvedEncounter, pushEvent: (event: SimulationEvent) => void): boolean {
     const id = relationshipId(encounter.initiatorId, encounter.participantId)
     const existing = this.relationshipById.get(id)
     const updated = applyEncounter(existing ?? createRelationship(encounter.initiatorId, encounter.participantId), encounter.outcome, this.state.tick)
@@ -1069,6 +1089,8 @@ export class SimulationEngine {
       transmitCulture(participant, initiator, updated, this.state.tick)
       acquireLanguage(initiator, participant, this.state.tick)
       acquireLanguage(participant, initiator, this.state.tick)
+      this.recordKnowledgeTransmission(initiator, participant, updated.aToB.trust, pushEvent)
+      this.recordKnowledgeTransmission(participant, initiator, updated.bToA.trust, pushEvent)
     }
     this.recordPeerDevelopmentExposure(initiator, participant, updated)
     return !existing
@@ -1183,6 +1205,7 @@ export class SimulationEngine {
     for (const person of this.state.people) {
       if (!this.cellById.has(person.locationCellId)) throw new Error(`Person ${person.id} occupies a missing cell`)
       validatePersonVariableValues(person.variables)
+      if (!person.knowledge || Object.values(person.knowledge).some((value) => !Number.isSafeInteger(value) || value < 0 || value > 1000)) throw new Error(`Person ${person.id} has invalid knowledge values`)
       if (person.journey) {
         const destination = this.cellById.get(person.journey.destinationCellId)
         if (!destination?.movementCost) throw new Error(`Person ${person.id} is traveling to an invalid cell`)

@@ -20,8 +20,9 @@ export function initialInventory(memberCount: number): HouseholdInventory {
   return { food: memberCount * ECONOMY.initialFoodPerHouseholdMember }
 }
 
-export function harvestFood(cell: GeographicCell, inventory: HouseholdInventory): number {
-  const amount = Math.min(ECONOMY.foodPerWorkHour, cell.foodAmount)
+export function harvestFood(cell: GeographicCell, inventory: HouseholdInventory, efficiencyPermille = 1000): number {
+  if (!Number.isSafeInteger(efficiencyPermille) || efficiencyPermille < 0) throw new RangeError('Harvest efficiency must be a non-negative safe integer')
+  const amount = Math.min(Math.floor(ECONOMY.foodPerWorkHour * efficiencyPermille / 1000), cell.foodAmount)
   cell.foodAmount -= amount
   inventory.food += amount
   return amount

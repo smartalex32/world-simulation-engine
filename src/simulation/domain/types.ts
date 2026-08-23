@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.21.0'
-export const SNAPSHOT_SCHEMA_VERSION = 21
+export const ENGINE_VERSION = '0.22.0'
+export const SNAPSHOT_SCHEMA_VERSION = 22
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -27,6 +27,8 @@ export const CULTURE_MODEL_VERSION = 1
 export const LANGUAGE_MODEL_VERSION = 1
 export const GOVERNANCE_MODEL_VERSION = 1
 export const CONFLICT_MODEL_VERSION = 1
+/** Versioned, person-owned knowledge acquisition and application rules. */
+export const KNOWLEDGE_MODEL_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
@@ -232,6 +234,19 @@ export interface OrganizationState {
 export interface LocalGovernanceState { id: string; communityId: string; councilOrganizationId: string; representativeIds: string[]; legitimacy: number; lastUpdatedTick: number }
 /** Interpersonal grievance state; not combat, a military unit, or warfare. */
 export interface DisputeState { id: string; personAId: string; personBId: string; grievance: number; incidents: number; lastIncidentTick: number; communityId: string }
+/** Knowledge is learned and applied separately from dispositions, values, and skills. */
+export type KnowledgeId = 'knowledge.foraging' | 'knowledge.localTerrain'
+export type PersonKnowledge = Record<KnowledgeId, number>
+export interface KnowledgeTrace {
+  knowledgeId: KnowledgeId
+  source: 'exploration' | 'peer-transmission'
+  tick: number
+  previousValue: number
+  sourceValue?: number
+  relationshipTrust?: number
+  gain: number
+  currentValue: number
+}
 export type PersonOccupation = 'forager' | 'household' | 'dependent'
 export interface HouseholdInventory { food: number }
 export type ParentChildLinkId = string
@@ -529,6 +544,9 @@ export interface PersonState {
   occupation?: PersonOccupation
   culture?: CulturalState
   language?: LanguageState
+  /** Required in authoritative schema-22 snapshots; optional only for narrow legacy/unit fixtures. */
+  knowledge?: PersonKnowledge
+  lastKnowledgeTrace?: KnowledgeTrace
   activityScheduleId: ActivityScheduleId
   currentActivity: CurrentActivityState
   originTraces: CuriosityInheritanceTrace[]
@@ -609,6 +627,7 @@ export interface RunConfiguration {
   languageModelVersion?: number
   governanceModelVersion?: number
   conflictModelVersion?: number
+  knowledgeModelVersion?: number
 }
 
 export interface RandomStreamSnapshot {
@@ -646,7 +665,7 @@ export interface SimulationEvent {
   id: string
   runId: string
   tick: number
-  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_WORKED' | 'HOUSEHOLDS_SHARED_FOOD' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
+  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_WORKED' | 'HOUSEHOLDS_SHARED_FOOD' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_KNOWLEDGE_DISCOVERED' | 'PERSON_KNOWLEDGE_SHARED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
   version: 1
   cellId?: string
   payload: Record<string, string | number | boolean | null>
