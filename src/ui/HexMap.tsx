@@ -43,7 +43,12 @@ export function HexMap({ world, settlements = [], roads = [], map, overlay, comm
     const container = containerRef.current
     if (!container) return
     const observer = new ResizeObserver(([entry]) => {
-      if (entry) setViewport((current) => ({ ...current, width: entry.contentRect.width, height: entry.contentRect.height }))
+      if (!entry) return
+      const { width, height } = entry.contentRect
+      // Browsers may repeat identical ResizeObserver records after canvas
+      // drawing. Do not turn those into an endless stream of viewport worker
+      // requests that can starve the latest projection on slower CI runners.
+      setViewport((current) => current.width === width && current.height === height ? current : { ...current, width, height })
     })
     observer.observe(container)
     return () => observer.disconnect()
