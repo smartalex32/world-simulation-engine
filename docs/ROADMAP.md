@@ -114,7 +114,7 @@ Do not implement distant systems merely because they appear later in this roadma
 
 ## Next Slice
 
-* Milestone 21 — Optional Narrative Presentation (optional), or Milestone 22 — Simulation Workbench Experience
+* Milestone 22 — Simulation Workbench Experience
 
 Detailed current implementation is documented in `README.md`.
 
@@ -1174,7 +1174,7 @@ Deferred: dedicated household, settlement, and community history views; historic
 
 # Milestone 21 — Optional Narrative Presentation
 
-Status: Future / Optional
+Status: Implemented (deterministic template presentation)
 
 ## Goal
 
@@ -1197,6 +1197,10 @@ Generated narrative must remain:
 * Separate from canonical digests
 
 The simulation must remain fully functional and explainable without it.
+
+Implemented: the History workspace includes an optional deterministic chronicle. It presents selected categories of already-recorded significant events through fixed local templates and exposes the exact evidence event ID. It does not call an AI service, generate new simulation facts, mutate state, use simulation RNG, or participate in canonical digests.
+
+Deferred: any generative-AI narrative layer. If ever introduced, it must remain user-invoked, replaceable, strictly non-authoritative, and downstream of the existing structured evidence history.
 
 ---
 

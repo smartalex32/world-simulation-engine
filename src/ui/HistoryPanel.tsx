@@ -1,4 +1,6 @@
 import { HISTORY_METRICS, historicalHighlights, metricDelta, metricTimeline, personTimeline } from '../history/history'
+import { buildChronicle } from '../history/chronicle'
+import { useState } from 'react'
 import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
 
 interface HistoryPanelProps {
@@ -11,12 +13,14 @@ interface HistoryPanelProps {
 }
 
 export function HistoryPanel({ events, statistics, selectedPersonId, onInspectPerson, onRefresh, loading }: HistoryPanelProps) {
+  const [showChronicle, setShowChronicle] = useState(false)
   const timeline = selectedPersonId ? personTimeline(events, selectedPersonId, 24) : []
   const highlights = historicalHighlights(events, 12)
+  const chronicle = buildChronicle(events, 12)
   return <section className="history-panel" aria-label="Historical inspection">
     <header className="history-heading">
       <div><span className="eyebrow">HISTORICAL INSPECTION</span><h2>Recorded evidence over time</h2><p>Events and sampled metrics are read from local run history; nothing is inferred.</p></div>
-      <button onClick={onRefresh} disabled={loading}>{loading ? 'Loading…' : 'Refresh history'}</button>
+      <div className="history-actions"><button onClick={() => setShowChronicle((value) => !value)} aria-pressed={showChronicle}>{showChronicle ? 'Evidence view' : 'Chronicle view'}</button><button onClick={onRefresh} disabled={loading}>{loading ? 'Loading…' : 'Refresh history'}</button></div>
     </header>
     <div className="history-grid">
       <section className="history-section">
@@ -29,9 +33,10 @@ export function HistoryPanel({ events, statistics, selectedPersonId, onInspectPe
         })}
       </section>
       <section className="history-section">
-        <h3>Major recorded events</h3>
-        {highlights.length === 0 && <p className="history-empty">No significant recorded events are available yet.</p>}
-        <div className="history-event-list">{highlights.map(({ event, reason }) => <HistoryEvent key={event.id} event={event} label={reason.replace('-', ' ')} onInspectPerson={onInspectPerson} />)}</div>
+        <h3>{showChronicle ? 'Deterministic chronicle' : 'Major recorded events'}</h3>
+        {showChronicle
+          ? <><p className="chronicle-note">Fixed templates from recorded evidence; this never affects the simulation.</p>{chronicle.length === 0 && <p className="history-empty">No significant recorded events are available yet.</p>}<div className="history-event-list">{chronicle.map((entry) => <article className="history-event chronicle-entry" key={entry.id}><span>Tick {entry.tick}</span><strong>{entry.text}</strong><em>{entry.category}</em><small>Evidence: {entry.evidenceEventId}</small></article>)}</div></>
+          : <>{highlights.length === 0 && <p className="history-empty">No significant recorded events are available yet.</p>}<div className="history-event-list">{highlights.map(({ event, reason }) => <HistoryEvent key={event.id} event={event} label={reason.replace('-', ' ')} onInspectPerson={onInspectPerson} />)}</div></>}
       </section>
       <section className="history-section">
         <h3>{selectedPersonId ? `Timeline · ${selectedPersonId}` : 'Person timeline'}</h3>
