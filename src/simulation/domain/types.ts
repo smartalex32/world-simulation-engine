@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.15.0'
-export const SNAPSHOT_SCHEMA_VERSION = 15
+export const ENGINE_VERSION = '0.16.0'
+export const SNAPSHOT_SCHEMA_VERSION = 16
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -20,6 +20,8 @@ export const WORLD_GENERATOR_VERSION = 1
 /** Versioned deterministic calendar/exposure rules used by Milestone 9. */
 export const ENVIRONMENT_MODEL_VERSION = 1
 export const LIFE_CYCLE_MODEL_VERSION = 1
+/** Versioned, non-monetary household food production and sharing rules. */
+export const ECONOMY_MODEL_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
@@ -207,6 +209,8 @@ export interface WorldState {
 }
 
 export type HouseholdId = string
+export type PersonOccupation = 'forager' | 'household' | 'dependent'
+export interface HouseholdInventory { food: number }
 export type ParentChildLinkId = string
 export type ActivityLocationId = string
 export type ActivityLocationKind = 'home' | 'commons'
@@ -218,6 +222,8 @@ export interface HouseholdState {
   homeCellId: string
   homeActivityLocationId: ActivityLocationId
   memberIds: string[]
+  /** Household-owned goods. Natural cell food remains an unowned environmental resource. */
+  inventory?: HouseholdInventory
 }
 
 export interface ParentChildLink {
@@ -398,7 +404,7 @@ export interface LastEncounter {
   familiarityAfter: number
 }
 
-export type ActionName = 'eat' | 'move' | 'explore' | 'rest' | 'socialize'
+export type ActionName = 'eat' | 'move' | 'explore' | 'rest' | 'socialize' | 'work'
 
 export interface UnattributedUtilityContribution {
   kind: 'base' | 'context' | 'interaction'
@@ -490,6 +496,7 @@ export interface PersonState {
   /** Authored starting home, retained when an adult later changes household. */
   initialHomeCellId?: string
   householdId: HouseholdId
+  occupation?: PersonOccupation
   activityScheduleId: ActivityScheduleId
   currentActivity: CurrentActivityState
   originTraces: CuriosityInheritanceTrace[]
@@ -540,6 +547,15 @@ export interface DailyLifeCycleCounters {
   lifeStageTransitions: number
 }
 
+/** Daily, whole-food-unit accounting. Transfers preserve total household food. */
+export interface DailyEconomicCounters {
+  productiveHours: number
+  foodProduced: number
+  foodConsumedFromHouseholds: number
+  foodShared: number
+  exchangeCount: number
+}
+
 export interface RunConfiguration {
   seed: string
   worldWidth: number
@@ -555,6 +571,7 @@ export interface RunConfiguration {
   communityRegistryVersion: number
   environmentModelVersion: number
   lifeCycleModelVersion: number
+  economyModelVersion?: number
 }
 
 export interface RandomStreamSnapshot {
@@ -581,6 +598,7 @@ export interface SimulationState {
   dailyActivityCounters: DailyActivityCounters
   dailyDevelopmentCounters: DailyDevelopmentCounters
   dailyLifeCycleCounters: DailyLifeCycleCounters
+  dailyEconomicCounters?: DailyEconomicCounters
   randomStreams: RandomStreamSnapshot[]
 }
 
@@ -588,13 +606,13 @@ export interface SimulationEvent {
   id: string
   runId: string
   tick: number
-  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
+  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_WORKED' | 'HOUSEHOLDS_SHARED_FOOD' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
   version: 1
   cellId?: string
   payload: Record<string, string | number | boolean | null>
 }
 
-export type WorldStatisticMetricId = 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.aliveCount' | 'population.averageHunger' | 'lifecycle.births' | 'lifecycle.deaths' | 'lifecycle.partnershipsFormed' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodConsumed' | 'resources.failedMeals' | 'social.encounters' | 'social.encountersPer1000People' | 'social.relationshipCount' | 'social.networkDensityPermille' | 'social.averageFamiliarity' | 'social.positiveEncounters' | 'social.tenseEncounters' | 'activity.homePersonHours' | 'activity.commonsPersonHours' | 'activity.travelPersonHours' | 'household.parentChildCoExposureSourceHours' | 'development.experiences' | 'development.curiosityChanges' | 'development.absoluteCuriosityChange' | 'development.broaderExperiences' | 'development.broaderChanges'
+export type WorldStatisticMetricId = 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.aliveCount' | 'population.averageHunger' | 'lifecycle.births' | 'lifecycle.deaths' | 'lifecycle.partnershipsFormed' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodConsumed' | 'resources.failedMeals' | 'economy.householdFood' | 'economy.productiveHours' | 'economy.foodProduced' | 'economy.foodShared' | 'economy.exchangeCount' | 'social.encounters' | 'social.encountersPer1000People' | 'social.relationshipCount' | 'social.networkDensityPermille' | 'social.averageFamiliarity' | 'social.positiveEncounters' | 'social.tenseEncounters' | 'activity.homePersonHours' | 'activity.commonsPersonHours' | 'activity.travelPersonHours' | 'household.parentChildCoExposureSourceHours' | 'development.experiences' | 'development.curiosityChanges' | 'development.absoluteCuriosityChange' | 'development.broaderExperiences' | 'development.broaderChanges'
 
 export type CommunityStatisticMetricId = 'community.emergent.socialTrust' | 'community.emergent.cohesion' | 'community.emergent.cooperation' | 'community.emergent.conflict' | 'community.emergent.innovationClimate' | 'community.structural.foodSecurity' | 'community.exposedPersonHours' | 'community.encounters'
 

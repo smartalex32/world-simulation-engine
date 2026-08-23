@@ -13,6 +13,7 @@ export const DECISION_INFLUENCE_TARGET = Object.freeze({
   exploreUtility: 'decision.explore.utility',
   restUtility: 'decision.rest.utility',
   socializeUtility: 'decision.socialize.utility',
+  workUtility: 'decision.work.utility',
 } as const satisfies Record<string, DecisionInfluenceTarget>)
 
 const initialDefinitions = [
@@ -125,6 +126,16 @@ const initialDefinitions = [
     timeHorizon: 'immediate',
     enabled: true,
     order: 110,
+  },
+  {
+    id: 'persistence-work-utility',
+    sourceId: PERSON_VARIABLE_ID.persistence,
+    targetId: DECISION_INFLUENCE_TARGET.workUtility,
+    weightPermille: 350,
+    curve: 'linear',
+    timeHorizon: 'immediate',
+    enabled: true,
+    order: 120,
   },
 ] as const satisfies readonly InfluenceEdgeDefinition[]
 

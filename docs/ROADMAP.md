@@ -813,7 +813,7 @@ All Milestone 11 development is deterministic once its structured evidence exist
 
 # Milestone 12 — Occupations, Production, and Exchange
 
-Status: Planned
+Status: Implemented
 
 ## Goal
 
@@ -834,6 +834,8 @@ Potential scope:
 * Skill requirements
 * Production traces
 
+Implemented: people receive an explicit, inspectable `forager`, `household`, or `dependent` role at initialization. Foragers can select a daytime `work` action only from a real commons location with accessible food. The action trace includes base, persistence, resource, and fatigue contributions.
+
 ---
 
 ## Milestone 12B — Production and Consumption
@@ -848,6 +850,8 @@ The system should answer:
 * Who consumes it?
 * What happens when it is scarce?
 
+Implemented: food is the first whole-unit good. It is harvested from a public geographic-cell resource into a household-owned food store, then consumed from that store. Food depletion therefore creates actual household scarcity and hunger pressure rather than an implied settlement-level effect. Productive hours, production, household food, consumption, and failed meals are sampled daily.
+
 ---
 
 ## Milestone 12C — Exchange
@@ -861,6 +865,8 @@ Potential factors:
 * Distance
 * Relationships
 * Exchange value
+
+Implemented: a daily, non-monetary food-sharing pass transfers a bounded amount only from a nearby household with surplus to a nearby household with need when existing cross-household relationship familiarity provides evidence of access. It is deterministic, records a meaningful event, and preserves household food total.
 
 Deferred:
 

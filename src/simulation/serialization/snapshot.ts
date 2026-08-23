@@ -4,6 +4,7 @@ import {
   DEVELOPMENT_REGISTRY_VERSION,
   ENVIRONMENT_MODEL_VERSION,
   LIFE_CYCLE_MODEL_VERSION,
+  ECONOMY_MODEL_VERSION,
   ENGINE_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
@@ -84,6 +85,9 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   }
   if (snapshot.state.config.lifeCycleModelVersion !== LIFE_CYCLE_MODEL_VERSION) {
     throw new Error(`Unsupported life-cycle model version: ${String(snapshot.state.config.lifeCycleModelVersion)}`)
+  }
+  if (snapshot.state.config.economyModelVersion !== ECONOMY_MODEL_VERSION) {
+    throw new Error(`Unsupported economy model version: ${String(snapshot.state.config.economyModelVersion)}`)
   }
   if (snapshot.state.config.worldGeneratorVersion !== WORLD_GENERATOR_VERSION) {
     throw new Error(`Unsupported world generator version: ${String(snapshot.state.config.worldGeneratorVersion)}`)

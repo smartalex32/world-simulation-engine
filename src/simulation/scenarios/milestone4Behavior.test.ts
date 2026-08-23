@@ -94,11 +94,10 @@ describe('Milestone 4 influence behavior', () => {
     }
   })
 
-  it('stores trust, conformity, and persistence without adding utility edges', () => {
+  it('keeps deferred social variables inert while persistence now informs explicit work utility', () => {
     const deferredVariables = [
       PERSON_VARIABLE_ID.trustPropensity,
       PERSON_VARIABLE_ID.conformity,
-      PERSON_VARIABLE_ID.persistence,
     ] as const
     const stored = person({
       [PERSON_VARIABLE_ID.trustPropensity]: 123,
@@ -106,7 +105,7 @@ describe('Milestone 4 influence behavior', () => {
       [PERSON_VARIABLE_ID.persistence]: 789,
     })
 
-    expect(deferredVariables.map((id) => getPersonVariable(stored.variables, id))).toEqual([123, 456, 789])
+    expect([...deferredVariables.map((id) => getPersonVariable(stored.variables, id)), getPersonVariable(stored.variables, PERSON_VARIABLE_ID.persistence)]).toEqual([123, 456, 789])
     expect(INFLUENCE_DEFINITIONS.some(({ sourceId }) => deferredVariables.includes(sourceId as typeof deferredVariables[number]))).toBe(false)
 
     for (const id of deferredVariables) {
