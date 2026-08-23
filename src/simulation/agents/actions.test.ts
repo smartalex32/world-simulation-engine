@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { GeographicCell, PersonState } from '../domain/types'
 import { Pcg32, hashSeed } from '../rng/pcg32'
-import { advanceJourney, chooseAction, evaluateActions, resolveAction, type ActionContext } from './actions'
+import { advanceJourney, chooseAction, effectiveMovementCost, evaluateActions, resolveAction, type ActionContext } from './actions'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { createDefaultPersonVariableValues, getPersonVariable, setPersonVariable } from '../variables/storage'
 import { createParentCuriosityExposureAccumulator } from '../exposure/model'
@@ -47,6 +47,11 @@ function person(curiosity = 500): PersonState {
 }
 
 describe('agent actions', () => {
+  it('lowers effective movement cost only on authored road cells', () => {
+    const cell = createCells()[0]!
+    expect(effectiveMovementCost(cell, { roadCellIds: new Set([cell.id]) })).toBe(650)
+    expect(effectiveMovementCost(cell, { roadCellIds: new Set() })).toBe(1000)
+  })
   it('provides named, inspectable utility contributions', () => {
     const cells = createCells()
     const candidates = evaluateActions(person(900), createContext(cells))

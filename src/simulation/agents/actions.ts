@@ -22,6 +22,7 @@ import {
   NIGHTTIME_REST_WEIGHT,
   OTHER_OCCUPANT_SOCIAL_WEIGHT,
   PLAIN_MOVEMENT_COST,
+  ROAD_MOVEMENT_COST_MULTIPLIER_PERMILLE,
   REST_FATIGUE_RECOVERY,
   WORK_FATIGUE_COST,
 } from './actionConfig'
@@ -39,6 +40,8 @@ export interface ActionContext {
   tick: number
   /** Deterministic calendar modifier; rendering and wall-clock timing do not affect it. */
   movementCostMultiplierPermille?: number
+  /** Authored road cells lower actual movement cost, without changing terrain. */
+  roadCellIds?: ReadonlySet<string>
   cellById: ReadonlyMap<string, GeographicCell>
   occupantsByCell: ReadonlyMap<string, readonly string[]>
   occupantsByActivityLocation: ReadonlyMap<string, readonly string[]>
@@ -230,8 +233,9 @@ function destinationScore(cell: GeographicCell, person: PersonState, context: Ac
   return cell.foodAmount * 4 + Math.floor(people * sociability / 10) - terrainPenalty
 }
 
-function effectiveMovementCost(cell: GeographicCell, context: Pick<ActionContext, 'movementCostMultiplierPermille'>): number {
-  return Math.floor(cell.movementCost * (context.movementCostMultiplierPermille ?? 1000) / 1000)
+export function effectiveMovementCost(cell: GeographicCell, context: Pick<ActionContext, 'movementCostMultiplierPermille' | 'roadCellIds'>): number {
+  const roadMultiplier = context.roadCellIds?.has(cell.id) ? ROAD_MOVEMENT_COST_MULTIPLIER_PERMILLE : 1000
+  return Math.floor(cell.movementCost * (context.movementCostMultiplierPermille ?? 1000) * roadMultiplier / 1_000_000)
 }
 
 function personInfluenceContributions(targetId: DecisionInfluenceTarget, person: PersonState): UtilityContribution[] {

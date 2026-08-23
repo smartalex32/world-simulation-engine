@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.23.0'
-export const SNAPSHOT_SCHEMA_VERSION = 23
+export const ENGINE_VERSION = '0.24.0'
+export const SNAPSHOT_SCHEMA_VERSION = 24
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1

@@ -61,6 +61,8 @@ fallback anchor radius. It remains inspection-only and does not affect behavior.
 
 ### Milestone 25 — Water, Routes, and Geographic Accessibility
 
+**Status:** Implemented (road-cost and water-access foundation)
+
 **Objective:** Add the first practical environmental features that make place
 choice and regional movement meaningfully different.
 
@@ -75,6 +77,12 @@ changing results merely because a person has a settlement label.
 
 **Explicit non-goals:** Full hydrology, precipitation simulation, oceans,
 shipping, climate, and erosion.
+
+**Implemented boundary:** Authored road cells now reduce real effective movement
+cost by a centralized 650-permille multiplier. Settlement inspection derives
+water-access cell counts from catchment cells adjacent to existing water terrain.
+There is no thirst, water inventory, river generation, ford, or shipping model
+in this slice.
 
 ### Milestone 26 — Household Relocation and Settlement Change
 

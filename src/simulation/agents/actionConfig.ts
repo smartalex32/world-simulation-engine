@@ -17,6 +17,8 @@ export const NIGHTTIME_REST_WEIGHT = 450
 export const HOME_REST_WEIGHT = 80
 export const OTHER_OCCUPANT_SOCIAL_WEIGHT = 90
 export const PLAIN_MOVEMENT_COST = 1000
+/** Road cells lower effective travel cost; roads remain owned by no person or polity. */
+export const ROAD_MOVEMENT_COST_MULTIPLIER_PERMILLE = 650
 export const HOURLY_TRAVEL_BUDGET = 1000
 
 export const HOURLY_HUNGER_INCREASE = 12
