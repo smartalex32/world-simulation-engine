@@ -7,6 +7,7 @@ import {
   ENVIRONMENT_MODEL_VERSION,
   LIFE_CYCLE_MODEL_VERSION,
   ECONOMY_MODEL_VERSION,
+  ORGANIZATION_MODEL_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
@@ -67,6 +68,7 @@ import { seasonAtTick, seasonalAmount } from '../environment/season'
 import { calculateCuriosityInheritance } from '../households/inheritance'
 import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STREAM, partnershipEligible } from '../lifecycle/model'
 import { resolveFoodShares } from '../economy/model'
+import { createInitialSchools } from '../organizations/model'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -161,6 +163,7 @@ export class SimulationEngine {
       return { ...createCommunityState(catchment, 500, foodSecurity), lastUpdatedTick: 0, latestTraces: [] }
     })
     const runId = `run-${world.id.slice(6)}-${creation.width}x${creation.height}`
+    const organizations = createInitialSchools(generatedPopulation.people, [...new Set(generatedPopulation.people.filter((person) => person.ageYears < 18).map((person) => person.homeCellId))])
     return new SimulationEngine({
       runId,
       tick: 0,
@@ -181,10 +184,12 @@ export class SimulationEngine {
         environmentModelVersion: ENVIRONMENT_MODEL_VERSION,
         lifeCycleModelVersion: LIFE_CYCLE_MODEL_VERSION,
         economyModelVersion: ECONOMY_MODEL_VERSION,
+        organizationModelVersion: ORGANIZATION_MODEL_VERSION,
       },
       world,
       people: generatedPopulation.people,
       households: generatedPopulation.households,
+      organizations,
       parentChildLinks: generatedPopulation.parentChildLinks,
       activityLocations: generatedPopulation.activityLocations,
       communities,
@@ -345,6 +350,7 @@ export class SimulationEngine {
       populationZones: this.state.config.worldCreation.populationZones,
       people: this.state.people,
       households: this.state.households,
+      organizations: this.state.organizations,
       parentChildLinks: this.state.parentChildLinks,
       activityLocations: this.state.activityLocations,
       communities: this.state.communities,
@@ -1135,6 +1141,11 @@ export class SimulationEngine {
     if (!Number.isSafeInteger(this.state.tick) || this.state.tick < 0) throw new Error('Simulation tick is invalid')
     if (new Set(this.state.people.map((person) => person.id)).size !== this.state.people.length) throw new Error('Population contains duplicate person IDs')
     const personIds = new Set(this.state.people.map((person) => person.id))
+    if (new Set(this.state.organizations.map((organization) => organization.id)).size !== this.state.organizations.length) throw new Error('Organizations contain duplicate IDs')
+    for (const organization of this.state.organizations) {
+      if (organization.kind !== 'school') throw new Error(`Organization ${organization.id} has invalid kind`)
+      if (organization.members.some((member) => member.role !== 'learner')) throw new Error(`Organization ${organization.id} has invalid member role`)
+    }
     for (const person of this.state.people) {
       if (!this.cellById.has(person.locationCellId)) throw new Error(`Person ${person.id} occupies a missing cell`)
       validatePersonVariableValues(person.variables)

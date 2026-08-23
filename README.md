@@ -46,6 +46,7 @@ Implemented:
 * Milestone 10 — Life Cycle and Population Dynamics
 * Milestone 11 — Broader Human Development
 * Milestone 12 — Occupations, Production, and Exchange
+* Milestone 13 — Institutions and Organizations
 
 Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. Linked population zones retain their existing anchor-containment validation.
 

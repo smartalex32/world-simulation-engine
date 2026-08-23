@@ -879,7 +879,7 @@ Deferred:
 
 # Milestone 13 — Institutions and Organizations
 
-Status: Planned
+Status: Implemented
 
 ## Goal
 
@@ -909,6 +909,8 @@ Potential scope:
 * Persistence over time
 
 Membership must not automatically overwrite personal beliefs, traits, or attitudes.
+
+Implemented: persistent, versioned organizations now have identity, kind, location, activity-location reference, explicit member roles, and shared-rule identifiers. The initial specialization is a deterministic local school populated with eligible learners; membership is informational and creates no automatic person-variable changes.
 
 ---
 
