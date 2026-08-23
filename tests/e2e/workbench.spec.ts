@@ -69,6 +69,17 @@ test('loads persisted historical evidence without changing the active world', as
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
 })
 
+test('offers an optional deterministic chronicle without changing simulation state', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  const tick = await page.locator('[data-simulation-tick]').getAttribute('data-simulation-tick')
+  await page.getByRole('button', { name: 'history', exact: true }).click()
+  await page.getByRole('button', { name: 'Chronicle view', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Deterministic chronicle' })).toBeVisible()
+  await expect(page.getByText('Fixed templates from recorded evidence; this never affects the simulation.')).toBeVisible()
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', tick ?? '')
+})
+
 test('shows a bounded generated map only for a non-settlement draft zone', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()

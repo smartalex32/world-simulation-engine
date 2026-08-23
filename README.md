@@ -61,9 +61,9 @@ Draft roads are ordered, contiguous passable-cell segments. They are validated b
 
 Drafts can also be imported and exported as a versioned JSON bundle. Bundles include the draft record, generator version, dimensions, scale, seed, terrain/resource edits, population zones, settlements, and roads; incompatible versions are rejected rather than silently reinterpreted.
 
-Historical inspection reads bounded, indexed event and sampled-metric evidence from IndexedDB. The History workspace offers selected-person timelines, curated major recorded-event highlights, and population/resource/social trends. It never invents events or mutates authoritative simulation state. Household and settlement history views, time-lapse replay, and richer causal drill-down remain future slices.
+Historical inspection reads bounded, indexed event and sampled-metric evidence from IndexedDB. The History workspace offers selected-person timelines, curated major recorded-event highlights, population/resource/social trends, and an optional deterministic chronicle. The chronicle uses fixed templates over recorded events; it never invents evidence, mutates authoritative simulation state, or affects canonical output. Household and settlement history views, time-lapse replay, and richer causal drill-down remain future slices.
 
-Next: Milestone 21 — Optional Narrative Presentation, or Milestone 22 — Simulation Workbench Experience if presentation work is prioritized over optional narrative.
+Next: Milestone 22 — Simulation Workbench Experience.
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 
