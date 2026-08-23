@@ -1100,7 +1100,7 @@ Deferred: skill registry, experimentation projects, inventions, technology adopt
 
 # Milestone 19 — Massive Simulation Scale
 
-Status: Future
+Status: Implemented (bounded inspection transport foundation)
 
 ## Goal
 
@@ -1136,6 +1136,10 @@ relevant transition
 This milestone requires substantial research.
 
 Any aggregation strategy must define a reproducibility contract and preserve individual inspectability where intended.
+
+Implemented: the workbench projection now has explicit bounded inspector-detail transport. Large views retain exact aggregate population and map counts while sending a deterministic local person set rather than every person, relationship, household, and parent-child record. A hooked person and their household remain prioritized for live inspection, and the projection explicitly reports truncated detail. This does not alter authoritative simulation fidelity, state, RNG, or canonical output.
+
+Deferred: chunked authoritative state, world paging, cohorts, fidelity transitions/materialization, worker parallelization, and OffscreenCanvas. These require measured workload targets and a fuller reproducibility design.
 
 ---
 

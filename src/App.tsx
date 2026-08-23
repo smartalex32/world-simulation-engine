@@ -534,11 +534,11 @@ export default function App() {
           <div className="metric-list">
             <Metric label="Cells" value={recentMetrics['world.cellCount'] ?? projection?.world.cellCount ?? 0} />
             <Metric label="Habitable" value={recentMetrics['world.habitableCells'] ?? '—'} />
-            <Metric label="Population" value={recentMetrics['population.count'] ?? projection?.people.length ?? 0} />
+            <Metric label="Population" value={recentMetrics['population.count'] ?? projection?.summary.populationCount ?? 0} />
             <Metric label="Living" value={recentMetrics['population.aliveCount'] ?? projection?.summary.populationCount ?? 0} />
             <Metric label="Births/day" value={recentMetrics['lifecycle.births'] ?? 0} />
             <Metric label="Deaths/day" value={recentMetrics['lifecycle.deaths'] ?? 0} />
-            <Metric label="Average hunger" value={recentMetrics['population.averageHunger'] ?? averageVariable(projection?.people, 'person.state.hunger')} />
+            <Metric label="Average hunger" value={recentMetrics['population.averageHunger'] ?? projection?.summary.averageHunger ?? 0} />
             <Metric label="Occupied cells" value={recentMetrics['spatial.occupiedCells'] ?? '—'} />
             <Metric label="World food" value={recentMetrics['resources.totalFood'] ?? 'Awaiting daily sample'} />
             <Metric label="Season" value={projection ? seasonAtTick(projection.tick).id : '—'} />
@@ -580,7 +580,7 @@ export default function App() {
                 setSelectedPersonId(undefined)
               }} />
             : selected
-              ? <CellInspector cell={selected} people={projection?.people.filter((person) => person.locationCellId === selected.id) ?? []} onSelectPerson={setSelectedPersonId} />
+              ? <CellInspector cell={selected} people={projection?.people.filter((person) => person.locationCellId === selected.id) ?? []} onSelectPerson={setSelectedPersonId} detailsTruncated={projection?.detailBudget.peopleTruncated ?? false} />
               : <div className="empty-state"><span>⌖</span><p>Choose a hex to inspect its authoritative spatial state.</p></div>}
           <PanelTitle title="Snapshots" subtitle={`${snapshots.length} local saves`} />
           <div className="save-form"><input placeholder="Snapshot name" value={saveName} onChange={(event) => setSaveName(event.target.value)} /><button onClick={() => void saveNamed()}>Save</button></div>
@@ -703,7 +703,7 @@ function worldSetupSignature(setup: WorldSetupValues): string {
   return JSON.stringify(creationDraftFromSetup(setup))
 }
 
-function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell; people: PersonState[]; onSelectPerson: (id: string) => void }) {
+function CellInspector({ cell, people, onSelectPerson, detailsTruncated }: { cell: GeographicCell & { populationCount?: number }; people: PersonState[]; onSelectPerson: (id: string) => void; detailsTruncated: boolean }) {
   return <div className="inspector-grid">
     <Metric label="Coordinates" value={`q ${cell.q} · r ${cell.r}`} />
     <Metric label="Terrain" value={cell.terrain} />
@@ -712,7 +712,7 @@ function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell;
     <Metric label="Move cost" value={cell.movementCost === 0 ? 'Blocked' : (cell.movementCost / 1000).toFixed(2)} />
     <Metric label="Food stock" value={`${cell.foodAmount} / ${cell.resourceCapacity}`} />
     <Metric label="Daily regrowth" value={cell.foodRegenerationPerDay} />
-    <div className="occupant-list"><span>People here ({people.length})</span>{people.slice(0, 12).map((person) => <button key={person.id} onClick={() => onSelectPerson(person.id)}>{person.id}<small>authoritative person state</small></button>)}{people.length === 0 && <em>None</em>}</div>
+    <div className="occupant-list"><span>People here ({cell.populationCount ?? people.length})</span>{people.slice(0, 12).map((person) => <button key={person.id} onClick={() => onSelectPerson(person.id)}>{person.id}<small>authoritative person state</small></button>)}{people.length === 0 && <em>{cell.populationCount ? 'Details are paged at this scale.' : 'None'}</em>}{detailsTruncated && people.length < (cell.populationCount ?? 0) && <small>Showing bounded local details; hook a person to inspect them.</small>}</div>
     <div className="neighbor-list"><span>Six neighbors</span><code>{hexNeighbors(cell).map((coord) => `${coord.q},${coord.r}`).join('  ')}</code></div>
   </div>
 }

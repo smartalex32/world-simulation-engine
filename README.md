@@ -860,6 +860,8 @@ A version changes only when its corresponding behavioral or compatibility contra
 
 Rendering currently scales beyond the authoritative dense simulation model.
 
+Workbench transport is independently bounded: when a view contains more than the inspector-detail budget, the worker sends only deterministic local details plus any hooked person and their household. Population and map aggregates retain their complete counts; hooking another person requests that person's current detail next frame. This is presentation paging, not cohort simulation or a reduction in authoritative fidelity.
+
 Known future scaling areas include:
 
 * Dense authoritative world storage
