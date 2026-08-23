@@ -135,6 +135,17 @@ describe('world draft lifecycle domain contract', () => {
     expect(() => previewWorldDraft(updateWorldDraftRecord(active, { ...active.draft, settlements: [{ id: 'bad-anchor', name: 'Bad anchor', anchorCellId: 'unknown-cell' }] }))).toThrow(/invalid anchor cell/)
   })
 
+  it('preserves a bounded authored settlement catchment and rejects an empty one', () => {
+    const active = createWorldDraftRecord('draft-settlement-catchment', {
+      ...defaultWorldCreationRequest('settlement-catchment-seed'), initialPopulationCount: 10,
+      populationZones: [{ id: 'population-zone-0001', name: 'Initial', preset: 'center', populationCount: 10 }],
+    })
+    const anchor = previewWorldDraft(active).creation.populationZones[0]!.cellIds[0]!
+    const valid = updateWorldDraftRecord(active, { ...active.draft, settlements: [{ id: 'northwatch', name: 'Northwatch', anchorCellId: anchor, catchmentCellIds: [anchor] }] })
+    expect(previewWorldDraft(valid).creation.settlements[0]).toMatchObject({ anchorCellId: anchor, catchmentCellIds: [anchor] })
+    expect(() => previewWorldDraft(updateWorldDraftRecord(active, { ...active.draft, settlements: [{ id: 'northwatch', name: 'Northwatch', anchorCellId: anchor, catchmentCellIds: [] }] }))).toThrow(/catchment/)
+  })
+
   it('normalizes an ordered contiguous draft road and rejects invalid geometry', async () => {
     const active = createWorldDraftRecord('draft-road', {
       ...defaultWorldCreationRequest('road-seed'), initialPopulationCount: 10,

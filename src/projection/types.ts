@@ -3,7 +3,7 @@ import type { DisputeState, GeographicCell, HouseholdState, LocalGovernanceState
 import type { PersonVariableDefinition } from '../simulation/variables/types'
 
 /** Incremented when the bounded worker-to-workbench projection shape changes. */
-export const PROJECTION_PROTOCOL_VERSION = 3
+export const PROJECTION_PROTOCOL_VERSION = 4
 export const PROJECTION_CHUNK_SIZE = 32
 export const PROJECTION_REGION_SIZES = Object.freeze([1, 4, 16, 64, 256] as const)
 export const MAX_TERRAIN_PRIMITIVES = 4096
@@ -138,6 +138,11 @@ export interface ProjectedSettlement {
   /** Living people with homes within the profile radius of this marker. */
   nearbyResidentCount: number
   nearbyHomeCellCount: number
+  /** Bounded authored cells when present, otherwise the anchor-radius profile. */
+  catchmentCellCount: number
+  catchmentSource: 'authored' | 'anchor-radius'
+  currentVisitorCount: number
+  catchmentResourceCapacity: number
 }
 /** Bounded metadata; geometry is drawn only where the active cell projection is exact. */
 export interface ProjectedRoad { id: string; cellIds: string[] }

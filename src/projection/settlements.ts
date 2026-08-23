@@ -27,15 +27,19 @@ export function buildProjectedSettlements(
     .sort((first, second) => first.id.localeCompare(second.id))
     .map((settlement) => {
       const anchor = cellsById.get(settlement.anchorCellId)
+      const catchmentCellIds = settlement.catchmentCellIds ?? (anchor ? cells.filter((cell) => hexDistance(anchor, cell) <= SETTLEMENT_PROFILE_RADIUS_CELLS).map((cell) => cell.id) : [])
+      const catchment = new Set(catchmentCellIds)
       const nearbyHomeCellIds = new Set<string>()
       let nearbyResidentCount = 0
+      let currentVisitorCount = 0
+      let catchmentResourceCapacity = 0
+      for (const cellId of catchment) catchmentResourceCapacity += cellsById.get(cellId)?.resourceCapacity ?? 0
       if (anchor) {
         for (const person of people) {
           if (person.lifeStatus === 'dead') continue
           const home = cellsById.get(person.homeCellId)
-          if (!home || hexDistance(anchor, home) > SETTLEMENT_PROFILE_RADIUS_CELLS) continue
-          nearbyResidentCount += 1
-          nearbyHomeCellIds.add(home.id)
+          if (home && catchment.has(home.id)) { nearbyResidentCount += 1; nearbyHomeCellIds.add(home.id) }
+          if (catchment.has(person.locationCellId) && !catchment.has(person.homeCellId)) currentVisitorCount += 1
         }
       }
       return {
@@ -45,6 +49,10 @@ export function buildProjectedSettlements(
         scale: settlementScaleForResidents(nearbyResidentCount),
         nearbyResidentCount,
         nearbyHomeCellCount: nearbyHomeCellIds.size,
+        catchmentCellCount: catchment.size,
+        catchmentSource: settlement.catchmentCellIds === undefined ? 'anchor-radius' : 'authored',
+        currentVisitorCount,
+        catchmentResourceCapacity,
       }
     })
 }
