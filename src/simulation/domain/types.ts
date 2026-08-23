@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.16.0'
-export const SNAPSHOT_SCHEMA_VERSION = 16
+export const ENGINE_VERSION = '0.17.0'
+export const SNAPSHOT_SCHEMA_VERSION = 17
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -22,6 +22,7 @@ export const ENVIRONMENT_MODEL_VERSION = 1
 export const LIFE_CYCLE_MODEL_VERSION = 1
 /** Versioned, non-monetary household food production and sharing rules. */
 export const ECONOMY_MODEL_VERSION = 1
+export const ORGANIZATION_MODEL_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
@@ -209,6 +210,20 @@ export interface WorldState {
 }
 
 export type HouseholdId = string
+export type OrganizationId = string
+export type OrganizationKind = 'school'
+export type OrganizationMemberRole = 'learner' | 'educator'
+export interface OrganizationMember { personId: string; role: OrganizationMemberRole }
+/** Persistent coordinated group; membership is not a trait, belief, or attitude assignment. */
+export interface OrganizationState {
+  id: OrganizationId
+  name: string
+  kind: OrganizationKind
+  locationCellId: string
+  activityLocationId: ActivityLocationId
+  members: OrganizationMember[]
+  sharedRuleIds: string[]
+}
 export type PersonOccupation = 'forager' | 'household' | 'dependent'
 export interface HouseholdInventory { food: number }
 export type ParentChildLinkId = string
@@ -572,6 +587,7 @@ export interface RunConfiguration {
   environmentModelVersion: number
   lifeCycleModelVersion: number
   economyModelVersion?: number
+  organizationModelVersion?: number
 }
 
 export interface RandomStreamSnapshot {
@@ -588,6 +604,7 @@ export interface SimulationState {
   world: WorldState
   people: PersonState[]
   households: HouseholdState[]
+  organizations: OrganizationState[]
   parentChildLinks: ParentChildLink[]
   activityLocations: ActivityLocationState[]
   communities: CommunitySimulationState[]
@@ -644,6 +661,7 @@ export interface WorldProjection {
   populationZones: PopulationPlacementZone[]
   people: PersonState[]
   households: HouseholdState[]
+  organizations: OrganizationState[]
   parentChildLinks: ParentChildLink[]
   activityLocations: ActivityLocationState[]
   communities: CommunitySimulationState[]
