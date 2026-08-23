@@ -1164,6 +1164,45 @@ The simulation must remain fully functional and explainable without it.
 
 ---
 
+# Milestone 22 — Simulation Workbench Experience
+
+Status: Future
+
+## Goal
+
+Bring the application workbench toward the intended world-simulation experience: a legible large map surrounded by useful, inspectable simulation controls and entity context. This is a presentation and workflow milestone; it must not move authoritative simulation logic into the UI.
+
+Potential capabilities:
+
+* A coherent world, simulation, analytics, entities, tools, and settings navigation model
+* A configurable map-layer panel for terrain, resources, population, routes, settlements, and diagnostic overlays
+* Purposeful map-creation and population-placement workflows rather than disconnected controls
+* A consistent person, household/group, settlement, and future polity inspector pattern
+* World overview, simulation controls, time-scale controls, event log, and visible seed/tick diagnostics
+* Population, needs, activity, and community summary panels that use sampled data rather than per-tick UI work
+* A minimap and level-appropriate map controls for very large worlds
+* Clear loading, empty, draft, running, paused, and error states
+* Accessible keyboard navigation, responsive layout behavior, and cross-browser visual regression coverage
+
+The visual direction may take inspiration from the intended dark, map-first workbench mockup, but must remain an original interface built from the application’s real data and capabilities. Do not add decorative controls for unimplemented systems. New entity categories (groups, cities, towns, kingdoms, and so on) should appear in the UI only when their authoritative domain models exist.
+
+Recommended sequencing:
+
+1. Establish shared layout, navigation, visual tokens, and dependable inspector patterns.
+2. Integrate existing world creation, map layers, controls, and diagnostics into that layout.
+3. Add real-data overview and analytics panels with explicit empty states.
+4. Add future entity views incrementally alongside their simulation milestones.
+
+Acceptance criteria:
+
+* Existing simulation and world-authoring workflows remain fully operable and inspectable.
+* The map remains the primary surface and keeps its large-world level-of-detail behavior.
+* UI refresh cadence remains decoupled from simulation cadence.
+* No UI change alters canonical simulation output or consumes simulation RNG.
+* Important interaction paths receive browser-level coverage; visual changes are reviewed at desktop and constrained-width layouts.
+
+---
+
 # Deferred Areas
 
 Unless explicitly promoted into active work, do not proactively implement:
