@@ -12,6 +12,7 @@ import { createDefaultPersonVariableValues, getPersonVariable, setPersonVariable
 import type { PersonVariableId } from '../variables/types'
 import { lifeStageForAge } from '../lifecycle/model'
 import { occupationFor } from '../economy/model'
+import { createCulturalState } from '../culture/model'
 
 type BasePersonState = Omit<PersonState, 'ageHoursIntoYear' | 'locationCellId' | 'homeCellId' | 'householdId' | 'activityScheduleId' | 'currentActivity' | 'originTraces' | 'development'> & { initialHomeCellId: string }
 
@@ -92,6 +93,7 @@ export function generatePopulation(cells: GeographicCell[], zonesOrRandom: reado
       homeCellId: assignment.homeCellId,
       householdId: household.id,
       occupation: occupationFor(assignment.ageYears, Number(base.id.slice(-4))),
+      culture: createCulturalState(),
       activityScheduleId: activity.scheduleId,
       currentActivity: { kind: activity.kind, locationId: activity.locationId, sinceTick: 0 },
       originTraces,

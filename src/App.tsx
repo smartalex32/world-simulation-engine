@@ -764,6 +764,7 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
       </div> : <p>No community catchment covers the current cell.</p>}
     </section>
     <PersonVariableSections definitions={variableDefinitions} values={variableValues(person)} layers={['state', 'need']} />
+    <section className="community-exposure-panel" aria-labelledby="cultural-beliefs-heading"><div className="section-heading"><h3 id="cultural-beliefs-heading">Learned beliefs</h3><span>Social exposure only</span></div>{person.culture ? <div className="activity-details"><Metric label="Exploration" value={`${(person.culture.beliefs['belief.exploration'] / 10).toFixed(1)}%`} /><Metric label="Cooperation" value={`${(person.culture.beliefs['belief.cooperation'] / 10).toFixed(1)}%`} /><Metric label="Exposures" value={person.culture.exposureCount} /></div> : <p>No cultural exposure recorded.</p>}</section>
     <section className="household-panel" aria-labelledby="household-heading">
       <div className="section-heading"><h3 id="household-heading">Household</h3><span>{household ? household.memberIds.length : 0} members</span></div>
       {household ? <>

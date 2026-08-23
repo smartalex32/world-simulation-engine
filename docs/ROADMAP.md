@@ -929,7 +929,7 @@ Schools are a strong first specialized institution because they naturally connec
 
 # Milestone 14 — Culture, Norms, and Beliefs
 
-Status: Planned
+Status: Implemented
 
 ## Goal
 
@@ -956,6 +956,8 @@ Potential transmission factors:
 * Social context
 
 Do not assign beliefs to everyone in a community merely because they are common there.
+
+Implemented: each person has a separate bounded learned-belief state for exploration and cooperation. Beliefs can shift only after repeated real relationship evidence reaches familiarity and directional-trust thresholds during a positive encounter. The transmission trace records the source and tick; community membership alone produces no cultural assignment.
 
 ---
 
