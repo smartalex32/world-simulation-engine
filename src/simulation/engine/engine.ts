@@ -5,6 +5,7 @@ import {
   DEVELOPMENT_REGISTRY_VERSION,
   ENGINE_VERSION,
   ENVIRONMENT_MODEL_VERSION,
+  LIFE_CYCLE_MODEL_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
@@ -51,15 +52,18 @@ import { applyEncounter, createRelationship, decayInteractionFrequency, relation
 import { createSnapshot, validateSnapshot } from '../serialization/snapshot'
 import { generateValley } from '../spatial/worldGenerator'
 import { PERSON_VARIABLE_DEFINITIONS, PERSON_VARIABLE_ID } from '../variables/registry'
-import { adjustPersonVariable, getPersonVariable, setPersonVariable, validatePersonVariableValues } from '../variables/storage'
+import { adjustPersonVariable, createDefaultPersonVariableValues, getPersonVariable, setPersonVariable, validatePersonVariableValues } from '../variables/storage'
 import { validateHouseholdActivityState } from './invariants'
 import {
   accumulateParentCuriosityExposure,
   completeParentCuriosityExposureWindow,
+  createParentCuriosityExposureAccumulator,
   PARENT_CURIOSITY_EXPOSURE_CHANNEL,
 } from '../exposure/model'
 import { applyParentCuriosityDevelopment } from '../development/apply'
 import { seasonAtTick, seasonalAmount } from '../environment/season'
+import { calculateCuriosityInheritance } from '../households/inheritance'
+import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STREAM, partnershipEligible } from '../lifecycle/model'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -172,6 +176,7 @@ export class SimulationEngine {
         developmentRegistryVersion: DEVELOPMENT_REGISTRY_VERSION,
         communityRegistryVersion: COMMUNITY_REGISTRY_VERSION,
         environmentModelVersion: ENVIRONMENT_MODEL_VERSION,
+        lifeCycleModelVersion: LIFE_CYCLE_MODEL_VERSION,
       },
       world,
       people: generatedPopulation.people,
@@ -185,6 +190,7 @@ export class SimulationEngine {
       dailySocialCounters: { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 },
       dailyActivityCounters: { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 },
       dailyDevelopmentCounters: { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0 },
+      dailyLifeCycleCounters: { births: 0, deaths: 0, partnershipsFormed: 0, householdMoves: 0, lifeStageTransitions: 0 },
       randomStreams: random.snapshot(),
     }, random)
   }
@@ -218,13 +224,14 @@ export class SimulationEngine {
     const statistics: StatisticSample[] = []
     for (let index = 0; index < count; index += 1) {
       this.state.tick += 1
-      for (const person of this.state.people) {
+      this.advanceAges(pushEvent)
+      for (const person of this.livingPeople()) {
         adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, HOURLY_HUNGER_INCREASE)
         adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, HOURLY_FATIGUE_INCREASE)
         adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.socialConnection, HOURLY_SOCIAL_NEED_INCREASE)
       }
 
-      for (const person of this.state.people) {
+      for (const person of this.livingPeople()) {
         const journey = advanceJourney(person, HOURLY_TRAVEL_BUDGET)
         if (journey?.arrived) {
           this.recordTravel(journey.travelCost)
@@ -239,7 +246,7 @@ export class SimulationEngine {
       const occupantsByActivityLocation = this.buildActivityOccupancy()
       const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId }
       const actionRng = this.random.stream('actions')
-      const decisions = this.state.people
+      const decisions = this.livingPeople()
         .filter((person) => !person.journey)
         .map((person) => ({ person, decision: chooseAction(person, context, actionRng) }))
       for (const { person, decision } of decisions) {
@@ -277,7 +284,7 @@ export class SimulationEngine {
       this.recordCommunityPersonHours()
       this.accumulateDevelopmentExposure()
       if (this.state.tick % 720 === 0) this.processDevelopment(pushEvent)
-      this.advanceAges(pushEvent)
+      if (this.state.tick % 8760 === 0) this.resolveAnnualLifeCycle(pushEvent)
       if (this.state.tick % 24 === 0) {
         this.aggregateCommunities(pushEvent)
         this.regenerateFood()
@@ -287,6 +294,7 @@ export class SimulationEngine {
         this.state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
         this.state.dailyActivityCounters = { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 }
         this.state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0 }
+        this.state.dailyLifeCycleCounters = { births: 0, deaths: 0, partnershipsFormed: 0, householdMoves: 0, lifeStageTransitions: 0 }
         this.resetCommunityCounters(this.state.tick + 1)
       }
     }
@@ -351,7 +359,8 @@ export class SimulationEngine {
 
   private sampleDailyStatistics(): StatisticSample[] {
     const cells = this.state.world.grid.cells
-    const population = this.state.people.length
+    const livingPeople = this.livingPeople()
+    const population = livingPeople.length
     const relationshipCount = this.state.relationships.length
     const possibleRelationships = population > 1 ? population * (population - 1) / 2 : 0
     const averageFamiliarity = relationshipCount > 0
@@ -363,9 +372,13 @@ export class SimulationEngine {
       { ...base, metricId: 'world.habitableCells', value: cells.filter((cell) => cell.habitability > 0).length },
       { ...base, metricId: 'engine.simulatedDays', value: this.state.tick / 24 },
       { ...base, metricId: 'population.count', value: this.state.people.length },
-      { ...base, metricId: 'population.averageHunger', value: Math.round(this.state.people.reduce((sum, person) => sum + getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger), 0) / this.state.people.length) },
+      { ...base, metricId: 'population.aliveCount', value: population },
+      { ...base, metricId: 'population.averageHunger', value: population === 0 ? 0 : Math.round(livingPeople.reduce((sum, person) => sum + getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger), 0) / population) },
+      { ...base, metricId: 'lifecycle.births', value: this.state.dailyLifeCycleCounters.births },
+      { ...base, metricId: 'lifecycle.deaths', value: this.state.dailyLifeCycleCounters.deaths },
+      { ...base, metricId: 'lifecycle.partnershipsFormed', value: this.state.dailyLifeCycleCounters.partnershipsFormed },
       { ...base, metricId: 'spatial.occupiedCells', value: this.buildOccupancy().size },
-      { ...base, metricId: 'spatial.averageTravelCost', value: Math.round(this.state.dailySpatialCounters.travelCost / this.state.people.length) },
+      { ...base, metricId: 'spatial.averageTravelCost', value: population === 0 ? 0 : Math.round(this.state.dailySpatialCounters.travelCost / population) },
       { ...base, metricId: 'resources.totalFood', value: cells.reduce((sum, cell) => sum + cell.foodAmount, 0) },
       { ...base, metricId: 'resources.foodConsumed', value: this.state.dailySpatialCounters.foodConsumed },
       { ...base, metricId: 'resources.failedMeals', value: this.state.dailySpatialCounters.failedMeals },
@@ -414,7 +427,7 @@ export class SimulationEngine {
   /** Records environmental conditions from each person's actual current cell. */
   private recordEnvironmentalExposure(): void {
     const season = seasonAtTick(this.state.tick)
-    for (const person of this.state.people) {
+    for (const person of this.livingPeople()) {
       const cell = this.cellById.get(person.locationCellId)
       if (!cell) throw new Error(`Person ${person.id} occupies a missing exposure cell`)
       const exposure = person.environmentalExposure ?? (person.environmentalExposure = { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0 })
@@ -462,7 +475,7 @@ export class SimulationEngine {
   }
 
   private recordCommunityPersonHours(): void {
-    for (const person of this.state.people) {
+    for (const person of this.livingPeople()) {
       const counters = this.communityCountersForCell(person.locationCellId)
       counters.exposedPersonIds.add(person.id)
       counters.exposedPersonHours += 1
@@ -556,7 +569,7 @@ export class SimulationEngine {
 
   private buildOccupancy(excludeTravelers = false): Map<string, string[]> {
     const occupancy = new Map<string, string[]>()
-    for (const person of this.state.people) {
+    for (const person of this.livingPeople()) {
       if (excludeTravelers && person.journey) continue
       const occupants = occupancy.get(person.locationCellId)
       if (occupants) occupants.push(person.id)
@@ -567,7 +580,7 @@ export class SimulationEngine {
 
   private buildActivityOccupancy(): Map<string, string[]> {
     const occupancy = new Map<string, string[]>()
-    for (const person of this.state.people) {
+    for (const person of this.livingPeople()) {
       const locationId = person.currentActivity.locationId
       if (locationId === null || person.currentActivity.kind === 'travel') continue
       const occupants = occupancy.get(locationId)
@@ -579,7 +592,7 @@ export class SimulationEngine {
 
   private resolveActivities(pushEvent: (event: SimulationEvent) => void): void {
     const hourOfDay = this.state.tick % 24
-    for (const person of this.state.people) {
+    for (const person of this.livingPeople()) {
       const household = this.householdById.get(person.householdId)
       if (!household) throw new Error(`Person ${person.id} belongs to missing household ${person.householdId}`)
       const resolved = resolveCurrentActivity({
@@ -609,7 +622,7 @@ export class SimulationEngine {
   }
 
   private recordActivityPersonHours(): void {
-    for (const person of this.state.people) {
+    for (const person of this.livingPeople()) {
       if (person.currentActivity.kind === 'home') this.state.dailyActivityCounters.homePersonHours += 1
       else if (person.currentActivity.kind === 'commons') this.state.dailyActivityCounters.commonsPersonHours += 1
       else this.state.dailyActivityCounters.travelPersonHours += 1
@@ -626,6 +639,7 @@ export class SimulationEngine {
       const coPresentParents = parentIds.flatMap((parentId) => {
         const parent = this.personById.get(parentId)
         if (!parent) throw new Error(`Development exposure source ${parentId} is missing`)
+        if (parent.lifeStatus === 'dead') return []
         if (parent.currentActivity.kind !== 'home' || parent.currentActivity.locationId !== household.homeActivityLocationId || parent.locationCellId !== household.homeCellId) return []
         return [{ parentId, curiosityPermille: getPersonVariable(parent.variables, PERSON_VARIABLE_ID.curiosity) }]
       })
@@ -640,7 +654,7 @@ export class SimulationEngine {
 
   private processDevelopment(pushEvent: (event: SimulationEvent) => void): void {
     const nextWindowStartTick = this.state.tick + 1
-    for (const person of this.state.people) {
+    for (const person of this.livingPeople()) {
       const accumulator = person.development.exposures.find(({ channelId }) => channelId === PARENT_CURIOSITY_EXPOSURE_CHANNEL)
       if (!accumulator) throw new Error(`Person ${person.id} is missing parent curiosity exposure state`)
       const completed = completeParentCuriosityExposureWindow(accumulator, nextWindowStartTick, person.id)
@@ -724,17 +738,124 @@ export class SimulationEngine {
   }
 
   private advanceAges(pushEvent: (event: SimulationEvent) => void): void {
-    for (const person of this.state.people) {
+    for (const person of this.livingPeople()) {
       person.ageHoursIntoYear += BASE_TICK_HOURS
       if (person.ageHoursIntoYear < 8760) continue
       person.ageHoursIntoYear -= 8760
       person.ageYears += 1
+      const previousLifeStage = person.lifeStage ?? lifeStageForAge(person.ageYears - 1)
+      const nextLifeStage = lifeStageForAge(person.ageYears)
+      person.lifeStage = nextLifeStage
       person.activityScheduleId = scheduleForAge(person.ageYears)
       pushEvent(this.event('PERSON_AGED', {
         personId: person.id,
         ageYears: person.ageYears,
       }))
+      if (previousLifeStage !== nextLifeStage) {
+        this.state.dailyLifeCycleCounters.lifeStageTransitions += 1
+        pushEvent(this.event('PERSON_LIFE_STAGE_CHANGED', { personId: person.id, previousLifeStage, nextLifeStage, ageYears: person.ageYears }))
+      }
+      const mortalityPermille = annualMortalityPermille(person.ageYears)
+      if (mortalityPermille > 0 && this.random.stream(LIFE_CYCLE_STREAM.mortality).nextInt(1000) < mortalityPermille) {
+        person.lifeStatus = 'dead'
+        person.deathTick = this.state.tick
+        if (person.journey) {
+          person.locationCellId = person.homeCellId
+          const household = this.householdById.get(person.householdId)
+          person.currentActivity = { kind: 'home', locationId: household?.homeActivityLocationId ?? null, sinceTick: this.state.tick }
+        }
+        person.journey = undefined
+        if (person.partnerId) {
+          const partner = this.personById.get(person.partnerId)
+          if (partner?.partnerId === person.id) partner.partnerId = undefined
+          person.partnerId = undefined
+        }
+        this.state.dailyLifeCycleCounters.deaths += 1
+        pushEvent(this.event('PERSON_DIED', { personId: person.id, ageYears: person.ageYears, mortalityPermille }))
+      }
     }
+  }
+
+  /** Annual social and demographic updates; all candidates come from actual relationships. */
+  private resolveAnnualLifeCycle(pushEvent: (event: SimulationEvent) => void): void {
+    const living = this.livingPeople()
+    for (const relationship of [...this.state.relationships].sort((a, b) => compareIds(a.id, b.id))) {
+      const first = this.personById.get(relationship.personAId)
+      const second = this.personById.get(relationship.personBId)
+      if (!first || !second || !partnershipEligible(first, second, relationship)) continue
+      if (this.random.stream(LIFE_CYCLE_STREAM.partnership).nextInt(1000) >= 180) continue
+      this.formPartnership(first, second, pushEvent)
+    }
+    for (const first of living.sort((a, b) => compareIds(a.id, b.id))) {
+      const second = first.partnerId ? this.personById.get(first.partnerId) : undefined
+      if (!second || first.id > second.id || !birthEligible(first, second)) continue
+      if (this.random.stream(LIFE_CYCLE_STREAM.birth).nextInt(1000) < 140) this.birthChild(first, second, pushEvent)
+    }
+  }
+
+  private formPartnership(first: SimulationState['people'][number], second: SimulationState['people'][number], pushEvent: (event: SimulationEvent) => void): void {
+    const destination = this.householdById.get(first.householdId)
+    const source = this.householdById.get(second.householdId)
+    if (!destination || !source || source.memberIds.length !== 1 || second.journey) return
+    first.partnerId = second.id
+    second.partnerId = first.id
+    if (source.id !== destination.id) {
+      destination.memberIds = [...destination.memberIds, second.id].sort(compareIds)
+      source.memberIds = []
+      second.initialHomeCellId ??= second.homeCellId
+      second.householdId = destination.id
+      second.homeCellId = destination.homeCellId
+      second.locationCellId = destination.homeCellId
+      second.currentActivity = { kind: 'home', locationId: destination.homeActivityLocationId, sinceTick: this.state.tick }
+      this.state.households = this.state.households.filter((household) => household.id !== source.id)
+      this.state.activityLocations = this.state.activityLocations.filter((location) => location.id !== source.homeActivityLocationId)
+      this.householdById.delete(source.id)
+      this.activityLocationById.delete(source.homeActivityLocationId)
+      this.state.dailyLifeCycleCounters.householdMoves += 1
+      pushEvent(this.event('PERSON_MOVED_HOUSEHOLD', { personId: second.id, previousHouseholdId: source.id, householdId: destination.id, homeCellId: destination.homeCellId }))
+    }
+    this.state.dailyLifeCycleCounters.partnershipsFormed += 1
+    pushEvent(this.event('PARTNERSHIP_FORMED', { firstPersonId: first.id, secondPersonId: second.id, householdId: destination.id }))
+  }
+
+  private birthChild(firstParent: SimulationState['people'][number], secondParent: SimulationState['people'][number], pushEvent: (event: SimulationEvent) => void): void {
+    const household = this.householdById.get(firstParent.householdId)
+    if (!household || household.id !== secondParent.householdId) return
+    const ordinal = this.state.people.reduce((maximum, person) => Math.max(maximum, Number(/^person-(\d+)$/.exec(person.id)?.[1] ?? 0)), 0) + 1
+    const id = `person-${ordinal.toString().padStart(4, '0')}`
+    const variables = createDefaultPersonVariableValues()
+    for (const definition of PERSON_VARIABLE_DEFINITIONS) {
+      const firstValue = getPersonVariable(firstParent.variables, definition.id)
+      const secondValue = getPersonVariable(secondParent.variables, definition.id)
+      setPersonVariable(variables, definition.id, Math.round((firstValue + secondValue) / 2))
+    }
+    const inheritance = calculateCuriosityInheritance({
+      parentIds: [firstParent.id, secondParent.id].sort(compareIds) as [string, string],
+      parentValuesPermille: [getPersonVariable(firstParent.variables, PERSON_VARIABLE_ID.curiosity), getPersonVariable(secondParent.variables, PERSON_VARIABLE_ID.curiosity)],
+      randomVariationPermille: this.random.stream(LIFE_CYCLE_STREAM.inheritance).nextInt(1001),
+    })
+    setPersonVariable(variables, PERSON_VARIABLE_ID.curiosity, inheritance.valuePermille)
+    const child: SimulationState['people'][number] = {
+      id, ageYears: 0, ageHoursIntoYear: 0, lifeStage: 'infant', lifeStatus: 'alive', birthTick: this.state.tick,
+      locationCellId: household.homeCellId, homeCellId: household.homeCellId, householdId: household.id,
+      activityScheduleId: scheduleForAge(0), currentActivity: { kind: 'home', locationId: household.homeActivityLocationId, sinceTick: this.state.tick },
+      originTraces: [inheritance.trace], development: { exposures: [{ ...createParentCuriosityExposureAccumulator(Math.floor(this.state.tick / 720) * 720 + 1), sourcePersonIds: [] }] },
+      environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0 }, variables, knownCellIds: [household.homeCellId],
+    }
+    this.state.people = [...this.state.people, child].sort((a, b) => compareIds(a.id, b.id))
+    this.personById.set(child.id, child)
+    household.memberIds = [...household.memberIds, child.id].sort(compareIds)
+    this.state.parentChildLinks = [...this.state.parentChildLinks,
+      { id: `${firstParent.id}|${id}`, householdId: household.id, parentId: firstParent.id, childId: id },
+      { id: `${secondParent.id}|${id}`, householdId: household.id, parentId: secondParent.id, childId: id },
+    ].sort((a, b) => compareIds(a.id, b.id))
+    this.parentIdsByChildId.set(id, [firstParent.id, secondParent.id].sort(compareIds))
+    this.state.dailyLifeCycleCounters.births += 1
+    pushEvent(this.event('PERSON_BORN', { personId: id, householdId: household.id, parentIds: [firstParent.id, secondParent.id].sort(compareIds).join(',') }))
+  }
+
+  private livingPeople(): SimulationState['people'][number][] {
+    return this.state.people.filter((person) => person.lifeStatus !== 'dead')
   }
 
   private applyEncounter(encounter: ResolvedEncounter): boolean {

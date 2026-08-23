@@ -646,7 +646,7 @@ Implemented: each person retains inspectable lifetime counters for actual occupi
 
 # Milestone 10 — Life Cycle and Population Dynamics
 
-Status: Planned
+Status: Complete
 
 ## Goal
 
@@ -655,6 +655,8 @@ Allow populations and households to evolve across long simulation time spans.
 ---
 
 ## Milestone 10A — Life Stages
+
+Status: Complete
 
 Candidate scope:
 
@@ -666,9 +668,13 @@ Candidate scope:
 
 Build on existing aging rather than replacing it.
 
+Implemented: explicit infant, child, adolescent, adult, and older-adult stages are derived from age and emitted as inspectable transitions. Existing child/adult schedules remain stable; an adolescent schedule identifier is reserved until it has a separately validated activity behavior.
+
 ---
 
 ## Milestone 10B — Mortality
+
+Status: Complete
 
 Candidate scope:
 
@@ -684,9 +690,13 @@ Candidate scope:
 
 Death must preserve referential integrity.
 
+Implemented: annual, age-banded mortality uses a dedicated snapshot-restorable RNG stream. Dead people retain their identity, history, relationships, and parent links but no longer act, move, consume, encounter, or contribute new exposure.
+
 ---
 
 ## Milestone 10C — Partnership and Household Formation
+
+Status: Complete
 
 Potential capabilities:
 
@@ -697,9 +707,13 @@ Potential capabilities:
 
 Partnership formation should build on actual relationships and interaction history rather than global arbitrary matching.
 
+Implemented: annual partnership candidates require mutual familiarity, interaction history, trust, and affection from an existing relationship. A qualifying single-person household can merge into the partner's household; every move and partnership is an event.
+
 ---
 
 ## Milestone 10D — Birth and Children
+
+Status: Complete
 
 Potential capabilities:
 
@@ -711,6 +725,8 @@ Potential capabilities:
 * Stable RNG ownership
 
 Do not introduce unsupported biological/genetic claims.
+
+Implemented: partnered adult pairs can produce a child during the annual life-cycle interval. The child receives a household, parent links, activity/development state, a structured curiosity inheritance trace, bounded initialized variables, and a unique stable ID. This is a fictional configurable starting-predisposition model, not a biological claim.
 
 ---
 
@@ -1145,6 +1161,45 @@ Generated narrative must remain:
 * Separate from canonical digests
 
 The simulation must remain fully functional and explainable without it.
+
+---
+
+# Milestone 22 — Simulation Workbench Experience
+
+Status: Future
+
+## Goal
+
+Bring the application workbench toward the intended world-simulation experience: a legible large map surrounded by useful, inspectable simulation controls and entity context. This is a presentation and workflow milestone; it must not move authoritative simulation logic into the UI.
+
+Potential capabilities:
+
+* A coherent world, simulation, analytics, entities, tools, and settings navigation model
+* A configurable map-layer panel for terrain, resources, population, routes, settlements, and diagnostic overlays
+* Purposeful map-creation and population-placement workflows rather than disconnected controls
+* A consistent person, household/group, settlement, and future polity inspector pattern
+* World overview, simulation controls, time-scale controls, event log, and visible seed/tick diagnostics
+* Population, needs, activity, and community summary panels that use sampled data rather than per-tick UI work
+* A minimap and level-appropriate map controls for very large worlds
+* Clear loading, empty, draft, running, paused, and error states
+* Accessible keyboard navigation, responsive layout behavior, and cross-browser visual regression coverage
+
+The visual direction may take inspiration from the intended dark, map-first workbench mockup, but must remain an original interface built from the application’s real data and capabilities. Do not add decorative controls for unimplemented systems. New entity categories (groups, cities, towns, kingdoms, and so on) should appear in the UI only when their authoritative domain models exist.
+
+Recommended sequencing:
+
+1. Establish shared layout, navigation, visual tokens, and dependable inspector patterns.
+2. Integrate existing world creation, map layers, controls, and diagnostics into that layout.
+3. Add real-data overview and analytics panels with explicit empty states.
+4. Add future entity views incrementally alongside their simulation milestones.
+
+Acceptance criteria:
+
+* Existing simulation and world-authoring workflows remain fully operable and inspectable.
+* The map remains the primary surface and keeps its large-world level-of-detail behavior.
+* UI refresh cadence remains decoupled from simulation cadence.
+* No UI change alters canonical simulation output or consumes simulation RNG.
+* Important interaction paths receive browser-level coverage; visual changes are reviewed at desktop and constrained-width layouts.
 
 ---
 

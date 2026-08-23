@@ -14,10 +14,19 @@ export interface ActivityScheduleDefinition {
 
 export const ACTIVITY_SCHEDULE_ID = {
   child: 'activity.schedule.child.v1',
+  adolescent: 'activity.schedule.adolescent.v1',
   adult: 'activity.schedule.adult.v1',
-} as const satisfies Record<'child' | 'adult', ActivityScheduleId>
+} as const satisfies Record<'child' | 'adolescent' | 'adult', ActivityScheduleId>
 
 export const ACTIVITY_SCHEDULES: readonly ActivityScheduleDefinition[] = [
+  {
+    id: ACTIVITY_SCHEDULE_ID.adolescent,
+    periods: [
+      { startHour: 0, endHourExclusive: 7, kind: 'home' },
+      { startHour: 7, endHourExclusive: 18, kind: 'commons' },
+      { startHour: 18, endHourExclusive: 24, kind: 'home' },
+    ],
+  },
   {
     id: ACTIVITY_SCHEDULE_ID.child,
     periods: [

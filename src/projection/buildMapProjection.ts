@@ -95,7 +95,8 @@ export class WorkbenchProjectionBuilder {
       .map((person) => [person.id, this.communityIdByCellId.get(person.locationCellId)] as const)
       .filter((entry): entry is readonly [string, string] => entry[1] !== undefined)
       .sort(([first], [second]) => first.localeCompare(second)))
-    const hungerTotal = source.people.reduce((sum, person) => sum + getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger), 0)
+    const livingPeople = source.people.filter((person) => person.lifeStatus !== 'dead')
+    const hungerTotal = livingPeople.reduce((sum, person) => sum + getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger), 0)
     return {
       projectionProtocolVersion: PROJECTION_PROTOCOL_VERSION,
       projectionEpoch,
@@ -121,11 +122,11 @@ export class WorkbenchProjectionBuilder {
       communityVariableDefinitions: source.communityVariableDefinitions,
       communityFeedbackDefinitions: source.communityFeedbackDefinitions,
       summary: {
-        populationCount: source.people.length,
+        populationCount: livingPeople.length,
         relationshipCount: source.relationships.length,
         householdCount: source.households.length,
         activityLocationCount: source.activityLocations.length,
-        averageHunger: source.people.length === 0 ? 0 : Math.round(hungerTotal / source.people.length),
+        averageHunger: livingPeople.length === 0 ? 0 : Math.round(hungerTotal / livingPeople.length),
       },
       routeHome: this.routeHome(source.people, request.hookedPersonId),
       digest: digest ?? source.digest,
@@ -137,12 +138,13 @@ export class WorkbenchProjectionBuilder {
     const bounds = clampViewportBounds(request.bounds, this.grid.width, this.grid.height)
     const size = selectRegionSize(bounds, request.projectedHexRadius)
     const exact = size === 1
-    const populationByCellId = countPeopleByCell(source.people)
+    const livingPeople = source.people.filter((person) => person.lifeStatus !== 'dead')
+    const populationByCellId = countPeopleByCell(livingPeople)
     const communitiesById = new Map(source.communities.map((community) => [community.catchment.id, community]))
     const exactCells = exact ? cellsInBounds(this.grid, bounds).map((cell) => this.projectCell(cell, populationByCellId, communitiesById, request.communityMeasureId)) : []
     const regions = exact ? [] : this.aggregateRegions(source, bounds, size, request.overlay === 'food', request.communityMeasureId)
-    const populationMarkers = buildPopulationMarkers(source.people, this.cellById, bounds, exact ? 1 : size)
-    const hookedPersonMarker = buildHookedMarker(source.people, this.cellById, bounds, request.hookedPersonId)
+    const populationMarkers = buildPopulationMarkers(livingPeople, this.cellById, bounds, exact ? 1 : size)
+    const hookedPersonMarker = buildHookedMarker(livingPeople, this.cellById, bounds, request.hookedPersonId)
     const selectedPerson = request.hookedPersonId ? source.people.find((person) => person.id === request.hookedPersonId) : undefined
     const activityMarkers = this.buildLocationMarkers(this.activityEntriesByChunk, this.activityCellById, bounds, size, MAX_ACTIVITY_MARKERS, 'activity', selectedPerson?.currentActivity.locationId ?? undefined)
     const householdMarkers = this.buildLocationMarkers(this.householdEntriesByChunk, this.householdCellById, bounds, size, MAX_HOUSEHOLD_MARKERS, 'household', selectedPerson?.householdId)

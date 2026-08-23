@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.13.0'
-export const SNAPSHOT_SCHEMA_VERSION = 13
+export const ENGINE_VERSION = '0.14.0'
+export const SNAPSHOT_SCHEMA_VERSION = 14
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -19,6 +19,7 @@ export const COMMUNITY_REGISTRY_VERSION = 1
 export const WORLD_GENERATOR_VERSION = 1
 /** Versioned deterministic calendar/exposure rules used by Milestone 9. */
 export const ENVIRONMENT_MODEL_VERSION = 1
+export const LIFE_CYCLE_MODEL_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
@@ -210,7 +211,7 @@ export type ParentChildLinkId = string
 export type ActivityLocationId = string
 export type ActivityLocationKind = 'home' | 'commons'
 export type CurrentActivityKind = ActivityLocationKind | 'travel'
-export type ActivityScheduleId = 'activity.schedule.child.v1' | 'activity.schedule.adult.v1'
+export type ActivityScheduleId = 'activity.schedule.child.v1' | 'activity.schedule.adolescent.v1' | 'activity.schedule.adult.v1'
 
 export interface HouseholdState {
   id: HouseholdId
@@ -415,12 +416,23 @@ export interface EnvironmentalExposureState {
   thermalLoadPermilleHours: number
 }
 
+export type PersonLifeStage = 'infant' | 'child' | 'adolescent' | 'adult' | 'olderAdult'
+export type PersonLifeStatus = 'alive' | 'dead'
+
 export interface PersonState {
   id: string
   ageYears: number
   ageHoursIntoYear: number
+  lifeStage?: PersonLifeStage
+  lifeStatus?: PersonLifeStatus
+  /** Defined only for people created during this run, preserving initial placement evidence. */
+  birthTick?: number
+  deathTick?: number
+  partnerId?: string
   locationCellId: string
   homeCellId: string
+  /** Authored starting home, retained when an adult later changes household. */
+  initialHomeCellId?: string
   householdId: HouseholdId
   activityScheduleId: ActivityScheduleId
   currentActivity: CurrentActivityState
@@ -462,6 +474,14 @@ export interface DailyDevelopmentCounters {
   absoluteCuriosityChange: number
 }
 
+export interface DailyLifeCycleCounters {
+  births: number
+  deaths: number
+  partnershipsFormed: number
+  householdMoves: number
+  lifeStageTransitions: number
+}
+
 export interface RunConfiguration {
   seed: string
   worldWidth: number
@@ -476,6 +496,7 @@ export interface RunConfiguration {
   developmentRegistryVersion: number
   communityRegistryVersion: number
   environmentModelVersion: number
+  lifeCycleModelVersion: number
 }
 
 export interface RandomStreamSnapshot {
@@ -501,6 +522,7 @@ export interface SimulationState {
   dailySocialCounters: DailySocialCounters
   dailyActivityCounters: DailyActivityCounters
   dailyDevelopmentCounters: DailyDevelopmentCounters
+  dailyLifeCycleCounters: DailyLifeCycleCounters
   randomStreams: RandomStreamSnapshot[]
 }
 
@@ -508,13 +530,13 @@ export interface SimulationEvent {
   id: string
   runId: string
   tick: number
-  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
+  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
   version: 1
   cellId?: string
   payload: Record<string, string | number | boolean | null>
 }
 
-export type WorldStatisticMetricId = 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.averageHunger' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodConsumed' | 'resources.failedMeals' | 'social.encounters' | 'social.encountersPer1000People' | 'social.relationshipCount' | 'social.networkDensityPermille' | 'social.averageFamiliarity' | 'social.positiveEncounters' | 'social.tenseEncounters' | 'activity.homePersonHours' | 'activity.commonsPersonHours' | 'activity.travelPersonHours' | 'household.parentChildCoExposureSourceHours' | 'development.experiences' | 'development.curiosityChanges' | 'development.absoluteCuriosityChange'
+export type WorldStatisticMetricId = 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.aliveCount' | 'population.averageHunger' | 'lifecycle.births' | 'lifecycle.deaths' | 'lifecycle.partnershipsFormed' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodConsumed' | 'resources.failedMeals' | 'social.encounters' | 'social.encountersPer1000People' | 'social.relationshipCount' | 'social.networkDensityPermille' | 'social.averageFamiliarity' | 'social.positiveEncounters' | 'social.tenseEncounters' | 'activity.homePersonHours' | 'activity.commonsPersonHours' | 'activity.travelPersonHours' | 'household.parentChildCoExposureSourceHours' | 'development.experiences' | 'development.curiosityChanges' | 'development.absoluteCuriosityChange'
 
 export type CommunityStatisticMetricId = 'community.emergent.socialTrust' | 'community.emergent.cohesion' | 'community.emergent.cooperation' | 'community.emergent.conflict' | 'community.emergent.innovationClimate' | 'community.structural.foodSecurity' | 'community.exposedPersonHours' | 'community.encounters'
 

@@ -535,6 +535,9 @@ export default function App() {
             <Metric label="Cells" value={recentMetrics['world.cellCount'] ?? projection?.world.cellCount ?? 0} />
             <Metric label="Habitable" value={recentMetrics['world.habitableCells'] ?? '—'} />
             <Metric label="Population" value={recentMetrics['population.count'] ?? projection?.people.length ?? 0} />
+            <Metric label="Living" value={recentMetrics['population.aliveCount'] ?? projection?.summary.populationCount ?? 0} />
+            <Metric label="Births/day" value={recentMetrics['lifecycle.births'] ?? 0} />
+            <Metric label="Deaths/day" value={recentMetrics['lifecycle.deaths'] ?? 0} />
             <Metric label="Average hunger" value={recentMetrics['population.averageHunger'] ?? averageVariable(projection?.people, 'person.state.hunger')} />
             <Metric label="Occupied cells" value={recentMetrics['spatial.occupiedCells'] ?? '—'} />
             <Metric label="World food" value={recentMetrics['resources.totalFood'] ?? 'Awaiting daily sample'} />
@@ -725,6 +728,9 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
     <div className="tracking-row"><span><i />Person hooked</span><button className="back-button" onClick={onRelease}>Release to current cell</button></div>
     <div className="inspector-grid">
       <Metric label="Age" value={`${person.ageYears} years`} />
+      <Metric label="Life stage" value={person.lifeStage ?? (person.ageYears < 18 ? 'child' : 'adult')} />
+      <Metric label="Status" value={person.lifeStatus ?? 'alive'} />
+      {person.partnerId && <Metric label="Partner" value={person.partnerId} />}
       <Metric label="Location" value={person.locationCellId} />
       <Metric label="Home" value={person.homeCellId} />
       {person.journey && <><Metric label="Traveling to" value={person.journey.destinationCellId} /><Metric label="Travel remaining" value={`${person.journey.remainingCost} / ${person.journey.totalCost}`} /></>}
