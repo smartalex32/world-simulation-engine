@@ -33,6 +33,8 @@ Future systems should be introduced only when lower-level mechanisms provide a c
 
 # Roadmap Rules
 
+The detailed plan for post-23 work is in [POST_23_ROADMAP.md](POST_23_ROADMAP.md).
+
 ## Vertical Slices
 
 Prefer the smallest behavior that can be implemented, observed, tested, and reviewed independently.
@@ -1359,7 +1361,7 @@ Deep simulation semantics belong in focused design documents.
 Completed through:
 
 ```text
-Milestone 23 — Settlement Profiles
+Milestone 24 — Settlement Catchments and Inspection
 ```
 
 Current milestone:
@@ -1371,7 +1373,7 @@ No active implementation milestone
 Next independently reviewable slice:
 
 ```text
-To be planned from the deferred areas and product goals
+Milestone 25 — Water, Routes, and Geographic Accessibility
 ```
 
 Completed immediate sequence:

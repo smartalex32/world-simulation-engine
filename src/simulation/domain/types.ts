@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.22.0'
-export const SNAPSHOT_SCHEMA_VERSION = 22
+export const ENGINE_VERSION = '0.23.0'
+export const SNAPSHOT_SCHEMA_VERSION = 23
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -84,6 +84,8 @@ export interface SettlementState {
   id: string
   name: string
   anchorCellId: string
+  /** Optional authored geographic area; never a person membership list. */
+  catchmentCellIds?: string[]
 }
 
 /** Exact initial resident allocation for a disjoint set of passable cells. */
@@ -113,6 +115,7 @@ export interface SettlementDraft {
   name: string
   anchorCellId?: string
   preset?: WorldPlacementPreset
+  catchmentCellIds?: string[]
 }
 
 /** Ordered, contiguous passable cell geometry for a draft-only road segment. */

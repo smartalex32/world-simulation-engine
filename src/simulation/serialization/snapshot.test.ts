@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SimulationEngine } from '../engine/engine'
-import { KNOWLEDGE_MODEL_VERSION } from '../domain/types'
+import { ENGINE_VERSION, KNOWLEDGE_MODEL_VERSION, SNAPSHOT_SCHEMA_VERSION } from '../domain/types'
 import { createSnapshot, canonicalStringify, validateSnapshot } from './snapshot'
 
 describe('canonical serialization', () => {
@@ -10,13 +10,13 @@ describe('canonical serialization', () => {
     )
   })
 
-  it('round-trips schema 22 including person knowledge', async () => {
+  it('round-trips the current schema including person knowledge', async () => {
     const snapshot = await SimulationEngine.create('schema-6-round-trip').snapshot()
     const validated = await validateSnapshot(structuredClone(snapshot))
 
     expect(validated).toEqual(snapshot)
-    expect(validated.schemaVersion).toBe(22)
-    expect(validated.engineVersion).toBe('0.22.0')
+    expect(validated.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION)
+    expect(validated.engineVersion).toBe(ENGINE_VERSION)
     expect(validated.state.people[0]?.knowledge).toEqual(expect.objectContaining({ 'knowledge.foraging': expect.any(Number), 'knowledge.localTerrain': expect.any(Number) }))
     expect(validated.state.households).toHaveLength(100)
     expect(validated.state.parentChildLinks).toHaveLength(100)

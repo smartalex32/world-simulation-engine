@@ -21,6 +21,7 @@ export const WORLD_CREATION_LIMITS = Object.freeze({
   maximumCellCount: 16_384,
   minimumPopulation: 1,
   maximumPopulation: 500,
+  maximumSettlementCatchmentCells: 512,
 })
 
 const IDENTIFIER = /^[a-z][a-z0-9-]*$/
@@ -184,9 +185,10 @@ export function fixedWorldScale() {
   return { layout: 'axial-pointy' as const, hexRadiusMeters: WORLD_CELL_RADIUS_METERS }
 }
 
-function normalizeSettlements(value: readonly { id: string; name: string; anchorCellId?: string; preset?: WorldPlacementPreset }[], cells: readonly GeographicCell[], width: number, height: number): SettlementState[] {
+function normalizeSettlements(value: readonly { id: string; name: string; anchorCellId?: string; preset?: WorldPlacementPreset; catchmentCellIds?: string[] }[], cells: readonly GeographicCell[], width: number, height: number): SettlementState[] {
   const cellsById = new Map(cells.map((cell) => [cell.id, cell]))
   const ids = new Set<string>()
+  const assignedCatchmentCells = new Set<string>()
   return value.map((settlement) => {
     validIdentifier(settlement.id, 'Settlement ID')
     if (ids.has(settlement.id)) throw new Error(`Duplicate settlement ID: ${settlement.id}`)
@@ -194,8 +196,21 @@ function normalizeSettlements(value: readonly { id: string; name: string; anchor
     const anchorCellId = settlement.anchorCellId ?? nearestPassableCell(cells, presetTarget(settlement.preset ?? 'center', width, height)).id
     const anchor = cellsById.get(anchorCellId)
     if (!anchor?.movementCost) throw new Error(`Settlement ${settlement.id} has an invalid anchor cell`)
-    return { id: settlement.id, name: requiredText(settlement.name, `Settlement ${settlement.id} name`, 80), anchorCellId }
+    const catchmentCellIds = settlement.catchmentCellIds === undefined ? undefined : normalizeSettlementCatchment(settlement.id, settlement.catchmentCellIds, anchorCellId, cellsById, assignedCatchmentCells)
+    return { id: settlement.id, name: requiredText(settlement.name, `Settlement ${settlement.id} name`, 80), anchorCellId, ...(catchmentCellIds === undefined ? {} : { catchmentCellIds }) }
   }).sort((a, b) => compareText(a.id, b.id))
+}
+
+function normalizeSettlementCatchment(settlementId: string, value: readonly string[], anchorCellId: string, cellsById: ReadonlyMap<string, GeographicCell>, assigned: Set<string>): string[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > WORLD_CREATION_LIMITS.maximumSettlementCatchmentCells) throw new Error(`Settlement ${settlementId} catchment must contain from 1 through ${WORLD_CREATION_LIMITS.maximumSettlementCatchmentCells} cells`)
+  const ids = [...value].sort(compareText)
+  if (new Set(ids).size !== ids.length || !ids.includes(anchorCellId)) throw new Error(`Settlement ${settlementId} catchment must be unique and contain its anchor`)
+  for (const cellId of ids) {
+    if (!cellsById.get(cellId)?.movementCost) throw new Error(`Settlement ${settlementId} catchment contains an invalid cell`)
+    if (assigned.has(cellId)) throw new Error(`Settlement catchments overlap at ${cellId}`)
+    assigned.add(cellId)
+  }
+  return ids
 }
 
 function normalizeRoads(value: readonly { id: string; cellIds: string[] }[] | undefined, cells: readonly GeographicCell[]): RoadState[] {
