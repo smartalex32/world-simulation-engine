@@ -63,6 +63,7 @@ test('shows a bounded generated map only for a non-settlement draft zone', async
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
   const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.getByRole('button', { name: 'Commit & create world', exact: true })).toBeEnabled()
   await setup.getByLabel('Zone 1 has settlement').uncheck()
   await expect(setup.getByLabel('Zone to draw')).toHaveValue('population-zone-1')
   const map = setup.getByLabel('Draft placement zone map')
@@ -304,7 +305,7 @@ test('the same seed and step count produce the same digest', async ({ page }) =>
   await page.getByTitle('Advance one hour').click()
   await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
   const firstDigest = await page.locator('.fact').filter({ hasText: 'SAVED HASH' }).locator('strong').textContent()
-  expect(firstDigest).toBe('37ab0ff047')
+  expect(firstDigest).toBe('5d9bd74940')
   await page.getByRole('button', { name: 'Reset' }).click()
   await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
   await page.getByTitle('Advance one hour').click()
@@ -418,7 +419,9 @@ test('inspects persisted experience and deterministic development at the 720-hou
   await page.locator('.occupant-list button').filter({ hasText: child.id }).click()
 
   await expect(page.getByRole('heading', { name: 'Recent experience', exact: true })).toBeVisible()
-  await expect(page.getByText('Parent curiosity modeling', { exact: true })).toBeVisible()
+  // Parent and peer evidence can both complete at this boundary. The inspector
+  // must show a persisted, structured experience without assuming their order.
+  await expect(page.getByRole('region', { name: 'Recent experience' })).toContainText(/Parent curiosity modeling|Peer relationship modeling/)
   await expect(page.getByRole('heading', { name: 'Developmental exposure', exact: true })).toBeVisible()
   await expect(page.getByText('No co-presence recorded in current window.', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Development change', exact: true })).toBeVisible()
@@ -621,7 +624,7 @@ async function controlledDevelopmentEngine(): Promise<SimulationEngine> {
   state.dailySpatialCounters = { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 }
   state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
   state.dailyActivityCounters = { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 }
-  state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0 }
+  state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0, broaderDevelopmentExperiences: 0, broaderDevelopmentChanges: 0 }
   return SimulationEngine.restore(await createSnapshot(state))
 }
 

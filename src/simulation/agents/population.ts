@@ -4,6 +4,7 @@ import { generateInitialHouseholds } from '../households/generate'
 import { HOUSEHOLD_GENERATION_STREAM } from '../households/config'
 import { calculateCuriosityInheritance } from '../households/inheritance'
 import { createParentCuriosityExposureAccumulator } from '../exposure/model'
+import { createBroaderDevelopmentState } from '../development/broader'
 import { RandomProvider } from '../rng/pcg32'
 import { hexNeighbors } from '../spatial/hex'
 import { PERSON_VARIABLE_ID, getPersonVariableDefinition } from '../variables/registry'
@@ -92,7 +93,7 @@ export function generatePopulation(cells: GeographicCell[], zonesOrRandom: reado
       activityScheduleId: activity.scheduleId,
       currentActivity: { kind: activity.kind, locationId: activity.locationId, sinceTick: 0 },
       originTraces,
-      development: { exposures: [{ ...createParentCuriosityExposureAccumulator(1), sourcePersonIds: [] }] },
+      development: { exposures: [{ ...createParentCuriosityExposureAccumulator(1), sourcePersonIds: [] }], broader: createBroaderDevelopmentState(1) },
       environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0 },
       variables,
       knownCellIds: knownCells(assignment.homeCellId, byId),

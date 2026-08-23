@@ -81,7 +81,7 @@ async function controlledEngine(options: ControlledOptions = {}): Promise<Simula
   state.dailySpatialCounters = { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 }
   state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
   state.dailyActivityCounters = { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 }
-  state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0 }
+  state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0, broaderDevelopmentExperiences: 0, broaderDevelopmentChanges: 0 }
   const catchments = createTwoCatchmentGeography({ cells: state.world.grid.cells, width: 2, height: 1 })
   state.communities = catchments.map((catchment) => ({ ...createCommunityState(catchment, 500, 0), lastUpdatedTick: 0, latestTraces: [] }))
   state.dailyCommunityCounters = state.communities.map((community) => ({
@@ -149,7 +149,7 @@ describe('Milestone 5B exposure and development integration', () => {
     expect(child.development.exposures[0]).toEqual({ ...createParentCuriosityExposureAccumulator(721), sourcePersonIds: [] })
     expect(child.development.lastExperience).toBeUndefined()
     expect(child.development.lastChange).toBeUndefined()
-    expect(result.events.some(({ type }) => type === 'PERSON_EXPERIENCED_PARENT_MODELING' || type === 'PERSON_VARIABLE_DEVELOPED')).toBe(false)
+    expect(result.events.some(({ type, payload }) => payload.personId === child.id && (type === 'PERSON_EXPERIENCED_PARENT_MODELING' || type === 'PERSON_VARIABLE_DEVELOPED'))).toBe(false)
   })
 
   it('creates one monthly experience and applies the exact childhood change before aging', async () => {

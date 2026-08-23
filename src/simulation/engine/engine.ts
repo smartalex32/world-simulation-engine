@@ -61,6 +61,7 @@ import {
   PARENT_CURIOSITY_EXPOSURE_CHANNEL,
 } from '../exposure/model'
 import { applyParentCuriosityDevelopment } from '../development/apply'
+import { accumulateBroaderExposure, applyBroaderDevelopment, broaderExposure, BROADER_DEVELOPMENT_DEFINITIONS, completeBroaderExposure, createBroaderDevelopmentState } from '../development/broader'
 import { seasonAtTick, seasonalAmount } from '../environment/season'
 import { calculateCuriosityInheritance } from '../households/inheritance'
 import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STREAM, partnershipEligible } from '../lifecycle/model'
@@ -189,7 +190,7 @@ export class SimulationEngine {
       dailySpatialCounters: { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 },
       dailySocialCounters: { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 },
       dailyActivityCounters: { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 },
-      dailyDevelopmentCounters: { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0 },
+      dailyDevelopmentCounters: { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0, broaderDevelopmentExperiences: 0, broaderDevelopmentChanges: 0 },
       dailyLifeCycleCounters: { births: 0, deaths: 0, partnershipsFormed: 0, householdMoves: 0, lifeStageTransitions: 0 },
       randomStreams: random.snapshot(),
     }, random)
@@ -235,7 +236,10 @@ export class SimulationEngine {
         const journey = advanceJourney(person, HOURLY_TRAVEL_BUDGET)
         if (journey?.arrived) {
           this.recordTravel(journey.travelCost)
-          if (journey.kind === 'explore') this.recordCommunityExplorationArrival(journey.targetCellId)
+          if (journey.kind === 'explore') {
+            this.recordCommunityExplorationArrival(journey.targetCellId)
+            this.recordActivityDevelopment(person)
+          }
           pushEvent(this.journeyEvent(person.id, journey))
         }
       }
@@ -255,6 +259,7 @@ export class SimulationEngine {
         this.state.dailySpatialCounters.foodConsumed += outcome.foodConsumed
         if (outcome.failedMeal) this.state.dailySpatialCounters.failedMeals += 1
         this.recordCommunityAction(decision.action, outcome)
+        if (decision.action === 'explore' && outcome.arrived) this.recordActivityDevelopment(person)
         if (decision.action === 'explore' && outcome.arrived && decision.targetCellId) this.recordCommunityExplorationArrival(decision.targetCellId)
         pushEvent(this.actionEvent(person.id, decision, outcome))
       }
@@ -282,8 +287,12 @@ export class SimulationEngine {
       this.recordActivityPersonHours()
       this.recordEnvironmentalExposure()
       this.recordCommunityPersonHours()
+      this.recordCommunityDevelopmentExposure()
       this.accumulateDevelopmentExposure()
-      if (this.state.tick % 720 === 0) this.processDevelopment(pushEvent)
+      if (this.state.tick % 720 === 0) {
+        this.processDevelopment(pushEvent)
+        this.processBroaderDevelopment(pushEvent)
+      }
       if (this.state.tick % 8760 === 0) this.resolveAnnualLifeCycle(pushEvent)
       if (this.state.tick % 24 === 0) {
         this.aggregateCommunities(pushEvent)
@@ -293,7 +302,7 @@ export class SimulationEngine {
         this.state.dailySpatialCounters = { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 }
         this.state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
         this.state.dailyActivityCounters = { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 }
-        this.state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0 }
+        this.state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0, broaderDevelopmentExperiences: 0, broaderDevelopmentChanges: 0 }
         this.state.dailyLifeCycleCounters = { births: 0, deaths: 0, partnershipsFormed: 0, householdMoves: 0, lifeStageTransitions: 0 }
         this.resetCommunityCounters(this.state.tick + 1)
       }
@@ -396,6 +405,8 @@ export class SimulationEngine {
       { ...base, metricId: 'development.experiences', value: this.state.dailyDevelopmentCounters.developmentExperiences },
       { ...base, metricId: 'development.curiosityChanges', value: this.state.dailyDevelopmentCounters.developmentChanges },
       { ...base, metricId: 'development.absoluteCuriosityChange', value: this.state.dailyDevelopmentCounters.absoluteCuriosityChange },
+      { ...base, metricId: 'development.broaderExperiences', value: this.state.dailyDevelopmentCounters.broaderDevelopmentExperiences },
+      { ...base, metricId: 'development.broaderChanges', value: this.state.dailyDevelopmentCounters.broaderDevelopmentChanges },
     ]
     const countersById = new Map(this.state.dailyCommunityCounters.map((entry) => [entry.communityId, entry.counters]))
     const communitySamples: StatisticSample[] = this.state.communities.flatMap((community) => {
@@ -776,6 +787,109 @@ export class SimulationEngine {
     }
   }
 
+  private processBroaderDevelopment(pushEvent: (event: SimulationEvent) => void): void {
+    const nextWindowStartTick = this.state.tick + 1
+    for (const person of this.livingPeople()) {
+      const broader = person.development.broader ?? (person.development.broader = createBroaderDevelopmentState(Math.floor((this.state.tick - 1) / 720) * 720 + 1))
+      for (const definition of BROADER_DEVELOPMENT_DEFINITIONS) {
+        const accumulator = broader.exposures.find((candidate) => candidate.channelId === definition.channelId && candidate.targetId === definition.targetId)
+        if (!accumulator) throw new Error(`Person ${person.id} is missing broader exposure ${definition.edgeId}`)
+        const completed = completeBroaderExposure(accumulator, nextWindowStartTick)
+        this.replaceBroaderExposure(person, completed.accumulator)
+        if (!completed.experience) continue
+        const experienceId = `${person.id}:${accumulator.windowStartTick}-${this.state.tick}:${definition.type}:${definition.targetId}`
+        const experience = {
+          id: experienceId,
+          type: definition.type,
+          channelId: definition.channelId,
+          personId: person.id,
+          targetId: definition.targetId,
+          startTick: accumulator.windowStartTick,
+          endTick: this.state.tick,
+          recipientHours: accumulator.recipientHours,
+          sourceHours: accumulator.sourceHours,
+          sourceMeanPermille: completed.experience.sourceMeanPermille,
+          exposureStrengthPermille: completed.experience.exposureStrengthPermille,
+          sourcePersonIds: [...accumulator.sourcePersonIds],
+          sourceContextId: accumulator.sourceContextId,
+        }
+        broader.lastExperience = experience
+        this.state.dailyDevelopmentCounters.broaderDevelopmentExperiences += 1
+        const eventType = definition.type === 'experience.peer.relationship-modeling'
+          ? 'PERSON_EXPERIENCED_PEER_MODELING' as const
+          : definition.type === 'experience.activity.exploration-practice'
+            ? 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' as const
+            : 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' as const
+        pushEvent(this.event(eventType, { personId: person.id, experienceId, targetId: definition.targetId, sourceHours: experience.sourceHours, sourceMeanPermille: experience.sourceMeanPermille, exposureStrengthPermille: experience.exposureStrengthPermille, sourceContextId: experience.sourceContextId ?? null }))
+        const developed = applyBroaderDevelopment({
+          currentValuePermille: getPersonVariable(person.variables, definition.targetId),
+          ageYears: person.ageYears,
+          sourceValuePermille: experience.sourceMeanPermille,
+          exposureStrengthPermille: experience.exposureStrengthPermille,
+          edgeId: definition.edgeId,
+          basePlasticityPermille: definition.plasticityPermille,
+        })
+        setPersonVariable(person.variables, definition.targetId, developed.currentValuePermille)
+        if (developed.appliedDeltaPermille === 0) continue
+        const trace = {
+          edgeId: definition.edgeId,
+          targetId: definition.targetId,
+          experienceId,
+          previousValue: getPersonVariable(person.variables, definition.targetId) - developed.appliedDeltaPermille,
+          sourceValuePermille: experience.sourceMeanPermille,
+          gapPermille: developed.gapPermille,
+          exposureStrengthPermille: experience.exposureStrengthPermille,
+          ageBand: developed.ageBand,
+          plasticityPermille: developed.plasticityPermille,
+          resolution: 'deterministic' as const,
+          applicationProbabilityPermille: 1000 as const,
+          requestedDelta: developed.requestedDeltaPermille,
+          appliedDelta: developed.appliedDeltaPermille,
+          currentValue: developed.currentValuePermille,
+        }
+        broader.lastChange = trace
+        this.state.dailyDevelopmentCounters.broaderDevelopmentChanges += 1
+        pushEvent(this.event('PERSON_VARIABLE_DEVELOPED', { personId: person.id, experienceId, edgeId: trace.edgeId, targetId: trace.targetId, previousValue: trace.previousValue, sourceValuePermille: trace.sourceValuePermille, gapPermille: trace.gapPermille, exposureStrengthPermille: trace.exposureStrengthPermille, ageBand: trace.ageBand, plasticityPermille: trace.plasticityPermille, applicationProbabilityPermille: trace.applicationProbabilityPermille, requestedDelta: trace.requestedDelta, appliedDelta: trace.appliedDelta, currentValue: trace.currentValue }))
+      }
+    }
+  }
+
+  /** Records actual location-time against the measures that were observable in that catchment this hour. */
+  private recordCommunityDevelopmentExposure(): void {
+    const sourceByTarget = [
+      [PERSON_VARIABLE_ID.trustPropensity, 'community.emergent.socialTrust' as const],
+      [PERSON_VARIABLE_ID.conformity, 'community.emergent.cohesion' as const],
+      [PERSON_VARIABLE_ID.curiosity, 'community.emergent.innovationClimate' as const],
+    ] as const
+    for (const person of this.livingPeople()) {
+      // The first community-development slice begins at adolescence so it does not
+      // blur the already-isolated parent/child childhood mechanism.
+      if (person.ageYears < 13) continue
+      const community = this.communityByCellId.get(person.locationCellId)
+      if (!community) throw new Error(`Person ${person.id} occupies a cell with no community catchment`)
+      for (const [targetId, sourceId] of sourceByTarget) {
+        const accumulator = broaderExposure(person, 'exposure.community.catchment', targetId)
+        const updated = accumulateBroaderExposure({ accumulator, tick: this.state.tick, sourceValuePermille: community.emergent[sourceId], sourceContextId: community.catchment.id })
+        this.replaceBroaderExposure(person, updated)
+      }
+    }
+  }
+
+  /** Completed exploration is the deliberately small first activity-practice signal. */
+  private recordActivityDevelopment(person: SimulationState['people'][number]): void {
+    const accumulator = broaderExposure(person, 'exposure.activity.exploration-practice', PERSON_VARIABLE_ID.persistence)
+    // A carried journey can arrive before a new immediate explore selection in
+    // the same one-hour interval. That is one practice interval, not two.
+    if (accumulator.lastExposureTick === this.state.tick) return
+    this.replaceBroaderExposure(person, accumulateBroaderExposure({ accumulator, tick: this.state.tick, sourceValuePermille: 1000, sourceContextId: 'action.explore' }))
+  }
+
+  private replaceBroaderExposure(person: SimulationState['people'][number], updated: NonNullable<SimulationState['people'][number]['development']['broader']>['exposures'][number]): void {
+    const broader = person.development.broader
+    if (!broader) throw new Error(`Person ${person.id} is missing broader development state`)
+    broader.exposures = broader.exposures.map((existing) => existing.channelId === updated.channelId && existing.targetId === updated.targetId ? updated : existing)
+  }
+
   /** Annual social and demographic updates; all candidates come from actual relationships. */
   private resolveAnnualLifeCycle(pushEvent: (event: SimulationEvent) => void): void {
     const living = this.livingPeople()
@@ -839,7 +953,7 @@ export class SimulationEngine {
       id, ageYears: 0, ageHoursIntoYear: 0, lifeStage: 'infant', lifeStatus: 'alive', birthTick: this.state.tick,
       locationCellId: household.homeCellId, homeCellId: household.homeCellId, householdId: household.id,
       activityScheduleId: scheduleForAge(0), currentActivity: { kind: 'home', locationId: household.homeActivityLocationId, sinceTick: this.state.tick },
-      originTraces: [inheritance.trace], development: { exposures: [{ ...createParentCuriosityExposureAccumulator(Math.floor(this.state.tick / 720) * 720 + 1), sourcePersonIds: [] }] },
+      originTraces: [inheritance.trace], development: { exposures: [{ ...createParentCuriosityExposureAccumulator(Math.floor(this.state.tick / 720) * 720 + 1), sourcePersonIds: [] }], broader: createBroaderDevelopmentState(Math.floor(this.state.tick / 720) * 720 + 1) },
       environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0 }, variables, knownCellIds: [household.homeCellId],
     }
     this.state.people = [...this.state.people, child].sort((a, b) => compareIds(a.id, b.id))
@@ -887,7 +1001,30 @@ export class SimulationEngine {
     else if (encounter.outcome === 'neutral') this.state.dailySocialCounters.neutralEncounters += 1
     else this.state.dailySocialCounters.tenseEncounters += 1
     if (!existing) this.state.dailySocialCounters.relationshipsFormed += 1
+    this.recordPeerDevelopmentExposure(initiator, participant, updated)
     return !existing
+  }
+
+  /** Peer modeling requires an actual resolved encounter and uses the post-encounter relationship strength as evidence. */
+  private recordPeerDevelopmentExposure(first: SimulationState['people'][number], second: SimulationState['people'][number], relationship: SimulationState['relationships'][number]): void {
+    const sources = [
+      [PERSON_VARIABLE_ID.trustPropensity, PERSON_VARIABLE_ID.trustPropensity],
+      [PERSON_VARIABLE_ID.sociability, PERSON_VARIABLE_ID.sociability],
+      [PERSON_VARIABLE_ID.conformity, PERSON_VARIABLE_ID.conformity],
+    ] as const
+    const record = (recipient: SimulationState['people'][number], source: SimulationState['people'][number], relationshipTrust: number) => {
+      for (const [targetId, sourceId] of sources) {
+        const accumulator = broaderExposure(recipient, 'exposure.peer.relationship-modeling', targetId)
+        const recipientValue = getPersonVariable(recipient.variables, targetId)
+        const sourceValue = getPersonVariable(source.variables, sourceId)
+        // Relationship trust attenuates a peer's modeled value; unfamiliar/weak ties cannot exert a full-strength pull.
+        const interpretedSource = recipientValue + symmetricRoundDivision((sourceValue - recipientValue) * relationshipTrust, 1000)
+        const updated = accumulateBroaderExposure({ accumulator, tick: this.state.tick, sourceValuePermille: interpretedSource, sourcePersonId: source.id })
+        this.replaceBroaderExposure(recipient, updated)
+      }
+    }
+    record(first, second, relationship.personAId === first.id ? relationship.aToB.trust : relationship.bToA.trust)
+    record(second, first, relationship.personAId === second.id ? relationship.aToB.trust : relationship.bToA.trust)
   }
 
   private decayRelationshipFrequencies(): void {

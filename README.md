@@ -599,6 +599,14 @@ Development is currently deterministic once the experience exists and requires n
 
 Development changes preserve structured traces.
 
+Milestone 11 extends this through three additional bounded monthly experience channels:
+
+* Repeated resolved peer encounters can influence trust propensity, sociability, and conformity, with relationship trust attenuating the modeled peer value.
+* Completed exploration can develop persistence through an activity-practice experience.
+* Actual adolescent/adult time in a geographic community catchment can create low-plasticity social-trust, cohesion, or innovation-climate experiences.
+
+These are exposure records and structured experiences—not direct assignment of a household or community average to a person. The first activity channel deliberately does not create a skill system; skills remain a separate future semantic layer.
+
 This is a fictional simulation mechanism, not a biological claim.
 
 ---
