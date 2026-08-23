@@ -59,7 +59,7 @@ describe('SimulationEngine', () => {
     expect(result.statistics.find((sample) => sample.metricId === 'social.encounters')?.value).toBeGreaterThan(0)
     expect(result.projection.people.every((person) => {
       const hunger = getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger)
-      return person.lastDecision && hunger >= 0 && hunger <= 1000
+      return person.lastDecision && hunger >= 0 && hunger <= 1000 && person.knowledge && Object.values(person.knowledge).every((value) => value >= 0 && value <= 1000)
     })).toBe(true)
     expect(result.projection.world.grid.cells.every((cell) => cell.foodAmount >= 0 && cell.foodAmount <= cell.resourceCapacity)).toBe(true)
   })

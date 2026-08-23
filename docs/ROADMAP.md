@@ -1060,7 +1060,7 @@ Implemented: tense encounters can create or escalate a persistent, inspectable i
 
 # Milestone 18 — Technology, Knowledge, and Innovation
 
-Status: Future
+Status: Implemented (knowledge foundation)
 
 ## Goal
 
@@ -1091,6 +1091,10 @@ individual knowledge
 ```
 
 Avoid arbitrary global technology trees unless later requirements justify them.
+
+Implemented: people now carry a versioned, bounded knowledge record distinct from variables and skills. Exploration deterministically produces local-terrain knowledge based on the actor's curiosity. Positive co-present encounters can transmit a bounded portion of a meaningful knowledge gap using the existing directional relationship trust as evidence of receptiveness. Foraging knowledge applies as a capped harvest-yield multiplier. Discovery and transmission create inspectable traces and meaningful events, and knowledge is snapshot-validated.
+
+Deferred: skill registry, experimentation projects, inventions, technology adoption, tools, and a global technology tree.
 
 ---
 

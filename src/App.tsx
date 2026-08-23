@@ -764,6 +764,11 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
       </div> : <p>No community catchment covers the current cell.</p>}
     </section>
     <PersonVariableSections definitions={variableDefinitions} values={variableValues(person)} layers={['state', 'need']} />
+    <section className="community-exposure-panel" aria-labelledby="knowledge-heading">
+      <div className="section-heading"><h3 id="knowledge-heading">Knowledge</h3><span>Learned, transferable</span></div>
+      <div className="activity-details"><Metric label="Foraging" value={formatPermille(person.knowledge?.['knowledge.foraging'] ?? 0)} /><Metric label="Local terrain" value={formatPermille(person.knowledge?.['knowledge.localTerrain'] ?? 0)} /></div>
+      {person.lastKnowledgeTrace && <small>Latest: {person.lastKnowledgeTrace.source === 'exploration' ? 'discovered through exploration' : 'learned through a positive encounter'} · {person.lastKnowledgeTrace.knowledgeId.replace('knowledge.', '')} +{person.lastKnowledgeTrace.gain / 10}% at tick {person.lastKnowledgeTrace.tick}</small>}
+    </section>
     <section className="community-exposure-panel" aria-labelledby="cultural-beliefs-heading"><div className="section-heading"><h3 id="cultural-beliefs-heading">Learned beliefs</h3><span>Social exposure only</span></div>{person.culture ? <div className="activity-details"><Metric label="Exploration" value={`${(person.culture.beliefs['belief.exploration'] / 10).toFixed(1)}%`} /><Metric label="Cooperation" value={`${(person.culture.beliefs['belief.cooperation'] / 10).toFixed(1)}%`} /><Metric label="Exposures" value={person.culture.exposureCount} /></div> : <p>No cultural exposure recorded.</p>}</section>
     <section className="household-panel" aria-labelledby="household-heading">
       <div className="section-heading"><h3 id="household-heading">Household</h3><span>{household ? household.memberIds.length : 0} members</span></div>

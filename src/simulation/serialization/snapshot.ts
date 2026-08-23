@@ -10,6 +10,7 @@ import {
   LANGUAGE_MODEL_VERSION,
   GOVERNANCE_MODEL_VERSION,
   CONFLICT_MODEL_VERSION,
+  KNOWLEDGE_MODEL_VERSION,
   ENGINE_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
@@ -99,6 +100,7 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   if (snapshot.state.config.languageModelVersion !== LANGUAGE_MODEL_VERSION) throw new Error(`Unsupported language model version: ${String(snapshot.state.config.languageModelVersion)}`)
   if (snapshot.state.config.governanceModelVersion !== GOVERNANCE_MODEL_VERSION) throw new Error(`Unsupported governance model version: ${String(snapshot.state.config.governanceModelVersion)}`)
   if (snapshot.state.config.conflictModelVersion !== CONFLICT_MODEL_VERSION) throw new Error(`Unsupported conflict model version: ${String(snapshot.state.config.conflictModelVersion)}`)
+  if (snapshot.state.config.knowledgeModelVersion !== KNOWLEDGE_MODEL_VERSION) throw new Error(`Unsupported knowledge model version: ${String(snapshot.state.config.knowledgeModelVersion)}`)
   if (snapshot.state.config.worldGeneratorVersion !== WORLD_GENERATOR_VERSION) {
     throw new Error(`Unsupported world generator version: ${String(snapshot.state.config.worldGeneratorVersion)}`)
   }
@@ -114,7 +116,11 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
     throw new Error('Snapshot world does not match creation request')
   }
   if (!Array.isArray(snapshot.state.people)) throw new Error('Snapshot contains an invalid population')
-  for (const person of snapshot.state.people) validatePersonVariableValues(person.variables)
+  for (const person of snapshot.state.people) {
+    validatePersonVariableValues(person.variables)
+    if (!person.knowledge || Object.keys(person.knowledge).sort().join('|') !== 'knowledge.foraging|knowledge.localTerrain') throw new Error(`Person ${person.id} contains invalid knowledge records`)
+    if (Object.values(person.knowledge).some((value) => !Number.isSafeInteger(value) || value < 0 || value > 1000)) throw new Error(`Person ${person.id} contains invalid knowledge values`)
+  }
   validateHouseholdActivityState(snapshot.state)
   validateCommunitySimulationState(snapshot.state)
   validateRandomStreams(snapshot.state.randomStreams)

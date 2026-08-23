@@ -11,6 +11,8 @@ describe('economy model', () => {
     expect(cell.foodAmount).toBe(0)
     expect(consumeHouseholdFood(inventory, 4)).toBe(4)
     expect(inventory.food).toBe(ECONOMY.initialFoodPerHouseholdMember + 2)
+    cell.foodAmount = 20
+    expect(harvestFood(cell, inventory, 1500)).toBe(12)
   })
 
   it('shares only across nearby household relationships with demonstrated familiarity', () => {
