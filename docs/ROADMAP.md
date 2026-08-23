@@ -555,7 +555,7 @@ Imports must:
 
 # Milestone 9 — Environmental and Resource Dynamics
 
-Status: Planned
+Status: Complete
 
 ## Goal
 
@@ -566,6 +566,8 @@ Begin with small explainable resource loops rather than a complete ecosystem.
 ---
 
 ## Milestone 9A — Basic Renewable Resource
+
+Status: Complete
 
 ### Initial Model
 
@@ -603,7 +605,7 @@ local food resources
 
 ## Milestone 9B — Seasonal Environment
 
-Status: Planned
+Status: Complete
 
 Potential capabilities:
 
@@ -618,11 +620,13 @@ Prefer deterministic calendar-driven changes initially.
 
 Any stochastic environment behavior must use named RNG streams.
 
+Implemented: a four-season, 30-day deterministic calendar controls daily food regeneration and movement-cost evaluation. It consumes no random draws and is derived entirely from the simulation tick.
+
 ---
 
 ## Milestone 9C — Environmental Exposure
 
-Status: Planned
+Status: Complete
 
 Allow physical location and time spent there to produce environmental exposure.
 
@@ -635,6 +639,8 @@ Potential examples:
 * Water availability
 
 Continue the existing exposure-over-membership principle.
+
+Implemented: each person retains inspectable lifetime counters for actual occupied-cell hours, food-access hours, difficult-terrain hours, and calendar-derived thermal load. These counters are observations only; they do not assign effects based on settlement or community membership.
 
 ---
 

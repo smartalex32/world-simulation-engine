@@ -2,6 +2,7 @@ import {
   ACTIVITY_REGISTRY_VERSION,
   COMMUNITY_REGISTRY_VERSION,
   DEVELOPMENT_REGISTRY_VERSION,
+  ENVIRONMENT_MODEL_VERSION,
   ENGINE_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
@@ -76,6 +77,9 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   }
   if (snapshot.state.config.communityRegistryVersion !== COMMUNITY_REGISTRY_VERSION) {
     throw new Error(`Unsupported community registry version: ${String(snapshot.state.config.communityRegistryVersion)}`)
+  }
+  if (snapshot.state.config.environmentModelVersion !== ENVIRONMENT_MODEL_VERSION) {
+    throw new Error(`Unsupported environment model version: ${String(snapshot.state.config.environmentModelVersion)}`)
   }
   if (snapshot.state.config.worldGeneratorVersion !== WORLD_GENERATOR_VERSION) {
     throw new Error(`Unsupported world generator version: ${String(snapshot.state.config.worldGeneratorVersion)}`)

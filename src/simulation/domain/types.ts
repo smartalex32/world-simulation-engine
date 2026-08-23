@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.12.0'
-export const SNAPSHOT_SCHEMA_VERSION = 12
+export const ENGINE_VERSION = '0.13.0'
+export const SNAPSHOT_SCHEMA_VERSION = 13
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -17,6 +17,8 @@ export const ACTIVITY_REGISTRY_VERSION = 1
 export const DEVELOPMENT_REGISTRY_VERSION = 1
 export const COMMUNITY_REGISTRY_VERSION = 1
 export const WORLD_GENERATOR_VERSION = 1
+/** Versioned deterministic calendar/exposure rules used by Milestone 9. */
+export const ENVIRONMENT_MODEL_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
@@ -401,6 +403,18 @@ export interface JourneyState {
   remainingCost: number
 }
 
+/**
+ * Lifetime, location-derived environmental exposure. These are observations,
+ * not community membership effects: each hour is credited only to the cell a
+ * person actually occupies.
+ */
+export interface EnvironmentalExposureState {
+  observedHours: number
+  foodAccessibleHours: number
+  difficultTerrainHours: number
+  thermalLoadPermilleHours: number
+}
+
 export interface PersonState {
   id: string
   ageYears: number
@@ -412,6 +426,7 @@ export interface PersonState {
   currentActivity: CurrentActivityState
   originTraces: CuriosityInheritanceTrace[]
   development: PersonDevelopmentState
+  environmentalExposure?: EnvironmentalExposureState
   variables: PersonVariableValues
   knownCellIds: string[]
   journey?: JourneyState
@@ -460,6 +475,7 @@ export interface RunConfiguration {
   activityRegistryVersion: number
   developmentRegistryVersion: number
   communityRegistryVersion: number
+  environmentModelVersion: number
 }
 
 export interface RandomStreamSnapshot {

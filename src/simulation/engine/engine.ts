@@ -4,6 +4,7 @@ import {
   COMMUNITY_REGISTRY_VERSION,
   DEVELOPMENT_REGISTRY_VERSION,
   ENGINE_VERSION,
+  ENVIRONMENT_MODEL_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
@@ -58,6 +59,7 @@ import {
   PARENT_CURIOSITY_EXPOSURE_CHANNEL,
 } from '../exposure/model'
 import { applyParentCuriosityDevelopment } from '../development/apply'
+import { seasonAtTick, seasonalAmount } from '../environment/season'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -169,6 +171,7 @@ export class SimulationEngine {
         activityRegistryVersion: ACTIVITY_REGISTRY_VERSION,
         developmentRegistryVersion: DEVELOPMENT_REGISTRY_VERSION,
         communityRegistryVersion: COMMUNITY_REGISTRY_VERSION,
+        environmentModelVersion: ENVIRONMENT_MODEL_VERSION,
       },
       world,
       people: generatedPopulation.people,
@@ -234,7 +237,7 @@ export class SimulationEngine {
 
       const occupantsByCell = this.buildOccupancy(true)
       const occupantsByActivityLocation = this.buildActivityOccupancy()
-      const context: ActionContext = { tick: this.state.tick, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId }
+      const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId }
       const actionRng = this.random.stream('actions')
       const decisions = this.state.people
         .filter((person) => !person.journey)
@@ -270,6 +273,7 @@ export class SimulationEngine {
         this.state.relationships = [...this.relationshipById.values()].sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
       }
       this.recordActivityPersonHours()
+      this.recordEnvironmentalExposure()
       this.recordCommunityPersonHours()
       this.accumulateDevelopmentExposure()
       if (this.state.tick % 720 === 0) this.processDevelopment(pushEvent)
@@ -401,8 +405,23 @@ export class SimulationEngine {
   }
 
   private regenerateFood(): void {
+    const season = seasonAtTick(this.state.tick)
     for (const cell of this.state.world.grid.cells) {
-      cell.foodAmount = Math.min(cell.resourceCapacity, cell.foodAmount + cell.foodRegenerationPerDay)
+      cell.foodAmount = Math.min(cell.resourceCapacity, cell.foodAmount + seasonalAmount(cell.foodRegenerationPerDay, season.foodRegenerationMultiplierPermille))
+    }
+  }
+
+  /** Records environmental conditions from each person's actual current cell. */
+  private recordEnvironmentalExposure(): void {
+    const season = seasonAtTick(this.state.tick)
+    for (const person of this.state.people) {
+      const cell = this.cellById.get(person.locationCellId)
+      if (!cell) throw new Error(`Person ${person.id} occupies a missing exposure cell`)
+      const exposure = person.environmentalExposure ?? (person.environmentalExposure = { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0 })
+      exposure.observedHours += 1
+      if (cell.foodAmount > 0) exposure.foodAccessibleHours += 1
+      if (cell.movementCost > 1000) exposure.difficultTerrainHours += 1
+      exposure.thermalLoadPermilleHours += season.thermalExposurePermille
     }
   }
 
