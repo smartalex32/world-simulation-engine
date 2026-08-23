@@ -732,7 +732,7 @@ Implemented: partnered adult pairs can produce a child during the annual life-cy
 
 # Milestone 11 — Broader Human Development
 
-Status: Planned
+Status: Complete
 
 ## Goal
 
@@ -778,6 +778,8 @@ Use repeated interaction and relationship strength.
 
 Start with a very small variable set.
 
+Implemented: repeated resolved encounters accumulate a bounded monthly peer-modeling experience for trust propensity, sociability, and conformity. Each peer value is attenuated by the receiving person's post-encounter relationship trust, so arbitrary co-location and household membership alone do not create peer influence.
+
 ---
 
 ## Milestone 11B — Activity-Based Development
@@ -791,6 +793,8 @@ Potential developmental targets:
 
 Skills should remain semantically separate from traits.
 
+Implemented: completed exploration actions accumulate an explicit monthly practice experience that can slowly develop persistence. This is intentionally a narrow activity-development proof; no skill registry or occupation model has been introduced before Milestone 12 creates a concrete need for one.
+
 ---
 
 ## Milestone 11C — Community-to-Person Development
@@ -800,6 +804,10 @@ Allow sustained environmental/community exposure to contribute to development.
 Do not copy catchment values directly into people.
 
 Track actual exposure duration and intensity.
+
+Implemented: adolescents and adults accumulate monthly exposure only while physically located in a community catchment. Observed social trust, cohesion, and innovation climate can then slowly influence trust propensity, conformity, and curiosity respectively through low-plasticity, inspectable development traces. Catchment values are not copied directly into person state.
+
+All Milestone 11 development is deterministic once its structured evidence exists, uses no new RNG draws, is snapshot-versioned, and remains visible in the person inspector, events, and sampled statistics.
 
 ---
 

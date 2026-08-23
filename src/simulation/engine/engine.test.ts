@@ -40,6 +40,8 @@ describe('SimulationEngine', () => {
       'development.experiences',
       'development.curiosityChanges',
       'development.absoluteCuriosityChange',
+      'development.broaderExperiences',
+      'development.broaderChanges',
     ])
     expect(result.statistics.filter((sample) => sample.scope === 'community')).toHaveLength(16)
     expect(new Set(result.statistics.filter((sample) => sample.scope === 'community').map((sample) => sample.scopeId))).toEqual(new Set(['community-west-valley', 'community-east-valley']))

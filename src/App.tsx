@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
 import type { CommunityVariableDefinition, CommunityVariableId } from './simulation/community/types'
-import type { DevelopmentExperienceType, ElevationOverride, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, Terrain, UtilityContribution, WorldCreationDraft, WorldCreationRequest, WorldDraftPreview, WorldDraftRecord } from './simulation/domain/types'
+import type { BroaderDevelopmentExperienceType, DevelopmentExperienceType, ElevationOverride, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, Terrain, UtilityContribution, WorldCreationDraft, WorldCreationRequest, WorldDraftPreview, WorldDraftRecord } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
 import { seasonAtTick } from './simulation/environment/season'
 import { exportWorldDraftBundle, importWorldDraftBundle } from './simulation/domain/worldDraftBundle'
@@ -798,14 +798,19 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
   </div>
 }
 
-const DEVELOPMENT_EXPERIENCE_DISPLAY: Record<DevelopmentExperienceType, { label: string; channel: string }> = {
+const DEVELOPMENT_EXPERIENCE_DISPLAY: Record<DevelopmentExperienceType | BroaderDevelopmentExperienceType, { label: string; channel: string }> = {
   'experience.parent.curiosity-modeling': { label: 'Parent curiosity modeling', channel: 'Household co-presence' },
+  'experience.peer.relationship-modeling': { label: 'Peer relationship modeling', channel: 'Repeated encounters' },
+  'experience.activity.exploration-practice': { label: 'Exploration practice', channel: 'Completed exploration' },
+  'experience.community.catchment': { label: 'Community exposure', channel: 'Time in catchment' },
 }
 
 function DevelopmentInspector({ person, tick, variableDefinitions, onHookPerson, showInputs, onToggleInputs }: { person: PersonState; tick: number; variableDefinitions: readonly VariableDefinitionView[]; onHookPerson: (id: string) => void; showInputs: boolean; onToggleInputs: () => void }) {
-  const experience = person.development.lastExperience
+  // Preserve the direct parent-child explanation when both channels exist; adults
+  // and people without parent modeling surface their latest broader experience.
+  const experience = person.development.lastExperience ?? person.development.broader?.lastExperience
   const exposure = person.development.exposures[0]
-  const change = person.development.lastChange
+  const change = person.development.lastChange ?? person.development.broader?.lastChange
   const targetLabel = change ? variableDefinitions.find((definition) => definition.id === change.targetId)?.label ?? change.targetId : 'Curiosity'
   const elapsedHours = exposure ? Math.max(0, Math.min(720, tick - exposure.windowStartTick + 1)) : 0
   return <div className="development-inspector">
@@ -815,8 +820,9 @@ function DevelopmentInspector({ person, tick, variableDefinitions, onHookPerson,
         <div className="development-grid">
           <Metric label="Type" value={DEVELOPMENT_EXPERIENCE_DISPLAY[experience.type].label} />
           <Metric label="Channel" value={DEVELOPMENT_EXPERIENCE_DISPLAY[experience.type].channel} />
-          <Metric label="Household" value={experience.householdId} />
-          <Metric label="Home activity" value={experience.activityLocationId} />
+          {'householdId' in experience && <Metric label="Household" value={experience.householdId} />}
+          {'activityLocationId' in experience && <Metric label="Home activity" value={experience.activityLocationId} />}
+          {'sourceContextId' in experience && experience.sourceContextId && <Metric label="Context" value={experience.sourceContextId} />}
           <Metric label="Recipient hours" value={`${experience.recipientHours} person-hours`} />
           <Metric label="Source hours" value={`${experience.sourceHours} person-hours`} />
           <Metric label="Source mean" value={formatPermille(experience.sourceMeanPermille)} />

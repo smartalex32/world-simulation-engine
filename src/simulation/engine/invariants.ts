@@ -3,6 +3,7 @@ import { commonsActivityId, householdHomeActivityId } from '../activities/model'
 import type { CuriosityInheritanceTrace, SimulationState } from '../domain/types'
 import { PARENT_CURIOSITY_EXPOSURE_CHANNEL, PARENT_CURIOSITY_EXPOSURE_WINDOW_TICKS, PARENT_CURIOSITY_EXPERIENCE_TYPE } from '../exposure/model'
 import { DEVELOPMENT_PARENT_CURIOSITY_EDGE_ID, DEVELOPMENT_PLASTICITY_REGISTRY } from '../development/model'
+import { BROADER_DEVELOPMENT_DEFINITIONS, BROADER_DEVELOPMENT_WINDOW_TICKS } from '../development/broader'
 
 export function validateHouseholdActivityState(state: SimulationState): void {
   if (!Array.isArray(state.households)) throw new Error('Simulation contains invalid households')
@@ -207,6 +208,24 @@ function validateDevelopmentState(
     const plasticity = DEVELOPMENT_PLASTICITY_REGISTRY.find(({ ageBand }) => ageBand === change.ageBand)?.curiosityPlasticityPermillePerMonth
     if (change.plasticityPermille !== plasticity) throw new Error(`Person ${person.id} has invalid development plasticity`)
   }
+  validateBroaderDevelopmentState(person, state, peopleById)
+}
+
+function validateBroaderDevelopmentState(person: SimulationState['people'][number], state: SimulationState, peopleById: ReadonlyMap<string, unknown>): void {
+  const broader = person.development.broader
+  if (!broader) return // Kept only for pre-M11 in-memory test fixtures; snapshots use schema 15.
+  if (!Array.isArray(broader.exposures) || broader.exposures.length !== BROADER_DEVELOPMENT_DEFINITIONS.length) throw new Error(`Person ${person.id} has invalid broader development exposures`)
+  for (const definition of BROADER_DEVELOPMENT_DEFINITIONS) {
+    const exposure = broader.exposures.find((value) => value.channelId === definition.channelId && value.targetId === definition.targetId)
+    if (!exposure || exposure.windowStartTick !== Math.floor(state.tick / BROADER_DEVELOPMENT_WINDOW_TICKS) * BROADER_DEVELOPMENT_WINDOW_TICKS + 1) throw new Error(`Person ${person.id} has invalid broader exposure window`)
+    const numeric = [exposure.recipientHours, exposure.sourceHours, exposure.weightedSourceValueHours]
+    if (numeric.some((value) => !Number.isSafeInteger(value) || value < 0) || exposure.sourceHours > BROADER_DEVELOPMENT_WINDOW_TICKS || exposure.weightedSourceValueHours > exposure.sourceHours * 1000) throw new Error(`Person ${person.id} has invalid broader exposure totals`)
+    if (!isSortedUnique(exposure.sourcePersonIds) || exposure.sourcePersonIds.some((id) => id === person.id || !peopleById.has(id))) throw new Error(`Person ${person.id} has invalid broader exposure sources`)
+  }
+  const experience = broader.lastExperience
+  if (experience && (!experience.id.startsWith(`${person.id}:`) || experience.personId !== person.id || experience.endTick > state.tick || experience.endTick - experience.startTick + 1 !== BROADER_DEVELOPMENT_WINDOW_TICKS || experience.sourceHours < 1 || experience.sourceHours > BROADER_DEVELOPMENT_WINDOW_TICKS)) throw new Error(`Person ${person.id} has invalid broader development experience`)
+  const change = broader.lastChange
+  if (change && (change.currentValue !== change.previousValue + change.appliedDelta || change.appliedDelta === 0 || change.resolution !== 'deterministic' || change.applicationProbabilityPermille !== 1000)) throw new Error(`Person ${person.id} has invalid broader development change`)
 }
 
 function validateCanonicalSources(personId: string, sourcePersonIds: readonly string[], expectedParentIds: readonly string[], peopleById: ReadonlyMap<string, unknown>): void {

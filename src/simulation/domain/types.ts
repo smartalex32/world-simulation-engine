@@ -7,14 +7,14 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.14.0'
-export const SNAPSHOT_SCHEMA_VERSION = 14
+export const ENGINE_VERSION = '0.15.0'
+export const SNAPSHOT_SCHEMA_VERSION = 15
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
 export const HOUSEHOLD_MODEL_VERSION = 2
 export const ACTIVITY_REGISTRY_VERSION = 1
-export const DEVELOPMENT_REGISTRY_VERSION = 1
+export const DEVELOPMENT_REGISTRY_VERSION = 2
 export const COMMUNITY_REGISTRY_VERSION = 1
 export const WORLD_GENERATOR_VERSION = 1
 /** Versioned deterministic calendar/exposure rules used by Milestone 9. */
@@ -257,6 +257,9 @@ export type DevelopmentAgeBand = 'childhood' | 'adolescence' | 'adult' | 'lateLi
 export type DevelopmentExposureChannelId = 'exposure.parent.curiosity-modeling'
 export type DevelopmentExperienceType = 'experience.parent.curiosity-modeling'
 export type DevelopmentEdgeId = 'development.parent-curiosity-to-curiosity'
+export type BroaderDevelopmentChannelId = 'exposure.peer.relationship-modeling' | 'exposure.activity.exploration-practice' | 'exposure.community.catchment'
+export type BroaderDevelopmentExperienceType = 'experience.peer.relationship-modeling' | 'experience.activity.exploration-practice' | 'experience.community.catchment'
+export type BroaderDevelopmentEdgeId = 'development.peer-to-trust' | 'development.peer-to-sociability' | 'development.peer-to-conformity' | 'development.activity-exploration-to-persistence' | 'development.community-social-trust-to-trust' | 'development.community-cohesion-to-conformity' | 'development.community-innovation-to-curiosity'
 
 export interface DevelopmentExposureAccumulator {
   channelId: DevelopmentExposureChannelId
@@ -300,10 +303,63 @@ export interface DevelopmentChangeTrace {
   currentValue: number
 }
 
+/** A bounded, monthly evidence window for peer, activity, or community development. */
+export interface BroaderDevelopmentExposureAccumulator {
+  channelId: BroaderDevelopmentChannelId
+  targetId: PersonVariableId
+  windowStartTick: number
+  sourcePersonIds: string[]
+  recipientHours: number
+  sourceHours: number
+  weightedSourceValueHours: number
+  lastExposureTick?: number
+  sourceContextId?: string
+}
+
+export interface BroaderDevelopmentExperience {
+  id: string
+  type: BroaderDevelopmentExperienceType
+  channelId: BroaderDevelopmentChannelId
+  personId: string
+  targetId: PersonVariableId
+  startTick: number
+  endTick: number
+  recipientHours: number
+  sourceHours: number
+  sourceMeanPermille: number
+  exposureStrengthPermille: number
+  sourcePersonIds: string[]
+  sourceContextId?: string
+}
+
+export interface BroaderDevelopmentChangeTrace {
+  edgeId: BroaderDevelopmentEdgeId
+  targetId: PersonVariableId
+  experienceId: string
+  previousValue: number
+  sourceValuePermille: number
+  gapPermille: number
+  exposureStrengthPermille: number
+  ageBand: DevelopmentAgeBand
+  plasticityPermille: number
+  resolution: 'deterministic'
+  applicationProbabilityPermille: 1000
+  requestedDelta: number
+  appliedDelta: number
+  currentValue: number
+}
+
+export interface BroaderDevelopmentState {
+  exposures: BroaderDevelopmentExposureAccumulator[]
+  lastExperience?: BroaderDevelopmentExperience
+  lastChange?: BroaderDevelopmentChangeTrace
+}
+
 export interface PersonDevelopmentState {
   exposures: DevelopmentExposureAccumulator[]
   lastExperience?: ParentCuriosityModelingExperience
   lastChange?: DevelopmentChangeTrace
+  broader?: BroaderDevelopmentState
 }
 
 export type EncounterOutcome = 'positive' | 'neutral' | 'tense'
@@ -472,6 +528,8 @@ export interface DailyDevelopmentCounters {
   developmentExperiences: number
   developmentChanges: number
   absoluteCuriosityChange: number
+  broaderDevelopmentExperiences: number
+  broaderDevelopmentChanges: number
 }
 
 export interface DailyLifeCycleCounters {
@@ -530,13 +588,13 @@ export interface SimulationEvent {
   id: string
   runId: string
   tick: number
-  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
+  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
   version: 1
   cellId?: string
   payload: Record<string, string | number | boolean | null>
 }
 
-export type WorldStatisticMetricId = 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.aliveCount' | 'population.averageHunger' | 'lifecycle.births' | 'lifecycle.deaths' | 'lifecycle.partnershipsFormed' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodConsumed' | 'resources.failedMeals' | 'social.encounters' | 'social.encountersPer1000People' | 'social.relationshipCount' | 'social.networkDensityPermille' | 'social.averageFamiliarity' | 'social.positiveEncounters' | 'social.tenseEncounters' | 'activity.homePersonHours' | 'activity.commonsPersonHours' | 'activity.travelPersonHours' | 'household.parentChildCoExposureSourceHours' | 'development.experiences' | 'development.curiosityChanges' | 'development.absoluteCuriosityChange'
+export type WorldStatisticMetricId = 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.aliveCount' | 'population.averageHunger' | 'lifecycle.births' | 'lifecycle.deaths' | 'lifecycle.partnershipsFormed' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodConsumed' | 'resources.failedMeals' | 'social.encounters' | 'social.encountersPer1000People' | 'social.relationshipCount' | 'social.networkDensityPermille' | 'social.averageFamiliarity' | 'social.positiveEncounters' | 'social.tenseEncounters' | 'activity.homePersonHours' | 'activity.commonsPersonHours' | 'activity.travelPersonHours' | 'household.parentChildCoExposureSourceHours' | 'development.experiences' | 'development.curiosityChanges' | 'development.absoluteCuriosityChange' | 'development.broaderExperiences' | 'development.broaderChanges'
 
 export type CommunityStatisticMetricId = 'community.emergent.socialTrust' | 'community.emergent.cohesion' | 'community.emergent.cooperation' | 'community.emergent.conflict' | 'community.emergent.innovationClimate' | 'community.structural.foodSecurity' | 'community.exposedPersonHours' | 'community.encounters'
 
