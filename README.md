@@ -49,6 +49,7 @@ Implemented:
 * Milestone 13 — Institutions and Organizations
 * Milestone 14 — Culture, Norms, and Beliefs
 * Milestone 15 — Language
+* Milestone 16 — Local Governance Foundation
 
 Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. Linked population zones retain their existing anchor-containment validation.
 

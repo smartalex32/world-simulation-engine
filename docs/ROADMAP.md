@@ -988,7 +988,7 @@ Implemented: people hold bounded fluency in two initial geographic language vari
 
 # Milestone 16 — Governance and Politics
 
-Status: Future
+Status: Implemented (local governance foundation)
 
 ## Preconditions
 
@@ -1016,6 +1016,8 @@ Potential capabilities:
 * Territorial jurisdiction
 
 Governance must remain distinct from settlements and emergent community catchments.
+
+Implemented: each community has a separate, persistent local council record with deterministic adult representatives and an inspectable legitimacy score derived daily from observed social trust, cooperation, and conflict. This creates no nation, political party, territorial jurisdiction, or automatic personal belief change.
 
 ---
 
