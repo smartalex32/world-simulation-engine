@@ -43,6 +43,7 @@ Implemented:
 * Milestone 9A — Renewable Food Resources
 * Milestone 9B — Deterministic Seasonal Environment
 * Milestone 9C — Location-Based Environmental Exposure
+* Milestone 10 — Life Cycle and Population Dynamics
 
 Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. Linked population zones retain their existing anchor-containment validation.
 
@@ -52,7 +53,7 @@ Drafts can also be imported and exported as a versioned JSON bundle. Bundles inc
 
 Next:
 
-* Milestone 10 — Life Cycle and Population Dynamics
+* Milestone 11 — Broader Human Development
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 
@@ -255,6 +256,16 @@ Owns:
 * Experience-driven variable changes
 * Development formulas
 * Development traces
+
+## Life Cycle
+
+Owns:
+
+* Explicit life-stage derivation
+* Annual mortality, partnership, and birth intervals
+* Named life-cycle RNG streams
+* Relationship-gated household formation
+* Parent links and retained deceased-person history
 
 ## Community
 

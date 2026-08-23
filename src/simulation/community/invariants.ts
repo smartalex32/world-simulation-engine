@@ -84,7 +84,8 @@ export function validateCommunitySimulationState(state: SimulationState): void {
     failedMeals += counters.failedMeals
   }
   const elapsedHours = state.tick % 24
-  if (exposedPersonHours !== state.people.length * elapsedHours) throw new Error('Community person-hours do not match physical population exposure')
+  const livingPeople = state.people.filter((person) => person.lifeStatus !== 'dead').length
+  if (exposedPersonHours !== livingPeople * elapsedHours) throw new Error('Community person-hours do not match physical population exposure')
   if (encounters !== state.dailySocialCounters.encounters || positive !== state.dailySocialCounters.positiveEncounters || neutral !== state.dailySocialCounters.neutralEncounters || tense !== state.dailySocialCounters.tenseEncounters) throw new Error('Community encounter counters do not match global social counters')
   if (failedMeals !== state.dailySpatialCounters.failedMeals) throw new Error('Community failed meals do not match global spatial counters')
 }

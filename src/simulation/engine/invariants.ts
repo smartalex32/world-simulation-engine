@@ -95,12 +95,12 @@ export function validateHouseholdActivityState(state: SimulationState): void {
     } else if (person.originTraces.length !== 0) {
       throw new Error(`Non-child ${person.id} has an inheritance trace`)
     }
-    validateDevelopmentState(person, state, expectedParentIds ?? [], peopleById, household)
+    if (person.lifeStatus !== 'dead') validateDevelopmentState(person, state, expectedParentIds ?? [], peopleById, household)
     const environmentalExposure = person.environmentalExposure
     if (!environmentalExposure || Object.values(environmentalExposure).some((value) => !Number.isSafeInteger(value) || value < 0)) {
       throw new Error(`Person ${person.id} has invalid environmental exposure`)
     }
-    if (environmentalExposure.observedHours !== state.tick || environmentalExposure.foodAccessibleHours > environmentalExposure.observedHours || environmentalExposure.difficultTerrainHours > environmentalExposure.observedHours) {
+    if (environmentalExposure.observedHours > state.tick || environmentalExposure.foodAccessibleHours > environmentalExposure.observedHours || environmentalExposure.difficultTerrainHours > environmentalExposure.observedHours) {
       throw new Error(`Person ${person.id} has inconsistent environmental exposure`)
     }
   }
@@ -109,18 +109,20 @@ export function validateHouseholdActivityState(state: SimulationState): void {
 
   const activityCounters = state.dailyActivityCounters
   if (!activityCounters || Object.values(activityCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily activity counters are invalid')
-  const expectedPersonHours = state.people.length * (state.tick % 24)
-  if (activityCounters.homePersonHours + activityCounters.commonsPersonHours + activityCounters.travelPersonHours !== expectedPersonHours) {
-    throw new Error('Daily activity counters do not sum to elapsed person-hours')
+  const maximumPersonHours = state.people.length * (state.tick % 24)
+  if (activityCounters.homePersonHours + activityCounters.commonsPersonHours + activityCounters.travelPersonHours > maximumPersonHours) {
+    throw new Error('Daily activity counters exceed elapsed living person-hours')
   }
   const developmentCounters = state.dailyDevelopmentCounters
   if (!developmentCounters || Object.values(developmentCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily development counters are invalid')
+  const lifeCycleCounters = state.dailyLifeCycleCounters
+  if (!lifeCycleCounters || Object.values(lifeCycleCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily life-cycle counters are invalid')
 }
 
-/** Homes are immutable in the current model, so authored initial-zone totals remain inspectable after people travel. */
+/** Starting homes retain authored zone totals after later household moves. */
 function validateInitialPopulationPlacement(state: SimulationState): void {
   const creation = state.config.worldCreation
-  if (!creation || state.people.length !== creation.initialPopulationCount) throw new Error('Population does not match world creation request')
+  if (!creation || state.people.length < creation.initialPopulationCount) throw new Error('Population is smaller than the world creation request')
   const zoneByCellId = new Map<string, string>()
   const expected = new Map<string, number>()
   for (const zone of creation.populationZones) {
@@ -131,8 +133,8 @@ function validateInitialPopulationPlacement(state: SimulationState): void {
     }
   }
   const actual = new Map<string, number>()
-  for (const person of state.people) {
-    const zoneId = zoneByCellId.get(person.homeCellId)
+  for (const person of state.people.filter((person) => person.birthTick === undefined)) {
+    const zoneId = zoneByCellId.get(person.initialHomeCellId ?? person.homeCellId)
     if (!zoneId) throw new Error(`Person ${person.id} home is outside all population creation zones`)
     actual.set(zoneId, (actual.get(zoneId) ?? 0) + 1)
   }

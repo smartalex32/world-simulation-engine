@@ -9,6 +9,7 @@ import { hexNeighbors } from '../spatial/hex'
 import { PERSON_VARIABLE_ID, getPersonVariableDefinition } from '../variables/registry'
 import { createDefaultPersonVariableValues, getPersonVariable, setPersonVariable } from '../variables/storage'
 import type { PersonVariableId } from '../variables/types'
+import { lifeStageForAge } from '../lifecycle/model'
 
 type BasePersonState = Omit<PersonState, 'ageHoursIntoYear' | 'locationCellId' | 'homeCellId' | 'householdId' | 'activityScheduleId' | 'currentActivity' | 'originTraces' | 'development'> & { initialHomeCellId: string }
 
@@ -83,6 +84,8 @@ export function generatePopulation(cells: GeographicCell[], zonesOrRandom: reado
       ...baseState,
       ageYears: assignment.ageYears,
       ageHoursIntoYear: ageRemainderRng.nextInt(8760),
+      lifeStage: lifeStageForAge(assignment.ageYears),
+      lifeStatus: 'alive',
       locationCellId: assignment.homeCellId,
       homeCellId: assignment.homeCellId,
       householdId: household.id,

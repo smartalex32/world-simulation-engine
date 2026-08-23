@@ -9,13 +9,13 @@ describe('canonical serialization', () => {
     )
   })
 
-  it('round-trips schema 12 households, communities, development, and named streams', async () => {
+  it('round-trips schema 14 households, communities, development, and named streams', async () => {
     const snapshot = await SimulationEngine.create('schema-6-round-trip').snapshot()
     const validated = await validateSnapshot(structuredClone(snapshot))
 
     expect(validated).toEqual(snapshot)
-    expect(validated.schemaVersion).toBe(13)
-    expect(validated.engineVersion).toBe('0.13.0')
+    expect(validated.schemaVersion).toBe(14)
+    expect(validated.engineVersion).toBe('0.14.0')
     expect(validated.state.households).toHaveLength(100)
     expect(validated.state.parentChildLinks).toHaveLength(100)
     expect(validated.state.communities).toHaveLength(2)
@@ -27,7 +27,7 @@ describe('canonical serialization', () => {
     ]))
   })
 
-  it('rejects unsupported household, activity, development, and community registry versions', async () => {
+  it('rejects unsupported household, activity, development, community, and life-cycle registry versions', async () => {
     const base = await SimulationEngine.create('schema-6-registry-rejection').snapshot()
     const householdMismatch = structuredClone(base.state)
     householdMismatch.config.householdModelVersion += 1
@@ -44,6 +44,10 @@ describe('canonical serialization', () => {
     const communityMismatch = structuredClone(base.state)
     communityMismatch.config.communityRegistryVersion += 1
     await expect(validateSnapshot(await createSnapshot(communityMismatch))).rejects.toThrow('Unsupported community registry version')
+
+    const lifeCycleMismatch = structuredClone(base.state)
+    lifeCycleMismatch.config.lifeCycleModelVersion += 1
+    await expect(validateSnapshot(await createSnapshot(lifeCycleMismatch))).rejects.toThrow('Unsupported life-cycle model version')
   })
 
   it('rejects malformed household membership, links, locations, and inheritance sources', async () => {

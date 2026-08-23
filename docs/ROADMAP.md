@@ -646,7 +646,7 @@ Implemented: each person retains inspectable lifetime counters for actual occupi
 
 # Milestone 10 — Life Cycle and Population Dynamics
 
-Status: Planned
+Status: Complete
 
 ## Goal
 
@@ -655,6 +655,8 @@ Allow populations and households to evolve across long simulation time spans.
 ---
 
 ## Milestone 10A — Life Stages
+
+Status: Complete
 
 Candidate scope:
 
@@ -666,9 +668,13 @@ Candidate scope:
 
 Build on existing aging rather than replacing it.
 
+Implemented: explicit infant, child, adolescent, adult, and older-adult stages are derived from age and emitted as inspectable transitions. Existing child/adult schedules remain stable; an adolescent schedule identifier is reserved until it has a separately validated activity behavior.
+
 ---
 
 ## Milestone 10B — Mortality
+
+Status: Complete
 
 Candidate scope:
 
@@ -684,9 +690,13 @@ Candidate scope:
 
 Death must preserve referential integrity.
 
+Implemented: annual, age-banded mortality uses a dedicated snapshot-restorable RNG stream. Dead people retain their identity, history, relationships, and parent links but no longer act, move, consume, encounter, or contribute new exposure.
+
 ---
 
 ## Milestone 10C — Partnership and Household Formation
+
+Status: Complete
 
 Potential capabilities:
 
@@ -697,9 +707,13 @@ Potential capabilities:
 
 Partnership formation should build on actual relationships and interaction history rather than global arbitrary matching.
 
+Implemented: annual partnership candidates require mutual familiarity, interaction history, trust, and affection from an existing relationship. A qualifying single-person household can merge into the partner's household; every move and partnership is an event.
+
 ---
 
 ## Milestone 10D — Birth and Children
+
+Status: Complete
 
 Potential capabilities:
 
@@ -711,6 +725,8 @@ Potential capabilities:
 * Stable RNG ownership
 
 Do not introduce unsupported biological/genetic claims.
+
+Implemented: partnered adult pairs can produce a child during the annual life-cycle interval. The child receives a household, parent links, activity/development state, a structured curiosity inheritance trace, bounded initialized variables, and a unique stable ID. This is a fictional configurable starting-predisposition model, not a biological claim.
 
 ---
 
