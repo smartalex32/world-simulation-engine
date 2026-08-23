@@ -114,7 +114,7 @@ Do not implement distant systems merely because they appear later in this roadma
 
 ## Next Slice
 
-* Milestone 22 — Simulation Workbench Experience
+* Next simulation slice to be planned
 
 Detailed current implementation is documented in `README.md`.
 
@@ -1206,7 +1206,7 @@ Deferred: any generative-AI narrative layer. If ever introduced, it must remain 
 
 # Milestone 22 — Simulation Workbench Experience
 
-Status: Future
+Status: Implemented (map-first presentation foundation)
 
 ## Goal
 
@@ -1240,6 +1240,10 @@ Acceptance criteria:
 * UI refresh cadence remains decoupled from simulation cadence.
 * No UI change alters canonical simulation output or consumes simulation RNG.
 * Important interaction paths receive browser-level coverage; visual changes are reviewed at desktop and constrained-width layouts.
+
+Implemented: the workbench now has coherent world, simulation, analytics, entities, history, tools, and settings navigation. Its map layer and annotation controls remain functional from the relevant workspaces, Tools links directly to worker-owned world creation, and Settings exposes real presentation diagnostics without false simulation controls. The existing map-first layout, worker-owned controls, live inspectors, sampled aggregate panels, seed/tick diagnostics, level-of-detail rendering, and responsive desktop/constrained-width rules have been consolidated and covered by browser interaction tests.
+
+Deferred: visual-regression screenshot baselines, a richer minimap, and additional entity inspectors. These require either a stable visual-review process or authoritative entity models beyond the currently implemented domains.
 
 ---
 

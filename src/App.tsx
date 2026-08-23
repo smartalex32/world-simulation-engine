@@ -33,7 +33,7 @@ export default function App() {
   const database = useMemo(() => new WorkbenchDatabase(), [])
   const [seed, setSeed] = useState('valley-001')
   const [setupOpen, setSetupOpen] = useState(false)
-  const [activeMode, setActiveMode] = useState<'world' | 'simulation' | 'analytics' | 'entities' | 'history'>('world')
+  const [activeMode, setActiveMode] = useState<'world' | 'simulation' | 'analytics' | 'entities' | 'history' | 'tools' | 'settings'>('world')
   const [worldSetup, setWorldSetup] = useState<WorldSetupValues>({
     name: 'The Seeded Valley', seed: 'valley-001', width: 32, height: 24, population: 200,
     placements: [
@@ -502,7 +502,7 @@ export default function App() {
           <div><h1>World Simulation</h1><span>deterministic engine workbench</span></div>
         </div>
         <nav className="mode-navigation" aria-label="Workbench modes">
-          {(['world', 'simulation', 'analytics', 'entities', 'history'] as const).map((mode) => <button key={mode} aria-current={activeMode === mode ? 'page' : undefined} className={activeMode === mode ? 'active' : ''} onClick={() => { setActiveMode(mode); if (mode === 'history') void refreshHistory() }}>{mode}</button>)}
+          {(['world', 'simulation', 'analytics', 'entities', 'history', 'tools', 'settings'] as const).map((mode) => <button key={mode} aria-current={activeMode === mode ? 'page' : undefined} className={activeMode === mode ? 'active' : ''} onClick={() => { setActiveMode(mode); if (mode === 'history') void refreshHistory() }}>{mode}</button>)}
         </nav>
         <div className="run-facts">
           <Fact label="SEED" value={projection?.seed ?? '—'} />
@@ -535,10 +535,12 @@ export default function App() {
 
       <section className="workspace">
         <aside className="left-panel panel">
-          {(activeMode === 'world') && <section className="world-overview"><span className="eyebrow">WORLD OVERVIEW</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{projection ? `${projection.world.width} × ${projection.world.height} hexes · ${projection.world.scale.hexRadiusMeters / 1000} km radius` : 'Awaiting authoritative world'}</small><div><span>People</span><b>{projection?.summary.populationCount ?? 0}</b><span>Households</span><b>{projection?.summary.householdCount ?? 0}</b></div></section>}
+          {(activeMode === 'world') && <section className="world-overview"><span className="eyebrow">WORLD OVERVIEW</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{projection ? `${projection.world.width} × ${projection.world.height} hexes · ${projection.world.scale.hexRadiusMeters / 1000} km radius` : 'Awaiting authoritative world'}</small><div><span>People</span><b>{projection?.summary.populationCount ?? 0}</b><span>Households</span><b>{projection?.summary.householdCount ?? 0}</b><span>Food</span><b>{recentMetrics['resources.totalFood'] ?? '—'}</b><span>Season</span><b>{projection ? seasonAtTick(projection.tick).id : '—'}</b></div></section>}
           {(activeMode === 'history') && <section className="world-overview"><span className="eyebrow">RUN HISTORY</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{history ? `${history.events.length} bounded events · ${history.statistics.length} sampled metrics` : 'Load persisted local run evidence'}</small><div><span>Selected person</span><b>{selectedPersonId ?? 'None'}</b><span>Current tick</span><b>{projection?.tick ?? 0}</b></div></section>}
+          {(activeMode === 'tools') && <section className="workbench-tool-panel" aria-label="World tools"><span className="eyebrow">WORLD TOOLS</span><strong>Author and inspect</strong><p>Creation remains worker-owned. Map controls change only the presentation projection.</p><button className="primary" onClick={() => void openWorldSetup()}>Create or edit world</button><button onClick={() => setActiveMode('world')}>Return to world overview</button></section>}
+          {(activeMode === 'settings') && <section className="workbench-tool-panel" aria-label="Workbench settings"><span className="eyebrow">WORKBENCH SETTINGS</span><strong>Presentation diagnostics</strong><p>These controls do not affect simulation state, seeded outcomes, or canonical digests.</p><div className="setting-facts"><Metric label="Engine" value={`v${projection?.engineVersion ?? '—'}`} /><Metric label="Seed" value={projection?.seed ?? '—'} /><Metric label="Map detail" value={projection?.map.lod ?? '—'} /></div></section>}
           {(activeMode === 'world' || activeMode === 'entities') && <section className="entity-catalog" aria-label="Entity categories"><span className="eyebrow">ENTITIES</span><button onClick={() => setActiveMode('entities')}>People <b>{projection?.summary.populationCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Households <b>{projection?.summary.householdCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Organizations <b>{projection?.organizations.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Communities <b>{projection?.communities.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Settlements <b>{projection?.settlements.length ?? 0}</b></button>{projection && <><div className="settlement-list">{projection.settlements.map((settlement) => <span key={settlement.id}>{settlement.name}<small>{projection.populationZones.find((zone) => zone.settlementId === settlement.id)?.populationCount ?? 0} people</small></span>)}</div><div className="organization-list">{projection.organizations.slice(0, 6).map((organization) => <span key={organization.id}>{organization.name}<small>{organization.members.length} learners · {organization.locationCellId}</small></span>)}</div></>}<small>Communities are geographic exposure measures, not memberships.</small></section>}
-          {(activeMode === 'world' || activeMode === 'simulation') && <><PanelTitle title="Map layers" subtitle={`${projection?.world.cellCount ?? 0} hex cells`} />
+          {(activeMode === 'world' || activeMode === 'simulation' || activeMode === 'tools' || activeMode === 'settings') && <><PanelTitle title="Map layers" subtitle={`${projection?.world.cellCount ?? 0} hex cells`} />
           <div className="overlay-list">
             {(['terrain', 'elevation', 'habitability', 'movement', 'food', 'population', 'community'] as MapOverlay[]).map((entry) => (
               <button key={entry} aria-pressed={overlay === entry} className={overlay === entry ? 'active' : ''} onClick={() => setOverlay(entry)}><span className={`swatch ${entry}`} />{entry}</button>
@@ -548,6 +550,7 @@ export default function App() {
             <button aria-label="Activity locations" aria-pressed={showActivityLocations} className={showActivityLocations ? 'active' : ''} onClick={() => setShowActivityLocations((current) => !current)}>Activity locations</button>
             <button aria-label="Households" aria-pressed={showHouseholds} className={showHouseholds ? 'active' : ''} onClick={() => setShowHouseholds((current) => !current)}>Households</button>
           </div>}</>}
+          {(activeMode === 'simulation') && <section className="simulation-status-panel"><span className="eyebrow">SIMULATION</span><div className="metric-list"><Metric label="Status" value={status} /><Metric label="Speed" value={SPEEDS.find((entry) => entry.value === speed)?.label ?? `${speed} hours / batch`} /><Metric label="Current time" value={`Day ${day} · ${hour.toString().padStart(2, '0')}:00`} /><Metric label="Last batch" value={`${processingMs.toFixed(2)} ms`} /></div><p>Rendering is decoupled from simulation advancement.</p></section>}
           {(activeMode === 'world' || activeMode === 'analytics') && <><PanelTitle title="Daily samples" subtitle="Latest aggregates" />
           <div className="metric-list">
             <Metric label="Cells" value={recentMetrics['world.cellCount'] ?? projection?.world.cellCount ?? 0} />

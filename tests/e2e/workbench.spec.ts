@@ -80,6 +80,33 @@ test('offers an optional deterministic chronicle without changing simulation sta
   await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', tick ?? '')
 })
 
+test('keeps real map tools and presentation diagnostics available from workbench navigation', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  const tick = await page.locator('[data-simulation-tick]').getAttribute('data-simulation-tick')
+  await page.getByRole('button', { name: 'tools', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'World tools' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Create or edit world', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Map layers' })).toBeVisible()
+  await page.getByRole('button', { name: 'settings', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Workbench settings' })).toBeVisible()
+  await expect(page.getByText('Presentation diagnostics')).toBeVisible()
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', tick ?? '')
+})
+
+test('keeps the map and controls usable at a constrained width', async ({ page }) => {
+  await page.setViewportSize({ width: 640, height: 900 })
+  await page.goto('/')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  await expect(page.getByRole('button', { name: 'tools', exact: true })).toBeVisible()
+  const canvas = page.getByLabel('Hex world map')
+  await expect(canvas).toBeVisible()
+  const bounds = await canvas.boundingBox()
+  expect(bounds?.width).toBeGreaterThanOrEqual(300)
+  await page.getByTitle('Advance one hour').click()
+  await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
+})
+
 test('shows a bounded generated map only for a non-settlement draft zone', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()

@@ -54,6 +54,8 @@ Implemented:
 * Milestone 18 — Politics and Government Foundations
 * Milestone 19 — Massive Simulation Scale (bounded inspection transport foundation)
 * Milestone 20 — Historical Inspection (evidence history foundation)
+* Milestone 21 — Optional Narrative Presentation (deterministic template presentation)
+* Milestone 22 — Simulation Workbench Experience (map-first presentation foundation)
 
 Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. Linked population zones retain their existing anchor-containment validation.
 
@@ -63,7 +65,9 @@ Drafts can also be imported and exported as a versioned JSON bundle. Bundles inc
 
 Historical inspection reads bounded, indexed event and sampled-metric evidence from IndexedDB. The History workspace offers selected-person timelines, curated major recorded-event highlights, population/resource/social trends, and an optional deterministic chronicle. The chronicle uses fixed templates over recorded events; it never invents evidence, mutates authoritative simulation state, or affects canonical output. Household and settlement history views, time-lapse replay, and richer causal drill-down remain future slices.
 
-Next: Milestone 22 — Simulation Workbench Experience.
+The workbench now provides coherent world, simulation, analytics, entities, history, tools, and settings navigation. Tools connect to the worker-owned world authoring flow; settings expose presentation diagnostics only. The map remains the primary surface, with existing level-of-detail behavior, live inspectors, controls, sampled aggregates, and responsive layouts. This presentation layer does not alter simulation state or consume simulation RNG.
+
+Next: plan and prioritize the next simulation vertical slice.
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 
