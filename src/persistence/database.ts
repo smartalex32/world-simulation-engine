@@ -1,4 +1,4 @@
-import type { SimulationEvent, StatisticSample, WorldDraftRecord } from '../simulation/domain/types'
+import type { SimulationEvent, StatisticSample, WorldDraftRecord, WorldStatisticMetricId } from '../simulation/domain/types'
 import { validateWorldDraftRecord } from '../simulation/domain/worldDraft'
 import { validateSnapshot } from '../simulation/serialization/snapshot'
 import { validateWorkerContinuation } from '../worker/frameScheduler'
@@ -6,6 +6,10 @@ import type { WorkbenchSnapshotEnvelope } from '../worker/protocol'
 
 const DATABASE_NAME = 'world-simulation-workbench'
 const DATABASE_VERSION = 2
+const MAX_TICK = Number.MAX_SAFE_INTEGER
+
+export const DEFAULT_HISTORY_EVENT_LIMIT = 200
+export const DEFAULT_HISTORY_SAMPLE_LIMIT = 365
 
 export interface RunRecord {
   runId: string
@@ -33,6 +37,19 @@ export interface ExportBundle {
   bundleVersion: 1
   exportedAt: string
   snapshot: WorkbenchSnapshotEnvelope
+  events: SimulationEvent[]
+  statistics: StatisticSample[]
+}
+
+export interface RunHistoryQuery {
+  /** Bounded newest-first event history. */
+  eventLimit?: number
+  /** World metrics to retrieve. Each metric receives its own bounded series. */
+  metricIds: readonly WorldStatisticMetricId[]
+  sampleLimit?: number
+}
+
+export interface RunHistory {
   events: SimulationEvent[]
   statistics: StatisticSample[]
 }
@@ -125,6 +142,38 @@ export class WorkbenchDatabase {
     return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   }
 
+  /**
+   * Reads a bounded, indexed history without loading a run's complete event
+   * log. History is evidence only: this never mutates authoritative state.
+   */
+  async readHistory(runId: string, query: RunHistoryQuery): Promise<RunHistory> {
+    const database = await this.open()
+    const eventLimit = boundedHistoryLimit(query.eventLimit, DEFAULT_HISTORY_EVENT_LIMIT)
+    const sampleLimit = boundedHistoryLimit(query.sampleLimit, DEFAULT_HISTORY_SAMPLE_LIMIT)
+    const eventTransaction = database.transaction('events')
+    const events = await cursorValues<StoredEvent>(
+      eventTransaction.objectStore('events').index('runTick'),
+      IDBKeyRange.bound([runId, 0], [runId, MAX_TICK]),
+      'prev',
+      eventLimit,
+    )
+    const statisticTransaction = database.transaction('statistics')
+    const statistics = (await Promise.all([...query.metricIds]
+      .sort()
+      .map((metricId) => cursorValues<StoredStatistic>(
+        statisticTransaction.objectStore('statistics').index('runMetricTick'),
+        IDBKeyRange.bound([runId, metricId, 0], [runId, metricId, MAX_TICK]),
+        'prev',
+        sampleLimit,
+      )))).flat()
+    return {
+      events: events.map(({ storageKey: _, ...event }) => event),
+      statistics: statistics
+        .map(({ storageKey: _, ...sample }) => sample)
+        .sort((first, second) => first.tick - second.tick || first.metricId.localeCompare(second.metricId)),
+    }
+  }
+
   async deleteSnapshot(key: string): Promise<void> {
     const database = await this.open()
     const transaction = database.transaction('snapshots', 'readwrite')
@@ -207,6 +256,29 @@ function request<T>(operation: IDBRequest<T>): Promise<T> {
     operation.onerror = () => reject(operation.error ?? new Error('IndexedDB request failed'))
   })
 }
+
+function cursorValues<T>(index: IDBIndex, keyRange: IDBKeyRange, direction: IDBCursorDirection, limit: number): Promise<T[]> {
+  return new Promise((resolve, reject) => {
+    const values: T[] = []
+    const operation = index.openCursor(keyRange, direction)
+    operation.onerror = () => reject(operation.error ?? new Error('IndexedDB cursor failed'))
+    operation.onsuccess = () => {
+      const cursor = operation.result
+      if (!cursor || values.length >= limit) {
+        resolve(values)
+        return
+      }
+      values.push(cursor.value as T)
+      cursor.continue()
+    }
+  })
+}
+
+function boundedHistoryLimit(value: number | undefined, fallback: number): number {
+  if (!Number.isSafeInteger(value) || value === undefined || value < 1) return fallback
+  return Math.min(value, 5_000)
+}
+
 
 function transactionDone(transaction: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {

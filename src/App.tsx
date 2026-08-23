@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
+import { WorkbenchDatabase, type RunHistory, type SavedSnapshot } from './persistence/database'
+import { HISTORY_METRICS } from './history/history'
 import type { CommunityVariableDefinition, CommunityVariableId } from './simulation/community/types'
 import type { BroaderDevelopmentExperienceType, DevelopmentExperienceType, ElevationOverride, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, Terrain, UtilityContribution, WorldCreationDraft, WorldCreationRequest, WorldDraftPreview, WorldDraftRecord } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
@@ -11,6 +12,7 @@ import { ActionExplanation } from './ui/ActionExplanation'
 import { PersonVariableSections } from './ui/PersonVariableSections'
 import { CommunityInspector, CommunitySignals } from './ui/CommunityPanels'
 import { WorldSetup, isWorldSetupGeometryValid, regionForPreset, type WorldSetupValues } from './ui/WorldSetup'
+import { HistoryPanel } from './ui/HistoryPanel'
 import type { DraftZoneViewportRequest } from './ui/DraftZoneMap'
 import { mergeWorkbenchProjection } from './ui/projectionFrame'
 import type { ContributionView, VariableDefinitionView } from './ui/personVariables'
@@ -31,7 +33,7 @@ export default function App() {
   const database = useMemo(() => new WorkbenchDatabase(), [])
   const [seed, setSeed] = useState('valley-001')
   const [setupOpen, setSetupOpen] = useState(false)
-  const [activeMode, setActiveMode] = useState<'world' | 'simulation' | 'analytics' | 'entities'>('world')
+  const [activeMode, setActiveMode] = useState<'world' | 'simulation' | 'analytics' | 'entities' | 'history'>('world')
   const [worldSetup, setWorldSetup] = useState<WorldSetupValues>({
     name: 'The Seeded Valley', seed: 'valley-001', width: 32, height: 24, population: 200,
     placements: [
@@ -68,6 +70,8 @@ export default function App() {
   const [speed, setSpeed] = useState(24)
   const [events, setEvents] = useState<SimulationEvent[]>([])
   const [statistics, setStatistics] = useState<StatisticSample[]>([])
+  const [history, setHistory] = useState<RunHistory>()
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [selectedCellId, setSelectedCellId] = useState<string>()
   const [selectedPersonId, setSelectedPersonId] = useState<string>()
   const [selectedCommunityId, setSelectedCommunityId] = useState<string>()
@@ -148,6 +152,7 @@ export default function App() {
           // is retained. The draft remains recoverable until commit succeeds.
           setEvents([])
           setStatistics([])
+          setHistory(undefined)
           setSelectedCellId(undefined)
           setSelectedPersonId(undefined)
           setSelectedCommunityId(undefined)
@@ -273,6 +278,18 @@ export default function App() {
     try { setSnapshots(await database.listSnapshots(runId)) } catch (reason) { setError(messageOf(reason)) }
   }
 
+  async function refreshHistory(runId = projectionRef.current?.runId) {
+    if (!runId) return
+    setHistoryLoading(true)
+    try {
+      setHistory(await database.readHistory(runId, { metricIds: HISTORY_METRICS }))
+    } catch (reason) {
+      setError(`History load failed: ${messageOf(reason)}`)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
   async function saveNamed() {
     try {
       const snapshot = await client.snapshot()
@@ -308,6 +325,7 @@ export default function App() {
       setWorldSetup(setup)
       setEvents([])
       setStatistics([])
+      setHistory(undefined)
       setSelectedCellId(undefined)
       setSelectedPersonId(undefined)
       setSelectedCommunityId(undefined)
@@ -457,8 +475,7 @@ export default function App() {
 
   function inspectPerson(personId: string) {
     const person = projectionRef.current?.people.find((candidate) => candidate.id === personId)
-    if (!person) return
-    setSelectedCellId(person.locationCellId)
+    if (person) setSelectedCellId(person.locationCellId)
     setSelectedPersonId(personId)
     setSelectedCommunityId(undefined)
   }
@@ -485,7 +502,7 @@ export default function App() {
           <div><h1>World Simulation</h1><span>deterministic engine workbench</span></div>
         </div>
         <nav className="mode-navigation" aria-label="Workbench modes">
-          {(['world', 'simulation', 'analytics', 'entities'] as const).map((mode) => <button key={mode} aria-current={activeMode === mode ? 'page' : undefined} className={activeMode === mode ? 'active' : ''} onClick={() => setActiveMode(mode)}>{mode}</button>)}
+          {(['world', 'simulation', 'analytics', 'entities', 'history'] as const).map((mode) => <button key={mode} aria-current={activeMode === mode ? 'page' : undefined} className={activeMode === mode ? 'active' : ''} onClick={() => { setActiveMode(mode); if (mode === 'history') void refreshHistory() }}>{mode}</button>)}
         </nav>
         <div className="run-facts">
           <Fact label="SEED" value={projection?.seed ?? '—'} />
@@ -519,6 +536,7 @@ export default function App() {
       <section className="workspace">
         <aside className="left-panel panel">
           {(activeMode === 'world') && <section className="world-overview"><span className="eyebrow">WORLD OVERVIEW</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{projection ? `${projection.world.width} × ${projection.world.height} hexes · ${projection.world.scale.hexRadiusMeters / 1000} km radius` : 'Awaiting authoritative world'}</small><div><span>People</span><b>{projection?.summary.populationCount ?? 0}</b><span>Households</span><b>{projection?.summary.householdCount ?? 0}</b></div></section>}
+          {(activeMode === 'history') && <section className="world-overview"><span className="eyebrow">RUN HISTORY</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{history ? `${history.events.length} bounded events · ${history.statistics.length} sampled metrics` : 'Load persisted local run evidence'}</small><div><span>Selected person</span><b>{selectedPersonId ?? 'None'}</b><span>Current tick</span><b>{projection?.tick ?? 0}</b></div></section>}
           {(activeMode === 'world' || activeMode === 'entities') && <section className="entity-catalog" aria-label="Entity categories"><span className="eyebrow">ENTITIES</span><button onClick={() => setActiveMode('entities')}>People <b>{projection?.summary.populationCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Households <b>{projection?.summary.householdCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Organizations <b>{projection?.organizations.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Communities <b>{projection?.communities.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Settlements <b>{projection?.settlements.length ?? 0}</b></button>{projection && <><div className="settlement-list">{projection.settlements.map((settlement) => <span key={settlement.id}>{settlement.name}<small>{projection.populationZones.find((zone) => zone.settlementId === settlement.id)?.populationCount ?? 0} people</small></span>)}</div><div className="organization-list">{projection.organizations.slice(0, 6).map((organization) => <span key={organization.id}>{organization.name}<small>{organization.members.length} learners · {organization.locationCellId}</small></span>)}</div></>}<small>Communities are geographic exposure measures, not memberships.</small></section>}
           {(activeMode === 'world' || activeMode === 'simulation') && <><PanelTitle title="Map layers" subtitle={`${projection?.world.cellCount ?? 0} hex cells`} />
           <div className="overlay-list">
@@ -595,14 +613,16 @@ export default function App() {
         </aside>
       </section>
 
-      <section className="event-panel panel">
+      {activeMode === 'history'
+        ? <HistoryPanel events={history?.events ?? []} statistics={history?.statistics ?? []} selectedPersonId={selectedPersonId} onInspectPerson={inspectPerson} onRefresh={() => void refreshHistory()} loading={historyLoading} />
+        : <section className="event-panel panel">
         <PanelTitle title="Simulation events" subtitle="Meaningful state transitions; calculations are intentionally omitted" />
         <div className="event-table" role="log">
           <div className="event-header"><span>Tick</span><span>Type</span><span>Details</span></div>
           {events.length === 0 && <div className="event-empty">No events recorded yet.</div>}
           {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
-      </section>
+      </section>}
       {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={!draftBusy && acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} onElevationPaintCommit={paintDraftElevation} onResourcePaintCommit={paintDraftResources} onExportDraft={exportWorldSetupDraft} onImportDraft={importWorldSetupDraft} error={error} />}
     </main>
   )

@@ -114,7 +114,7 @@ Do not implement distant systems merely because they appear later in this roadma
 
 ## Next Slice
 
-* Milestone 9 — Environmental and Resource Dynamics
+* Milestone 21 — Optional Narrative Presentation (optional), or Milestone 22 — Simulation Workbench Experience
 
 Detailed current implementation is documented in `README.md`.
 
@@ -1145,7 +1145,7 @@ Deferred: chunked authoritative state, world paging, cohorts, fidelity transitio
 
 # Milestone 20 — Historical Inspection
 
-Status: Future
+Status: Implemented (evidence history foundation)
 
 ## Goal
 
@@ -1165,6 +1165,10 @@ Potential capabilities:
 * Time-lapse maps
 
 Historical summaries should derive from authoritative simulation evidence rather than invent events.
+
+Implemented: IndexedDB now exposes bounded, indexed reads of persisted meaningful events and selected world statistic series. The History workspace displays exact selected-person event participation, explicit major-event highlights, and world population/resource/social trends. Historical person inspection hooks the person through the existing bounded projection path without moving the camera or changing the simulation.
+
+Deferred: dedicated household, settlement, and community history views; historical snapshot comparison; time-lapse maps; geographic-change history; and richer causal drill-down. These require additional authoritative evidence or a deliberate retained-snapshot policy rather than UI inference.
 
 ---
 
