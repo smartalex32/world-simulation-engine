@@ -115,6 +115,7 @@ export class WorkbenchProjectionBuilder {
       people: source.people,
       households: source.households,
       organizations: source.organizations,
+      governance: source.governance,
       parentChildLinks: source.parentChildLinks,
       communities: projectedCommunities,
       personCommunityIds,

@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.19.0'
-export const SNAPSHOT_SCHEMA_VERSION = 19
+export const ENGINE_VERSION = '0.20.0'
+export const SNAPSHOT_SCHEMA_VERSION = 20
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -25,6 +25,7 @@ export const ECONOMY_MODEL_VERSION = 1
 export const ORGANIZATION_MODEL_VERSION = 1
 export const CULTURE_MODEL_VERSION = 1
 export const LANGUAGE_MODEL_VERSION = 1
+export const GOVERNANCE_MODEL_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
@@ -226,6 +227,8 @@ export interface OrganizationState {
   members: OrganizationMember[]
   sharedRuleIds: string[]
 }
+/** Local authority is separate from settlement labels and exposure catchments. */
+export interface LocalGovernanceState { id: string; communityId: string; councilOrganizationId: string; representativeIds: string[]; legitimacy: number; lastUpdatedTick: number }
 export type PersonOccupation = 'forager' | 'household' | 'dependent'
 export interface HouseholdInventory { food: number }
 export type ParentChildLinkId = string
@@ -601,6 +604,7 @@ export interface RunConfiguration {
   organizationModelVersion?: number
   cultureModelVersion?: number
   languageModelVersion?: number
+  governanceModelVersion?: number
 }
 
 export interface RandomStreamSnapshot {
@@ -618,6 +622,7 @@ export interface SimulationState {
   people: PersonState[]
   households: HouseholdState[]
   organizations: OrganizationState[]
+  governance: LocalGovernanceState[]
   parentChildLinks: ParentChildLink[]
   activityLocations: ActivityLocationState[]
   communities: CommunitySimulationState[]
@@ -675,6 +680,7 @@ export interface WorldProjection {
   people: PersonState[]
   households: HouseholdState[]
   organizations: OrganizationState[]
+  governance: LocalGovernanceState[]
   parentChildLinks: ParentChildLink[]
   activityLocations: ActivityLocationState[]
   communities: CommunitySimulationState[]

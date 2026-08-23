@@ -1,5 +1,5 @@
 import type { CommunityAggregationTrace, CommunityEmergentValues, CommunityStructuralId, CommunityVariableDefinition, CommunityVariableId, CommunityFeedbackEdgeDefinition } from '../simulation/community/types'
-import type { GeographicCell, HouseholdState, OrganizationState, ParentChildLink, PersonState, PopulationPlacementZone, RelationshipState, SettlementState, Terrain, WorldScale } from '../simulation/domain/types'
+import type { GeographicCell, HouseholdState, LocalGovernanceState, OrganizationState, ParentChildLink, PersonState, PopulationPlacementZone, RelationshipState, SettlementState, Terrain, WorldScale } from '../simulation/domain/types'
 import type { PersonVariableDefinition } from '../simulation/variables/types'
 
 export const PROJECTION_PROTOCOL_VERSION = 1
@@ -173,6 +173,7 @@ export interface WorkbenchProjection {
   people: PersonState[]
   households: HouseholdState[]
   organizations: OrganizationState[]
+  governance: LocalGovernanceState[]
   parentChildLinks: ParentChildLink[]
   communities: ProjectedCommunityState[]
   personCommunityIds: Record<string, string>

@@ -10,6 +10,7 @@ import {
   ORGANIZATION_MODEL_VERSION,
   CULTURE_MODEL_VERSION,
   LANGUAGE_MODEL_VERSION,
+  GOVERNANCE_MODEL_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
@@ -73,6 +74,7 @@ import { resolveFoodShares } from '../economy/model'
 import { createInitialSchools } from '../organizations/model'
 import { createCulturalState, transmitCulture } from '../culture/model'
 import { acquireLanguage, initialLanguage } from '../language/model'
+import { createLocalGovernance, updateLegitimacy } from '../governance/model'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -168,6 +170,7 @@ export class SimulationEngine {
     })
     const runId = `run-${world.id.slice(6)}-${creation.width}x${creation.height}`
     const organizations = createInitialSchools(generatedPopulation.people, [...new Set(generatedPopulation.people.filter((person) => person.ageYears < 18).map((person) => person.homeCellId))])
+    const governance = createLocalGovernance(communities, generatedPopulation.people)
     return new SimulationEngine({
       runId,
       tick: 0,
@@ -191,11 +194,13 @@ export class SimulationEngine {
         organizationModelVersion: ORGANIZATION_MODEL_VERSION,
         cultureModelVersion: CULTURE_MODEL_VERSION,
         languageModelVersion: LANGUAGE_MODEL_VERSION,
+        governanceModelVersion: GOVERNANCE_MODEL_VERSION,
       },
       world,
       people: generatedPopulation.people,
       households: generatedPopulation.households,
       organizations,
+      governance,
       parentChildLinks: generatedPopulation.parentChildLinks,
       activityLocations: generatedPopulation.activityLocations,
       communities,
@@ -315,6 +320,7 @@ export class SimulationEngine {
       if (this.state.tick % 24 === 0) {
         this.resolveDailyFoodSharing(pushEvent)
         this.aggregateCommunities(pushEvent)
+        for (const governance of this.state.governance) { const community = this.state.communities.find((value) => value.catchment.id === governance.communityId); if (community) updateLegitimacy(governance, community, this.state.tick) }
         this.regenerateFood()
         statistics.push(...this.sampleDailyStatistics())
         this.decayRelationshipFrequencies()
@@ -357,6 +363,7 @@ export class SimulationEngine {
       people: this.state.people,
       households: this.state.households,
       organizations: this.state.organizations,
+      governance: this.state.governance,
       parentChildLinks: this.state.parentChildLinks,
       activityLocations: this.state.activityLocations,
       communities: this.state.communities,
