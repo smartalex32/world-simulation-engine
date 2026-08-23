@@ -447,7 +447,7 @@ test('maps and explains authoritative catchment measures without losing a hooked
   await expect(page.locator('.community-signal-card').filter({ hasText: 'West Valley' })).toBeVisible()
   await expect(page.locator('.community-signal-card').filter({ hasText: 'East Valley' })).toBeVisible()
 
-  for (let hour = 0; hour < 24; hour += 1) await page.getByTitle('Advance one hour').click()
+  for (let hour = 1; hour <= 24; hour += 1) await advanceOneHour(page, hour)
   await expect(page.getByText('Day 1 · 00:00')).toBeVisible()
   const canvas = page.getByLabel('Hex world map')
   const communityLayer = page.getByRole('button', { name: 'community', exact: true })
@@ -509,7 +509,7 @@ test('shows the authoritative community influence in an actual person action tra
 
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
-  for (let hour = 0; hour < 25; hour += 1) await page.getByTitle('Advance one hour').click()
+  for (let hour = 1; hour <= 25; hour += 1) await advanceOneHour(page, hour)
   await hookPersonAtCurrentCell(page, person)
   const communityGroup = page.locator('#contribution-community-exposure').locator('..')
   await expect(communityGroup).toBeVisible()
