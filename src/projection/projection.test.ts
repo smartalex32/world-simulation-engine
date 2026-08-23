@@ -3,7 +3,7 @@ import type { GeographicCell, PersonState } from '../simulation/domain/types'
 import { SimulationEngine } from '../simulation/engine/engine'
 import { projectionChunkKey, regionCount, regionKey } from './chunks'
 import { selectRegionSize, WorkbenchProjectionBuilder } from './buildMapProjection'
-import { MAX_POPULATION_MARKERS, MAX_TERRAIN_PRIMITIVES, PROJECTION_PROTOCOL_VERSION, type MapProjectionRequest } from './types'
+import { MAX_PERSON_DETAILS, MAX_POPULATION_MARKERS, MAX_TERRAIN_PRIMITIVES, PROJECTION_PROTOCOL_VERSION, type MapProjectionRequest } from './types'
 
 describe('bounded workbench projection', () => {
   it('selects globally aligned dynamic regions without exceeding the terrain budget', () => {
@@ -60,6 +60,20 @@ describe('bounded workbench projection', () => {
     const map = new WorkbenchProjectionBuilder(source).buildMap(source, request({ minQ: 0, maxQ: 63, minR: 0, maxR: 47 }, 12)).populationMarkers
     expect(map.length).toBeLessThanOrEqual(MAX_POPULATION_MARKERS)
     expect(map.reduce((sum, marker) => sum + marker.count, 0)).toBe(5_000)
+  })
+
+  it('keeps inspector transport bounded while preserving the authoritative population summary', () => {
+    const source = SimulationEngine.create('projection-detail-budget', 64, 48).project()
+    const template = source.people[0]
+    const cell = source.world.grid.cells.find((candidate) => candidate.movementCost > 0)
+    if (!template || !cell) throw new Error('Population fixture needs a passable template')
+    source.people = Array.from({ length: MAX_PERSON_DETAILS + 400 }, (_, index) => personAt(template, cell, index))
+    const projection = new WorkbenchProjectionBuilder(source).build(source, request({ minQ: cell.q, maxQ: cell.q, minR: cell.r, maxR: cell.r }, 12))
+    expect(projection.summary.populationCount).toBe(MAX_PERSON_DETAILS + 400)
+    expect(projection.map.populationMarkers.reduce((sum, marker) => sum + marker.count, 0)).toBe(MAX_PERSON_DETAILS + 400)
+    expect(projection.people).toHaveLength(MAX_PERSON_DETAILS)
+    expect(projection.detailBudget.peopleTruncated).toBe(true)
+    expect(projection.relationships).toEqual([])
   })
 
   it('enumerates activity markers only from intersecting 32-cell chunks and preserves visible counts', () => {

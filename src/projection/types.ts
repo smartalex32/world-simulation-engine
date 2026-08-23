@@ -2,7 +2,7 @@ import type { CommunityAggregationTrace, CommunityEmergentValues, CommunityStruc
 import type { DisputeState, GeographicCell, HouseholdState, LocalGovernanceState, OrganizationState, ParentChildLink, PersonState, PopulationPlacementZone, RelationshipState, SettlementState, Terrain, WorldScale } from '../simulation/domain/types'
 import type { PersonVariableDefinition } from '../simulation/variables/types'
 
-export const PROJECTION_PROTOCOL_VERSION = 1
+export const PROJECTION_PROTOCOL_VERSION = 2
 export const PROJECTION_CHUNK_SIZE = 32
 export const PROJECTION_REGION_SIZES = Object.freeze([1, 4, 16, 64, 256] as const)
 export const MAX_TERRAIN_PRIMITIVES = 4096
@@ -10,6 +10,12 @@ export const MAX_POPULATION_MARKERS = 1500
 export const MAX_ACTIVITY_MARKERS = 750
 export const MAX_HOUSEHOLD_MARKERS = 750
 export const MAX_RELATIONSHIP_SEGMENTS = 250
+/** Bounded inspector transport; the authoritative worker retains every entity. */
+export const MAX_PERSON_DETAILS = 512
+export const MAX_RELATIONSHIP_DETAILS = 512
+export const MAX_DISPUTE_DETAILS = 256
+export const MAX_HOUSEHOLD_DETAILS = 256
+export const MAX_PARENT_CHILD_LINK_DETAILS = 512
 
 /** Starts with the canonical 1/4/16/64/256 ladder and may grow by powers of four for exceptionally large viewports. */
 export type ProjectionRegionSize = number
@@ -149,6 +155,15 @@ export interface ProjectionSummary {
   averageHunger: number
 }
 
+/** Reports intentional transport paging without affecting authoritative state. */
+export interface ProjectionDetailBudget {
+  peopleTruncated: boolean
+  relationshipsTruncated: boolean
+  disputesTruncated: boolean
+  householdsTruncated: boolean
+  parentChildLinksTruncated: boolean
+}
+
 export interface RouteHomeProjection {
   personId: string
   reachable: boolean
@@ -183,6 +198,7 @@ export interface WorkbenchProjection {
   communityVariableDefinitions: readonly CommunityVariableDefinition[]
   communityFeedbackDefinitions: readonly CommunityFeedbackEdgeDefinition[]
   summary: ProjectionSummary
+  detailBudget: ProjectionDetailBudget
   routeHome?: RouteHomeProjection
   digest?: string
 }

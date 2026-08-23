@@ -6,8 +6,13 @@ import { findPathDetailed } from '../simulation/spatial/pathfinding'
 import { alignRegionOrigin, clampViewportBounds, projectionChunkKey, regionCount, regionKey } from './chunks'
 import {
   MAX_ACTIVITY_MARKERS,
+  MAX_DISPUTE_DETAILS,
   MAX_HOUSEHOLD_MARKERS,
+  MAX_HOUSEHOLD_DETAILS,
+  MAX_PARENT_CHILD_LINK_DETAILS,
   MAX_POPULATION_MARKERS,
+  MAX_PERSON_DETAILS,
+  MAX_RELATIONSHIP_DETAILS,
   MAX_RELATIONSHIP_SEGMENTS,
   MAX_TERRAIN_PRIMITIVES,
   PROJECTION_CHUNK_SIZE,
@@ -91,7 +96,8 @@ export class WorkbenchProjectionBuilder {
   build(source: WorldProjection, request: MapProjectionRequest, digest?: string, projectionEpoch = 0): WorkbenchProjection {
     const map = this.buildMap(source, request)
     const projectedCommunities = projectCommunities(source.communities)
-    const personCommunityIds = Object.fromEntries(source.people
+    const details = projectInspectorDetails(source, map, request)
+    const personCommunityIds = Object.fromEntries(details.people
       .map((person) => [person.id, this.communityIdByCellId.get(person.locationCellId)] as const)
       .filter((entry): entry is readonly [string, string] => entry[1] !== undefined)
       .sort(([first], [second]) => first.localeCompare(second)))
@@ -112,15 +118,15 @@ export class WorkbenchProjectionBuilder {
         : { id: zone.id, name: zone.name, populationCount: zone.populationCount, cellCount: zone.cellIds.length, settlementId: zone.settlementId })
         .sort((a, b) => a.id.localeCompare(b.id)),
       map,
-      people: source.people,
-      households: source.households,
+      people: details.people,
+      households: details.households,
       organizations: source.organizations,
       governance: source.governance,
-      disputes: source.disputes,
-      parentChildLinks: source.parentChildLinks,
+      disputes: source.disputes.slice(0, MAX_DISPUTE_DETAILS),
+      parentChildLinks: details.parentChildLinks,
       communities: projectedCommunities,
       personCommunityIds,
-      relationships: source.relationships,
+      relationships: details.relationships,
       variableDefinitions: source.variableDefinitions,
       communityVariableDefinitions: source.communityVariableDefinitions,
       communityFeedbackDefinitions: source.communityFeedbackDefinitions,
@@ -131,6 +137,7 @@ export class WorkbenchProjectionBuilder {
         activityLocationCount: source.activityLocations.length,
         averageHunger: livingPeople.length === 0 ? 0 : Math.round(hungerTotal / livingPeople.length),
       },
+      detailBudget: { ...details.budget, disputesTruncated: source.disputes.length > MAX_DISPUTE_DETAILS },
       routeHome: this.routeHome(source.people, request.hookedPersonId),
       digest: digest ?? source.digest,
     }
@@ -403,6 +410,51 @@ function buildPopulationMarkers(people: readonly PersonState[], cells: ReadonlyM
     groups = populationGroups(people, cells, bounds, markerSize)
   }
   return groups
+}
+
+/** Bounded inspector transport: the worker retains every entity and a hook takes priority. */
+function projectInspectorDetails(source: WorldProjection, map: MapProjection, request: MapProjectionRequest): {
+  people: PersonState[]
+  relationships: typeof source.relationships
+  households: typeof source.households
+  parentChildLinks: typeof source.parentChildLinks
+  budget: { peopleTruncated: boolean; relationshipsTruncated: boolean; householdsTruncated: boolean; parentChildLinksTruncated: boolean }
+} {
+  const byId = new Map(source.people.map((person) => [person.id, person]))
+  const hooked = request.hookedPersonId ? byId.get(request.hookedPersonId) : undefined
+  const requiredPersonIds = new Set<string>()
+  if (hooked) {
+    requiredPersonIds.add(hooked.id)
+    const household = source.households.find((candidate) => candidate.id === hooked.householdId)
+    for (const personId of household?.memberIds ?? []) requiredPersonIds.add(personId)
+  }
+  const visibleCellIds = map.lod === 'cell' ? new Set(map.exactCells.map((cell) => cell.id)) : new Set<string>()
+  if (request.focusCellId) visibleCellIds.add(request.focusCellId)
+  const prioritized = source.people.filter((person) => requiredPersonIds.has(person.id)).sort((a, b) => a.id.localeCompare(b.id))
+  const local = source.people.filter((person) => !requiredPersonIds.has(person.id) && visibleCellIds.has(person.locationCellId)).sort((a, b) => a.id.localeCompare(b.id))
+  const people = [...prioritized, ...local].slice(0, MAX_PERSON_DETAILS)
+  const projectedPersonIds = new Set(people.map((person) => person.id))
+  const relationshipCandidates = hooked
+    ? source.relationships.filter((relationship) => relationship.personAId === hooked.id || relationship.personBId === hooked.id)
+    : source.relationships.filter((relationship) => projectedPersonIds.has(relationship.personAId) && projectedPersonIds.has(relationship.personBId))
+  const relationships = relationshipCandidates.slice().sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_RELATIONSHIP_DETAILS)
+  const householdIds = new Set(people.map((person) => person.householdId))
+  const householdCandidates = source.households.filter((household) => householdIds.has(household.id)).sort((a, b) => a.id.localeCompare(b.id))
+  const households = householdCandidates.slice(0, MAX_HOUSEHOLD_DETAILS)
+  const parentChildCandidates = source.parentChildLinks.filter((link) => projectedPersonIds.has(link.parentId) || projectedPersonIds.has(link.childId)).sort((a, b) => a.id.localeCompare(b.id))
+  const parentChildLinks = parentChildCandidates.slice(0, MAX_PARENT_CHILD_LINK_DETAILS)
+  return {
+    people,
+    relationships,
+    households,
+    parentChildLinks,
+    budget: {
+      peopleTruncated: source.people.length > people.length,
+      relationshipsTruncated: relationshipCandidates.length > relationships.length,
+      householdsTruncated: householdCandidates.length > households.length,
+      parentChildLinksTruncated: parentChildCandidates.length > parentChildLinks.length,
+    },
+  }
 }
 
 function populationGroups(people: readonly PersonState[], cells: ReadonlyMap<string, GeographicCell>, bounds: AxialViewportBounds, size: ProjectionRegionSize): PopulationMapMarker[] {
