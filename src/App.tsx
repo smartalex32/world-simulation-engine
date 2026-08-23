@@ -3,6 +3,7 @@ import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
 import type { CommunityVariableDefinition, CommunityVariableId } from './simulation/community/types'
 import type { DevelopmentExperienceType, ElevationOverride, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, Terrain, UtilityContribution, WorldCreationDraft, WorldCreationRequest, WorldDraftPreview, WorldDraftRecord } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
+import { seasonAtTick } from './simulation/environment/season'
 import { exportWorldDraftBundle, importWorldDraftBundle } from './simulation/domain/worldDraftBundle'
 import type { ProjectedCommunityState, WorkbenchProjection } from './projection'
 import { HexMap, type MapOverlay } from './ui/HexMap'
@@ -537,6 +538,7 @@ export default function App() {
             <Metric label="Average hunger" value={recentMetrics['population.averageHunger'] ?? averageVariable(projection?.people, 'person.state.hunger')} />
             <Metric label="Occupied cells" value={recentMetrics['spatial.occupiedCells'] ?? '—'} />
             <Metric label="World food" value={recentMetrics['resources.totalFood'] ?? 'Awaiting daily sample'} />
+            <Metric label="Season" value={projection ? seasonAtTick(projection.tick).id : '—'} />
             <Metric label="Food consumed/day" value={recentMetrics['resources.foodConsumed'] ?? '—'} />
             <Metric label="Travel cost/person" value={recentMetrics['spatial.averageTravelCost'] ?? '—'} />
             <Metric label="Simulated days" value={recentMetrics['engine.simulatedDays'] ?? day} />
@@ -727,6 +729,7 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
       <Metric label="Home" value={person.homeCellId} />
       {person.journey && <><Metric label="Traveling to" value={person.journey.destinationCellId} /><Metric label="Travel remaining" value={`${person.journey.remainingCost} / ${person.journey.totalCost}`} /></>}
       <Metric label="Route home" value={routeHome?.reachable ? `${routeHome.steps ?? 0} steps · ${routeHome.totalCost ?? 0} cost` : routeHome?.truncated ? 'Search limit reached' : routeHome ? 'No route' : 'Calculating'} />
+      <Metric label="Environmental hours" value={person.environmentalExposure?.observedHours ?? 0} />
     </div>
     <section className="activity-panel" aria-labelledby="current-activity-heading">
       <div className="section-heading"><h3 id="current-activity-heading">Current activity</h3><span>{scheduleLabel(person.activityScheduleId)}</span></div>
@@ -735,6 +738,14 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
         <Metric label="Location" value={person.currentActivity.kind === 'travel' ? 'None while traveling' : person.currentActivity.locationId ?? 'None'} />
         <Metric label="Cell" value={person.locationCellId} />
         <Metric label="Since tick" value={person.currentActivity.sinceTick} />
+      </div>
+    </section>
+    <section className="community-exposure-panel" aria-labelledby="environmental-exposure-heading">
+      <div className="section-heading"><h3 id="environmental-exposure-heading">Environmental exposure</h3><span>Actual location hours</span></div>
+      <div className="activity-details">
+        <Metric label="Food accessible" value={`${person.environmentalExposure?.foodAccessibleHours ?? 0} h`} />
+        <Metric label="Difficult terrain" value={`${person.environmentalExposure?.difficultTerrainHours ?? 0} h`} />
+        <Metric label="Thermal load" value={`${((person.environmentalExposure?.thermalLoadPermilleHours ?? 0) / 1000).toFixed(1)} h`} />
       </div>
     </section>
     <section className="community-exposure-panel" aria-labelledby="geographic-exposure-heading">

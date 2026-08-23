@@ -96,6 +96,13 @@ export function validateHouseholdActivityState(state: SimulationState): void {
       throw new Error(`Non-child ${person.id} has an inheritance trace`)
     }
     validateDevelopmentState(person, state, expectedParentIds ?? [], peopleById, household)
+    const environmentalExposure = person.environmentalExposure
+    if (!environmentalExposure || Object.values(environmentalExposure).some((value) => !Number.isSafeInteger(value) || value < 0)) {
+      throw new Error(`Person ${person.id} has invalid environmental exposure`)
+    }
+    if (environmentalExposure.observedHours !== state.tick || environmentalExposure.foodAccessibleHours > environmentalExposure.observedHours || environmentalExposure.difficultTerrainHours > environmentalExposure.observedHours) {
+      throw new Error(`Person ${person.id} has inconsistent environmental exposure`)
+    }
   }
   if (memberships.size !== state.people.length) throw new Error('Not every person belongs to exactly one household')
   validateInitialPopulationPlacement(state)

@@ -34,6 +34,8 @@ export interface Candidate {
 
 export interface ActionContext {
   tick: number
+  /** Deterministic calendar modifier; rendering and wall-clock timing do not affect it. */
+  movementCostMultiplierPermille?: number
   cellById: ReadonlyMap<string, GeographicCell>
   occupantsByCell: ReadonlyMap<string, readonly string[]>
   occupantsByActivityLocation: ReadonlyMap<string, readonly string[]>
@@ -110,13 +112,13 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
     baseContribution(ACTION_BASE_WEIGHT.move),
     ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.moveUtility, person),
     contextContribution('destination food', Math.floor(moveTarget.foodAmount * DESTINATION_FOOD_WEIGHT_PERMILLE / 1000)),
-    contextContribution('travel cost', -Math.floor(Math.max(0, moveTarget.movementCost - PLAIN_MOVEMENT_COST) / MOVE_TRAVEL_COST_DIVISOR)),
+    contextContribution('travel cost', -Math.floor(Math.max(0, effectiveMovementCost(moveTarget, context) - PLAIN_MOVEMENT_COST) / MOVE_TRAVEL_COST_DIVISOR)),
   ], moveTarget.id))
   if (exploreTarget) candidates.push(candidate('explore', [
     baseContribution(ACTION_BASE_WEIGHT.explore),
     ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.exploreUtility, person),
     interactionContribution('terrain uncertainty', -Math.floor(
-      Math.max(0, exploreTarget.movementCost - PLAIN_MOVEMENT_COST)
+      Math.max(0, effectiveMovementCost(exploreTarget, context) - PLAIN_MOVEMENT_COST)
       * (1000 - getPersonVariable(person.variables, PERSON_VARIABLE_ID.riskTolerance))
       / 3000,
     )),
@@ -154,7 +156,8 @@ export function resolveAction(person: PersonState, decision: ActionDecision, con
   } else if ((decision.action === 'move' || decision.action === 'explore') && decision.targetCellId) {
     const destination = context.cellById.get(decision.targetCellId)
     if (destination?.movementCost) {
-      person.journey = { kind: decision.action, destinationCellId: destination.id, totalCost: destination.movementCost, remainingCost: destination.movementCost }
+      const cost = effectiveMovementCost(destination, context)
+      person.journey = { kind: decision.action, destinationCellId: destination.id, totalCost: cost, remainingCost: cost }
       const journey = advanceJourney(person, HOURLY_TRAVEL_BUDGET)
       outcome.arrived = journey?.arrived ?? false
       outcome.travelCost = journey?.travelCost ?? 0
@@ -196,9 +199,13 @@ function destinationScore(cell: GeographicCell, person: PersonState, context: Ac
   const riskTolerance = getPersonVariable(person.variables, PERSON_VARIABLE_ID.riskTolerance)
   const sociability = getPersonVariable(person.variables, PERSON_VARIABLE_ID.sociability)
   const terrainPenalty = exploring
-    ? Math.floor((cell.movementCost - PLAIN_MOVEMENT_COST) * (1000 - riskTolerance) / 1000)
-    : cell.movementCost - PLAIN_MOVEMENT_COST
+    ? Math.floor((effectiveMovementCost(cell, context) - PLAIN_MOVEMENT_COST) * (1000 - riskTolerance) / 1000)
+    : effectiveMovementCost(cell, context) - PLAIN_MOVEMENT_COST
   return cell.foodAmount * 4 + Math.floor(people * sociability / 10) - terrainPenalty
+}
+
+function effectiveMovementCost(cell: GeographicCell, context: Pick<ActionContext, 'movementCostMultiplierPermille'>): number {
+  return Math.floor(cell.movementCost * (context.movementCostMultiplierPermille ?? 1000) / 1000)
 }
 
 function personInfluenceContributions(targetId: DecisionInfluenceTarget, person: PersonState): UtilityContribution[] {

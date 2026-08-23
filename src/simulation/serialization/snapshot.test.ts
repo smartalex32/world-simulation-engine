@@ -14,8 +14,8 @@ describe('canonical serialization', () => {
     const validated = await validateSnapshot(structuredClone(snapshot))
 
     expect(validated).toEqual(snapshot)
-    expect(validated.schemaVersion).toBe(12)
-    expect(validated.engineVersion).toBe('0.12.0')
+    expect(validated.schemaVersion).toBe(13)
+    expect(validated.engineVersion).toBe('0.13.0')
     expect(validated.state.households).toHaveLength(100)
     expect(validated.state.parentChildLinks).toHaveLength(100)
     expect(validated.state.communities).toHaveLength(2)
