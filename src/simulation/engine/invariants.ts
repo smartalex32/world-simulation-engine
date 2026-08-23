@@ -25,6 +25,7 @@ export function validateHouseholdActivityState(state: SimulationState): void {
     if (!homeCell?.movementCost) throw new Error(`Household ${household.id} has an invalid home cell`)
     if (household.homeActivityLocationId !== householdHomeActivityId(household.id)) throw new Error(`Household ${household.id} has a non-canonical home activity ID`)
     if (!isSortedUnique(household.memberIds) || household.memberIds.length === 0) throw new Error(`Household ${household.id} has invalid members`)
+    if (!household.inventory || !Number.isSafeInteger(household.inventory.food) || household.inventory.food < 0) throw new Error(`Household ${household.id} has invalid food inventory`)
     for (const personId of household.memberIds) {
       if (!peopleById.has(personId)) throw new Error(`Household ${household.id} contains missing person ${personId}`)
       if (memberships.has(personId)) throw new Error(`Person ${personId} belongs to multiple households`)
@@ -74,6 +75,8 @@ export function validateHouseholdActivityState(state: SimulationState): void {
     const household = householdsById.get(person.householdId)
     if (!household || memberships.get(person.id) !== household.id) throw new Error(`Person ${person.id} has inconsistent household membership`)
     if (person.homeCellId !== household.homeCellId) throw new Error(`Person ${person.id} has a home outside their household`)
+    if (person.occupation !== 'forager' && person.occupation !== 'household' && person.occupation !== 'dependent') throw new Error(`Person ${person.id} has an invalid occupation`)
+    if (person.ageYears < 16 && person.occupation !== 'dependent') throw new Error(`Child ${person.id} has a productive occupation`)
     if (!Number.isSafeInteger(person.ageYears) || person.ageYears < 0) throw new Error(`Person ${person.id} has an invalid age`)
     if (!Number.isSafeInteger(person.ageHoursIntoYear) || person.ageHoursIntoYear < 0 || person.ageHoursIntoYear >= 8760) throw new Error(`Person ${person.id} has invalid age-hour progress`)
     if (person.activityScheduleId !== scheduleForAge(person.ageYears)) throw new Error(`Person ${person.id} has an invalid activity schedule`)
@@ -118,6 +121,8 @@ export function validateHouseholdActivityState(state: SimulationState): void {
   if (!developmentCounters || Object.values(developmentCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily development counters are invalid')
   const lifeCycleCounters = state.dailyLifeCycleCounters
   if (!lifeCycleCounters || Object.values(lifeCycleCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily life-cycle counters are invalid')
+  const economicCounters = state.dailyEconomicCounters
+  if (!economicCounters || Object.values(economicCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily economic counters are invalid')
 }
 
 /** Starting homes retain authored zone totals after later household moves. */

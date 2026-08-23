@@ -64,7 +64,7 @@ describe('Milestone 8A world creation validation', () => {
 
   it('round-trips schema 12 and rejects the prior schema explicitly', async () => {
     const snapshot = await SimulationEngine.create('m8a-schema-round-trip').snapshot()
-    expect(snapshot.schemaVersion).toBe(15)
+    expect(snapshot.schemaVersion).toBe(16)
     expect((await validateSnapshot(structuredClone(snapshot))).digest).toBe(snapshot.digest)
     const unsupported = structuredClone(snapshot)
     unsupported.schemaVersion = 8

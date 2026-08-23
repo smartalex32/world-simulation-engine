@@ -305,7 +305,7 @@ test('the same seed and step count produce the same digest', async ({ page }) =>
   await page.getByTitle('Advance one hour').click()
   await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
   const firstDigest = await page.locator('.fact').filter({ hasText: 'SAVED HASH' }).locator('strong').textContent()
-  expect(firstDigest).toBe('5d9bd74940')
+  expect(firstDigest).toBe('b6fa674476')
   await page.getByRole('button', { name: 'Reset' }).click()
   await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
   await page.getByTitle('Advance one hour').click()

@@ -730,6 +730,7 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
       <Metric label="Age" value={`${person.ageYears} years`} />
       <Metric label="Life stage" value={person.lifeStage ?? (person.ageYears < 18 ? 'child' : 'adult')} />
       <Metric label="Status" value={person.lifeStatus ?? 'alive'} />
+      <Metric label="Role" value={person.occupation ?? 'unassigned'} />
       {person.partnerId && <Metric label="Partner" value={person.partnerId} />}
       <Metric label="Location" value={person.locationCellId} />
       <Metric label="Home" value={person.homeCellId} />
@@ -766,7 +767,7 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
     <section className="household-panel" aria-labelledby="household-heading">
       <div className="section-heading"><h3 id="household-heading">Household</h3><span>{household ? household.memberIds.length : 0} members</span></div>
       {household ? <>
-        <div className="activity-details"><Metric label="Household ID" value={household.id} /><Metric label="Home" value={household.homeCellId} /></div>
+        <div className="activity-details"><Metric label="Household ID" value={household.id} /><Metric label="Home" value={household.homeCellId} /><Metric label="Food store" value={`${household.inventory?.food ?? 0} units`} /></div>
         <div className="household-members">
           {householdMembers.map((member) => <button key={member.id} onClick={() => onHookPerson(member.id)} aria-label={`Hook ${member.id}`}><span><strong>{member.id}</strong><small>{member.role}</small></span><span>{member.ageYears} years</span></button>)}
         </div>

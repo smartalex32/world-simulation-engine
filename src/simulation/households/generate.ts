@@ -2,6 +2,7 @@ import { createCommonsActivity, createHouseholdHomeActivity } from '../activitie
 import type { ActivityLocationState, HouseholdState, ParentChildLink, PopulationPlacementZone } from '../domain/types'
 import { RandomProvider } from '../rng/pcg32'
 import { CHILD_AGE, HOUSEHOLD_GENERATION_STREAM, householdIdForOrdinal, personIdForOrdinal } from './config'
+import { initialInventory } from '../economy/model'
 
 export interface HouseholdPersonInput { readonly id: string; readonly ageYears: number; readonly initialHomeCellId?: string }
 export interface PassableCellInput { readonly id: string; readonly movementCost: number }
@@ -48,7 +49,7 @@ export function generateInitialHouseholds(people: readonly HouseholdPersonInput[
     const person = requiredPerson(peopleById, personId)
     const householdId = householdIdForOrdinal(householdOrdinal++)
     const homeCellId = legacyHome(person, zone, passableIds, placementRng, preserveLegacyHomePlacement)
-    households.push({ id: householdId, homeCellId, homeActivityLocationId: `activity.home.${householdId}`, memberIds: [personId] })
+    households.push({ id: householdId, homeCellId, homeActivityLocationId: `activity.home.${householdId}`, memberIds: [personId], inventory: initialInventory(1) })
     assignments.push({ personId, householdId, homeCellId, ageYears: Math.max(person.ageYears, 18) })
     zone.remaining -= 1
   }
@@ -97,7 +98,7 @@ function addFamily(input: { peopleById: ReadonlyMap<string, HouseholdPersonInput
   const parentA = requiredPerson(input.peopleById, input.parentAId)
   const parentB = requiredPerson(input.peopleById, input.parentBId)
   requiredPerson(input.peopleById, input.childId)
-  input.households.push({ id: householdId, homeCellId: input.homeCellId, homeActivityLocationId: `activity.home.${householdId}`, memberIds: [input.parentAId, input.parentBId, input.childId].sort(compareText) })
+  input.households.push({ id: householdId, homeCellId: input.homeCellId, homeActivityLocationId: `activity.home.${householdId}`, memberIds: [input.parentAId, input.parentBId, input.childId].sort(compareText), inventory: initialInventory(3) })
   input.assignments.push(
     { personId: input.parentAId, householdId, homeCellId: input.homeCellId, ageYears: Math.max(parentA.ageYears, input.childAgeYears + CHILD_AGE.minimumParentAgeGapYears) },
     { personId: input.parentBId, householdId, homeCellId: input.homeCellId, ageYears: Math.max(parentB.ageYears, input.childAgeYears + CHILD_AGE.minimumParentAgeGapYears) },

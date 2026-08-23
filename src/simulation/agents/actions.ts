@@ -1,4 +1,4 @@
-import type { ActionDecision, ActionName, GeographicCell, PersonState, UtilityContribution } from '../domain/types'
+import type { ActionDecision, ActionName, GeographicCell, HouseholdState, PersonState, UtilityContribution } from '../domain/types'
 import type { CommunitySimulationState } from '../community/types'
 import { evaluateCommunityFeedback } from '../community/feedback'
 import { getCommunityVariableDefinition } from '../community/registry'
@@ -23,7 +23,9 @@ import {
   OTHER_OCCUPANT_SOCIAL_WEIGHT,
   PLAIN_MOVEMENT_COST,
   REST_FATIGUE_RECOVERY,
+  WORK_FATIGUE_COST,
 } from './actionConfig'
+import { consumeHouseholdFood, harvestFood } from '../economy/model'
 
 export interface Candidate {
   action: ActionName
@@ -41,6 +43,7 @@ export interface ActionContext {
   occupantsByActivityLocation: ReadonlyMap<string, readonly string[]>
   /** Current authoritative catchment state indexed by actual world cell. */
   communityByCellId: ReadonlyMap<string, CommunitySimulationState>
+  householdById?: ReadonlyMap<string, HouseholdState>
 }
 
 export interface ActionOutcome {
@@ -53,6 +56,7 @@ export interface ActionOutcome {
   failedMeal: boolean
   hungerReduced: number
   fatigueReduced: number
+  foodProduced: number
 }
 
 export interface JourneyOutcome {
@@ -103,10 +107,11 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
   const hour = context.tick % 24
   const candidates: Candidate[] = []
 
-  if (cell.foodAmount > 0 && hunger > 0) candidates.push(candidate('eat', [
+  const householdFood = context.householdById?.get(person.householdId)?.inventory?.food ?? 0
+  if ((householdFood > 0 || (!context.householdById && cell.foodAmount > 0)) && hunger > 0) candidates.push(candidate('eat', [
     baseContribution(ACTION_BASE_WEIGHT.eat),
     ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.eatUtility, person),
-    contextContribution('local food', Math.min(LOCAL_FOOD_WEIGHT_CAP, cell.foodAmount)),
+    contextContribution('household food', Math.min(LOCAL_FOOD_WEIGHT_CAP, householdFood || cell.foodAmount)),
   ]))
   if (moveTarget) candidates.push(candidate('move', [
     baseContribution(ACTION_BASE_WEIGHT.move),
@@ -136,23 +141,36 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
     contextContribution('people present', company * OTHER_OCCUPANT_SOCIAL_WEIGHT),
     ...communityInfluenceContributions('decision.socialize.utility', person.locationCellId, context),
   ]))
+  if (person.occupation === 'forager' && person.currentActivity.kind === 'commons' && cell.foodAmount > 0 && hour >= 6 && hour < 18) candidates.push(candidate('work', [
+    baseContribution(ACTION_BASE_WEIGHT.work),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.workUtility, person),
+    contextContribution('accessible resource', Math.min(160, cell.foodAmount * 8)),
+    contextContribution('fatigue cost', -Math.floor(getPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue) / 5)),
+  ]))
   return candidates
 }
 
 export function resolveAction(person: PersonState, decision: ActionDecision, context: ActionContext): ActionOutcome {
   const fromCellId = person.locationCellId
-  const outcome: ActionOutcome = { action: decision.action, fromCellId, targetCellId: decision.targetCellId, arrived: false, travelCost: 0, foodConsumed: 0, failedMeal: false, hungerReduced: 0, fatigueReduced: 0 }
+  const outcome: ActionOutcome = { action: decision.action, fromCellId, targetCellId: decision.targetCellId, arrived: false, travelCost: 0, foodConsumed: 0, failedMeal: false, hungerReduced: 0, fatigueReduced: 0, foodProduced: 0 }
   if (decision.action === 'eat') {
+    const household = context.householdById?.get(person.householdId)
+    const inventory = household?.inventory
     const cell = context.cellById.get(person.locationCellId)
-    if (!cell || cell.foodAmount <= 0) outcome.failedMeal = true
-    else {
+    if (inventory?.food !== undefined && inventory.food > 0) {
+      const hunger = getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger)
+      const desiredFood = Math.max(1, Math.min(160, Math.ceil(hunger / FOOD_TO_HUNGER_RECOVERY)))
+      outcome.foodConsumed = consumeHouseholdFood(inventory, desiredFood)
+      const remainingHunger = adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, -outcome.foodConsumed * FOOD_TO_HUNGER_RECOVERY)
+      outcome.hungerReduced = hunger - remainingHunger
+    } else if (!context.householdById && cell && cell.foodAmount > 0) {
       const hunger = getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger)
       const desiredFood = Math.max(1, Math.min(160, Math.ceil(hunger / FOOD_TO_HUNGER_RECOVERY)))
       outcome.foodConsumed = Math.min(cell.foodAmount, desiredFood)
       cell.foodAmount -= outcome.foodConsumed
       const remainingHunger = adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, -outcome.foodConsumed * FOOD_TO_HUNGER_RECOVERY)
       outcome.hungerReduced = hunger - remainingHunger
-    }
+    } else outcome.failedMeal = true
   } else if ((decision.action === 'move' || decision.action === 'explore') && decision.targetCellId) {
     const destination = context.cellById.get(decision.targetCellId)
     if (destination?.movementCost) {
@@ -166,6 +184,13 @@ export function resolveAction(person: PersonState, decision: ActionDecision, con
     const fatigue = getPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue)
     const remainingFatigue = adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, -REST_FATIGUE_RECOVERY)
     outcome.fatigueReduced = fatigue - remainingFatigue
+  } else if (decision.action === 'work') {
+    const household = context.householdById?.get(person.householdId)
+    const cell = context.cellById.get(person.locationCellId)
+    if (household?.inventory && cell && person.occupation === 'forager') {
+      outcome.foodProduced = harvestFood(cell, household.inventory)
+      adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, WORK_FATIGUE_COST)
+    }
   }
   person.lastDecision = decision
   return outcome

@@ -23,8 +23,8 @@ const edge = (
 })
 
 describe('influence registry', () => {
-  it('contains the frozen eleven-edge initial registry', () => {
-    expect(INFLUENCE_DEFINITIONS).toHaveLength(11)
+  it('contains the frozen twelve-edge initial registry', () => {
+    expect(INFLUENCE_DEFINITIONS).toHaveLength(12)
     expect(INFLUENCE_REGISTRY.definitions.map((definition) => [definition.sourceId, definition.targetId, definition.weightPermille])).toEqual([
       [PERSON_VARIABLE_ID.hunger, DECISION_INFLUENCE_TARGET.eatUtility, 900],
       [PERSON_VARIABLE_ID.hunger, DECISION_INFLUENCE_TARGET.moveUtility, 120],
@@ -37,6 +37,7 @@ describe('influence registry', () => {
       [PERSON_VARIABLE_ID.hunger, DECISION_INFLUENCE_TARGET.socializeUtility, -150],
       [PERSON_VARIABLE_ID.fatigue, DECISION_INFLUENCE_TARGET.restUtility, 800],
       [PERSON_VARIABLE_ID.socialConnection, DECISION_INFLUENCE_TARGET.socializeUtility, 650],
+      [PERSON_VARIABLE_ID.persistence, DECISION_INFLUENCE_TARGET.workUtility, 350],
     ])
   })
 

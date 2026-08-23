@@ -7,6 +7,7 @@ export const ACTION_BASE_WEIGHT = Object.freeze({
   explore: 40,
   rest: 120,
   socialize: 20,
+  work: 55,
 } as const)
 
 export const LOCAL_FOOD_WEIGHT_CAP = 300
@@ -24,3 +25,4 @@ export const HOURLY_SOCIAL_NEED_INCREASE = 8
 export const REST_FATIGUE_RECOVERY = 180
 export const ENCOUNTER_SOCIAL_NEED_RECOVERY = 140
 export const FOOD_TO_HUNGER_RECOVERY = 2
+export const WORK_FATIGUE_COST = 55

@@ -6,6 +6,7 @@ export const DECISION_INFLUENCE_TARGETS = Object.freeze([
   'decision.explore.utility',
   'decision.rest.utility',
   'decision.socialize.utility',
+  'decision.work.utility',
 ] as const)
 
 export type DecisionInfluenceTarget = typeof DECISION_INFLUENCE_TARGETS[number]

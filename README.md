@@ -44,6 +44,8 @@ Implemented:
 * Milestone 9B — Deterministic Seasonal Environment
 * Milestone 9C — Location-Based Environmental Exposure
 * Milestone 10 — Life Cycle and Population Dynamics
+* Milestone 11 — Broader Human Development
+* Milestone 12 — Occupations, Production, and Exchange
 
 Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. Linked population zones retain their existing anchor-containment validation.
 
@@ -51,9 +53,7 @@ Draft roads are ordered, contiguous passable-cell segments. They are validated b
 
 Drafts can also be imported and exported as a versioned JSON bundle. Bundles include the draft record, generator version, dimensions, scale, seed, terrain/resource edits, population zones, settlements, and roads; incompatible versions are rejected rather than silently reinterpreted.
 
-Next:
-
-* Milestone 11 — Broader Human Development
+Next: Milestone 13 — Institutions and Organizations.
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 
