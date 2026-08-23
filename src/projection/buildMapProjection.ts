@@ -3,6 +3,7 @@ import type { GeographicCell, HexGrid, PersonState, Terrain, WorldProjection } f
 import { PERSON_VARIABLE_ID } from '../simulation/variables/registry'
 import { getPersonVariable } from '../simulation/variables/storage'
 import { findPathDetailed } from '../simulation/spatial/pathfinding'
+import { buildProjectedSettlements } from './settlements'
 import { alignRegionOrigin, clampViewportBounds, projectionChunkKey, regionCount, regionKey } from './chunks'
 import {
   MAX_ACTIVITY_MARKERS,
@@ -111,7 +112,7 @@ export class WorkbenchProjectionBuilder {
       seed: source.seed,
       engineVersion: source.engineVersion,
       world: { id: source.world.id, name: source.world.name, width: this.grid.width, height: this.grid.height, cellCount: this.grid.cells.length, scale: source.world.scale },
-      settlements: source.world.settlements.map(({ id, name, anchorCellId }) => ({ id, name, anchorCellId })).sort((a, b) => a.id.localeCompare(b.id)),
+      settlements: buildProjectedSettlements(source.world.settlements, source.world.grid.cells, source.people),
       roads: (source.world.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })).sort((a, b) => a.id.localeCompare(b.id)),
       populationZones: source.populationZones.map((zone) => zone.settlementId === undefined
         ? { id: zone.id, name: zone.name, populationCount: zone.populationCount, cellCount: zone.cellIds.length }

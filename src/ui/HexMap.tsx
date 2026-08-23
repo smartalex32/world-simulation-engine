@@ -254,11 +254,12 @@ function drawSettlementMarkers(context: CanvasRenderingContext2D, settlements: r
     context.textBaseline = 'bottom'
     const labelY = center.y - markerRadius - 4 / scale
     const padding = 4 / scale
-    const width = context.measureText(settlement.name).width + padding * 2
+    const label = `${settlement.name} · ${settlement.scale}`
+    const width = context.measureText(label).width + padding * 2
     context.fillStyle = 'rgba(7, 14, 16, .82)'
     context.fillRect(center.x - width / 2, labelY - labelSize / scale - padding / 2, width, labelSize / scale + padding)
     context.fillStyle = '#f4f0dc'
-    context.fillText(settlement.name, center.x, labelY)
+    context.fillText(label, center.x, labelY)
   }
 }
 
