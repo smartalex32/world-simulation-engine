@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.18.0'
-export const SNAPSHOT_SCHEMA_VERSION = 18
+export const ENGINE_VERSION = '0.19.0'
+export const SNAPSHOT_SCHEMA_VERSION = 19
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -24,6 +24,7 @@ export const LIFE_CYCLE_MODEL_VERSION = 1
 export const ECONOMY_MODEL_VERSION = 1
 export const ORGANIZATION_MODEL_VERSION = 1
 export const CULTURE_MODEL_VERSION = 1
+export const LANGUAGE_MODEL_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
@@ -486,6 +487,8 @@ export type CulturalBeliefId = 'belief.exploration' | 'belief.cooperation'
 export type CulturalBeliefs = Record<CulturalBeliefId, number>
 /** Learned beliefs, separate from dispositions and changed only through explicit social exposure. */
 export interface CulturalState { beliefs: CulturalBeliefs; exposureCount: number; lastSourcePersonId?: string; lastTransmissionTick?: number }
+export type LanguageId = 'language.valley' | 'language.ridge'
+export interface LanguageState { fluency: Record<LanguageId, number>; acquisitionCount: number; lastSourcePersonId?: string; lastAcquisitionTick?: number }
 
 /**
  * Lifetime, location-derived environmental exposure. These are observations,
@@ -519,6 +522,7 @@ export interface PersonState {
   householdId: HouseholdId
   occupation?: PersonOccupation
   culture?: CulturalState
+  language?: LanguageState
   activityScheduleId: ActivityScheduleId
   currentActivity: CurrentActivityState
   originTraces: CuriosityInheritanceTrace[]
@@ -596,6 +600,7 @@ export interface RunConfiguration {
   economyModelVersion?: number
   organizationModelVersion?: number
   cultureModelVersion?: number
+  languageModelVersion?: number
 }
 
 export interface RandomStreamSnapshot {

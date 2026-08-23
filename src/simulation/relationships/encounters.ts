@@ -3,6 +3,7 @@ import type { Pcg32 } from '../rng/pcg32'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { getPersonVariable } from '../variables/storage'
 import { relationshipId } from './model'
+import { communicationFluency } from '../language/model'
 
 export interface EncounterOutcomeWeights {
   positive: number
@@ -73,10 +74,11 @@ export function encounterOutcomeWeights(first: PersonState, second: PersonState,
     getPersonVariable(first.variables, PERSON_VARIABLE_ID.sociability)
     + getPersonVariable(second.variables, PERSON_VARIABLE_ID.sociability)
   ) / 2)
+  const fluency = communicationFluency(first, second)
   return {
-    positive: 200 + Math.floor(sociability * 3 / 5) + Math.floor(familiarity / 5),
+    positive: 200 + Math.floor(sociability * 3 / 5) + Math.floor(familiarity / 5) + Math.floor(fluency / 5),
     neutral: 500,
-    tense: 100 + Math.floor((1000 - sociability) / 4) + Math.floor((1000 - familiarity) / 10),
+    tense: 100 + Math.floor((1000 - sociability) / 4) + Math.floor((1000 - familiarity) / 10) + Math.floor((1000 - fluency) / 4),
   }
 }
 

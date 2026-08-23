@@ -7,6 +7,7 @@ import {
   ECONOMY_MODEL_VERSION,
   ORGANIZATION_MODEL_VERSION,
   CULTURE_MODEL_VERSION,
+  LANGUAGE_MODEL_VERSION,
   ENGINE_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
@@ -93,6 +94,7 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   }
   if (snapshot.state.config.organizationModelVersion !== ORGANIZATION_MODEL_VERSION) throw new Error(`Unsupported organization model version: ${String(snapshot.state.config.organizationModelVersion)}`)
   if (snapshot.state.config.cultureModelVersion !== CULTURE_MODEL_VERSION) throw new Error(`Unsupported culture model version: ${String(snapshot.state.config.cultureModelVersion)}`)
+  if (snapshot.state.config.languageModelVersion !== LANGUAGE_MODEL_VERSION) throw new Error(`Unsupported language model version: ${String(snapshot.state.config.languageModelVersion)}`)
   if (snapshot.state.config.worldGeneratorVersion !== WORLD_GENERATOR_VERSION) {
     throw new Error(`Unsupported world generator version: ${String(snapshot.state.config.worldGeneratorVersion)}`)
   }
