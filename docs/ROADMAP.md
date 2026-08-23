@@ -1023,7 +1023,7 @@ Implemented: each community has a separate, persistent local council record with
 
 # Milestone 17 — Conflict and Warfare
 
-Status: Future
+Status: Implemented (interpersonal conflict foundation)
 
 ## Goal
 
@@ -1053,6 +1053,8 @@ Potential prerequisites include:
 * Technology
 
 Do not jump directly from a community conflict metric to armies or warfare.
+
+Implemented: tense encounters can create or escalate a persistent, inspectable interpersonal dispute with grievance, incident count, last incident time, and local community context. This is explicitly not combat, organized violence, a military unit, or warfare.
 
 ---
 

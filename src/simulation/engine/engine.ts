@@ -11,6 +11,7 @@ import {
   CULTURE_MODEL_VERSION,
   LANGUAGE_MODEL_VERSION,
   GOVERNANCE_MODEL_VERSION,
+  CONFLICT_MODEL_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
@@ -75,6 +76,7 @@ import { createInitialSchools } from '../organizations/model'
 import { createCulturalState, transmitCulture } from '../culture/model'
 import { acquireLanguage, initialLanguage } from '../language/model'
 import { createLocalGovernance, updateLegitimacy } from '../governance/model'
+import { applyDispute, disputeId } from '../conflict/model'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -195,12 +197,14 @@ export class SimulationEngine {
         cultureModelVersion: CULTURE_MODEL_VERSION,
         languageModelVersion: LANGUAGE_MODEL_VERSION,
         governanceModelVersion: GOVERNANCE_MODEL_VERSION,
+        conflictModelVersion: CONFLICT_MODEL_VERSION,
       },
       world,
       people: generatedPopulation.people,
       households: generatedPopulation.households,
       organizations,
       governance,
+      disputes: [],
       parentChildLinks: generatedPopulation.parentChildLinks,
       activityLocations: generatedPopulation.activityLocations,
       communities,
@@ -364,6 +368,7 @@ export class SimulationEngine {
       households: this.state.households,
       organizations: this.state.organizations,
       governance: this.state.governance,
+      disputes: this.state.disputes,
       parentChildLinks: this.state.parentChildLinks,
       activityLocations: this.state.activityLocations,
       communities: this.state.communities,
@@ -1051,6 +1056,9 @@ export class SimulationEngine {
     else if (encounter.outcome === 'neutral') this.state.dailySocialCounters.neutralEncounters += 1
     else this.state.dailySocialCounters.tenseEncounters += 1
     if (!existing) this.state.dailySocialCounters.relationshipsFormed += 1
+    const communityId = this.communityByCellId.get(encounter.cellId)?.catchment.id ?? 'unassigned'
+    const nextDispute = applyDispute(this.state.disputes.find((dispute) => dispute.id === disputeId(initiator.id, participant.id)), initiator.id, participant.id, encounter.outcome, communityId, this.state.tick)
+    if (nextDispute) this.state.disputes = [...this.state.disputes.filter((dispute) => dispute.id !== nextDispute.id), nextDispute].sort((a, b) => a.id.localeCompare(b.id))
     if (encounter.outcome === 'positive') {
       transmitCulture(initiator, participant, updated, this.state.tick)
       transmitCulture(participant, initiator, updated, this.state.tick)
