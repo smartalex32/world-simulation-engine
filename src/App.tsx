@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchDatabase, type SavedSnapshot } from './persistence/database'
 import type { CommunityVariableDefinition, CommunityVariableId } from './simulation/community/types'
-import type { DevelopmentExperienceType, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, UtilityContribution } from './simulation/domain/types'
+import type { DevelopmentExperienceType, ElevationOverride, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, Terrain, UtilityContribution, WorldCreationDraft, WorldCreationRequest, WorldDraftPreview, WorldDraftRecord } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
+import { exportWorldDraftBundle, importWorldDraftBundle } from './simulation/domain/worldDraftBundle'
 import type { ProjectedCommunityState, WorkbenchProjection } from './projection'
 import { HexMap, type MapOverlay } from './ui/HexMap'
 import { ActionExplanation } from './ui/ActionExplanation'
 import { PersonVariableSections } from './ui/PersonVariableSections'
 import { CommunityInspector, CommunitySignals } from './ui/CommunityPanels'
+import { WorldSetup, isWorldSetupGeometryValid, regionForPreset, type WorldSetupValues } from './ui/WorldSetup'
+import type { DraftZoneViewportRequest } from './ui/DraftZoneMap'
 import { mergeWorkbenchProjection } from './ui/projectionFrame'
 import type { ContributionView, VariableDefinitionView } from './ui/personVariables'
 import { SimulationWorkerClient } from './worker/client'
@@ -20,10 +23,44 @@ const SPEEDS = [
   { value: 720, label: '30 days / batch' },
 ]
 
+const WORLD_SETUP_DRAFT_ID = 'workbench-world-setup'
+
 export default function App() {
   const client = useMemo(() => new SimulationWorkerClient(), [])
   const database = useMemo(() => new WorkbenchDatabase(), [])
   const [seed, setSeed] = useState('valley-001')
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [activeMode, setActiveMode] = useState<'world' | 'simulation' | 'analytics' | 'entities'>('world')
+  const [worldSetup, setWorldSetup] = useState<WorldSetupValues>({
+    name: 'The Seeded Valley', seed: 'valley-001', width: 32, height: 24, population: 200,
+    placements: [
+      { id: 'population-zone-1', name: 'Westhaven residents', region: 'west', preset: 'west', radiusCells: 3, allocation: 100, settlementId: 'settlement-1', settlementName: 'Westhaven' },
+      { id: 'population-zone-2', name: 'Eastwatch residents', region: 'east', preset: 'east', radiusCells: 3, allocation: 100, settlementId: 'settlement-2', settlementName: 'Eastwatch' },
+    ],
+    nextPlacementId: 1, nextSettlementId: 1, nextRoadId: 1, roads: [],
+    settlements: [
+      { id: 'settlement-1', name: 'Westhaven', preset: 'west' },
+      { id: 'settlement-2', name: 'Eastwatch', preset: 'east' },
+    ],
+    terrainOverrides: [], elevationOverrides: [], resourceCapacityOverrides: [],
+  })
+  const worldSetupRef = useRef<WorldSetupValues>(worldSetup)
+  const [worldDraft, setWorldDraft] = useState<WorldDraftRecord>()
+  const [draftPreview, setDraftPreview] = useState<WorldDraftPreview>()
+  const [draftViewport, setDraftViewport] = useState<import('./simulation/domain/types').DraftViewportProjection>()
+  const [acceptedDraftSignature, setAcceptedDraftSignature] = useState<string>()
+  const [draftBusy, setDraftBusy] = useState(false)
+  const worldDraftRef = useRef<WorldDraftRecord | undefined>(undefined)
+  const draftBusyRef = useRef(false)
+  const latestDraftViewportRequestRevision = useRef(0)
+  const minimumDraftViewportRevision = useRef(0)
+  const pendingDraftZoneCells = useRef<{ zoneId: string; cellIds: string[] } | undefined>(undefined)
+  const pendingTerrainPaint = useRef<{ terrain: Terrain; cellIds: string[] } | undefined>(undefined)
+  const pendingElevationPaint = useRef<{ elevation: number; cellIds: string[] } | undefined>(undefined)
+  const pendingDraftUpdate = useRef<WorldSetupValues | undefined>(undefined)
+  const draftPersistenceChain = useRef<Promise<unknown>>(Promise.resolve())
+  const commitAfterDraftUpdateRef = useRef(false)
+  const commitAfterDraftSignatureRef = useRef<string | undefined>(undefined)
   const [projection, setProjection] = useState<WorkbenchProjection>()
   const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
   const [status, setStatus] = useState<'starting' | 'idle' | 'paused' | 'playing'>('starting')
@@ -46,6 +83,11 @@ export default function App() {
   const importRef = useRef<HTMLInputElement>(null)
   const requestViewport = useCallback((request: import('./projection').MapProjectionRequest) => client.setViewport(request), [client])
 
+  function setDraftOperationBusy(value: boolean) {
+    draftBusyRef.current = value
+    setDraftBusy(value)
+  }
+
   useEffect(() => {
     projectionRef.current = projection
   }, [projection])
@@ -63,12 +105,18 @@ export default function App() {
         client.create(seed)
       } else if (response.type === 'FRAME') {
         const previousProjection = projectionRef.current
+        const startedNewProjection = previousProjection !== undefined && previousProjection.projectionEpoch !== response.projection.projectionEpoch
         const nextProjection = { ...mergeWorkbenchProjection(previousProjection, response.projection), digest: response.projection.digest ?? previousProjection?.digest }
         projectionRef.current = nextProjection
         setProjection(nextProjection)
         setProcessingMs(response.processingMs)
-        if (response.events.length) setEvents((current) => [...response.events].reverse().concat(current).slice(0, 150))
-        if (response.statistics.length) setStatistics((current) => [...response.statistics, ...current].slice(0, 150))
+        if (startedNewProjection) {
+          setEvents([...response.events].reverse())
+          setStatistics([...response.statistics])
+        } else {
+          if (response.events.length) setEvents((current) => [...response.events].reverse().concat(current).slice(0, 150))
+          if (response.statistics.length) setStatistics((current) => [...response.statistics, ...current].slice(0, 150))
+        }
         try { await database.appendTelemetry(response.events, response.statistics) } catch (reason) { setError(messageOf(reason)) }
       } else if (response.type === 'STATUS') {
         setStatus(response.status)
@@ -77,6 +125,125 @@ export default function App() {
       } else if (response.type === 'ERROR') {
         setError(response.message)
         setStatus('paused')
+        commitAfterDraftUpdateRef.current = false
+        // A draft edit may briefly be invalid while a user is changing a
+        // coordinated set of fields (for example, adding a zone before
+        // reallocating population). If a later complete form state arrived
+        // while that request was in flight, submit that latest state rather
+        // than dropping it with the rejected intermediate request.
+        const pending = pendingDraftUpdate.current
+        if (pending) {
+          pendingDraftUpdate.current = undefined
+          setDraftOperationBusy(true)
+          client.updateDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(pending))
+        } else {
+          setDraftOperationBusy(false)
+        }
+      } else if (response.type === 'DRAFT_VIEWPORT') {
+        if (response.viewport.draftId === WORLD_SETUP_DRAFT_ID && response.viewport.revision >= minimumDraftViewportRevision.current && response.viewport.revision >= latestDraftViewportRequestRevision.current) setDraftViewport(response.viewport)
+      } else if (response.type === 'DRAFT') {
+        if (response.action === 'committing') {
+          // This arrives before the new run's FRAME so its RUN_CREATED event
+          // is retained. The draft remains recoverable until commit succeeds.
+          setEvents([])
+          setStatistics([])
+          setSelectedCellId(undefined)
+          setSelectedPersonId(undefined)
+          setSelectedCommunityId(undefined)
+        } else if (response.action === 'committed' || response.action === 'discarded') {
+          const discarded = response.draft
+          setDraftOperationBusy(true)
+          if (discarded) {
+            try { await database.deleteWorldDraft(discarded.draftId) } catch (reason) { setError(messageOf(reason)) }
+          }
+          commitAfterDraftUpdateRef.current = false
+          worldDraftRef.current = undefined
+          setWorldDraft(undefined)
+          setDraftPreview(undefined)
+          setDraftViewport(undefined)
+          setAcceptedDraftSignature(undefined)
+          setDraftOperationBusy(false)
+          if (response.action === 'committed') {
+            if (discarded) setSeed(discarded.draft.seed)
+            setSetupOpen(false)
+            setError(undefined)
+            lastAutosavedTick.current = -1
+          } else {
+            setSetupOpen(false)
+          }
+        } else if (response.draft) {
+          // IndexedDB writes are asynchronous; ignore an older worker reply
+          // that resumes after a newer accepted draft has already arrived.
+          if (worldDraftRef.current && response.draft.revision < worldDraftRef.current.revision) return
+          if (response.action === 'updated' || response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted' || response.action === 'elevationPainted' || response.action === 'resourcesPainted') setError(undefined)
+          worldDraftRef.current = response.draft
+          setWorldDraft(response.draft)
+          if (response.preview) setDraftPreview(response.preview)
+          const acceptedSetup = worldSetupFromDraft(response.draft.draft)
+          setAcceptedDraftSignature(worldSetupSignature(acceptedSetup))
+          if (response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted' || response.action === 'elevationPainted' || response.action === 'resourcesPainted') {
+            // The worker canonicalizes selected cell IDs. Rehydrate the form
+            // from that accepted draft before asking for a fresh terrain slice.
+            worldSetupRef.current = acceptedSetup
+            setWorldSetup(acceptedSetup)
+            setDraftViewport(undefined)
+          }
+          if (response.action === 'reset' || response.action === 'hydrated') {
+            worldSetupRef.current = acceptedSetup
+            setWorldSetup(acceptedSetup)
+          }
+          setDraftOperationBusy(true)
+          try {
+            // Persist accepted revisions in worker order. IndexedDB requests
+            // from overlapping response handlers can otherwise finish out of
+            // order and resurrect an older draft after a reload.
+            draftPersistenceChain.current = draftPersistenceChain.current.then(() => database.saveWorldDraft(response.draft!))
+            await draftPersistenceChain.current
+            if (response.action === 'updated' && commitAfterDraftUpdateRef.current && commitAfterDraftSignatureRef.current === worldSetupSignature(acceptedSetup)) {
+              commitAfterDraftUpdateRef.current = false
+              commitAfterDraftSignatureRef.current = undefined
+              client.commitDraft(WORLD_SETUP_DRAFT_ID)
+            } else {
+              const pendingUpdate = pendingDraftUpdate.current
+              // Keep the worker draft convergent with the latest form state,
+              // even when a response races a burst of React input events.
+              // The explicit comparison is the acknowledgement boundary used
+              // by both persistence and the enabled commit control.
+              const desiredSetup = worldSetupRef.current
+              if (pendingUpdate || (isCommitReadyWorldSetup(desiredSetup) && worldSetupSignature(desiredSetup) !== worldSetupSignature(acceptedSetup))) {
+                const nextDraft = pendingUpdate ?? desiredSetup
+                pendingDraftUpdate.current = undefined
+                setDraftOperationBusy(true)
+                client.updateDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(nextDraft))
+              } else {
+                setDraftOperationBusy(false)
+                const pending = pendingDraftZoneCells.current
+              if (pending) {
+                pendingDraftZoneCells.current = undefined
+                setDraftOperationBusy(true)
+                client.updateDraftZoneCells(WORLD_SETUP_DRAFT_ID, pending.zoneId, pending.cellIds)
+              } else {
+                const terrain = pendingTerrainPaint.current
+                if (terrain) {
+                  pendingTerrainPaint.current = undefined
+                  setDraftOperationBusy(true)
+                  client.paintDraftTerrain(WORLD_SETUP_DRAFT_ID, terrain.cellIds, terrain.terrain)
+                } else {
+                  const elevation = pendingElevationPaint.current
+                  if (elevation) {
+                    pendingElevationPaint.current = undefined
+                    setDraftOperationBusy(true)
+                    client.paintDraftElevation(WORLD_SETUP_DRAFT_ID, elevation.cellIds, elevation.elevation)
+                  }
+                }
+                }
+              }
+            }
+          } catch (reason) {
+            setError(messageOf(reason))
+            setDraftOperationBusy(false)
+          }
+        }
       }
     }
     void refreshSnapshots()
@@ -135,6 +302,9 @@ export default function App() {
       const saved = await database.importBundle(value)
       client.load(saved.snapshot)
       setSeed(saved.snapshot.state.config.seed)
+      const setup = worldSetupFromCreation(saved.snapshot.state.config.worldCreation)
+      worldSetupRef.current = setup
+      setWorldSetup(setup)
       setEvents([])
       setStatistics([])
       setSelectedCellId(undefined)
@@ -145,15 +315,143 @@ export default function App() {
     if (importRef.current) importRef.current.value = ''
   }
 
-  function createRun() {
-    client.create(seed)
-    setEvents([])
-    setStatistics([])
-    setSelectedCellId(undefined)
-    setSelectedPersonId(undefined)
-    setSelectedCommunityId(undefined)
-    setError(undefined)
-    lastAutosavedTick.current = -1
+  async function openWorldSetup() {
+    worldSetupRef.current = worldSetup
+    setSetupOpen(true)
+    worldDraftRef.current = undefined
+    setWorldDraft(undefined)
+    setDraftPreview(undefined)
+    setDraftViewport(undefined)
+    setAcceptedDraftSignature(undefined)
+    latestDraftViewportRequestRevision.current = 0
+    minimumDraftViewportRevision.current = 0
+    setDraftOperationBusy(true)
+    try {
+      const saved = await database.loadWorldDraft(WORLD_SETUP_DRAFT_ID)
+      if (saved) client.hydrateDraft(saved)
+      else client.createDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(worldSetup))
+    } catch (reason) {
+      setDraftOperationBusy(false)
+      setError(`Draft setup failed: ${messageOf(reason)}`)
+      try { await database.deleteWorldDraft(WORLD_SETUP_DRAFT_ID) } catch { /* Preserve the original error when storage is unavailable. */ }
+    }
+  }
+
+  function updateWorldSetup(update: WorldSetupValues | ((current: WorldSetupValues) => WorldSetupValues)) {
+    const next = typeof update === 'function' ? update(worldSetupRef.current) : update
+    worldSetupRef.current = next
+    const currentDraft = worldDraftRef.current
+    if (!currentDraft) return
+    setWorldSetup(next)
+    // Keep invalid intermediate form values in the UI only. The worker owns
+    // drafts and validates them as complete creation requests, so sending a
+    // partially edited allocation would reject the detached draft instead of
+    // allowing the user to finish the edit.
+    if (!isCommitReadyWorldSetup(next)) return
+    if (draftBusyRef.current) {
+      pendingDraftUpdate.current = next
+      return
+    }
+    setDraftOperationBusy(true)
+    // The worker command queue serializes this single-editor flow. Retaining
+    // revision checks in the protocol protects future concurrent editors,
+    // while omitting them here prevents stale React renders from rejecting a
+    // valid queued edit immediately before a commit.
+    client.updateDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(next))
+  }
+
+  const requestDraftViewport = useCallback((viewport: DraftZoneViewportRequest) => {
+    if (!worldDraftRef.current || draftBusyRef.current) return
+    latestDraftViewportRequestRevision.current = Math.max(latestDraftViewportRequestRevision.current, viewport.revision)
+    client.requestDraftViewport(WORLD_SETUP_DRAFT_ID, viewport)
+  }, [client])
+
+  const updateDraftZoneCells = useCallback((zoneId: string, cellIds: readonly string[]) => {
+    if (!worldDraftRef.current) return
+    if (draftBusyRef.current) {
+      pendingDraftZoneCells.current = { zoneId, cellIds: [...cellIds] }
+      return
+    }
+    // Ignore any in-flight terrain response. DraftZoneMap will issue its next
+    // monotonically newer request once the accepted draft revision arrives.
+    minimumDraftViewportRevision.current = latestDraftViewportRequestRevision.current + 1
+    setDraftViewport(undefined)
+    setDraftOperationBusy(true)
+    client.updateDraftZoneCells(WORLD_SETUP_DRAFT_ID, zoneId, [...cellIds])
+  }, [client])
+
+  const paintDraftTerrain = useCallback((terrain: Terrain, cellIds: readonly string[]) => {
+    if (!worldDraftRef.current) return
+    if (draftBusyRef.current) { pendingTerrainPaint.current = { terrain, cellIds: [...cellIds] }; return }
+    minimumDraftViewportRevision.current = latestDraftViewportRequestRevision.current + 1
+    setDraftViewport(undefined)
+    setDraftOperationBusy(true)
+    client.paintDraftTerrain(WORLD_SETUP_DRAFT_ID, [...cellIds], terrain)
+  }, [client])
+
+  const paintDraftElevation = useCallback((elevation: number, cellIds: readonly string[]) => {
+    if (!worldDraftRef.current) return
+    if (draftBusyRef.current) { pendingElevationPaint.current = { elevation, cellIds: [...cellIds] }; return }
+    minimumDraftViewportRevision.current = latestDraftViewportRequestRevision.current + 1
+    setDraftViewport(undefined)
+    setDraftOperationBusy(true)
+    client.paintDraftElevation(WORLD_SETUP_DRAFT_ID, [...cellIds], elevation)
+  }, [client])
+
+  const paintDraftResources = useCallback((resourceCapacity: number, cellIds: readonly string[]) => {
+    if (!worldDraftRef.current || draftBusyRef.current) return
+    minimumDraftViewportRevision.current = latestDraftViewportRequestRevision.current + 1
+    setDraftViewport(undefined)
+    setDraftOperationBusy(true)
+    client.paintDraftResources(WORLD_SETUP_DRAFT_ID, [...cellIds], resourceCapacity)
+  }, [client])
+
+  function discardWorldSetup() {
+    if (!worldDraftRef.current) {
+      setSetupOpen(false)
+      return
+    }
+    if (draftBusyRef.current) return
+    setDraftOperationBusy(true)
+    client.discardDraft(WORLD_SETUP_DRAFT_ID)
+  }
+
+  function resetWorldSetup() {
+    const currentDraft = worldDraftRef.current
+    if (draftBusyRef.current || !currentDraft) return
+    setDraftOperationBusy(true)
+    client.resetDraft(WORLD_SETUP_DRAFT_ID)
+  }
+
+  function exportWorldSetupDraft() {
+    const draft = worldDraftRef.current
+    if (!draft) return
+    const blob = new Blob([JSON.stringify(exportWorldDraftBundle(draft), null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${draft.draft.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'world-draft'}.draft.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function importWorldSetupDraft(file: File | undefined) {
+    if (!file || draftBusyRef.current) return
+    try {
+      const imported = importWorldDraftBundle(JSON.parse(await file.text()))
+      const draft: WorldDraftRecord = { ...imported, draftId: WORLD_SETUP_DRAFT_ID }
+      setDraftOperationBusy(true)
+      client.hydrateDraft(draft)
+    } catch (reason) {
+      setError(`Draft import failed: ${messageOf(reason)}`)
+    }
+  }
+
+  function commitWorldSetup() {
+    const currentDraft = worldDraftRef.current
+    if (!currentDraft) return
+    setDraftOperationBusy(true)
+    client.commitDraft(WORLD_SETUP_DRAFT_ID)
   }
 
   function inspectPerson(personId: string) {
@@ -185,9 +483,12 @@ export default function App() {
           <div className="mark" aria-hidden="true">⬡</div>
           <div><h1>World Simulation</h1><span>deterministic engine workbench</span></div>
         </div>
+        <nav className="mode-navigation" aria-label="Workbench modes">
+          {(['world', 'simulation', 'analytics', 'entities'] as const).map((mode) => <button key={mode} aria-current={activeMode === mode ? 'page' : undefined} className={activeMode === mode ? 'active' : ''} onClick={() => setActiveMode(mode)}>{mode}</button>)}
+        </nav>
         <div className="run-facts">
           <Fact label="SEED" value={projection?.seed ?? '—'} />
-          <Fact label="TIME" value={`Day ${day} · ${hour.toString().padStart(2, '0')}:00`} />
+          <div className="fact" data-simulation-tick={projection?.tick ?? 0}><span>TIME</span><strong>{`Day ${day} · ${hour.toString().padStart(2, '0')}:00`}</strong></div>
           <Fact label="ENGINE" value={`v${projection?.engineVersion ?? '—'}`} />
           <Fact label="SAVED HASH" value={projection?.digest?.slice(0, 10) ?? 'computing…'} mono />
         </div>
@@ -195,8 +496,8 @@ export default function App() {
       </header>
 
       <section className="controlbar" aria-label="Simulation controls">
-        <label className="seed-control"><span>World seed</span><input value={seed} onChange={(event) => setSeed(event.target.value)} /></label>
-        <button className="secondary" onClick={createRun}>New world</button>
+        <button className="secondary" onClick={() => { void openWorldSetup() }}>Create world</button>
+        <span className="active-world-seed">Seed <strong>{projection?.seed ?? seed}</strong></span>
         <div className="divider" />
         <button className="icon-button" onClick={() => client.step()} disabled={status === 'playing'} title="Advance one hour">Step +1h</button>
         {status === 'playing'
@@ -216,7 +517,9 @@ export default function App() {
 
       <section className="workspace">
         <aside className="left-panel panel">
-          <PanelTitle title="Map layers" subtitle={`${projection?.world.cellCount ?? 0} hex cells`} />
+          {(activeMode === 'world') && <section className="world-overview"><span className="eyebrow">WORLD OVERVIEW</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{projection ? `${projection.world.width} × ${projection.world.height} hexes · ${projection.world.scale.hexRadiusMeters / 1000} km radius` : 'Awaiting authoritative world'}</small><div><span>People</span><b>{projection?.summary.populationCount ?? 0}</b><span>Households</span><b>{projection?.summary.householdCount ?? 0}</b></div></section>}
+          {(activeMode === 'world' || activeMode === 'entities') && <section className="entity-catalog" aria-label="Entity categories"><span className="eyebrow">ENTITIES</span><button onClick={() => setActiveMode('entities')}>People <b>{projection?.summary.populationCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Households <b>{projection?.summary.householdCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Communities <b>{projection?.communities.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Settlements <b>{projection?.settlements.length ?? 0}</b></button>{projection && <div className="settlement-list">{projection.settlements.map((settlement) => <span key={settlement.id}>{settlement.name}<small>{projection.populationZones.find((zone) => zone.settlementId === settlement.id)?.populationCount ?? 0} people</small></span>)}</div>}<small>Communities are geographic exposure measures, not memberships.</small></section>}
+          {(activeMode === 'world' || activeMode === 'simulation') && <><PanelTitle title="Map layers" subtitle={`${projection?.world.cellCount ?? 0} hex cells`} />
           <div className="overlay-list">
             {(['terrain', 'elevation', 'habitability', 'movement', 'food', 'population', 'community'] as MapOverlay[]).map((entry) => (
               <button key={entry} aria-pressed={overlay === entry} className={overlay === entry ? 'active' : ''} onClick={() => setOverlay(entry)}><span className={`swatch ${entry}`} />{entry}</button>
@@ -225,8 +528,8 @@ export default function App() {
           {projection && <div className="map-annotation-toggles" aria-label="Map annotations">
             <button aria-label="Activity locations" aria-pressed={showActivityLocations} className={showActivityLocations ? 'active' : ''} onClick={() => setShowActivityLocations((current) => !current)}>Activity locations</button>
             <button aria-label="Households" aria-pressed={showHouseholds} className={showHouseholds ? 'active' : ''} onClick={() => setShowHouseholds((current) => !current)}>Households</button>
-          </div>}
-          <PanelTitle title="Daily samples" subtitle="Latest aggregates" />
+          </div>}</>}
+          {(activeMode === 'world' || activeMode === 'analytics') && <><PanelTitle title="Daily samples" subtitle="Latest aggregates" />
           <div className="metric-list">
             <Metric label="Cells" value={recentMetrics['world.cellCount'] ?? projection?.world.cellCount ?? 0} />
             <Metric label="Habitable" value={recentMetrics['world.habitableCells'] ?? '—'} />
@@ -254,12 +557,12 @@ export default function App() {
             selectedMeasureId={communityMeasureId}
             onSelectMeasure={(id) => { setCommunityMeasureId(id); setOverlay('community') }}
             onInspect={inspectCommunity}
-          />}
+          />}</>}
         </aside>
 
         <section className="map-panel panel">
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {projection?.map.overlay ?? overlay}{projection && projection.map.overlay !== overlay ? ' · updating…' : ''}</span></div>
-          {projection ? <HexMap world={projection.world} map={projection.map} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selectedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelectedCellId(cell.id); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onFocusCell={(cellId) => { setSelectedCellId(cellId); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onViewportRequest={requestViewport} /> : <div className="loading">Starting simulation worker…</div>}
+          {projection ? <HexMap world={projection.world} settlements={projection.settlements} roads={projection.roads} map={projection.map} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selectedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelectedCellId(cell.id); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onFocusCell={(cellId) => { setSelectedCellId(cellId); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onViewportRequest={requestViewport} /> : <div className="loading">Starting simulation worker…</div>}
         </section>
 
         <aside className="right-panel panel">
@@ -295,6 +598,7 @@ export default function App() {
           {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
       </section>
+      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={!draftBusy && acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} onElevationPaintCommit={paintDraftElevation} onResourcePaintCommit={paintDraftResources} onExportDraft={exportWorldSetupDraft} onImportDraft={importWorldSetupDraft} error={error} />}
     </main>
   )
 }
@@ -302,6 +606,97 @@ export default function App() {
 function Fact({ label, value, mono }: { label: string; value: string; mono?: boolean }) { return <div className="fact"><span>{label}</span><strong className={mono ? 'mono' : ''}>{value}</strong></div> }
 function PanelTitle({ title, subtitle }: { title: string; subtitle: string }) { return <div className="panel-title"><div><h2>{title}</h2><span>{subtitle}</span></div></div> }
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
+
+function worldSetupFromCreation(creation: WorldCreationRequest): WorldSetupValues {
+  return {
+    name: creation.name,
+    seed: creation.seed,
+    width: creation.width,
+    height: creation.height,
+    population: creation.initialPopulationCount,
+    // Resolved imports remain resolved. This editor intentionally does not
+    // expose freehand cell editing or silently convert them to presets.
+    placements: creation.populationZones.map((zone, index) => {
+      const settlement = creation.settlements.find((candidate) => candidate.id === zone.settlementId)
+      const region = index === 0 ? 'west' : index === 1 ? 'east' : 'center'
+      return { id: zone.id, name: zone.name, region, preset: region, radiusCells: 3, allocation: zone.populationCount, settlementId: zone.settlementId, settlementName: settlement?.name, cellIds: [...zone.cellIds] }
+    }),
+    nextPlacementId: nextDraftSequence(creation.populationZones.map((zone) => zone.id), creation.settlements.map((settlement) => settlement.id)),
+    nextSettlementId: nextDraftSequence(creation.settlements.map((settlement) => settlement.id)),
+    settlements: creation.settlements.map((settlement) => ({ id: settlement.id, name: settlement.name, anchorCellId: settlement.anchorCellId })),
+    nextRoadId: nextDraftSequence((creation.roads ?? []).map((road) => road.id)),
+    roads: (creation.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })),
+    terrainOverrides: creation.terrainOverrides.map((override) => ({ ...override })),
+    elevationOverrides: creation.elevationOverrides.map((override) => ({ ...override })),
+    resourceCapacityOverrides: creation.resourceCapacityOverrides.map((override) => ({ ...override })),
+  }
+}
+
+function creationDraftFromSetup(setup: WorldSetupValues): WorldCreationDraft {
+  return {
+    seed: setup.seed,
+    name: setup.name,
+    width: setup.width,
+    height: setup.height,
+    initialPopulationCount: setup.population,
+    terrainOverrides: setup.terrainOverrides.map((override) => ({ ...override })),
+    elevationOverrides: setup.elevationOverrides.map((override) => ({ ...override })),
+    resourceCapacityOverrides: setup.resourceCapacityOverrides.map((override) => ({ ...override })),
+    settlements: setup.settlements.map((settlement) => ({ ...settlement })),
+    roads: setup.roads.map((road) => ({ id: road.id, cellIds: [...road.cellIds] })),
+    populationZones: setup.placements.map((placement) => ({
+      id: placement.id,
+      name: placement.name,
+      populationCount: placement.allocation,
+      ...(placement.settlementId ? { settlementId: placement.settlementId } : {}),
+      ...(placement.cellIds !== undefined ? { cellIds: [...placement.cellIds] } : { preset: placement.preset, radiusCells: placement.radiusCells }),
+    })),
+  }
+}
+
+function isCommitReadyWorldSetup(setup: WorldSetupValues): boolean {
+  return setup.name.trim().length > 0
+    && setup.placements.length > 0
+    && setup.placements.every((placement) => placement.name.trim().length > 0
+      && (placement.cellIds !== undefined || (Number.isInteger(placement.radiusCells) && placement.radiusCells >= 0 && placement.radiusCells <= 32))
+      && (!placement.settlementId || Boolean(placement.settlementName?.trim())))
+    && setup.settlements.every((settlement) => settlement.name.trim().length > 0)
+    && setup.placements.reduce((total, placement) => total + placement.allocation, 0) === setup.population
+    && isWorldSetupGeometryValid(setup)
+}
+
+function worldSetupFromDraft(draft: WorldCreationDraft): WorldSetupValues {
+  return {
+    name: draft.name,
+    seed: draft.seed,
+    width: draft.width,
+    height: draft.height,
+    population: draft.initialPopulationCount,
+    placements: draft.populationZones.map((zone, index) => {
+      const settlement = draft.settlements.find((candidate) => candidate.id === zone.settlementId)
+      const preset = zone.preset ?? (index === 0 ? 'west' : index === 1 ? 'east' : 'center')
+      return { id: zone.id, name: zone.name, region: regionForPreset(preset), preset, radiusCells: zone.radiusCells ?? 3, allocation: zone.populationCount, settlementId: zone.settlementId, settlementName: settlement?.name, ...(zone.cellIds !== undefined ? { cellIds: [...zone.cellIds] } : {}) }
+    }),
+    nextPlacementId: nextDraftSequence(draft.populationZones.map((zone) => zone.id), draft.settlements.map((settlement) => settlement.id)),
+    nextSettlementId: nextDraftSequence(draft.settlements.map((settlement) => settlement.id)),
+    settlements: draft.settlements.map((settlement) => ({ ...settlement })),
+    nextRoadId: nextDraftSequence((draft.roads ?? []).map((road) => road.id)),
+    roads: (draft.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })),
+    terrainOverrides: (draft.terrainOverrides ?? []).map((override) => ({ ...override })),
+    elevationOverrides: (draft.elevationOverrides ?? []).map((override) => ({ ...override })),
+    resourceCapacityOverrides: (draft.resourceCapacityOverrides ?? []).map((override) => ({ ...override })),
+  }
+}
+
+function nextDraftSequence(...groups: readonly string[][]): number {
+  return groups.flat().reduce((next, id) => Math.max(next, Number(/-draft-(\d+)$/.exec(id)?.[1] ?? 0) + 1), 1)
+}
+
+function worldSetupSignature(setup: WorldSetupValues): string {
+  // Compare only the authoritative creation input, never UI-only allocation
+  // counters or object insertion order from a hydrated/imported record.
+  return JSON.stringify(creationDraftFromSetup(setup))
+}
 
 function CellInspector({ cell, people, onSelectPerson }: { cell: GeographicCell; people: PersonState[]; onSelectPerson: (id: string) => void }) {
   return <div className="inspector-grid">

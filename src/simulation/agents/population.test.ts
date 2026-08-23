@@ -22,12 +22,11 @@ describe('population variable initialization', () => {
 
     const generated = generatePopulation(world.grid.cells, random)
     expect(generated.people.slice(0, 4).map((person) => ({
-      homeCellId: person.homeCellId,
       curiosity: getPersonVariable(person.variables, PERSON_VARIABLE_ID.curiosity),
       riskTolerance: getPersonVariable(person.variables, PERSON_VARIABLE_ID.riskTolerance),
       sociability: getPersonVariable(person.variables, PERSON_VARIABLE_ID.sociability),
       hunger: getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger),
-    }))).toEqual(expected.map(({ ignoredAgeYears: _, ...entry }) => entry))
+    }))).toEqual(expected.map(({ homeCellId: _, ignoredAgeYears: __, ...entry }) => entry))
 
     expect(random.snapshot().map((stream) => stream.name)).toEqual(expect.arrayContaining([
       `population.variable.${PERSON_VARIABLE_ID.trustPropensity}`,

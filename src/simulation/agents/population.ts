@@ -1,16 +1,16 @@
-import type { ActivityLocationState, CuriosityInheritanceTrace, GeographicCell, HouseholdState, ParentChildLink, PersonState } from '../domain/types'
+import type { ActivityLocationState, CuriosityInheritanceTrace, GeographicCell, HouseholdState, ParentChildLink, PersonState, PopulationPlacementZone } from '../domain/types'
 import { resolveCurrentActivity } from '../activities/model'
 import { generateInitialHouseholds } from '../households/generate'
 import { HOUSEHOLD_GENERATION_STREAM } from '../households/config'
 import { calculateCuriosityInheritance } from '../households/inheritance'
 import { createParentCuriosityExposureAccumulator } from '../exposure/model'
-import type { RandomProvider } from '../rng/pcg32'
+import { RandomProvider } from '../rng/pcg32'
 import { hexNeighbors } from '../spatial/hex'
 import { PERSON_VARIABLE_ID, getPersonVariableDefinition } from '../variables/registry'
 import { createDefaultPersonVariableValues, getPersonVariable, setPersonVariable } from '../variables/storage'
 import type { PersonVariableId } from '../variables/types'
 
-type BasePersonState = Omit<PersonState, 'ageHoursIntoYear' | 'householdId' | 'activityScheduleId' | 'currentActivity' | 'originTraces' | 'development'>
+type BasePersonState = Omit<PersonState, 'ageHoursIntoYear' | 'locationCellId' | 'homeCellId' | 'householdId' | 'activityScheduleId' | 'currentActivity' | 'originTraces' | 'development'> & { initialHomeCellId: string }
 
 export interface GeneratedPopulation {
   people: PersonState[]
@@ -19,9 +19,17 @@ export interface GeneratedPopulation {
   activityLocations: ActivityLocationState[]
 }
 
-export function generatePopulation(cells: GeographicCell[], random: RandomProvider): GeneratedPopulation {
-  const basePeople = generateBasePeople(cells, random, 200)
-  const topology = generateInitialHouseholds(basePeople, cells, random)
+export function generatePopulation(cells: GeographicCell[], random: RandomProvider): GeneratedPopulation
+export function generatePopulation(cells: GeographicCell[], zones: readonly PopulationPlacementZone[], random: RandomProvider, preserveLegacyHomePlacement?: boolean): GeneratedPopulation
+export function generatePopulation(cells: GeographicCell[], zonesOrRandom: readonly PopulationPlacementZone[] | RandomProvider, suppliedRandom?: RandomProvider, preserveLegacyHomePlacement = false): GeneratedPopulation {
+  const random = zonesOrRandom instanceof RandomProvider ? zonesOrRandom : suppliedRandom
+  if (!random) throw new Error('Population generation requires a random provider')
+  const zones = zonesOrRandom instanceof RandomProvider
+    ? [{ id: 'population-zone-0001', name: 'Initial population', cellIds: cells.filter((cell) => cell.habitability >= 500 && cell.movementCost > 0).map((cell) => cell.id).sort(), populationCount: 200 }]
+    : zonesOrRandom
+  const count = zones.reduce((sum, zone) => sum + zone.populationCount, 0)
+  const basePeople = generateBasePeople(cells, random, count)
+  const topology = generateInitialHouseholds(basePeople, cells, zones, random, preserveLegacyHomePlacement || zonesOrRandom instanceof RandomProvider)
   const basePeopleById = new Map(basePeople.map((person) => [person.id, person]))
   const householdsById = new Map(topology.households.map((household) => [household.id, household]))
   const parentIdsByChildId = new Map<string, string[]>()
@@ -70,8 +78,9 @@ export function generatePopulation(cells: GeographicCell[], random: RandomProvid
       householdHomeCellId: household.homeCellId,
     }, 0)
     if (!activity) throw new Error(`Initial person ${base.id} has no activity location`)
+    const { initialHomeCellId: _, ...baseState } = base
     return {
-      ...base,
+      ...baseState,
       ageYears: assignment.ageYears,
       ageHoursIntoYear: ageRemainderRng.nextInt(8760),
       locationCellId: assignment.homeCellId,
@@ -102,25 +111,25 @@ export function generatePopulation(cells: GeographicCell[], random: RandomProvid
   }
 }
 
-function generateBasePeople(cells: GeographicCell[], random: RandomProvider, count: number): BasePersonState[] {
+function generateBasePeople(cells: readonly GeographicCell[], random: RandomProvider, count: number): BasePersonState[] {
   const rng = random.stream('population')
   const trustRng = random.stream(`population.variable.${PERSON_VARIABLE_ID.trustPropensity}`)
   const conformityRng = random.stream(`population.variable.${PERSON_VARIABLE_ID.conformity}`)
   const persistenceRng = random.stream(`population.variable.${PERSON_VARIABLE_ID.persistence}`)
   const fatigueRng = random.stream(`population.variable.${PERSON_VARIABLE_ID.fatigue}`)
   const socialConnectionRng = random.stream(`population.variable.${PERSON_VARIABLE_ID.socialConnection}`)
-  const byId = new Map(cells.map((cell) => [cell.id, cell]))
-  const homes = cells.filter((cell) => cell.habitability >= 500 && cell.movementCost > 0)
-  if (homes.length === 0) throw new Error('World has no habitable cells for population placement')
-
+  const legacyHomes = cells.filter((cell) => cell.habitability >= 500 && cell.movementCost > 0)
+  const legacyHomeCount = legacyHomes.length
+  if (legacyHomeCount === 0) throw new Error('World has no habitable cells for population placement')
   return Array.from({ length: count }, (_, index): BasePersonState => {
-    const home = homes[rng.nextInt(homes.length)]
-    if (!home) throw new Error('Unable to select a home cell')
+    // Preserve the pre-8A population stream cadence while actual homes are selected by the placement stream.
+    const legacyHomeOrdinal = rng.nextInt(legacyHomeCount)
+    const initialHomeCellId = legacyHomes[legacyHomeOrdinal]?.id
+    if (!initialHomeCellId) throw new Error('Unable to select a legacy home cell')
     return {
       id: `person-${(index + 1).toString().padStart(4, '0')}`,
+      initialHomeCellId,
       ageYears: 18 + rng.nextInt(48),
-      locationCellId: home.id,
-      homeCellId: home.id,
       variables: createDefaultPersonVariableValues({
         [PERSON_VARIABLE_ID.curiosity]: drawInitialValue(PERSON_VARIABLE_ID.curiosity, rng),
         [PERSON_VARIABLE_ID.riskTolerance]: drawInitialValue(PERSON_VARIABLE_ID.riskTolerance, rng),
@@ -132,7 +141,7 @@ function generateBasePeople(cells: GeographicCell[], random: RandomProvider, cou
         [PERSON_VARIABLE_ID.fatigue]: drawInitialValue(PERSON_VARIABLE_ID.fatigue, fatigueRng),
         [PERSON_VARIABLE_ID.socialConnection]: drawInitialValue(PERSON_VARIABLE_ID.socialConnection, socialConnectionRng),
       }),
-      knownCellIds: knownCells(home.id, byId),
+      knownCellIds: [],
     }
   })
 }

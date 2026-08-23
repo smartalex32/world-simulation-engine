@@ -7,9 +7,12 @@ import {
   INFLUENCE_REGISTRY_VERSION,
   SNAPSHOT_SCHEMA_VERSION,
   VARIABLE_REGISTRY_VERSION,
+  WORLD_CELL_RADIUS_METERS,
+  WORLD_GENERATOR_VERSION,
   type SimulationState,
   type SnapshotEnvelope,
 } from '../domain/types'
+import { normalizeWorldCreationRequest } from '../domain/worldCreation'
 import { HOUSEHOLD_GENERATION_STREAM } from '../households/config'
 import { validateHouseholdActivityState } from '../engine/invariants'
 import { validatePersonVariableValues } from '../variables/storage'
@@ -73,6 +76,20 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   }
   if (snapshot.state.config.communityRegistryVersion !== COMMUNITY_REGISTRY_VERSION) {
     throw new Error(`Unsupported community registry version: ${String(snapshot.state.config.communityRegistryVersion)}`)
+  }
+  if (snapshot.state.config.worldGeneratorVersion !== WORLD_GENERATOR_VERSION) {
+    throw new Error(`Unsupported world generator version: ${String(snapshot.state.config.worldGeneratorVersion)}`)
+  }
+  if (snapshot.state.config.worldWidth !== snapshot.state.world.grid.width || snapshot.state.config.worldHeight !== snapshot.state.world.grid.height) {
+    throw new Error('Snapshot world dimensions do not match configuration')
+  }
+  if (snapshot.state.world.scale?.layout !== 'axial-pointy' || snapshot.state.world.scale.hexRadiusMeters !== WORLD_CELL_RADIUS_METERS) {
+    throw new Error('Snapshot contains an unsupported world scale')
+  }
+  const normalizedCreation = normalizeWorldCreationRequest(snapshot.state.config.worldCreation, snapshot.state.world.grid.cells, { enforceCreatorLimits: false })
+  if (canonicalStringify(normalizedCreation) !== canonicalStringify(snapshot.state.config.worldCreation)) throw new Error('Snapshot contains a non-canonical world creation request')
+  if (snapshot.state.world.name !== normalizedCreation.name || canonicalStringify(snapshot.state.world.settlements) !== canonicalStringify(normalizedCreation.settlements) || canonicalStringify(snapshot.state.world.roads ?? []) !== canonicalStringify(normalizedCreation.roads ?? [])) {
+    throw new Error('Snapshot world does not match creation request')
   }
   if (!Array.isArray(snapshot.state.people)) throw new Error('Snapshot contains an invalid population')
   for (const person of snapshot.state.people) validatePersonVariableValues(person.variables)

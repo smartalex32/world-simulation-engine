@@ -63,6 +63,14 @@ async function controlledSnapshot(seed: string, personCount: number): Promise<Sn
     lastEncounter: undefined,
     currentActivity: { kind: 'home' as const, locationId: `activity.home.${person.householdId}`, sinceTick: 0 },
   }))
+  state.config.worldCreation = {
+    ...state.config.worldCreation,
+    width: 2,
+    height: 1,
+    initialPopulationCount: personCount,
+    populationZones: [{ id: 'population-zone-0001', name: 'Controlled population', cellIds: [cell.id], populationCount: personCount }],
+    settlements: [],
+  }
   const householdIds = new Set(state.people.map(({ householdId }) => householdId))
   state.households = state.households
     .filter(({ id }) => householdIds.has(id))

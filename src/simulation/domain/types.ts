@@ -7,17 +7,37 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.8.0'
-export const SNAPSHOT_SCHEMA_VERSION = 8
+export const ENGINE_VERSION = '0.12.0'
+export const SNAPSHOT_SCHEMA_VERSION = 12
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
-export const HOUSEHOLD_MODEL_VERSION = 1
+export const HOUSEHOLD_MODEL_VERSION = 2
 export const ACTIVITY_REGISTRY_VERSION = 1
 export const DEVELOPMENT_REGISTRY_VERSION = 1
 export const COMMUNITY_REGISTRY_VERSION = 1
+export const WORLD_GENERATOR_VERSION = 1
+export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
+
+/** A deliberate terrain-type edit retained in a draft and creation request. */
+export interface TerrainTypeOverride {
+  cellId: string
+  terrain: Terrain
+}
+
+/** A deliberate absolute elevation edit, measured in the cell's 0–1000 scale. */
+export interface ElevationOverride {
+  cellId: string
+  elevation: number
+}
+
+/** A deliberate resource-capacity edit in whole resource units. */
+export interface ResourceCapacityOverride {
+  cellId: string
+  resourceCapacity: number
+}
 
 export interface HexCoord {
   q: number
@@ -41,10 +61,146 @@ export interface HexGrid {
   cells: GeographicCell[]
 }
 
+/** Physical interpretation of the pointy axial grid. It is fixed for the first creator. */
+export interface WorldScale {
+  layout: 'axial-pointy'
+  hexRadiusMeters: number
+}
+
+/** A named spatial place. It has no political or demographic behavior in Milestone 8A. */
+export interface SettlementState {
+  id: string
+  name: string
+  anchorCellId: string
+}
+
+/** Exact initial resident allocation for a disjoint set of passable cells. */
+export interface PopulationPlacementZone {
+  id: string
+  name: string
+  cellIds: string[]
+  populationCount: number
+  settlementId?: string
+}
+
+export type WorldPlacementPreset = 'west' | 'center' | 'central' | 'east'
+
+/** UI-friendly pre-generation placement. The engine resolves it to passable cell IDs. */
+export interface PopulationPlacementZoneDraft {
+  id: string
+  name: string
+  populationCount: number
+  settlementId?: string
+  cellIds?: string[]
+  preset?: WorldPlacementPreset
+  radiusCells?: number
+}
+
+export interface SettlementDraft {
+  id: string
+  name: string
+  anchorCellId?: string
+  preset?: WorldPlacementPreset
+}
+
+/** Ordered, contiguous passable cell geometry for a draft-only road segment. */
+export interface RoadDraft {
+  id: string
+  cellIds: string[]
+}
+
+/** A named-free transportation segment. Roads have no ownership or economic meaning. */
+export interface RoadState {
+  id: string
+  cellIds: string[]
+}
+
+export interface WorldCreationDraft {
+  seed: string
+  name: string
+  width: number
+  height: number
+  initialPopulationCount: number
+  populationZones: PopulationPlacementZoneDraft[]
+  settlements: SettlementDraft[]
+  roads?: RoadDraft[]
+  /** Canonically sorted sparse terrain edits; absent means seeded terrain only. */
+  terrainOverrides?: TerrainTypeOverride[]
+  elevationOverrides?: ElevationOverride[]
+  resourceCapacityOverrides?: ResourceCapacityOverride[]
+}
+
+export interface WorldCreationRequest {
+  seed: string
+  name: string
+  width: number
+  height: number
+  initialPopulationCount: number
+  populationZones: PopulationPlacementZone[]
+  settlements: SettlementState[]
+  /** Omitted when no authored roads exist, preserving legacy canonical worlds. */
+  roads?: RoadState[]
+  terrainOverrides: TerrainTypeOverride[]
+  elevationOverrides: ElevationOverride[]
+  resourceCapacityOverrides: ResourceCapacityOverride[]
+}
+
+/**
+ * A non-authoritative, versioned world-authoring record. Drafts are editable
+ * outside a live run and only become authoritative through an explicit worker
+ * commit.
+ */
+export interface WorldDraftRecord {
+  version: 2
+  draftId: string
+  revision: number
+  /** Immutable authored input retained so reset never depends on UI state. */
+  initialDraft: WorldCreationDraft
+  draft: WorldCreationDraft
+}
+
+/** A bounded, deterministic result used by authoring UI before commit. */
+export interface WorldDraftPreview {
+  version: 1
+  draftId: string
+  revision: number
+  creation: WorldCreationRequest
+  worldId: string
+  cellCount: number
+  passableCellCount: number
+  terrainCounts: Record<Terrain, number>
+}
+
+/** A bounded spatial request for read-only, generated draft terrain. */
+export interface DraftViewportRequest {
+  revision: number
+  bounds: { minQ: number; maxQ: number; minR: number; maxR: number }
+  selectedZoneId?: string
+}
+
+/** A generated terrain cell annotated only with membership in the requested zone. */
+export interface DraftViewportCell extends GeographicCell {
+  selected: boolean
+}
+
+/** Non-authoritative draft terrain projection; it must never be treated as a live frame. */
+export interface DraftViewportProjection {
+  version: 1
+  draftId: string
+  draftRevision: number
+  revision: number
+  selectedZoneId?: string
+  cells: DraftViewportCell[]
+}
+
 export interface WorldState {
   id: string
   name: string
+  scale: WorldScale
   grid: HexGrid
+  settlements: SettlementState[]
+  /** Omitted for legacy worlds without authored roads. */
+  roads?: RoadState[]
 }
 
 export type HouseholdId = string
@@ -295,6 +451,8 @@ export interface RunConfiguration {
   seed: string
   worldWidth: number
   worldHeight: number
+  worldGeneratorVersion: number
+  worldCreation: WorldCreationRequest
   baseTickHours: number
   variableRegistryVersion: number
   influenceRegistryVersion: number
@@ -369,6 +527,7 @@ export interface WorldProjection {
   seed: string
   engineVersion: string
   world: WorldState
+  populationZones: PopulationPlacementZone[]
   people: PersonState[]
   households: HouseholdState[]
   parentChildLinks: ParentChildLink[]

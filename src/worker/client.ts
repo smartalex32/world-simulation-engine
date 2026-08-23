@@ -1,4 +1,6 @@
 import type { MapProjectionRequest } from '../projection'
+import type { DraftViewportRequest, Terrain, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
+import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
 import { requestId, type SimulationCommand, type SimulationResponse, type WorkbenchSnapshotEnvelope } from './protocol'
 
 type Listener = (response: SimulationResponse) => void
@@ -43,7 +45,19 @@ export class SimulationWorkerClient {
     return () => this.listeners.delete(listener)
   }
 
-  create(seed: string): void { this.send({ type: 'CREATE_RUN', requestId: requestId(), seed }) }
+  create(creation: WorldCreationDraft | string): void { this.send({ type: 'CREATE_RUN', requestId: requestId(), creation: typeof creation === 'string' ? defaultWorldCreationRequest(creation) : creation }) }
+  createDraft(draftId: string, draft: WorldCreationDraft): void { this.send({ type: 'CREATE_DRAFT', requestId: requestId(), draftId, draft }) }
+  hydrateDraft(draft: WorldDraftRecord): void { this.send({ type: 'HYDRATE_DRAFT', requestId: requestId(), draft }) }
+  updateDraft(draftId: string, draft: WorldCreationDraft, expectedRevision?: number): void { this.send({ type: 'UPDATE_DRAFT', requestId: requestId(), draftId, draft, expectedRevision }) }
+  updateDraftZoneCells(draftId: string, zoneId: string, cellIds: string[], expectedRevision?: number): void { this.send({ type: 'UPDATE_DRAFT_ZONE_CELLS', requestId: requestId(), draftId, zoneId, cellIds, expectedRevision }) }
+  paintDraftTerrain(draftId: string, cellIds: string[], terrain: Terrain, expectedRevision?: number): void { this.send({ type: 'PAINT_DRAFT_TERRAIN', requestId: requestId(), draftId, cellIds, terrain, expectedRevision }) }
+  paintDraftElevation(draftId: string, cellIds: string[], elevation: number, expectedRevision?: number): void { this.send({ type: 'PAINT_DRAFT_ELEVATION', requestId: requestId(), draftId, cellIds, elevation, expectedRevision }) }
+  paintDraftResources(draftId: string, cellIds: string[], resourceCapacity: number, expectedRevision?: number): void { this.send({ type: 'PAINT_DRAFT_RESOURCES', requestId: requestId(), draftId, cellIds, resourceCapacity, expectedRevision }) }
+  resetDraft(draftId: string, expectedRevision?: number): void { this.send({ type: 'RESET_DRAFT', requestId: requestId(), draftId, expectedRevision }) }
+  previewDraft(draftId: string): void { this.send({ type: 'REQUEST_DRAFT_PREVIEW', requestId: requestId(), draftId }) }
+  requestDraftViewport(draftId: string, viewport: DraftViewportRequest): void { this.send({ type: 'REQUEST_DRAFT_VIEWPORT', requestId: requestId(), draftId, viewport }) }
+  commitDraft(draftId: string, expectedRevision?: number): void { this.send({ type: 'COMMIT_DRAFT', requestId: requestId(), draftId, expectedRevision }) }
+  discardDraft(draftId: string): void { this.send({ type: 'DISCARD_DRAFT', requestId: requestId(), draftId }) }
   load(snapshot: WorkbenchSnapshotEnvelope): void { this.send({ type: 'LOAD_RUN', requestId: requestId(), snapshot }) }
   step(count = 1): void { this.send({ type: 'STEP', requestId: requestId(), count }) }
   play(ticksPerBatch: number): void { this.send({ type: 'PLAY', requestId: requestId(), ticksPerBatch }) }

@@ -12,15 +12,186 @@ import { setPersonVariable } from '../../src/simulation/variables/storage'
 
 test.describe.configure({ timeout: 60_000 })
 
+async function advanceOneHour(page: import('@playwright/test').Page, tick: number): Promise<void> {
+  await page.getByTitle('Advance one hour').click()
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', String(tick))
+}
+
+async function waitForMapSettled(canvas: import('@playwright/test').Locator): Promise<void> {
+  await expect.poll(async () => {
+    const requested = await canvas.getAttribute('data-map-request-revision')
+    const rendered = await canvas.getAttribute('data-map-revision')
+    return requested !== null && requested === rendered
+  }).toBe(true)
+}
+
+test('opens the world setup surface with explicit scale and placement allocations', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup).toBeVisible()
+  await expect(setup.getByText('1 km hex radius · max 128 × 128')).toBeVisible()
+  await setup.getByLabel('World name').fill('Ardentia')
+  await setup.getByLabel('Map scale').selectOption('64x48')
+  await setup.getByLabel('Starting population').fill('240')
+  await setup.getByLabel('Zone 1 region').selectOption('center')
+  await setup.getByLabel('Zone 1 people').fill('120')
+  await setup.getByLabel('Zone 2 people').fill('120')
+  await expect(setup.locator('.allocation')).toContainText('240 / 240')
+  await expect(setup.locator('.draft-preview')).toContainText('Draft preview')
+  await expect(setup.getByRole('button', { name: 'Commit & create world', exact: true })).toBeEnabled()
+  await expect(page.getByText('Communities are geographic exposure measures, not memberships.')).toBeVisible()
+  await setup.getByRole('button', { name: 'Commit & create world', exact: true }).click()
+  await expect(setup).toBeHidden()
+  await expect(page.locator('.world-overview strong')).toHaveText('Ardentia')
+  await expect(page.getByText('64 × 48 hexes · 1 km radius')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Settlements/ })).toContainText('2')
+  await expect(page.locator('.settlement-list')).toContainText('Westhaven')
+  await expect(page.locator('.settlement-list')).toContainText('Eastwatch')
+  await page.getByRole('button', { name: 'analytics', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Daily samples' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Entity categories' })).toBeHidden()
+  await page.getByRole('button', { name: 'entities', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Entity categories' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Daily samples' })).toBeHidden()
+  await page.getByRole('button', { name: 'world', exact: true }).click()
+  await expect(page.locator('.world-overview strong')).toHaveText('Ardentia')
+})
+
+test('shows a bounded generated map only for a non-settlement draft zone', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await setup.getByLabel('Zone 1 has settlement').uncheck()
+  await expect(setup.getByLabel('Zone to draw')).toHaveValue('population-zone-1')
+  const map = setup.getByLabel('Draft placement zone map')
+  await expect(map).toBeVisible()
+  await expect.poll(async () => map.getAttribute('data-draft-map-revision')).toMatch(/^\d+$/)
+  await expect(map).toHaveAttribute('data-draft-zone-id', 'population-zone-1')
+  await expect(setup.getByText('Terrain and settlement anchors are read-only.')).toBeVisible()
+  const selection = setup.locator('.draft-zone-map-heading small')
+  const before = await selection.textContent()
+  const passableCenter = await map.getAttribute('data-draft-map-first-passable-center')
+  expect(passableCenter).not.toBeNull()
+  const [x, y] = passableCenter!.split(',').map(Number)
+  const passablePixel = { x: x!, y: y! }
+  await map.click({ position: passablePixel })
+  await expect.poll(() => selection.textContent()).not.toBe(before)
+})
+
+test('persists an accepted drawn zone through reload and commits its authoritative cells', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  let setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  // The dialog becomes visible before its worker-owned draft is fully
+  // accepted and persisted. Wait for the explicit acknowledgement boundary
+  // before changing a controlled form field.
+  await expect(setup.getByRole('button', { name: 'Commit & create world', exact: true })).toBeEnabled()
+  await setup.getByLabel('Zone 1 has settlement').uncheck()
+  let map = setup.getByLabel('Draft placement zone map')
+  await expect.poll(async () => map.getAttribute('data-draft-map-revision')).toMatch(/^\d+$/)
+  await expect(setup.locator('.setup-fields')).toBeEnabled()
+  await expect.poll(async () => map.getAttribute('data-draft-map-first-passable-center')).not.toBeNull()
+  const [x, y] = (await map.getAttribute('data-draft-map-first-passable-center'))!.split(',').map(Number)
+  const passablePixel = { x: x!, y: y! }
+  await map.click({ position: passablePixel })
+  await setup.getByRole('button', { name: 'Apply drawn cells', exact: true }).click()
+  await expect(setup.locator('.placement-card').first().locator('.placement-meta')).toContainText(/Resolved cells: \d+/)
+  await expect.poll(async () => map.getAttribute('data-draft-map-revision')).toMatch(/^\d+$/)
+
+  await page.reload()
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.locator('.placement-card').first().locator('.placement-meta')).toContainText(/Resolved cells: \d+/)
+  map = setup.getByLabel('Draft placement zone map')
+  await expect.poll(async () => map.getAttribute('data-draft-map-revision')).not.toBeNull()
+  await expect(setup.locator('.draft-zone-map-heading small')).toContainText('36 selected')
+  await setup.getByRole('button', { name: 'Commit & create world', exact: true }).click()
+  await expect(setup).toBeHidden()
+  await expect(page.locator('.world-overview strong')).toHaveText('The Seeded Valley')
+})
+
+test('authors arbitrary stable placement zones before a draft commit', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.locator('.draft-preview')).toContainText('Draft preview')
+  await setup.getByRole('button', { name: 'Add placement zone', exact: true }).click()
+  await expect(setup.getByRole('region', { name: 'Placement zone 3' })).toBeVisible()
+  await setup.getByLabel('Zone 1 people').fill('80')
+  await setup.getByLabel('Zone 2 people').fill('80')
+  await setup.getByLabel('Zone 3 name').fill('Central arrivals')
+  await setup.getByLabel('Zone 3 region').selectOption('center')
+  await setup.getByLabel('Zone 3 radius').fill('2')
+  await setup.getByLabel('Zone 3 people').fill('40')
+  await expect(setup.locator('.allocation')).toContainText('200 / 200')
+  await expect(setup.getByRole('button', { name: 'Commit & create world', exact: true })).toBeEnabled()
+  await page.reload()
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  const restored = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(restored.getByLabel('Zone 3 name')).toHaveValue('Central arrivals')
+  await expect(restored.getByLabel('Zone 3 radius')).toHaveValue('2')
+  await expect(restored.getByText('population-zone-draft-1', { exact: true })).toBeVisible()
+  await restored.getByRole('button', { name: 'Remove zone 3', exact: true }).click()
+  await expect(restored.getByRole('button', { name: 'Commit & create world', exact: true })).toBeDisabled()
+  await restored.getByRole('button', { name: 'Discard draft', exact: true }).click()
+})
+
+test('commits a three-zone population draft', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.locator('.draft-preview')).toContainText('Draft preview')
+  await setup.getByRole('button', { name: 'Add placement zone', exact: true }).click()
+  await setup.getByLabel('Zone 1 people').fill('80')
+  await setup.getByLabel('Zone 2 people').fill('80')
+  await setup.getByLabel('Zone 3 name').fill('Central arrivals')
+  await setup.getByLabel('Zone 3 region').selectOption('center')
+  await setup.getByLabel('Zone 3 people').fill('40')
+  await expect(setup.getByRole('button', { name: 'Commit & create world', exact: true })).toBeEnabled()
+  await setup.getByRole('button', { name: 'Commit & create world', exact: true }).click()
+  await expect(page.locator('.world-overview strong')).toHaveText('The Seeded Valley')
+  await expect(page.locator('.settlement-list')).toContainText('Settlement 3')
+})
+
+test('discards an editable world draft without changing the active simulation', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  const activeSeed = await page.locator('.active-world-seed').textContent()
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.locator('.draft-preview')).toContainText('Draft preview')
+  await setup.getByLabel('World name').fill('Discarded Draft')
+  await setup.getByRole('button', { name: 'Reset draft', exact: true }).click()
+  await expect(setup.getByLabel('World name')).toHaveValue('The Seeded Valley')
+  await setup.getByRole('button', { name: 'Discard draft', exact: true }).click()
+  await expect(setup).toBeHidden()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  await expect(page.locator('.active-world-seed')).toHaveText(activeSeed ?? '')
+})
+
+test('rehydrates a persisted draft before any authoritative world commit', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  let setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.locator('.draft-preview')).toContainText('Draft preview')
+  await setup.getByLabel('World name').fill('Persisted Draft Valley')
+  await expect(setup.getByRole('button', { name: 'Commit & create world', exact: true })).toBeEnabled()
+  await page.reload()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.getByLabel('World name')).toHaveValue('Persisted Draft Valley')
+  await setup.getByRole('button', { name: 'Discard draft', exact: true }).click()
+  await expect(setup).toBeHidden()
+})
+
 test('settles an idle viewport request and supports keyboard map navigation', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const canvas = page.getByLabel('Hex world map')
-  await expect.poll(async () => canvas.getAttribute('data-map-revision')).not.toBeNull()
-  await page.waitForTimeout(300)
-  const settledRevision = await canvas.getAttribute('data-map-revision')
-  await page.waitForTimeout(300)
-  await expect(canvas).toHaveAttribute('data-map-revision', settledRevision ?? '')
+  await waitForMapSettled(canvas)
   const before = await canvas.getAttribute('data-map-viewport')
   await canvas.focus()
   await page.keyboard.press('ArrowRight')
@@ -31,7 +202,7 @@ test('settles an idle viewport request and supports keyboard map navigation', as
 
 test('switches to bounded world overview rendering without distant hex outlines', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const canvas = page.getByLabel('Hex world map')
   await expect(canvas).toHaveAttribute('data-map-lod', 'cell')
   const bounds = await canvas.boundingBox()
@@ -52,7 +223,7 @@ test('keeps a hooked person live without changing the camera', async ({ page }) 
   const after = expected.step(1).projection
 
   await page.goto('/')
-  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const person = await findVisiblePerson(page, before.people)
   expect(person).toBeDefined()
   if (!person) return
@@ -75,7 +246,7 @@ test('keeps a hooked person live without changing the camera', async ({ page }) 
 
 test('creates, steps, inspects, and saves a deterministic world', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   await page.getByRole('button', { name: 'food', exact: true }).click()
   await expect(page.getByRole('button', { name: 'food', exact: true })).toHaveClass(/active/)
   const activityLayer = page.getByRole('button', { name: 'Activity locations', exact: true })
@@ -129,11 +300,11 @@ test('creates, steps, inspects, and saves a deterministic world', async ({ page 
 
 test('the same seed and step count produce the same digest', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   await page.getByTitle('Advance one hour').click()
   await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
   const firstDigest = await page.locator('.fact').filter({ hasText: 'SAVED HASH' }).locator('strong').textContent()
-  expect(firstDigest).toBe('e756231a46')
+  expect(firstDigest).toBe('a35226adb6')
   await page.getByRole('button', { name: 'Reset' }).click()
   await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
   await page.getByTitle('Advance one hour').click()
@@ -143,9 +314,9 @@ test('the same seed and step count produce the same digest', async ({ page }) =>
 
 test('encounter events navigate between hooked people and their relationships', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByText('Seeded Valley')).toBeVisible()
-  for (let hour = 0; hour < 24; hour += 1) await page.getByTitle('Advance one hour').click()
-  await expect(page.getByText('Day 1 · 00:00')).toBeVisible()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  for (let hour = 1; hour <= 24; hour += 1) await advanceOneHour(page, hour)
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '24')
   const encounter = page.locator('.event-row').filter({ hasText: 'PERSON ENCOUNTERED' }).first()
   await expect(encounter).toBeVisible()
   await expect(encounter.getByRole('button')).toHaveCount(2)
@@ -169,7 +340,7 @@ test('hooks a fixed child, inspects household origins, and re-hooks a parent wit
   expect(parentChild).toBeDefined()
 
   await page.goto('/')
-  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const canvas = page.getByLabel('Hex world map')
   const bounds = await canvas.boundingBox()
   expect(bounds).not.toBeNull()
@@ -210,9 +381,9 @@ test('inspects persisted experience and deterministic development at the 720-hou
   if (!child) return
   const snapshot = await engine.snapshot()
   await page.goto('/')
-  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   await page.evaluate(async (savedSnapshot) => new Promise<void>((resolve, reject) => {
-    const opening = indexedDB.open('world-simulation-workbench', 1)
+    const opening = indexedDB.open('world-simulation-workbench')
     opening.onerror = () => reject(opening.error)
     opening.onsuccess = () => {
       const database = opening.result
@@ -267,7 +438,7 @@ test('maps and explains authoritative catchment measures without losing a hooked
   expect(westAtSnapshot).toBeDefined()
   const snapshot = await restoreEngine.snapshot()
   await page.goto('/')
-  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   await storeNamedSnapshot(page, snapshot, 'e2e:community', 'Community fixture')
   await expect(page.locator('.community-signal-card')).toHaveCount(2)
   await expect(page.locator('.community-signal-card').filter({ hasText: 'West Valley' })).toBeVisible()
@@ -334,7 +505,7 @@ test('shows the authoritative community influence in an actual person action tra
   if (!person) return
 
   await page.goto('/')
-  await expect(page.getByText('Seeded Valley')).toBeVisible()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   for (let hour = 0; hour < 25; hour += 1) await page.getByTitle('Advance one hour').click()
   await hookPersonAtCurrentCell(page, person)
   const communityGroup = page.locator('#contribution-community-exposure').locator('..')
@@ -380,7 +551,7 @@ async function findVisiblePerson(page: import('@playwright/test').Page, people: 
 
 async function storeNamedSnapshot(page: import('@playwright/test').Page, snapshot: Awaited<ReturnType<SimulationEngine['snapshot']>>, key: string, name: string): Promise<void> {
   await page.evaluate(async ({ savedSnapshot, savedKey, savedName }) => new Promise<void>((resolve, reject) => {
-    const opening = indexedDB.open('world-simulation-workbench', 1)
+    const opening = indexedDB.open('world-simulation-workbench')
     opening.onerror = () => reject(opening.error)
     opening.onsuccess = () => {
       const database = opening.result
@@ -399,7 +570,7 @@ async function controlledDevelopmentEngine(): Promise<SimulationEngine> {
   const first = passable[0]
   const second = passable[1]
   if (!first || !second) throw new Error('Controlled UI development fixture needs two passable cells')
-  const homeCell = { ...first, id: '0,0', q: 0, r: 0, resourceCapacity: 0, foodAmount: 0, foodRegenerationPerDay: 0 }
+  const homeCell = { ...first, id: '0,0', q: 0, r: 0, habitability: 700, resourceCapacity: 0, foodAmount: 0, foodRegenerationPerDay: 0 }
   const awayCell = { ...second, id: '1,0', q: 1, r: 0, resourceCapacity: 0, foodAmount: 0, foodRegenerationPerDay: 0 }
   state.world.grid = { width: 2, height: 1, cells: [homeCell, awayCell] }
   state.config.worldWidth = 2
@@ -411,6 +582,14 @@ async function controlledDevelopmentEngine(): Promise<SimulationEngine> {
   state.nextEventSequence = 1
   const retained = new Set(['person-0001', 'person-0051', 'person-0101', 'person-0151'])
   state.people = state.people.filter(({ id }) => retained.has(id))
+  state.config.worldCreation = {
+    ...state.config.worldCreation,
+    width: 2,
+    height: 1,
+    initialPopulationCount: state.people.length,
+    populationZones: [{ id: 'population-zone-0001', name: 'Controlled population', cellIds: [homeCell.id], populationCount: state.people.length }],
+    settlements: [],
+  }
   const peopleById = new Map(state.people.map((person) => [person.id, person]))
   configureDevelopmentPerson(requiredDevelopmentPerson(peopleById, 'person-0001'), 30, homeCell.id, 600)
   configureDevelopmentPerson(requiredDevelopmentPerson(peopleById, 'person-0051'), 30, homeCell.id, 800)

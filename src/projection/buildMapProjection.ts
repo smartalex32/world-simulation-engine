@@ -103,7 +103,13 @@ export class WorkbenchProjectionBuilder {
       tick: source.tick,
       seed: source.seed,
       engineVersion: source.engineVersion,
-      world: { id: source.world.id, name: source.world.name, width: this.grid.width, height: this.grid.height, cellCount: this.grid.cells.length },
+      world: { id: source.world.id, name: source.world.name, width: this.grid.width, height: this.grid.height, cellCount: this.grid.cells.length, scale: source.world.scale },
+      settlements: source.world.settlements.map(({ id, name, anchorCellId }) => ({ id, name, anchorCellId })).sort((a, b) => a.id.localeCompare(b.id)),
+      roads: (source.world.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })).sort((a, b) => a.id.localeCompare(b.id)),
+      populationZones: source.populationZones.map((zone) => zone.settlementId === undefined
+        ? { id: zone.id, name: zone.name, populationCount: zone.populationCount, cellCount: zone.cellIds.length }
+        : { id: zone.id, name: zone.name, populationCount: zone.populationCount, cellCount: zone.cellIds.length, settlementId: zone.settlementId })
+        .sort((a, b) => a.id.localeCompare(b.id)),
       map,
       people: source.people,
       households: source.households,
