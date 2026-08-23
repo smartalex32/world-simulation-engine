@@ -1,0 +1,58 @@
+import type { GeographicCell, PersonState, SettlementState } from '../simulation/domain/types'
+import { hexDistance } from '../simulation/spatial/hex'
+import type { ProjectedSettlement, SettlementScale } from './types'
+
+/**
+ * Read-only display rules for authored settlement anchors. These are not a
+ * demographic membership model: they summarize living people whose homes are
+ * physically near the anchor at the current projection tick.
+ */
+export const SETTLEMENT_PROFILE_VERSION = 1
+export const SETTLEMENT_PROFILE_RADIUS_CELLS = 4
+
+export const SETTLEMENT_SCALE_THRESHOLDS = {
+  hamlet: 1,
+  village: 25,
+  town: 100,
+  city: 300,
+} as const
+
+export function buildProjectedSettlements(
+  settlements: readonly SettlementState[],
+  cells: readonly GeographicCell[],
+  people: readonly PersonState[],
+): ProjectedSettlement[] {
+  const cellsById = new Map(cells.map((cell) => [cell.id, cell]))
+  return [...settlements]
+    .sort((first, second) => first.id.localeCompare(second.id))
+    .map((settlement) => {
+      const anchor = cellsById.get(settlement.anchorCellId)
+      const nearbyHomeCellIds = new Set<string>()
+      let nearbyResidentCount = 0
+      if (anchor) {
+        for (const person of people) {
+          if (person.lifeStatus === 'dead') continue
+          const home = cellsById.get(person.homeCellId)
+          if (!home || hexDistance(anchor, home) > SETTLEMENT_PROFILE_RADIUS_CELLS) continue
+          nearbyResidentCount += 1
+          nearbyHomeCellIds.add(home.id)
+        }
+      }
+      return {
+        id: settlement.id,
+        name: settlement.name,
+        anchorCellId: settlement.anchorCellId,
+        scale: settlementScaleForResidents(nearbyResidentCount),
+        nearbyResidentCount,
+        nearbyHomeCellCount: nearbyHomeCellIds.size,
+      }
+    })
+}
+
+export function settlementScaleForResidents(nearbyResidentCount: number): SettlementScale {
+  if (nearbyResidentCount >= SETTLEMENT_SCALE_THRESHOLDS.city) return 'city'
+  if (nearbyResidentCount >= SETTLEMENT_SCALE_THRESHOLDS.town) return 'town'
+  if (nearbyResidentCount >= SETTLEMENT_SCALE_THRESHOLDS.village) return 'village'
+  if (nearbyResidentCount >= SETTLEMENT_SCALE_THRESHOLDS.hamlet) return 'hamlet'
+  return 'landmark'
+}

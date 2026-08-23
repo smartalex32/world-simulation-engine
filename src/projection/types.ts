@@ -2,7 +2,8 @@ import type { CommunityAggregationTrace, CommunityEmergentValues, CommunityStruc
 import type { DisputeState, GeographicCell, HouseholdState, LocalGovernanceState, OrganizationState, ParentChildLink, PersonState, PopulationPlacementZone, RelationshipState, SettlementState, Terrain, WorldScale } from '../simulation/domain/types'
 import type { PersonVariableDefinition } from '../simulation/variables/types'
 
-export const PROJECTION_PROTOCOL_VERSION = 2
+/** Incremented when the bounded worker-to-workbench projection shape changes. */
+export const PROJECTION_PROTOCOL_VERSION = 3
 export const PROJECTION_CHUNK_SIZE = 32
 export const PROJECTION_REGION_SIZES = Object.freeze([1, 4, 16, 64, 256] as const)
 export const MAX_TERRAIN_PRIMITIVES = 4096
@@ -127,7 +128,17 @@ export interface WorldDescriptor {
   scale: WorldScale
 }
 
-export interface ProjectedSettlement { id: string; name: string; anchorCellId: string }
+/** A presentation-only scale derived from nearby homes, never a person membership. */
+export type SettlementScale = 'landmark' | 'hamlet' | 'village' | 'town' | 'city'
+export interface ProjectedSettlement {
+  id: string
+  name: string
+  anchorCellId: string
+  scale: SettlementScale
+  /** Living people with homes within the profile radius of this marker. */
+  nearbyResidentCount: number
+  nearbyHomeCellCount: number
+}
 /** Bounded metadata; geometry is drawn only where the active cell projection is exact. */
 export interface ProjectedRoad { id: string; cellIds: string[] }
 export interface ProjectedPopulationZone { id: string; name: string; populationCount: number; cellCount: number; settlementId?: string }

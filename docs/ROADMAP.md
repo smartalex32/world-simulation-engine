@@ -111,10 +111,25 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 8B.4 — Settlement Editing
 * Milestone 8B.5 — Roads
 * Milestone 8B.6 — Draft Import and Export
+* Milestone 9 — Environmental and Resource Dynamics
+* Milestone 10 — Life Cycle and Population Dynamics
+* Milestone 11 — Broader Human Development
+* Milestone 12 — Occupations, Production, and Exchange
+* Milestone 13 — Institutions and Organizations
+* Milestone 14 — Culture, Norms, and Beliefs
+* Milestone 15 — Language
+* Milestone 16 — Governance and Politics
+* Milestone 17 — Conflict and Warfare
+* Milestone 18 — Technology, Knowledge, and Innovation
+* Milestone 19 — Massive Simulation Scale
+* Milestone 20 — Historical Inspection
+* Milestone 21 — Optional Narrative Presentation
+* Milestone 22 — Simulation Workbench Experience
+* Milestone 23 — Settlement Profiles
 
 ## Next Slice
 
-* Next simulation slice to be planned
+* Next simulation slice to be planned after settlement profiles
 
 Detailed current implementation is documented in `README.md`.
 
@@ -1247,6 +1262,20 @@ Deferred: visual-regression screenshot baselines, a richer minimap, and addition
 
 ---
 
+# Milestone 23 — Settlement Profiles
+
+Status: Implemented (nearby-home scale foundation)
+
+## Goal
+
+Make authored geographic settlement anchors legible as real places without turning them into a premature demographic, cultural, governmental, or political membership system.
+
+Implemented: the projection derives a deterministic landmark, hamlet, village, town, or city display scale from the number of living people whose homes are within four hexes of each settlement anchor. The workbench exposes the nearby resident and occupied-home-cell counts in the entity list, and the map labels include the derived scale. This is a read-only projection rule: it neither adds a person settlement field nor affects simulation rules, RNG, snapshots, or canonical digests.
+
+Deferred: settlement boundary/catchment authoring, markets, institutions tied to settlement locations, settlement histories, actual civic membership, urban growth mechanics, cities as distinct authoritative entities, and any kingdoms or political borders. Those require their own explicit spatial and social semantics.
+
+---
+
 # Deferred Areas
 
 Unless explicitly promoted into active work, do not proactively implement:
@@ -1330,22 +1359,22 @@ Deep simulation semantics belong in focused design documents.
 Completed through:
 
 ```text
-Milestone 8B.6 — Draft Import and Export
+Milestone 23 — Settlement Profiles
 ```
 
 Current milestone:
 
 ```text
-Milestone 8B — Draft Map Authoring
+No active implementation milestone
 ```
 
 Next independently reviewable slice:
 
 ```text
-Milestone 9 — Environmental and Resource Dynamics
+To be planned from the deferred areas and product goals
 ```
 
-Intended immediate sequence:
+Completed immediate sequence:
 
 ```text
 8B.3 Terrain Painting
@@ -1355,6 +1384,6 @@ Intended immediate sequence:
   -> 9 Environmental and Resource Dynamics
 ```
 
-Within 8B.3, prefer the smallest safe editing slice rather than implementing every terrain dimension simultaneously.
+Future work should promote a new milestone only after its intended behavior and prerequisite boundaries are explicitly planned.
 
 The user may explicitly override roadmap priority for any development request.
