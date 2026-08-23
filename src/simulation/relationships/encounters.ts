@@ -76,7 +76,9 @@ export function encounterOutcomeWeights(first: PersonState, second: PersonState,
   ) / 2)
   const fluency = communicationFluency(first, second)
   return {
-    positive: 200 + Math.floor(sociability * 3 / 5) + Math.floor(familiarity / 5) + Math.floor(fluency / 5),
+    // Full shared fluency is the historical baseline; only a communication
+    // gap changes outcomes, preserving same-language encounter behavior.
+    positive: 200 + Math.floor(sociability * 3 / 5) + Math.floor(familiarity / 5) - Math.floor((1000 - fluency) / 5),
     neutral: 500,
     tense: 100 + Math.floor((1000 - sociability) / 4) + Math.floor((1000 - familiarity) / 10) + Math.floor((1000 - fluency) / 4),
   }
