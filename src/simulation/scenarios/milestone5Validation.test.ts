@@ -124,7 +124,7 @@ describe('Milestone 5 bounded validation', () => {
     const firstSnapshot = await first.snapshot()
     const secondSnapshot = await second.snapshot()
     expect(firstSnapshot).toEqual(secondSnapshot)
-    expect(firstSnapshot.schemaVersion).toBe(20)
+    expect(firstSnapshot.schemaVersion).toBe(21)
     expect(firstSnapshot.state.randomStreams.map(({ name }) => name)).toEqual([...firstSnapshot.state.randomStreams.map(({ name }) => name)].sort())
 
     const restored = await SimulationEngine.restore(firstSnapshot)

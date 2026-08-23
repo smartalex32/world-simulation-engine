@@ -11,6 +11,7 @@ import {
   CULTURE_MODEL_VERSION,
   LANGUAGE_MODEL_VERSION,
   GOVERNANCE_MODEL_VERSION,
+  CONFLICT_MODEL_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
@@ -75,6 +76,7 @@ import { createInitialSchools } from '../organizations/model'
 import { createCulturalState, transmitCulture } from '../culture/model'
 import { acquireLanguage, initialLanguage } from '../language/model'
 import { createLocalGovernance, updateLegitimacy } from '../governance/model'
+import { applyDispute, disputeId } from '../conflict/model'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -123,6 +125,7 @@ export class SimulationEngine {
   private readonly cellById: Map<string, SimulationState['world']['grid']['cells'][number]>
   private readonly personById: Map<string, SimulationState['people'][number]>
   private readonly relationshipById: Map<string, SimulationState['relationships'][number]>
+  private readonly disputeById: Map<string, SimulationState['disputes'][number]>
   private readonly householdById: Map<string, SimulationState['households'][number]>
   private readonly activityLocationById: Map<string, SimulationState['activityLocations'][number]>
   private readonly parentIdsByChildId: Map<string, readonly string[]>
@@ -134,6 +137,7 @@ export class SimulationEngine {
     this.cellById = new Map(state.world.grid.cells.map((cell) => [cell.id, cell]))
     this.personById = new Map(state.people.map((person) => [person.id, person]))
     this.relationshipById = new Map(state.relationships.map((relationship) => [relationship.id, relationship]))
+    this.disputeById = new Map(state.disputes.map((dispute) => [dispute.id, dispute]))
     this.householdById = new Map(state.households.map((household) => [household.id, household]))
     this.activityLocationById = new Map(state.activityLocations.map((location) => [location.id, location]))
     this.communityByCellId = new Map()
@@ -195,12 +199,14 @@ export class SimulationEngine {
         cultureModelVersion: CULTURE_MODEL_VERSION,
         languageModelVersion: LANGUAGE_MODEL_VERSION,
         governanceModelVersion: GOVERNANCE_MODEL_VERSION,
+        conflictModelVersion: CONFLICT_MODEL_VERSION,
       },
       world,
       people: generatedPopulation.people,
       households: generatedPopulation.households,
       organizations,
       governance,
+      disputes: [],
       parentChildLinks: generatedPopulation.parentChildLinks,
       activityLocations: generatedPopulation.activityLocations,
       communities,
@@ -333,6 +339,9 @@ export class SimulationEngine {
         this.resetCommunityCounters(this.state.tick + 1)
       }
     }
+    // Disputes are indexed during encounter resolution.  Materialize the stable serialized
+    // collection once per requested advance batch instead of rebuilding it for every encounter.
+    this.state.disputes = [...this.disputeById.values()].sort((first, second) => first.id.localeCompare(second.id))
     this.state.randomStreams = this.random.snapshot()
     this.syncCommunityCounterState()
     if (options.clockEventHours !== false) {
@@ -364,6 +373,7 @@ export class SimulationEngine {
       households: this.state.households,
       organizations: this.state.organizations,
       governance: this.state.governance,
+      disputes: this.state.disputes,
       parentChildLinks: this.state.parentChildLinks,
       activityLocations: this.state.activityLocations,
       communities: this.state.communities,
@@ -1051,6 +1061,9 @@ export class SimulationEngine {
     else if (encounter.outcome === 'neutral') this.state.dailySocialCounters.neutralEncounters += 1
     else this.state.dailySocialCounters.tenseEncounters += 1
     if (!existing) this.state.dailySocialCounters.relationshipsFormed += 1
+    const communityId = this.communityByCellId.get(encounter.cellId)?.catchment.id ?? 'unassigned'
+    const nextDispute = applyDispute(this.disputeById.get(disputeId(initiator.id, participant.id)), initiator.id, participant.id, encounter.outcome, communityId, this.state.tick)
+    if (nextDispute) this.disputeById.set(nextDispute.id, nextDispute)
     if (encounter.outcome === 'positive') {
       transmitCulture(initiator, participant, updated, this.state.tick)
       transmitCulture(participant, initiator, updated, this.state.tick)
