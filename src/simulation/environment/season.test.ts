@@ -28,6 +28,7 @@ describe('seasonal environment', () => {
         foodAccessibleHours: cell && cell.foodAmount > 0 ? 1 : 0,
         difficultTerrainHours: cell && cell.movementCost > 1000 ? 1 : 0,
         thermalLoadPermilleHours: 450,
+        waterAvailabilityPermilleHours: cell?.terrain === 'water' ? 1100 : cell?.terrain === 'hill' ? 682 : cell && cell.elevation >= 460 ? 473 : 935,
       })
     }
   })

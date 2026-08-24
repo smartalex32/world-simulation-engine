@@ -129,6 +129,8 @@ export function validateHouseholdActivityState(state: SimulationState): void {
   if (!lifeCycleCounters || Object.values(lifeCycleCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily life-cycle counters are invalid')
   const economicCounters = state.dailyEconomicCounters
   if (!economicCounters || Object.values(economicCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily economic counters are invalid')
+  const environmentalCounters = state.dailyEnvironmentalCounters
+  if (!environmentalCounters || Object.values(environmentalCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily environmental counters are invalid')
 }
 
 function validateHouseholdRelocation(household: SimulationState['households'][number], state: SimulationState): void {

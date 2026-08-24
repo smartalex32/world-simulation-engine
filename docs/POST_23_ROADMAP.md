@@ -251,6 +251,11 @@ or a global conflict simulator.
 
 ### Milestone 33 — Seasonal Climate, Agriculture, and Ecology
 
+**Status:** Implemented — static terrain/elevation-derived climate zones now
+apply deterministic seasonal water, regeneration, and plain-cell agricultural
+productivity modifiers. Recovery and agricultural production are separately
+sampled. Weather, biomes, and ecology remain deliberately deferred.
+
 **Objective:** Replace the current simple seasonal resource pattern with the
 first explicit environmental feedback loop.
 

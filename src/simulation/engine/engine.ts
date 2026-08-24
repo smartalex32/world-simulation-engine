@@ -69,7 +69,8 @@ import {
 } from '../exposure/model'
 import { applyParentCuriosityDevelopment } from '../development/apply'
 import { accumulateBroaderExposure, applyBroaderDevelopment, broaderExposure, BROADER_DEVELOPMENT_DEFINITIONS, completeBroaderExposure, createBroaderDevelopmentState } from '../development/broader'
-import { seasonAtTick, seasonalAmount } from '../environment/season'
+import { seasonAtTick } from '../environment/season'
+import { climateConditionsAt, regeneratedFoodAmount } from '../environment/climate'
 import { calculateCuriosityInheritance } from '../households/inheritance'
 import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STREAM, partnershipEligible } from '../lifecycle/model'
 import { createInitialMarkets, resolveFoodShares, resolveToolExchanges } from '../economy/model'
@@ -225,7 +226,8 @@ export class SimulationEngine {
       dailyActivityCounters: { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 },
       dailyDevelopmentCounters: { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0, broaderDevelopmentExperiences: 0, broaderDevelopmentChanges: 0 },
       dailyLifeCycleCounters: { births: 0, deaths: 0, partnershipsFormed: 0, householdMoves: 0, lifeStageTransitions: 0 },
-      dailyEconomicCounters: { productiveHours: 0, foodProduced: 0, foodConsumedFromHouseholds: 0, foodShared: 0, exchangeCount: 0 },
+      dailyEconomicCounters: { productiveHours: 0, foodProduced: 0, agriculturalFoodProduced: 0, foodConsumedFromHouseholds: 0, foodShared: 0, exchangeCount: 0 },
+      dailyEnvironmentalCounters: { foodRegenerated: 0 },
       randomStreams: random.snapshot(),
     }, random)
   }
@@ -295,6 +297,7 @@ export class SimulationEngine {
         this.state.dailySpatialCounters.foodConsumed += outcome.foodConsumed
         this.economicCounters().foodConsumedFromHouseholds += outcome.foodConsumed
         this.economicCounters().foodProduced += outcome.foodProduced
+        this.economicCounters().agriculturalFoodProduced += outcome.agriculturalFoodProduced
         if (decision.action === 'work') this.economicCounters().productiveHours += 1
         if (outcome.failedMeal) this.state.dailySpatialCounters.failedMeals += 1
         this.recordCommunityAction(decision.action, outcome)
@@ -351,7 +354,8 @@ export class SimulationEngine {
         this.state.dailyActivityCounters = { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 }
         this.state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0, broaderDevelopmentExperiences: 0, broaderDevelopmentChanges: 0 }
         this.state.dailyLifeCycleCounters = { births: 0, deaths: 0, partnershipsFormed: 0, householdMoves: 0, lifeStageTransitions: 0 }
-        this.state.dailyEconomicCounters = { productiveHours: 0, foodProduced: 0, foodConsumedFromHouseholds: 0, foodShared: 0, exchangeCount: 0 }
+        this.state.dailyEconomicCounters = { productiveHours: 0, foodProduced: 0, agriculturalFoodProduced: 0, foodConsumedFromHouseholds: 0, foodShared: 0, exchangeCount: 0 }
+        this.state.dailyEnvironmentalCounters = { foodRegenerated: 0 }
         this.resetCommunityCounters(this.state.tick + 1)
       }
     }
@@ -443,11 +447,13 @@ export class SimulationEngine {
       { ...base, metricId: 'spatial.occupiedCells', value: this.buildOccupancy().size },
       { ...base, metricId: 'spatial.averageTravelCost', value: population === 0 ? 0 : Math.round(this.state.dailySpatialCounters.travelCost / population) },
       { ...base, metricId: 'resources.totalFood', value: cells.reduce((sum, cell) => sum + cell.foodAmount, 0) },
+      { ...base, metricId: 'resources.foodRegenerated', value: this.environmentalCounters().foodRegenerated },
       { ...base, metricId: 'resources.foodConsumed', value: this.state.dailySpatialCounters.foodConsumed },
       { ...base, metricId: 'resources.failedMeals', value: this.state.dailySpatialCounters.failedMeals },
       { ...base, metricId: 'economy.householdFood', value: this.state.households.reduce((sum, household) => sum + (household.inventory?.food ?? 0), 0) },
       { ...base, metricId: 'economy.productiveHours', value: this.economicCounters().productiveHours },
       { ...base, metricId: 'economy.foodProduced', value: this.economicCounters().foodProduced },
+      { ...base, metricId: 'economy.agriculturalFoodProduced', value: this.economicCounters().agriculturalFoodProduced },
       { ...base, metricId: 'economy.foodShared', value: this.economicCounters().foodShared },
       { ...base, metricId: 'economy.exchangeCount', value: this.economicCounters().exchangeCount },
       { ...base, metricId: 'social.encounters', value: this.state.dailySocialCounters.encounters },
@@ -488,9 +494,10 @@ export class SimulationEngine {
   }
 
   private regenerateFood(): void {
-    const season = seasonAtTick(this.state.tick)
     for (const cell of this.state.world.grid.cells) {
-      cell.foodAmount = Math.min(cell.resourceCapacity, cell.foodAmount + seasonalAmount(cell.foodRegenerationPerDay, season.foodRegenerationMultiplierPermille))
+      const prior = cell.foodAmount
+      cell.foodAmount = Math.min(cell.resourceCapacity, cell.foodAmount + regeneratedFoodAmount(cell, this.state.tick))
+      this.environmentalCounters().foodRegenerated += cell.foodAmount - prior
     }
   }
 
@@ -500,11 +507,12 @@ export class SimulationEngine {
     for (const person of this.livingPeople()) {
       const cell = this.cellById.get(person.locationCellId)
       if (!cell) throw new Error(`Person ${person.id} occupies a missing exposure cell`)
-      const exposure = person.environmentalExposure ?? (person.environmentalExposure = { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0 })
+      const exposure = person.environmentalExposure ?? (person.environmentalExposure = { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0, waterAvailabilityPermilleHours: 0 })
       exposure.observedHours += 1
       if (cell.foodAmount > 0) exposure.foodAccessibleHours += 1
       if (cell.movementCost > 1000) exposure.difficultTerrainHours += 1
       exposure.thermalLoadPermilleHours += season.thermalExposurePermille
+      exposure.waterAvailabilityPermilleHours += climateConditionsAt(cell, this.state.tick).waterAvailabilityPermille
     }
   }
 
@@ -1162,7 +1170,7 @@ export class SimulationEngine {
       schoolLearningHours: 0,
       activityScheduleId: scheduleForAge(0), currentActivity: { kind: 'home', locationId: household.homeActivityLocationId, sinceTick: this.state.tick },
       originTraces: [inheritance.trace], development: { exposures: [{ ...createParentCuriosityExposureAccumulator(Math.floor(this.state.tick / 720) * 720 + 1), sourcePersonIds: [] }], broader: createBroaderDevelopmentState(Math.floor(this.state.tick / 720) * 720 + 1) },
-      environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0 }, variables, knownCellIds: [household.homeCellId],
+      environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0, waterAvailabilityPermilleHours: 0 }, variables, knownCellIds: [household.homeCellId],
     }
     this.state.people = [...this.state.people, child].sort((a, b) => compareIds(a.id, b.id))
     this.personById.set(child.id, child)
@@ -1295,6 +1303,7 @@ export class SimulationEngine {
       probabilityPermille: decision.probabilityPermille,
       foodConsumed: outcome.foodConsumed,
       foodProduced: outcome.foodProduced,
+      agriculturalFoodProduced: outcome.agriculturalFoodProduced,
       hungerReduced: outcome.hungerReduced,
       fatigueReduced: outcome.fatigueReduced,
       travelCost: outcome.travelCost,
@@ -1367,8 +1376,13 @@ export class SimulationEngine {
   }
 
   private economicCounters(): NonNullable<SimulationState['dailyEconomicCounters']> {
-    if (!this.state.dailyEconomicCounters) this.state.dailyEconomicCounters = { productiveHours: 0, foodProduced: 0, foodConsumedFromHouseholds: 0, foodShared: 0, exchangeCount: 0 }
+    if (!this.state.dailyEconomicCounters) this.state.dailyEconomicCounters = { productiveHours: 0, foodProduced: 0, agriculturalFoodProduced: 0, foodConsumedFromHouseholds: 0, foodShared: 0, exchangeCount: 0 }
     return this.state.dailyEconomicCounters
+  }
+
+  private environmentalCounters(): NonNullable<SimulationState['dailyEnvironmentalCounters']> {
+    if (!this.state.dailyEnvironmentalCounters) this.state.dailyEnvironmentalCounters = { foodRegenerated: 0 }
+    return this.state.dailyEnvironmentalCounters
   }
 }
 

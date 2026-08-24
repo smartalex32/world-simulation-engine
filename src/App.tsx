@@ -776,6 +776,7 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
         <Metric label="Food accessible" value={`${person.environmentalExposure?.foodAccessibleHours ?? 0} h`} />
         <Metric label="Difficult terrain" value={`${person.environmentalExposure?.difficultTerrainHours ?? 0} h`} />
         <Metric label="Thermal load" value={`${((person.environmentalExposure?.thermalLoadPermilleHours ?? 0) / 1000).toFixed(1)} h`} />
+        <Metric label="Water access" value={`${((person.environmentalExposure?.waterAvailabilityPermilleHours ?? 0) / 1000).toFixed(1)} h`} />
       </div>
     </section>
     <section className="community-exposure-panel" aria-labelledby="geographic-exposure-heading">
