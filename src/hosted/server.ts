@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { resolve } from 'node:path'
 import type { MapProjectionRequest } from '../projection'
-import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
+import { defaultWorldCreationRequest, WORLD_CREATION_LIMITS } from '../simulation/domain/worldCreation'
 import type { HostedRunCommand } from './types'
 import { FileHostedRunStore } from './store'
 import { HostedRunService } from './runService'
@@ -11,12 +11,13 @@ const runId = process.env.HOSTED_RUN_ID ?? 'hosted-run'
 const ownerId = process.env.HOSTED_OWNER_ID ?? 'local-owner'
 const ownerToken = requiredEnvironment('HOSTED_OWNER_TOKEN')
 const dataDirectory = resolve(process.env.HOSTED_DATA_DIRECTORY ?? '.world-simulation-hosted')
+const hostedPopulation = boundedIntegerEnvironment('HOSTED_WORLD_POPULATION', 200, WORLD_CREATION_LIMITS.minimumPopulation, WORLD_CREATION_LIMITS.maximumPopulation)
 
 const service = await HostedRunService.open({
   runId,
   ownerId,
   ownerToken,
-  creation: defaultWorldCreationRequest(process.env.HOSTED_WORLD_SEED ?? 'hosted-valley'),
+  creation: { ...defaultWorldCreationRequest(process.env.HOSTED_WORLD_SEED ?? 'hosted-valley'), initialPopulationCount: hostedPopulation },
 }, new FileHostedRunStore(dataDirectory))
 
 createServer(async (request, response) => {
@@ -103,10 +104,14 @@ function requiredEnvironment(name: string): string {
 }
 
 function numberEnvironment(name: string, fallback: number): number {
+  return boundedIntegerEnvironment(name, fallback, 1, 65_535, 'a valid port')
+}
+
+function boundedIntegerEnvironment(name: string, fallback: number, minimum: number, maximum: number, label = `an integer from ${minimum} through ${maximum}`): number {
   const value = process.env[name]
   if (value === undefined) return fallback
   const number = Number(value)
-  if (!Number.isSafeInteger(number) || number < 1 || number > 65535) throw new Error(`${name} must be a valid port`)
+  if (!Number.isSafeInteger(number) || number < minimum || number > maximum) throw new Error(`${name} must be ${label}`)
   return number
 }
 

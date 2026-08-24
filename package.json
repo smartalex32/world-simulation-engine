@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "preview": "vite preview",
-    "host": "tsx src/hosted/server.ts"
+    "host": "tsx src/hosted/server.ts",
+    "benchmark:scale": "tsx scripts/benchmark-scale.ts"
   },
   "dependencies": {
     "react": "19.2.8",

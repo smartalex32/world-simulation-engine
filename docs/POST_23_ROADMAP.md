@@ -475,6 +475,8 @@ and multi-node ownership remain deferred.
 
 ### Milestone 44 — Measured Ten-Thousand-Person Scale
 
+**Status:** Implemented (detailed-agent benchmark and per-hour live-person index)
+
 **Objective:** Support the first useful hosted world scale with measured,
 reproducible performance rather than speculative billion-cell claims.
 
@@ -484,6 +486,18 @@ contracts.
 
 **Explicit non-goals:** Hundred-thousand-person guarantees, cohorts, or
 unbounded in-browser state transfer.
+
+**Implemented boundary:** The engine now accepts up to 10,000 initial people
+while the interactive builder remains capped at 500. `pnpm benchmark:scale`
+builds a deterministic 128 × 128, 10,000-person world; advances it one hour;
+and verifies snapshot/restore digest equality. The engine reuses a live-person
+index for each hour instead of repeatedly filtering the full population across
+hourly systems. The benchmark reports index builds and local timing, which are
+non-authoritative diagnostics. On the reference development machine this slice
+measured roughly 5.9 seconds creation, 0.58 seconds for one hour, and 1.8
+seconds snapshotting. Hosts can select `HOSTED_WORLD_POPULATION` through the
+same validated creation boundary. Cohorts, 100k targets, and full browser-state
+transport remain explicitly deferred.
 
 ### Milestone 45 — Fidelity Regions and Population Aggregation
 
