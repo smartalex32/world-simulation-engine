@@ -1373,7 +1373,7 @@ No active implementation milestone
 Next independently reviewable slice:
 
 ```text
-Milestone 26 — Household Relocation and Settlement Change
+Milestone 27 — Local Goods and Exchange Places
 ```
 
 Completed immediate sequence:

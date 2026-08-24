@@ -86,6 +86,8 @@ in this slice.
 
 ### Milestone 26 — Household Relocation and Settlement Change
 
+**Status:** Implemented (bounded monthly relocation foundation)
+
 **Objective:** Let people and households change where they live through
 available housing/place opportunities rather than scripted population totals.
 
@@ -99,6 +101,15 @@ the affected catchment lose more households than a matched favorable catchment.
 
 **Explicit non-goals:** International migration, refugees, land markets,
 property law, or automatic city growth.
+
+**Implemented boundary:** Every 720 hours, each household evaluates at most 24
+reachable homes within eight hexes. Local food access, road-adjusted path cost,
+nearby relationship familiarity, home-cell crowding, household hunger, and risk
+tolerance yield an integer utility and a named-stream probability. A successful
+move updates the shared home activity and each member's future geographic
+exposure; its full contributing trace is retained on the household and emitted
+as a `HOUSEHOLD_RELOCATED` event. This is not a settlement-membership change,
+housing market, or migration system.
 
 ## Phase B — Material Life and Settlements
 

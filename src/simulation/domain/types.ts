@@ -7,12 +7,12 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.24.0'
-export const SNAPSHOT_SCHEMA_VERSION = 24
+export const ENGINE_VERSION = '0.25.0'
+export const SNAPSHOT_SCHEMA_VERSION = 25
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
-export const HOUSEHOLD_MODEL_VERSION = 2
+export const HOUSEHOLD_MODEL_VERSION = 3
 export const ACTIVITY_REGISTRY_VERSION = 1
 export const DEVELOPMENT_REGISTRY_VERSION = 2
 export const COMMUNITY_REGISTRY_VERSION = 1
@@ -252,6 +252,20 @@ export interface KnowledgeTrace {
 }
 export type PersonOccupation = 'forager' | 'household' | 'dependent'
 export interface HouseholdInventory { food: number }
+/** The last successful geographic home change, retained for inspection rather than inference. */
+export interface HouseholdRelocationTrace {
+  tick: number
+  sourceCellId: string
+  destinationCellId: string
+  foodAccessDeltaPermille: number
+  travelCost: number
+  householdTiePermille: number
+  crowdingDelta: number
+  riskCostPermille: number
+  utilityPermille: number
+  probabilityPermille: number
+  randomRollPermille: number
+}
 export type ParentChildLinkId = string
 export type ActivityLocationId = string
 export type ActivityLocationKind = 'home' | 'commons'
@@ -265,6 +279,7 @@ export interface HouseholdState {
   memberIds: string[]
   /** Household-owned goods. Natural cell food remains an unowned environmental resource. */
   inventory?: HouseholdInventory
+  lastRelocation?: HouseholdRelocationTrace
 }
 
 export interface ParentChildLink {
@@ -668,7 +683,7 @@ export interface SimulationEvent {
   id: string
   runId: string
   tick: number
-  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_WORKED' | 'HOUSEHOLDS_SHARED_FOOD' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_KNOWLEDGE_DISCOVERED' | 'PERSON_KNOWLEDGE_SHARED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
+  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_WORKED' | 'HOUSEHOLDS_SHARED_FOOD' | 'HOUSEHOLD_RELOCATED' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_KNOWLEDGE_DISCOVERED' | 'PERSON_KNOWLEDGE_SHARED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
   version: 1
   cellId?: string
   payload: Record<string, string | number | boolean | null>

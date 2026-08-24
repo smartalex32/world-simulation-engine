@@ -562,6 +562,13 @@ Current household concepts include:
 * Home locations
 * Adult and child roles
 * Variable household generation
+* A monthly, bounded relocation evaluation based on real local food access,
+  route travel cost, nearby relationship ties, crowding, and household risk tolerance
+
+Successful relocation is resolved through its own named random stream. It moves
+the household home activity and every member's future home exposure, then retains
+an inspectable score/probability/roll trace and a meaningful event. It does not
+assign people a settlement membership or model property ownership.
 
 People also follow versioned activity patterns involving locations such as:
 

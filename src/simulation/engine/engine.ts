@@ -79,6 +79,7 @@ import { acquireLanguage, initialLanguage } from '../language/model'
 import { createLocalGovernance, updateLegitimacy } from '../governance/model'
 import { applyDispute, disputeId } from '../conflict/model'
 import { discoverLocalTerrain, initialKnowledge, transmitKnowledge } from '../knowledge/model'
+import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION_STREAM, relocationTrace } from '../households/relocation'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -328,6 +329,7 @@ export class SimulationEngine {
       if (this.state.tick % 720 === 0) {
         this.processDevelopment(pushEvent)
         this.processBroaderDevelopment(pushEvent)
+        this.resolveMonthlyHouseholdRelocations(pushEvent)
       }
       if (this.state.tick % 8760 === 0) this.resolveAnnualLifeCycle(pushEvent)
       if (this.state.tick % 24 === 0) {
@@ -980,6 +982,61 @@ export class SimulationEngine {
       const second = first.partnerId ? this.personById.get(first.partnerId) : undefined
       if (!second || first.id > second.id || !birthEligible(first, second)) continue
       if (this.random.stream(LIFE_CYCLE_STREAM.birth).nextInt(1000) < 140) this.birthChild(first, second, pushEvent)
+    }
+  }
+
+  /**
+   * A bounded monthly home-choice pass. It changes homes only after a concrete
+   * geographic candidate has been evaluated and a named stochastic roll accepts it.
+   */
+  private resolveMonthlyHouseholdRelocations(pushEvent: (event: SimulationEvent) => void): void {
+    if (this.state.tick % HOUSEHOLD_RELOCATION.intervalHours !== 0) return
+    const roadCellIds = new Set((this.state.world.roads ?? []).flatMap((road) => road.cellIds))
+    const relocationRng = this.random.stream(HOUSEHOLD_RELOCATION_STREAM)
+    for (const household of [...this.state.households].sort((first, second) => compareIds(first.id, second.id))) {
+      const evaluation = evaluateHouseholdRelocation({
+        household,
+        peopleById: this.personById,
+        households: this.state.households,
+        relationships: this.state.relationships,
+        cells: this.state.world.grid.cells,
+        roadCellIds,
+      })
+      if (!evaluation.candidate || evaluation.probabilityPermille === 0) continue
+      const trace = relocationTrace(evaluation, this.state.tick, relocationRng.nextInt(1000))
+      if (!trace) continue
+      const homeActivity = this.activityLocationById.get(household.homeActivityLocationId)
+      if (!homeActivity || homeActivity.kind !== 'home') throw new Error(`Household ${household.id} has no valid home activity`)
+      household.homeCellId = trace.destinationCellId
+      household.lastRelocation = trace
+      homeActivity.cellId = trace.destinationCellId
+      for (const personId of household.memberIds) {
+        const person = this.personById.get(personId)
+        if (!person) throw new Error(`Household ${household.id} relocation references missing person ${personId}`)
+        // Creation-zone accounting must retain a stable origin even when a
+        // legacy initial person did not serialize it explicitly.
+        person.initialHomeCellId ??= person.homeCellId
+        person.homeCellId = trace.destinationCellId
+        person.knownCellIds = [...new Set([...person.knownCellIds, trace.destinationCellId])].sort(compareIds)
+        if (person.currentActivity.kind === 'home') {
+          person.locationCellId = trace.destinationCellId
+          person.currentActivity = { kind: 'home', locationId: household.homeActivityLocationId, sinceTick: this.state.tick }
+        }
+      }
+      this.state.dailyLifeCycleCounters.householdMoves += 1
+      pushEvent(this.event('HOUSEHOLD_RELOCATED', {
+        householdId: household.id,
+        sourceCellId: trace.sourceCellId,
+        destinationCellId: trace.destinationCellId,
+        foodAccessDeltaPermille: trace.foodAccessDeltaPermille,
+        travelCost: trace.travelCost,
+        householdTiePermille: trace.householdTiePermille,
+        crowdingDelta: trace.crowdingDelta,
+        riskCostPermille: trace.riskCostPermille,
+        utilityPermille: trace.utilityPermille,
+        probabilityPermille: trace.probabilityPermille,
+        randomRollPermille: trace.randomRollPermille,
+      }))
     }
   }
 
