@@ -29,6 +29,7 @@ function chronicleText(event: SimulationEvent): string {
   if (event.type === 'PERSON_DIED' && person) return `${person} died at recorded age ${number(event, 'ageYears') ?? 'unknown'}.`
   if (event.type === 'PARTNERSHIP_FORMED') return `${text(event, 'firstPersonId') ?? 'A person'} and ${text(event, 'secondPersonId') ?? 'another person'} formed a partnership.`
   if (event.type === 'HOUSEHOLD_RELOCATED') return `${text(event, 'householdId') ?? 'A household'} relocated from ${text(event, 'sourceCellId') ?? 'an unknown home'} to ${text(event, 'destinationCellId') ?? 'a new home'}.`
+  if (event.type === 'HOUSEHOLDS_EXCHANGED_TOOLS') return `${text(event, 'donorHouseholdId') ?? 'A household'} exchanged tools with ${text(event, 'recipientHouseholdId') ?? 'another household'} at ${text(event, 'marketId') ?? 'a market'}.`
   if (event.type === 'PERSON_KNOWLEDGE_DISCOVERED' && person) return `${person} recorded a discovery of ${text(event, 'knowledgeId') ?? 'knowledge'}.`
   if (event.type === 'COMMUNITY_MEASURES_UPDATED') return `${text(event, 'communityName') ?? text(event, 'communityId') ?? 'A community'} recorded updated community measures.`
   if (event.type === 'ERROR') return `The simulation recorded an error: ${text(event, 'message') ?? 'unspecified error'}.`

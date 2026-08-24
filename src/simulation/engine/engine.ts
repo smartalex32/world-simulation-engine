@@ -72,7 +72,7 @@ import { accumulateBroaderExposure, applyBroaderDevelopment, broaderExposure, BR
 import { seasonAtTick, seasonalAmount } from '../environment/season'
 import { calculateCuriosityInheritance } from '../households/inheritance'
 import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STREAM, partnershipEligible } from '../lifecycle/model'
-import { resolveFoodShares } from '../economy/model'
+import { createInitialMarkets, resolveFoodShares, resolveToolExchanges } from '../economy/model'
 import { createInitialSchools } from '../organizations/model'
 import { createCulturalState, transmitCulture } from '../culture/model'
 import { acquireLanguage, initialLanguage } from '../language/model'
@@ -208,6 +208,7 @@ export class SimulationEngine {
       world,
       people: generatedPopulation.people,
       households: generatedPopulation.households,
+      markets: createInitialMarkets(world.grid.cells, world.settlements),
       organizations,
       governance,
       disputes: [],
@@ -321,6 +322,7 @@ export class SimulationEngine {
       if (encounters.length > 0) {
         this.state.relationships = [...this.relationshipById.values()].sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
       }
+      this.resolveMarketExchanges(postActionActivityOccupancy, pushEvent)
       this.recordActivityPersonHours()
       this.recordEnvironmentalExposure()
       this.recordCommunityPersonHours()
@@ -850,6 +852,13 @@ export class SimulationEngine {
         recipientHouseholdId: share.recipientHouseholdId,
         foodAmount: share.amount,
       }))
+    }
+  }
+
+  private resolveMarketExchanges(occupantsByActivity: ReadonlyMap<string, readonly string[]>, pushEvent: (event: SimulationEvent) => void): void {
+    for (const exchange of resolveToolExchanges(this.state.households, this.state.markets, occupantsByActivity, this.personById)) {
+      this.economicCounters().exchangeCount += 1
+      pushEvent(this.event('HOUSEHOLDS_EXCHANGED_TOOLS', { marketId: exchange.marketId, donorHouseholdId: exchange.donorHouseholdId, recipientHouseholdId: exchange.recipientHouseholdId, toolAmount: exchange.amount }))
     }
   }
 

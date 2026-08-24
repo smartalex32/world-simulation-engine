@@ -27,6 +27,7 @@ async function controlledEngine(options: ControlledOptions = {}): Promise<Simula
   const homeCell = { ...firstSource, id: '0,0', q: 0, r: 0, resourceCapacity: 0, foodAmount: 0, foodRegenerationPerDay: 0 }
   const awayCell = { ...secondSource, id: '10,10', q: 10, r: 10, resourceCapacity: 0, foodAmount: 0, foodRegenerationPerDay: 0 }
   state.world.grid = { width: 2, height: 1, cells: [homeCell, awayCell] }
+  state.markets = []
   state.config.worldWidth = 2
   state.config.worldHeight = 1
   state.tick = 0

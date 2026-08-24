@@ -26,7 +26,7 @@ describe('household relocation', () => {
     source.resourceCapacity = 100
     destination.resourceCapacity = 100
     destination.foodAmount = 100
-    household.inventory = { food: 0 }
+    household.inventory = { food: 0, tools: 0 }
     for (const personId of household.memberIds) {
       const person = engine.state.people.find((candidate) => candidate.id === personId)
       if (!person) throw new Error(`Missing fixture member ${personId}`)
@@ -58,7 +58,7 @@ function relocationFixture() {
   source.resourceCapacity = 100
   destination.resourceCapacity = 100
   destination.foodAmount = 100
-  household.inventory = { food: 0 }
+  household.inventory = { food: 0, tools: 0 }
   for (const personId of household.memberIds) {
     const person = engine.state.people.find((candidate) => candidate.id === personId)
     if (!person) throw new Error(`Missing fixture member ${personId}`)

@@ -49,7 +49,7 @@ export function generateInitialHouseholds(people: readonly HouseholdPersonInput[
     const person = requiredPerson(peopleById, personId)
     const householdId = householdIdForOrdinal(householdOrdinal++)
     const homeCellId = legacyHome(person, zone, passableIds, placementRng, preserveLegacyHomePlacement)
-    households.push({ id: householdId, homeCellId, homeActivityLocationId: `activity.home.${householdId}`, memberIds: [personId], inventory: initialInventory(1) })
+    households.push({ id: householdId, homeCellId, homeActivityLocationId: `activity.home.${householdId}`, memberIds: [personId], inventory: initialInventory(1, householdOrdinal) })
     assignments.push({ personId, householdId, homeCellId, ageYears: Math.max(person.ageYears, 18) })
     zone.remaining -= 1
   }
@@ -98,7 +98,7 @@ function addFamily(input: { peopleById: ReadonlyMap<string, HouseholdPersonInput
   const parentA = requiredPerson(input.peopleById, input.parentAId)
   const parentB = requiredPerson(input.peopleById, input.parentBId)
   requiredPerson(input.peopleById, input.childId)
-  input.households.push({ id: householdId, homeCellId: input.homeCellId, homeActivityLocationId: `activity.home.${householdId}`, memberIds: [input.parentAId, input.parentBId, input.childId].sort(compareText), inventory: initialInventory(3) })
+  input.households.push({ id: householdId, homeCellId: input.homeCellId, homeActivityLocationId: `activity.home.${householdId}`, memberIds: [input.parentAId, input.parentBId, input.childId].sort(compareText), inventory: initialInventory(3, input.householdOrdinal) })
   input.assignments.push(
     { personId: input.parentAId, householdId, homeCellId: input.homeCellId, ageYears: Math.max(parentA.ageYears, input.childAgeYears + CHILD_AGE.minimumParentAgeGapYears) },
     { personId: input.parentBId, householdId, homeCellId: input.homeCellId, ageYears: Math.max(parentB.ageYears, input.childAgeYears + CHILD_AGE.minimumParentAgeGapYears) },

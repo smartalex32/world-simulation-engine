@@ -586,6 +586,11 @@ Activity determines physical exposure and therefore affects:
 
 Household membership alone does not imply social trust, affection, or exposure.
 
+The first local-exchange slice adds a single worker-owned market at an existing
+commons location. Co-present households may deterministically exchange one
+durable tool when one has surplus and another has need. No currency, price, or
+settlement membership is inferred.
+
 ---
 
 # Exposure and Development

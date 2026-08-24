@@ -1,4 +1,5 @@
-import type { GeographicCell, HouseholdInventory, HouseholdState, PersonOccupation, RelationshipState } from '../domain/types'
+import type { GeographicCell, HouseholdInventory, HouseholdState, MarketState, PersonOccupation, RelationshipState, SettlementState } from '../domain/types'
+import { commonsActivityId } from '../activities/model'
 import { hexDistance } from '../spatial/hex'
 
 /** Small, inspectable economy: food is harvested from a public cell into household ownership. */
@@ -9,6 +10,7 @@ export const ECONOMY = Object.freeze({
   targetFoodForRecipient: 12,
   maximumFoodPerExchange: 8,
   minimumFamiliarityToShare: 100,
+  initialToolsPerMember: 1,
 } as const)
 
 export function occupationFor(ageYears: number, ordinal: number): PersonOccupation {
@@ -16,8 +18,38 @@ export function occupationFor(ageYears: number, ordinal: number): PersonOccupati
   return ordinal % 3 === 0 ? 'household' : 'forager'
 }
 
-export function initialInventory(memberCount: number): HouseholdInventory {
-  return { food: memberCount * ECONOMY.initialFoodPerHouseholdMember }
+export function initialInventory(memberCount: number, ordinal = 1): HouseholdInventory {
+  return { food: memberCount * ECONOMY.initialFoodPerHouseholdMember, tools: ordinal % 2 === 0 ? memberCount * 2 : 0 }
+}
+
+export function createInitialMarkets(cells: readonly GeographicCell[], settlements: readonly SettlementState[]): MarketState[] {
+  const anchor = [...settlements].sort((a, b) => a.id.localeCompare(b.id)).map((settlement) => cells.find((cell) => cell.id === settlement.anchorCellId)).find((cell) => cell?.movementCost)
+    ?? [...cells].filter((cell) => cell.movementCost > 0).sort((a, b) => Math.abs(a.q - 16) + Math.abs(a.r - 12) - (Math.abs(b.q - 16) + Math.abs(b.r - 12)) || a.id.localeCompare(b.id))[0]
+  return anchor ? [{ id: 'market-0001', cellId: anchor.id, activityLocationId: commonsActivityId(anchor.id) }] : []
+}
+
+export interface ToolExchange { marketId: string; donorHouseholdId: string; recipientHouseholdId: string; amount: number }
+/** Exact shared market presence is the only access condition in this first exchange slice. */
+export function resolveToolExchanges(households: readonly HouseholdState[], markets: readonly MarketState[], occupantsByActivity: ReadonlyMap<string, readonly string[]>, peopleById: ReadonlyMap<string, { householdId: string }>): ToolExchange[] {
+  const byId = new Map(households.map((household) => [household.id, household]))
+  const exchanges: ToolExchange[] = []
+  for (const market of [...markets].sort((a, b) => a.id.localeCompare(b.id))) {
+    const present = [...new Set((occupantsByActivity.get(market.activityLocationId) ?? []).map((personId) => peopleById.get(personId)?.householdId).filter((id): id is string => id !== undefined))]
+      .map((id) => byId.get(id)).filter((household): household is HouseholdState => household !== undefined).sort((a, b) => a.id.localeCompare(b.id))
+    const committed = new Set<string>()
+    for (const recipient of present) {
+      const need = recipient.memberIds.length - (recipient.inventory?.tools ?? 0)
+      if (need <= 0 || committed.has(recipient.id) || !recipient.inventory) continue
+      const donor = present.filter((candidate) => candidate.id !== recipient.id && !committed.has(candidate.id) && (candidate.inventory?.tools ?? 0) > candidate.memberIds.length)
+        .sort((a, b) => ((b.inventory?.tools ?? 0) - b.memberIds.length) - ((a.inventory?.tools ?? 0) - a.memberIds.length) || a.id.localeCompare(b.id))[0]
+      if (!donor?.inventory) continue
+      const amount = Math.min(1, need, donor.inventory.tools - donor.memberIds.length)
+      if (amount <= 0) continue
+      donor.inventory.tools -= amount; recipient.inventory.tools += amount
+      committed.add(donor.id); committed.add(recipient.id); exchanges.push({ marketId: market.id, donorHouseholdId: donor.id, recipientHouseholdId: recipient.id, amount })
+    }
+  }
+  return exchanges
 }
 
 export function harvestFood(cell: GeographicCell, inventory: HouseholdInventory, efficiencyPermille = 1000): number {

@@ -628,6 +628,7 @@ async function controlledDevelopmentEngine(): Promise<SimulationEngine> {
   const homeCell = { ...first, id: '0,0', q: 0, r: 0, habitability: 700, resourceCapacity: 0, foodAmount: 0, foodRegenerationPerDay: 0 }
   const awayCell = { ...second, id: '1,0', q: 1, r: 0, resourceCapacity: 0, foodAmount: 0, foodRegenerationPerDay: 0 }
   state.world.grid = { width: 2, height: 1, cells: [homeCell, awayCell] }
+  state.markets = []
   state.config.worldWidth = 2
   state.config.worldHeight = 1
   const catchments = createTwoCatchmentGeography({ cells: state.world.grid.cells, width: state.world.grid.width, height: state.world.grid.height })
