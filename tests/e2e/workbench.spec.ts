@@ -251,6 +251,23 @@ test('settles an idle viewport request and supports keyboard map navigation', as
   await expect(canvas).toHaveAttribute('data-map-revision', /\d+/)
 })
 
+test('recenters the map from the world minimap without changing simulation state', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  const canvas = page.getByLabel('Hex world map')
+  await waitForMapSettled(canvas)
+  const before = await canvas.getAttribute('data-map-viewport')
+  const minimap = page.getByLabel('World minimap')
+  await expect(minimap).toBeVisible()
+  const bounds = await minimap.boundingBox()
+  expect(bounds).not.toBeNull()
+  if (!bounds) return
+  await minimap.click({ position: { x: bounds.width * 0.18, y: bounds.height * 0.82 } })
+  await expect.poll(async () => canvas.getAttribute('data-map-viewport')).not.toBe(before)
+  await waitForMapSettled(canvas)
+  await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
+})
+
 test('switches to bounded world overview rendering without distant hex outlines', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
