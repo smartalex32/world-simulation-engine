@@ -231,6 +231,8 @@ local foundation, comprehensive law, taxation systems, or political parties.
 
 ### Milestone 32 — Collective Conflict and Resolution
 
+**Status:** Implemented (bounded community-contention foundation)
+
 **Objective:** Build from interpersonal disputes toward bounded collective
 conflict only where a real shared context exists.
 
