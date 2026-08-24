@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.27.0'
-export const SNAPSHOT_SCHEMA_VERSION = 27
+export const ENGINE_VERSION = '0.28.0'
+export const SNAPSHOT_SCHEMA_VERSION = 28
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -25,7 +25,7 @@ export const ECONOMY_MODEL_VERSION = 2
 export const ORGANIZATION_MODEL_VERSION = 2
 export const CULTURE_MODEL_VERSION = 1
 export const LANGUAGE_MODEL_VERSION = 1
-export const GOVERNANCE_MODEL_VERSION = 1
+export const GOVERNANCE_MODEL_VERSION = 2
 export const CONFLICT_MODEL_VERSION = 1
 /** Versioned, person-owned knowledge acquisition and application rules. */
 export const KNOWLEDGE_MODEL_VERSION = 1
@@ -240,7 +240,7 @@ export type SchoolAttendanceReason = 'available' | 'no-route' | 'no-household-ca
 export interface SchoolAttendanceTrace { tick: number; schoolId: OrganizationId; schoolCellId: string; travelCost: number | null; householdCapacityPermille: number; curiosityPermille: number; persistencePermille: number; probabilityPermille: number; randomRollPermille: number; attended: boolean; reason: SchoolAttendanceReason }
 export interface SchoolAttendanceState { schoolId: OrganizationId; returnTick: number }
 /** Local authority is separate from settlement labels and exposure catchments. */
-export interface LocalGovernanceState { id: string; communityId: string; councilOrganizationId: string; representativeIds: string[]; legitimacy: number; lastUpdatedTick: number }
+export interface LocalGovernanceState { id: string; communityId: string; councilOrganizationId: string; representativeIds: string[]; legitimacy: number; publicGood: 'food-relief'; serviceAccessPermille: number; contributionFairnessPermille: number; lastUpdatedTick: number }
 /** Interpersonal grievance state; not combat, a military unit, or warfare. */
 export interface DisputeState { id: string; personAId: string; personBId: string; grievance: number; incidents: number; lastIncidentTick: number; communityId: string }
 /** Knowledge is learned and applied separately from dispositions, values, and skills. */
