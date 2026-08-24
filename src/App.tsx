@@ -45,7 +45,7 @@ export default function App() {
       { id: 'settlement-1', name: 'Westhaven', preset: 'west' },
       { id: 'settlement-2', name: 'Eastwatch', preset: 'east' },
     ],
-    terrainOverrides: [], elevationOverrides: [], resourceCapacityOverrides: [],
+    terrainBase: 'seeded-valley', terrainOverrides: [], elevationOverrides: [], resourceCapacityOverrides: [],
   })
   const worldSetupRef = useRef<WorldSetupValues>(worldSetup)
   const [worldDraft, setWorldDraft] = useState<WorldDraftRecord>()
@@ -647,6 +647,7 @@ function worldSetupFromCreation(creation: WorldCreationRequest): WorldSetupValue
     width: creation.width,
     height: creation.height,
     population: creation.initialPopulationCount,
+    terrainBase: creation.terrainBase ?? 'seeded-valley',
     // Resolved imports remain resolved. This editor intentionally does not
     // expose freehand cell editing or silently convert them to presets.
     placements: creation.populationZones.map((zone, index) => {
@@ -672,6 +673,7 @@ function creationDraftFromSetup(setup: WorldSetupValues): WorldCreationDraft {
     width: setup.width,
     height: setup.height,
     initialPopulationCount: setup.population,
+    ...(setup.terrainBase === 'seeded-valley' ? {} : { terrainBase: setup.terrainBase }),
     terrainOverrides: setup.terrainOverrides.map((override) => ({ ...override })),
     elevationOverrides: setup.elevationOverrides.map((override) => ({ ...override })),
     resourceCapacityOverrides: setup.resourceCapacityOverrides.map((override) => ({ ...override })),
@@ -705,6 +707,7 @@ function worldSetupFromDraft(draft: WorldCreationDraft): WorldSetupValues {
     width: draft.width,
     height: draft.height,
     population: draft.initialPopulationCount,
+    terrainBase: draft.terrainBase ?? 'seeded-valley',
     placements: draft.populationZones.map((zone, index) => {
       const settlement = draft.settlements.find((candidate) => candidate.id === zone.settlementId)
       const preset = zone.preset ?? (index === 0 ? 'west' : index === 1 ? 'east' : 'center')

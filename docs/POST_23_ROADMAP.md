@@ -390,6 +390,12 @@ simulation, or shared mutable drafts without a conflict model.
 
 ### Milestone 40 — Designed Landmass and Water Authoring
 
+**Status:** Implemented — authors can choose a deterministic blank-land canvas
+before draft creation, then use the existing worker-owned terrain editor to
+paint bounded water, land, elevation, and resource edits. The baseline and
+edits are retained through preview, persistence, commit, and fixed-seed
+creation.
+
 **Objective:** Let an author intentionally compose a world’s land/water shape
 and usable scale before placing settlements and people.
 
@@ -481,11 +487,10 @@ that mutates the active run.
 
 ## Recommended Next Slice
 
-Start with **Milestone 40 — Designed Landmass and Water Authoring**. The
-existing draft editor already proves sparse terrain, elevation, water, resource,
-settlement, and road mutation; the next product slice should make deliberate
-landmass composition and usable world scale the first-class authoring workflow
-before adding shared hosting.
+Start with **Milestone 41 — Settlement Seeds and Authoring Profiles**. It
+builds directly on authored landmass composition by making initial town,
+village, and dispersed-homestead choices explicit without inferring later
+social or political membership.
 
 Before beginning each future milestone, update `docs/ROADMAP.md` with its
 status, confirm the prerequisite evidence is present, and create a dedicated

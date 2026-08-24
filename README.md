@@ -791,6 +791,12 @@ Drawing:
 
 ## Terrain-Type Painting
 
+Terrain baseline selection supports the legacy seeded valley and a deterministic
+blank-land canvas. Blank land starts as passable plain terrain so authors can
+paint bounded water around an intended landmass before placement; changing the
+baseline clears prior sparse terrain, elevation, and resource edits rather than
+silently reinterpreting them.
+
 Terrain and elevation painting store sparse, canonically ordered cell overrides in the worker-owned draft. Bounded paint commands update terrain-derived passability and preview validation deterministically. Elevation uses the generator's explicit 0–1000 cell scale; an explicit terrain-type edit remains authoritative when both edit the same cell. The same overrides are applied by the authoritative creation path only when the draft is explicitly committed.
 
 Next:

@@ -35,6 +35,8 @@ export const INNOVATION_MODEL_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
+/** The deterministic terrain baseline used before sparse draft edits are applied. */
+export type WorldTerrainBase = 'seeded-valley' | 'blank-land'
 
 /** A deliberate terrain-type edit retained in a draft and creation request. */
 export interface TerrainTypeOverride {
@@ -139,6 +141,8 @@ export interface WorldCreationDraft {
   width: number
   height: number
   initialPopulationCount: number
+  /** Omitted for legacy seeded-valley worlds; blank-land is an explicit authored canvas. */
+  terrainBase?: WorldTerrainBase
   populationZones: PopulationPlacementZoneDraft[]
   settlements: SettlementDraft[]
   roads?: RoadDraft[]
@@ -154,6 +158,8 @@ export interface WorldCreationRequest {
   width: number
   height: number
   initialPopulationCount: number
+  /** Present only when the authored world does not use the legacy seeded valley baseline. */
+  terrainBase?: Exclude<WorldTerrainBase, 'seeded-valley'>
   populationZones: PopulationPlacementZone[]
   settlements: SettlementState[]
   /** Omitted when no authored roads exist, preserving legacy canonical worlds. */
