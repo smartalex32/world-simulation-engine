@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CommunityVariableDefinition, CommunityVariableId } from '../simulation/community/types'
 import type { GeographicCell } from '../simulation/domain/types'
-import type { MapProjection, ProjectedMapCell, ProjectedRoad, ProjectedSettlement, ProjectionOverlay, ProjectedCommunityState, WorldDescriptor } from '../projection'
+import type { MapProjection, ProjectedMapCell, ProjectedRoad, ProjectedSettlement, ProjectedSettlementLink, ProjectionOverlay, ProjectedCommunityState, WorldDescriptor } from '../projection'
 import { axialToPixel, pixelToAxial } from '../simulation/spatial/hex'
 import { aggregateRegionPolygon, fitWorld, mapProjectionRequest, type MapViewportState } from './mapViewport'
 
@@ -11,6 +11,7 @@ interface HexMapProps {
   world: WorldDescriptor
   settlements: readonly ProjectedSettlement[]
   roads: readonly ProjectedRoad[]
+  settlementLinks?: readonly ProjectedSettlementLink[]
   map: MapProjection
   overlay: MapOverlay
   communityMeasureId: CommunityVariableId
@@ -28,7 +29,7 @@ interface HexMapProps {
 
 const HEX_SIZE = 18
 
-export function HexMap({ world, settlements = [], roads = [], map, overlay, communityMeasureId, communities, communityVariableDefinitions, selectedCellId, selectedCommunityId, showActivityLocations, showHouseholds, selectedPersonId, onSelect, onFocusCell, onViewportRequest }: HexMapProps) {
+export function HexMap({ world, settlements = [], roads = [], settlementLinks = [], map, overlay, communityMeasureId, communities, communityVariableDefinitions, selectedCellId, selectedCommunityId, showActivityLocations, showHouseholds, selectedPersonId, onSelect, onFocusCell, onViewportRequest }: HexMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState<MapViewportState>({ width: 0, height: 0, scale: 0.86, x: 34, y: 42 })
@@ -99,13 +100,14 @@ export function HexMap({ world, settlements = [], roads = [], map, overlay, comm
     else for (const region of map.regions) drawRegion(context, region, map.overlay, appliedMeasureId)
     if (selectedCell && !map.exactCells.some((cell) => cell.id === selectedCell.id)) drawCell(context, selectedCell, map.overlay, true, HEX_SIZE, 1, appliedMeasureId)
     drawRoads(context, roads, map.exactCells, viewport.scale)
+    drawSettlementLinks(context, settlementLinks, viewport.scale)
     drawRelationships(context, map, viewport.scale)
     drawPopulation(context, map, viewport.scale)
     if (showActivityLocations) drawLocationMarkers(context, map.activityMarkers, viewport.scale, 'activity')
     if (showHouseholds) drawLocationMarkers(context, map.householdMarkers, viewport.scale, 'household')
     drawSettlementMarkers(context, settlements, viewport, HEX_SIZE)
     context.restore()
-  }, [communityMeasureId, map, overlay, roads, selectedCell, selectedCellId, settlements, showActivityLocations, showHouseholds, viewport])
+  }, [communityMeasureId, map, overlay, roads, selectedCell, selectedCellId, settlementLinks, settlements, showActivityLocations, showHouseholds, viewport])
 
   function focusAt(clientX: number, clientY: number): void {
     const bounds = canvasRef.current?.getBoundingClientRect()
@@ -278,6 +280,12 @@ function drawRoads(context: CanvasRenderingContext2D, roads: readonly ProjectedR
     const to = axialToPixel(second, HEX_SIZE)
     context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke()
   }
+  context.restore()
+}
+function drawSettlementLinks(context: CanvasRenderingContext2D, links: readonly ProjectedSettlementLink[], scale: number): void {
+  if (scale < .12) return
+  context.save(); context.setLineDash([4 / scale, 4 / scale]); context.strokeStyle = 'rgba(104, 194, 239, .5)'; context.lineWidth = 1 / scale
+  for (const link of links) { const [fq, fr] = link.fromCellId.split(',').map(Number); const [tq, tr] = link.toCellId.split(',').map(Number); if ([fq, fr, tq, tr].some((value) => !Number.isFinite(value))) continue; const from = axialToPixel({ q: fq!, r: fr! }, HEX_SIZE); const to = axialToPixel({ q: tq!, r: tr! }, HEX_SIZE); context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke() }
   context.restore()
 }
 

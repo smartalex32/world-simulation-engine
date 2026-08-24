@@ -167,6 +167,8 @@ nor a general education, budget, or institutional hierarchy model.
 
 ### Milestone 29 — Regional Routes and Inter-Settlement Networks
 
+**Status:** Implemented (bounded route-accessibility projection foundation)
+
 **Objective:** Make roads, movement, exchange, and institutions visible as a
 regional network rather than disconnected local features.
 
