@@ -429,6 +429,8 @@ community membership.
 
 ### Milestone 42 — Food Security, Settlement Growth, and Migration Signals
 
+**Status:** Implemented (household food-reserve migration pressure and settlement material evidence)
+
 **Objective:** Make population growth, decline, and relocation visibly respond
 to actual food access, household conditions, and reachable places.
 
@@ -438,6 +440,14 @@ pressure that feeds a bounded household migration decision.
 
 **Explicit non-goals:** Detailed markets, prices, national economics, or
 scripted city growth totals.
+
+**Implemented boundary:** Settlement projections now expose household count,
+current household food stores, and retained successful relocation arrivals for
+their geographic catchments. Household relocation retains its named RNG stream
+and now adds a bounded, continuous food-reserve shortfall pressure to existing
+hunger-based destination evaluation. The trace records that pressure; no
+settlement membership, scripted growth, market prices, or population-total rule
+has been added.
 
 ### Milestone 43 — Hosted Single-Node Simulation Boundary
 

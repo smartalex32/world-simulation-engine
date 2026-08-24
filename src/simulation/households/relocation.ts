@@ -13,6 +13,9 @@ export const HOUSEHOLD_RELOCATION = {
   maximumPathExpansions: 240,
   minimumUtility: 110,
   maximumProbabilityPermille: 700,
+  /** Food units per current household member before stores stop adding relocation pressure. */
+  foodReserveTargetUnitsPerMember: 4,
+  maximumFoodReservePressurePermille: 220,
 } as const
 
 /** A named stream isolates relocation outcomes from life-cycle and action draws. */
@@ -22,6 +25,7 @@ export interface HouseholdRelocationCandidate {
   readonly destinationCellId: string
   readonly foodAccessPermille: number
   readonly foodAccessDeltaPermille: number
+  readonly foodReservePressurePermille: number
   readonly travelCost: number
   readonly householdTiePermille: number
   readonly crowdingDelta: number
@@ -61,7 +65,8 @@ export function evaluateHouseholdRelocation(input: HouseholdRelocationInput): Ho
   const sourceCrowding = householdCrowding(source.id, input.household.id, input.households)
   const averageHunger = Math.floor(householdPeople.reduce((sum, person) => sum + getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger), 0) / householdPeople.length)
   const averageRiskTolerance = Math.floor(householdPeople.reduce((sum, person) => sum + getPersonVariable(person.variables, PERSON_VARIABLE_ID.riskTolerance), 0) / householdPeople.length)
-  const scarcityPressure = clamp(averageHunger + ((input.household.inventory?.food ?? 0) === 0 ? 220 : 0), 0, 1000)
+  const foodReservePressurePermille = foodReservePressure(input.household, householdPeople.length)
+  const scarcityPressure = clamp(averageHunger + foodReservePressurePermille, 0, 1000)
   const candidateHomes = input.cells
     .filter((cell) => cell.id !== source.id && cell.movementCost > 0 && hexDistance(source, cell) <= HOUSEHOLD_RELOCATION.maximumDistance)
     .sort((first, second) => hexDistance(source, first) - hexDistance(source, second) || first.id.localeCompare(second.id))
@@ -91,7 +96,7 @@ export function evaluateHouseholdRelocation(input: HouseholdRelocationInput): Ho
       + crowdingDelta * 75
       - travelCostPermille
       - riskCostPermille
-    candidates.push({ destinationCellId: destination.id, foodAccessPermille, foodAccessDeltaPermille, travelCost, householdTiePermille, crowdingDelta, riskCostPermille, utilityPermille })
+    candidates.push({ destinationCellId: destination.id, foodAccessPermille, foodAccessDeltaPermille, foodReservePressurePermille, travelCost, householdTiePermille, crowdingDelta, riskCostPermille, utilityPermille })
   }
   const candidate = candidates.sort((first, second) => second.utilityPermille - first.utilityPermille || first.destinationCellId.localeCompare(second.destinationCellId))[0]
   if (!candidate || candidate.utilityPermille < HOUSEHOLD_RELOCATION.minimumUtility) return { sourceCellId: source.id, probabilityPermille: 0 }
@@ -106,6 +111,7 @@ export function relocationTrace(evaluation: HouseholdRelocationEvaluation, tick:
     sourceCellId: evaluation.sourceCellId,
     destinationCellId: candidate.destinationCellId,
     foodAccessDeltaPermille: candidate.foodAccessDeltaPermille,
+    foodReservePressurePermille: candidate.foodReservePressurePermille,
     travelCost: candidate.travelCost,
     householdTiePermille: candidate.householdTiePermille,
     crowdingDelta: candidate.crowdingDelta,
@@ -114,6 +120,19 @@ export function relocationTrace(evaluation: HouseholdRelocationEvaluation, tick:
     probabilityPermille: evaluation.probabilityPermille,
     randomRollPermille,
   }
+}
+
+/**
+ * Material pressure is distinct from immediate hunger. Four units per member
+ * is the current bounded reserve target; an empty store retains the former
+ * +220 pressure while partial stores taper deterministically toward zero.
+ */
+function foodReservePressure(household: HouseholdState, memberCount: number): number {
+  const targetPerHousehold = HOUSEHOLD_RELOCATION.foodReserveTargetUnitsPerMember * memberCount
+  if (targetPerHousehold <= 0) return 0
+  const storedFood = Math.max(0, household.inventory?.food ?? 0)
+  const shortfall = Math.max(0, targetPerHousehold - storedFood)
+  return clamp(Math.ceil(shortfall * HOUSEHOLD_RELOCATION.maximumFoodReservePressurePermille / targetPerHousehold), 0, HOUSEHOLD_RELOCATION.maximumFoodReservePressurePermille)
 }
 
 function localFoodAccess(center: GeographicCell, cells: readonly GeographicCell[]): number {

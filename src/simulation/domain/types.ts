@@ -8,12 +8,12 @@ import type {
 } from '../community/types'
 import type { SettlementTemplateId } from '../spatial/settlementTemplates'
 
-export const ENGINE_VERSION = '0.32.0'
+export const ENGINE_VERSION = '0.33.0'
 export const SNAPSHOT_SCHEMA_VERSION = 32
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 2
 export const INFLUENCE_REGISTRY_VERSION = 1
-export const HOUSEHOLD_MODEL_VERSION = 3
+export const HOUSEHOLD_MODEL_VERSION = 4
 export const ACTIVITY_REGISTRY_VERSION = 1
 export const DEVELOPMENT_REGISTRY_VERSION = 2
 export const COMMUNITY_REGISTRY_VERSION = 1
@@ -284,6 +284,8 @@ export interface HouseholdRelocationTrace {
   sourceCellId: string
   destinationCellId: string
   foodAccessDeltaPermille: number
+  /** Bounded pressure caused by food stores below the household reserve target. */
+  foodReservePressurePermille: number
   travelCost: number
   householdTiePermille: number
   crowdingDelta: number

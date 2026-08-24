@@ -27,6 +27,7 @@ const SPEEDS = [
 ]
 
 const WORLD_SETUP_DRAFT_ID = 'workbench-world-setup'
+const PAUSED_AUTOSAVE_DELAY_MS = 300
 
 export default function App() {
   const client = useMemo(() => new SimulationWorkerClient(), [])
@@ -83,6 +84,12 @@ export default function App() {
   const [error, setError] = useState<string>()
   const [processingMs, setProcessingMs] = useState(0)
   const [saveName, setSaveName] = useState('')
+  const [namedSavePending, setNamedSavePending] = useState(false)
+  const [lastNamedSave, setLastNamedSave] = useState<string>()
+  const namedSavePendingRef = useRef(false)
+  /** Serializes observational snapshots so autosave cannot race a named save. */
+  const snapshotRequestChain = useRef<Promise<void>>(Promise.resolve())
+  const pausedAutosaveTimer = useRef<number | undefined>(undefined)
   const lastAutosavedTick = useRef(-1)
   const lastCheckpointTick = useRef(-1)
   const statusRef = useRef<typeof status>('starting')
@@ -92,6 +99,20 @@ export default function App() {
   function setDraftOperationBusy(value: boolean) {
     draftBusyRef.current = value
     setDraftBusy(value)
+  }
+
+  function requestSnapshot() {
+    const request = snapshotRequestChain.current.then(() => client.snapshot())
+    snapshotRequestChain.current = request.then(() => undefined, () => undefined)
+    return request
+  }
+
+  function schedulePausedAutosave() {
+    if (pausedAutosaveTimer.current !== undefined) window.clearTimeout(pausedAutosaveTimer.current)
+    pausedAutosaveTimer.current = window.setTimeout(() => {
+      pausedAutosaveTimer.current = undefined
+      void autosave()
+    }, PAUSED_AUTOSAVE_DELAY_MS)
   }
 
   useEffect(() => {
@@ -127,7 +148,7 @@ export default function App() {
       } else if (response.type === 'STATUS') {
         setStatus(response.status)
         setSpeed(response.ticksPerBatch)
-        if (response.status === 'paused') void autosave()
+        if (response.status === 'paused') schedulePausedAutosave()
       } else if (response.type === 'ERROR') {
         setError(response.message)
         setStatus('paused')
@@ -257,6 +278,7 @@ export default function App() {
     const interval = window.setInterval(() => { if (statusRef.current === 'playing') void autosave() }, 5000)
     return () => {
       window.clearInterval(interval)
+      if (pausedAutosaveTimer.current !== undefined) window.clearTimeout(pausedAutosaveTimer.current)
       unsubscribe()
       client.dispose()
     }
@@ -264,9 +286,9 @@ export default function App() {
 
   async function autosave() {
     const current = projectionRef.current
-    if (!current || current.tick === lastAutosavedTick.current) return
+    if (!current || namedSavePendingRef.current || current.tick === lastAutosavedTick.current) return
     try {
-      const snapshot = await client.snapshot()
+      const snapshot = await requestSnapshot()
       await database.saveSnapshot(snapshot, 'autosave')
       if (snapshot.state.tick > 0 && snapshot.state.tick % 168 === 0 && snapshot.state.tick !== lastCheckpointTick.current) {
         await database.saveSnapshot(snapshot, 'checkpoint')
@@ -296,17 +318,29 @@ export default function App() {
   }
 
   async function saveNamed() {
+    if (pausedAutosaveTimer.current !== undefined) {
+      window.clearTimeout(pausedAutosaveTimer.current)
+      pausedAutosaveTimer.current = undefined
+    }
+    namedSavePendingRef.current = true
+    setNamedSavePending(true)
+    setLastNamedSave(undefined)
     try {
-      const snapshot = await client.snapshot()
-      await database.saveSnapshot(snapshot, 'named', saveName)
+      const snapshot = await requestSnapshot()
+      const saved = await database.saveSnapshot(snapshot, 'named', saveName)
       setSaveName('')
       await refreshSnapshots(snapshot.state.runId)
+      setLastNamedSave(saved.name)
     } catch (reason) { setError(messageOf(reason)) }
+    finally {
+      namedSavePendingRef.current = false
+      setNamedSavePending(false)
+    }
   }
 
   async function exportRun() {
     try {
-      const snapshot = await client.snapshot()
+      const snapshot = await requestSnapshot()
       const bundle = await database.exportBundle(snapshot)
       const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
@@ -544,7 +578,7 @@ export default function App() {
           {(activeMode === 'history') && <section className="world-overview"><span className="eyebrow">RUN HISTORY</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{history ? `${history.events.length} bounded events · ${history.statistics.length} sampled metrics` : 'Load persisted local run evidence'}</small><div><span>Selected person</span><b>{selectedPersonId ?? 'None'}</b><span>Current tick</span><b>{projection?.tick ?? 0}</b></div></section>}
           {(activeMode === 'tools') && <section className="workbench-tool-panel" aria-label="World tools"><span className="eyebrow">WORLD TOOLS</span><strong>Author and inspect</strong><p>Creation remains worker-owned. Map controls change only the presentation projection.</p><button className="primary" onClick={() => void openWorldSetup()}>Create or edit world</button><button onClick={() => setActiveMode('world')}>Return to world overview</button></section>}
           {(activeMode === 'settings') && <section className="workbench-tool-panel" aria-label="Workbench settings"><span className="eyebrow">WORKBENCH SETTINGS</span><strong>Presentation diagnostics</strong><p>These controls do not affect simulation state, seeded outcomes, or canonical digests.</p><div className="setting-facts"><Metric label="Engine" value={`v${projection?.engineVersion ?? '—'}`} /><Metric label="Seed" value={projection?.seed ?? '—'} /><Metric label="Map detail" value={projection?.map.lod ?? '—'} /></div></section>}
-          {(activeMode === 'world' || activeMode === 'entities') && <section className="entity-catalog" aria-label="Entity categories"><span className="eyebrow">ENTITIES</span><button onClick={() => setActiveMode('entities')}>People <b>{projection?.summary.populationCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Households <b>{projection?.summary.householdCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Organizations <b>{projection?.organizations.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Communities <b>{projection?.communities.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Settlements <b>{projection?.settlements.length ?? 0}</b></button>{projection && <><div className="settlement-list">{projection.settlements.map((settlement) => <span key={settlement.id}>{settlement.name}<small>{settlement.scale} · {settlement.nearbyResidentCount} residents · {settlement.catchmentCellCount} {settlement.catchmentSource} catchment cells · {settlement.currentVisitorCount} visitors</small></span>)}</div><div className="organization-list">{projection.organizations.slice(0, 6).map((organization) => <span key={organization.id}>{organization.name}<small>{organization.members.length} learners · {organization.locationCellId}</small></span>)}</div></>}<small>Settlement scale and catchments are geographic home/location profiles, not membership. Communities are geographic exposure measures, not memberships.</small></section>}
+          {(activeMode === 'world' || activeMode === 'entities') && <section className="entity-catalog" aria-label="Entity categories"><span className="eyebrow">ENTITIES</span><button onClick={() => setActiveMode('entities')}>People <b>{projection?.summary.populationCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Households <b>{projection?.summary.householdCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Organizations <b>{projection?.organizations.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Communities <b>{projection?.communities.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Settlements <b>{projection?.settlements.length ?? 0}</b></button>{projection && <><div className="settlement-list">{projection.settlements.map((settlement) => <span key={settlement.id}>{settlement.name}<small>{settlement.scale} · {settlement.nearbyResidentCount} residents · {settlement.nearbyHouseholdCount} households · {settlement.householdFoodStoreUnits} food stores · {settlement.recordedRelocationArrivalCount} recorded moves</small><small>{settlement.catchmentCellCount} {settlement.catchmentSource} catchment cells · {settlement.currentVisitorCount} visitors</small></span>)}</div><div className="organization-list">{projection.organizations.slice(0, 6).map((organization) => <span key={organization.id}>{organization.name}<small>{organization.members.length} learners · {organization.locationCellId}</small></span>)}</div></>}<small>Settlement scale and catchments are geographic home/location profiles, not membership. Communities are geographic exposure measures, not memberships.</small></section>}
           {(activeMode === 'world' || activeMode === 'simulation' || activeMode === 'tools' || activeMode === 'settings') && <><PanelTitle title="Map layers" subtitle={`${projection?.world.cellCount ?? 0} hex cells`} />
           <div className="overlay-list">
             {(['terrain', 'elevation', 'habitability', 'movement', 'food', 'population', 'community'] as MapOverlay[]).map((entry) => (
@@ -609,7 +643,7 @@ export default function App() {
               ? <CellInspector cell={selected} people={projection?.people.filter((person) => person.locationCellId === selected.id) ?? []} onSelectPerson={setSelectedPersonId} detailsTruncated={projection?.detailBudget.peopleTruncated ?? false} />
               : <div className="empty-state"><span>⌖</span><p>Choose a hex to inspect its authoritative spatial state.</p></div>}
           <PanelTitle title="Snapshots" subtitle={`${snapshots.length} local saves`} />
-          <div className="save-form"><input placeholder="Snapshot name" value={saveName} onChange={(event) => setSaveName(event.target.value)} /><button onClick={() => void saveNamed()}>Save</button></div>
+          <div className="save-form"><input placeholder="Snapshot name" value={saveName} onChange={(event) => setSaveName(event.target.value)} /><button onClick={() => void saveNamed()} disabled={namedSavePending} aria-busy={namedSavePending}>Save</button>{lastNamedSave && <small role="status">Saved snapshot: {lastNamedSave}</small>}</div>
           <div className="snapshot-list">
             {snapshots.slice(0, 5).map((saved) => (
               <div key={saved.key} className="snapshot-row">
@@ -822,7 +856,7 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
       <div className="section-heading"><h3 id="household-heading">Household</h3><span>{household ? household.memberIds.length : 0} members</span></div>
       {household ? <>
         <div className="activity-details"><Metric label="Household ID" value={household.id} /><Metric label="Home" value={household.homeCellId} /><Metric label="Food store" value={`${household.inventory?.food ?? 0} units`} /><Metric label="Tools" value={`${household.inventory?.tools ?? 0} durable goods`} /></div>
-        {household.lastRelocation && <div className="inheritance-trace"><strong>Latest relocation · tick {household.lastRelocation.tick}</strong><span>{household.lastRelocation.sourceCellId} → {household.lastRelocation.destinationCellId}</span><small>Food access {formatSignedPermille(household.lastRelocation.foodAccessDeltaPermille)} · travel {household.lastRelocation.travelCost} · ties +{(household.lastRelocation.householdTiePermille / 10).toFixed(1)}% · crowding {household.lastRelocation.crowdingDelta >= 0 ? '+' : ''}{household.lastRelocation.crowdingDelta} · utility {household.lastRelocation.utilityPermille} · accepted at {household.lastRelocation.randomRollPermille / 10}% of {(household.lastRelocation.probabilityPermille / 10).toFixed(1)}%</small></div>}
+        {household.lastRelocation && <div className="inheritance-trace"><strong>Latest relocation · tick {household.lastRelocation.tick}</strong><span>{household.lastRelocation.sourceCellId} → {household.lastRelocation.destinationCellId}</span><small>Food access {formatSignedPermille(household.lastRelocation.foodAccessDeltaPermille)} · reserve pressure +{(household.lastRelocation.foodReservePressurePermille / 10).toFixed(1)}% · travel {household.lastRelocation.travelCost} · ties +{(household.lastRelocation.householdTiePermille / 10).toFixed(1)}% · crowding {household.lastRelocation.crowdingDelta >= 0 ? '+' : ''}{household.lastRelocation.crowdingDelta} · utility {household.lastRelocation.utilityPermille} · accepted at {household.lastRelocation.randomRollPermille / 10}% of {(household.lastRelocation.probabilityPermille / 10).toFixed(1)}%</small></div>}
         <div className="household-members">
           {householdMembers.map((member) => <button key={member.id} onClick={() => onHookPerson(member.id)} aria-label={`Hook ${member.id}`}><span><strong>{member.id}</strong><small>{member.role}</small></span><span>{member.ageYears} years</span></button>)}
         </div>

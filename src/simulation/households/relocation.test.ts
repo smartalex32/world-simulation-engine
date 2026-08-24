@@ -4,7 +4,7 @@ import type { RandomStreamSnapshot, SimulationState } from '../domain/types'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { setPersonVariable } from '../variables/storage'
 import { findPath } from '../spatial/pathfinding'
-import { evaluateHouseholdRelocation, relocationTrace } from './relocation'
+import { HOUSEHOLD_RELOCATION, evaluateHouseholdRelocation, relocationTrace } from './relocation'
 
 describe('household relocation', () => {
   it('prefers a reachable food-rich home under household scarcity and records the complete trace', () => {
@@ -12,8 +12,27 @@ describe('household relocation', () => {
     const evaluation = evaluateHouseholdRelocation(fixture)
     expect(evaluation.candidate).toMatchObject({ foodAccessDeltaPermille: 1000 })
     expect(evaluation.probabilityPermille).toBeGreaterThan(0)
-    expect(relocationTrace(evaluation, 720, 0)).toMatchObject({ sourceCellId: fixture.source.id, destinationCellId: evaluation.candidate?.destinationCellId, tick: 720 })
+    expect(relocationTrace(evaluation, 720, 0)).toMatchObject({ sourceCellId: fixture.source.id, destinationCellId: evaluation.candidate?.destinationCellId, foodReservePressurePermille: HOUSEHOLD_RELOCATION.maximumFoodReservePressurePermille, tick: 720 })
     expect(relocationTrace(evaluation, 720, 999)).toBeUndefined()
+  })
+
+  it('raises bounded migration pressure continuously as household food reserves fall', () => {
+    const scarce = relocationFixture()
+    const secure = relocationFixture()
+    secure.household.inventory = { food: secure.household.memberIds.length * HOUSEHOLD_RELOCATION.foodReserveTargetUnitsPerMember, tools: 0 }
+    for (const fixture of [scarce, secure]) {
+      for (const personId of fixture.household.memberIds) {
+        const person = fixture.peopleById.get(personId)
+        if (person) setPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, 400)
+      }
+    }
+
+    const scarceEvaluation = evaluateHouseholdRelocation(scarce)
+    const secureEvaluation = evaluateHouseholdRelocation(secure)
+
+    expect(scarceEvaluation.candidate?.foodReservePressurePermille).toBe(HOUSEHOLD_RELOCATION.maximumFoodReservePressurePermille)
+    expect(secureEvaluation.candidate?.foodReservePressurePermille).toBe(0)
+    expect(scarceEvaluation.candidate?.utilityPermille).toBeGreaterThan(secureEvaluation.candidate?.utilityPermille ?? Number.POSITIVE_INFINITY)
   })
 
   it('changes household home, home activity, and member exposure locations only after a successful seeded resolution', () => {

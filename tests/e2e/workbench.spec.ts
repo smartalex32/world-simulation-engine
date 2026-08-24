@@ -352,8 +352,14 @@ test('creates, steps, inspects, and saves a deterministic world', async ({ page 
   await page.getByTitle('Advance one hour').click()
   await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
   await page.getByPlaceholder('Snapshot name').fill('First hour')
-  await page.getByRole('button', { name: 'Save', exact: true }).click()
-  await expect(page.getByText('First hour')).toBeVisible()
+  const save = page.getByRole('button', { name: 'Save', exact: true })
+  await save.click()
+  await expect(save).toHaveAttribute('aria-busy', 'true')
+  // A named save is a full worker snapshot plus an IndexedDB transaction.
+  // Wait for the application-level completion signal rather than assuming a
+  // browser-specific storage/structured-clone duration.
+  await expect(page.getByRole('status')).toHaveText('Saved snapshot: First hour', { timeout: 10_000 })
+  await expect(page.locator('.snapshot-list')).toContainText('First hour')
   await expect(page.getByText('CLOCK ADVANCED')).toBeVisible()
   await page.getByRole('button', { name: /Inspect person-/ }).first().click()
   await expect(page.getByText('Person inspector')).toBeVisible()
