@@ -138,6 +138,12 @@ export interface ProjectedSettlement {
   /** Living people with homes within the profile radius of this marker. */
   nearbyResidentCount: number
   nearbyHomeCellCount: number
+  /** Current households with homes in this geographic catchment. */
+  nearbyHouseholdCount: number
+  /** Household-owned food currently stored in this geographic catchment. */
+  householdFoodStoreUnits: number
+  /** Successful home changes whose retained destination is in this catchment. */
+  recordedRelocationArrivalCount: number
   /** Bounded authored cells when present, otherwise the anchor-radius profile. */
   catchmentCellCount: number
   catchmentSource: 'authored' | 'anchor-radius'

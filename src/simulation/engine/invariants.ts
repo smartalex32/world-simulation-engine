@@ -138,7 +138,7 @@ function validateHouseholdRelocation(household: SimulationState['households'][nu
   if (!trace) return
   if (trace.destinationCellId !== household.homeCellId || trace.sourceCellId === trace.destinationCellId) throw new Error(`Household ${household.id} has an invalid relocation home trace`)
   if (!Number.isSafeInteger(trace.tick) || trace.tick < 1 || trace.tick > state.tick || trace.tick % 720 !== 0) throw new Error(`Household ${household.id} has an invalid relocation tick`)
-  const nonNegative = [trace.travelCost, trace.householdTiePermille, trace.riskCostPermille, trace.probabilityPermille, trace.randomRollPermille]
+  const nonNegative = [trace.travelCost, trace.householdTiePermille, trace.foodReservePressurePermille, trace.riskCostPermille, trace.probabilityPermille, trace.randomRollPermille]
   if (nonNegative.some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error(`Household ${household.id} has invalid relocation values`)
   if (!Number.isSafeInteger(trace.foodAccessDeltaPermille) || !Number.isSafeInteger(trace.crowdingDelta) || !Number.isSafeInteger(trace.utilityPermille)) throw new Error(`Household ${household.id} has invalid relocation modifiers`)
   if (trace.probabilityPermille > 1000 || trace.randomRollPermille >= 1000 || trace.randomRollPermille >= trace.probabilityPermille) throw new Error(`Household ${household.id} has an invalid relocation resolution`)

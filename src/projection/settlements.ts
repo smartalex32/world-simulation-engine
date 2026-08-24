@@ -1,4 +1,4 @@
-import type { GeographicCell, PersonState, SettlementState } from '../simulation/domain/types'
+import type { GeographicCell, HouseholdState, PersonState, SettlementState } from '../simulation/domain/types'
 import { hexDistance } from '../simulation/spatial/hex'
 import type { ProjectedSettlement, SettlementScale } from './types'
 
@@ -21,6 +21,7 @@ export function buildProjectedSettlements(
   settlements: readonly SettlementState[],
   cells: readonly GeographicCell[],
   people: readonly PersonState[],
+  households: readonly HouseholdState[] = [],
 ): ProjectedSettlement[] {
   const cellsById = new Map(cells.map((cell) => [cell.id, cell]))
   return [...settlements]
@@ -32,6 +33,9 @@ export function buildProjectedSettlements(
       const nearbyHomeCellIds = new Set<string>()
       let nearbyResidentCount = 0
       let currentVisitorCount = 0
+      let nearbyHouseholdCount = 0
+      let householdFoodStoreUnits = 0
+      let recordedRelocationArrivalCount = 0
       let catchmentResourceCapacity = 0
       let waterAccessCellCount = 0
       for (const cellId of catchment) catchmentResourceCapacity += cellsById.get(cellId)?.resourceCapacity ?? 0
@@ -46,6 +50,12 @@ export function buildProjectedSettlements(
           if (home && catchment.has(home.id)) { nearbyResidentCount += 1; nearbyHomeCellIds.add(home.id) }
           if (catchment.has(person.locationCellId) && !catchment.has(person.homeCellId)) currentVisitorCount += 1
         }
+        for (const household of households) {
+          if (!catchment.has(household.homeCellId)) continue
+          nearbyHouseholdCount += 1
+          householdFoodStoreUnits += household.inventory?.food ?? 0
+          if (household.lastRelocation?.destinationCellId === household.homeCellId) recordedRelocationArrivalCount += 1
+        }
       }
       return {
         id: settlement.id,
@@ -54,6 +64,9 @@ export function buildProjectedSettlements(
         scale: settlementScaleForResidents(nearbyResidentCount),
         nearbyResidentCount,
         nearbyHomeCellCount: nearbyHomeCellIds.size,
+        nearbyHouseholdCount,
+        householdFoodStoreUnits,
+        recordedRelocationArrivalCount,
         catchmentCellCount: catchment.size,
         catchmentSource: settlement.catchmentCellIds === undefined ? 'anchor-radius' : 'authored',
         currentVisitorCount,

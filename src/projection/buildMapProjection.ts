@@ -114,7 +114,7 @@ export class WorkbenchProjectionBuilder {
       seed: source.seed,
       engineVersion: source.engineVersion,
       world: { id: source.world.id, name: source.world.name, width: this.grid.width, height: this.grid.height, cellCount: this.grid.cells.length, scale: source.world.scale },
-      settlements: buildProjectedSettlements(source.world.settlements, source.world.grid.cells, source.people),
+      settlements: buildProjectedSettlements(source.world.settlements, source.world.grid.cells, source.people, source.households),
       settlementLinks: buildProjectedSettlementLinks(source.world.settlements, source.world.grid.cells, source.world.roads),
       settlementDiffusion: buildProjectedSettlementDiffusion(source.world.settlements, source.people),
       roads: (source.world.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })).sort((a, b) => a.id.localeCompare(b.id)),
