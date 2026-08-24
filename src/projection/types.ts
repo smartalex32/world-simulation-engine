@@ -146,6 +146,7 @@ export interface ProjectedSettlement {
   waterAccessCellCount: number
 }
 export interface ProjectedSettlementLink { id: string; fromSettlementId: string; toSettlementId: string; fromCellId: string; toCellId: string; steps: number; travelCost: number; roadCellCount: number }
+export interface ProjectedSettlementDiffusion { settlementId: string; observedResidentCount: number; averageValleyFluency: number; averageExplorationBelief: number }
 /** Bounded metadata; geometry is drawn only where the active cell projection is exact. */
 export interface ProjectedRoad { id: string; cellIds: string[] }
 export interface ProjectedPopulationZone { id: string; name: string; populationCount: number; cellCount: number; settlementId?: string }
@@ -201,6 +202,7 @@ export interface WorkbenchProjection {
   world: WorldDescriptor
   settlements: ProjectedSettlement[]
   settlementLinks: ProjectedSettlementLink[]
+  settlementDiffusion: ProjectedSettlementDiffusion[]
   roads: ProjectedRoad[]
   populationZones: ProjectedPopulationZone[]
   map: MapProjection
