@@ -23,6 +23,14 @@ export function initialInventory(memberCount: number, ordinal = 1): HouseholdInv
 }
 
 export function createInitialMarkets(cells: readonly GeographicCell[], settlements: readonly SettlementState[]): MarketState[] {
+  const authoredTemplateSettlements = [...settlements].filter((settlement) => settlement.template !== undefined).sort((a, b) => a.id.localeCompare(b.id))
+  if (authoredTemplateSettlements.length > 0) {
+    return authoredTemplateSettlements.map((settlement, index) => {
+      const cell = cells.find((candidate) => candidate.id === settlement.anchorCellId)
+      if (!cell?.movementCost) throw new Error(`Settlement ${settlement.id} has no passable market anchor`)
+      return { id: `market-${(index + 1).toString().padStart(4, '0')}`, cellId: cell.id, activityLocationId: commonsActivityId(cell.id) }
+    })
+  }
   const anchor = [...settlements].sort((a, b) => a.id.localeCompare(b.id)).map((settlement) => cells.find((cell) => cell.id === settlement.anchorCellId)).find((cell) => cell?.movementCost)
     ?? [...cells].filter((cell) => cell.movementCost > 0).sort((a, b) => Math.abs(a.q - 16) + Math.abs(a.r - 12) - (Math.abs(b.q - 16) + Math.abs(b.r - 12)) || a.id.localeCompare(b.id))[0]
   return anchor ? [{ id: 'market-0001', cellId: anchor.id, activityLocationId: commonsActivityId(anchor.id) }] : []

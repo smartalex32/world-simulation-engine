@@ -62,6 +62,8 @@ Implemented:
 
 Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. The workbench derives a read-only landmark/hamlet/village/town/city profile from living homes near an anchor, making its geographic basis explicit rather than assigning residents a settlement field. Linked population zones retain their existing anchor-containment validation.
 
+Initial placement also supports explicit `town`, `village`, and `dispersed-homesteads` templates. Town homes begin at the settlement anchor, village homes use nearby zone cells, and dispersed homesteads use the authored placement zone. Town and village templates add one worker-owned market at their real anchor location; dispersed homesteads deliberately create neither a settlement marker nor a market. These are bounded starting-geography and resource-access choices, not social memberships or claims about later institutions.
+
 Draft roads are ordered, contiguous passable-cell segments. They are validated by the worker, serialize with authored worlds, and render on exact-cell map projections. Current agent movement is intentionally unchanged: route-aware road travel is deferred until a route-planned movement system exists.
 
 Drafts can also be imported and exported as a versioned JSON bundle. Bundles include the draft record, generator version, dimensions, scale, seed, terrain/resource edits, population zones, settlements, and roads; incompatible versions are rejected rather than silently reinterpreted.

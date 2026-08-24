@@ -108,7 +108,7 @@ function addFamily(input: { peopleById: ReadonlyMap<string, HouseholdPersonInput
 }
 
 function selectHome(zone: PopulationPlacementZone, passableIds: ReadonlySet<string>, random: ReturnType<RandomProvider['stream']>): string {
-  const candidates = zone.cellIds.filter((id) => passableIds.has(id))
+  const candidates = (zone.homeCellIds ?? zone.cellIds).filter((id) => passableIds.has(id))
   if (candidates.length === 0) throw new Error(`Population zone ${zone.id} has no passable home cells`)
   return candidates[random.nextInt(candidates.length)] as string
 }

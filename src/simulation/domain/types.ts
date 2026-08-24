@@ -6,6 +6,7 @@ import type {
   CommunitySimulationState,
   CommunityVariableDefinition,
 } from '../community/types'
+import type { SettlementTemplateId } from '../spatial/settlementTemplates'
 
 export const ENGINE_VERSION = '0.32.0'
 export const SNAPSHOT_SCHEMA_VERSION = 32
@@ -89,6 +90,8 @@ export interface SettlementState {
   id: string
   name: string
   anchorCellId: string
+  /** Optional starting geography profile; never person membership. */
+  template?: Exclude<SettlementTemplateId, 'dispersed-homesteads'>
   /** Optional authored geographic area; never a person membership list. */
   catchmentCellIds?: string[]
 }
@@ -100,6 +103,10 @@ export interface PopulationPlacementZone {
   cellIds: string[]
   populationCount: number
   settlementId?: string
+  /** Explicit authoring profile controlling initial home dispersion only. */
+  template?: SettlementTemplateId
+  /** Canonical eligible initial-home cells derived from the selected template. */
+  homeCellIds?: string[]
 }
 
 export type WorldPlacementPreset = 'west' | 'center' | 'central' | 'east'
@@ -113,6 +120,7 @@ export interface PopulationPlacementZoneDraft {
   cellIds?: string[]
   preset?: WorldPlacementPreset
   radiusCells?: number
+  template?: SettlementTemplateId
 }
 
 export interface SettlementDraft {
@@ -121,6 +129,7 @@ export interface SettlementDraft {
   anchorCellId?: string
   preset?: WorldPlacementPreset
   catchmentCellIds?: string[]
+  template?: Exclude<SettlementTemplateId, 'dispersed-homesteads'>
 }
 
 /** Ordered, contiguous passable cell geometry for a draft-only road segment. */
