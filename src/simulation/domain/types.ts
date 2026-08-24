@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.31.0'
-export const SNAPSHOT_SCHEMA_VERSION = 31
+export const ENGINE_VERSION = '0.32.0'
+export const SNAPSHOT_SCHEMA_VERSION = 32
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 2
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -31,6 +31,7 @@ export const CONFLICT_MODEL_VERSION = 2
 export const HEALTH_MODEL_VERSION = 1
 /** Versioned, person-owned knowledge acquisition and application rules. */
 export const KNOWLEDGE_MODEL_VERSION = 1
+export const INNOVATION_MODEL_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
@@ -551,6 +552,7 @@ export interface EnvironmentalExposureState {
   thermalLoadPermilleHours: number
   waterAvailabilityPermilleHours: number
 }
+export interface PracticalTechnique { id: 'technique.foraging.efficient-harvest'; personId: string; createdTick: number; knowledgePermille: number; toolCost: number; successRollPermille: number }
 
 /** Daily, location-derived evidence used only by the health-stress system. */
 export interface HealthExposureState {
@@ -597,6 +599,7 @@ export interface PersonState {
   language?: LanguageState
   /** Required in authoritative schema-22 snapshots; optional only for narrow legacy/unit fixtures. */
   knowledge?: PersonKnowledge
+  techniques?: PracticalTechnique[]
   lastKnowledgeTrace?: KnowledgeTrace
   schoolLearningHours?: number
   schoolAttendance?: SchoolAttendanceState
@@ -691,6 +694,7 @@ export interface RunConfiguration {
   conflictModelVersion?: number
   knowledgeModelVersion?: number
   healthModelVersion?: number
+  innovationModelVersion?: number
 }
 
 export interface RandomStreamSnapshot {

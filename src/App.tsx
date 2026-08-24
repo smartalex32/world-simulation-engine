@@ -797,6 +797,7 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
       <div className="section-heading"><h3 id="knowledge-heading">Knowledge</h3><span>Learned, transferable</span></div>
       <div className="activity-details"><Metric label="Foraging" value={formatPermille(person.knowledge?.['knowledge.foraging'] ?? 0)} /><Metric label="Local terrain" value={formatPermille(person.knowledge?.['knowledge.localTerrain'] ?? 0)} /></div>
       {person.lastKnowledgeTrace && <small>Latest: {person.lastKnowledgeTrace.source === 'exploration' ? 'discovered through exploration' : 'learned through a positive encounter'} · {person.lastKnowledgeTrace.knowledgeId.replace('knowledge.', '')} +{person.lastKnowledgeTrace.gain / 10}% at tick {person.lastKnowledgeTrace.tick}</small>}
+      {person.techniques?.length ? <small>Practical techniques: {person.techniques.map((technique) => `${technique.id.replace('technique.foraging.', '')} (tick ${technique.createdTick})`).join(', ')}</small> : <small>No practical techniques yet.</small>}
     </section>
     <section className="community-exposure-panel" aria-labelledby="school-access-heading">
       <div className="section-heading"><h3 id="school-access-heading">School access</h3><span>{person.schoolLearningHours ?? 0} learning hours</span></div>

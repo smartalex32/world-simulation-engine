@@ -12,6 +12,7 @@ import {
   CONFLICT_MODEL_VERSION,
   KNOWLEDGE_MODEL_VERSION,
   HEALTH_MODEL_VERSION,
+  INNOVATION_MODEL_VERSION,
   ENGINE_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
@@ -103,6 +104,7 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   if (snapshot.state.config.conflictModelVersion !== CONFLICT_MODEL_VERSION) throw new Error(`Unsupported conflict model version: ${String(snapshot.state.config.conflictModelVersion)}`)
   if (snapshot.state.config.knowledgeModelVersion !== KNOWLEDGE_MODEL_VERSION) throw new Error(`Unsupported knowledge model version: ${String(snapshot.state.config.knowledgeModelVersion)}`)
   if (snapshot.state.config.healthModelVersion !== HEALTH_MODEL_VERSION) throw new Error(`Unsupported health model version: ${String(snapshot.state.config.healthModelVersion)}`)
+  if (snapshot.state.config.innovationModelVersion !== INNOVATION_MODEL_VERSION) throw new Error(`Unsupported innovation model version: ${String(snapshot.state.config.innovationModelVersion)}`)
   if (snapshot.state.config.worldGeneratorVersion !== WORLD_GENERATOR_VERSION) {
     throw new Error(`Unsupported world generator version: ${String(snapshot.state.config.worldGeneratorVersion)}`)
   }
