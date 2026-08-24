@@ -726,6 +726,12 @@ Exact generator limits should be read from implementation rather than duplicated
 
 Draft authoring is worker-owned and remains separate from authoritative simulation state.
 
+Future shared-world work is governed by the
+[`Collaboration and Shared Worlds Authority Model`](./docs/COLLABORATION_AND_SHARED_WORLDS.md).
+It deliberately retains one editing lease per draft and one authoritative
+executor per simulation run; collaboration is not yet implemented in the local
+application.
+
 The ownership model is:
 
 ```text
