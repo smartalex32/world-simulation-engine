@@ -14,12 +14,13 @@ export const CHILD_AGE = {
   minimumParentAgeGapYears: 18,
 } as const
 
+/** Four-digit IDs remain stable through 9,999; the hosted 10k benchmark adds `person-10000`. */
 export function personIdForOrdinal(ordinal: number): string {
-  if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 9999) throw new RangeError('Person ordinal must be an integer from 1 through 9999')
+  if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 10_000) throw new RangeError('Person ordinal must be an integer from 1 through 10000')
   return `person-${ordinal.toString().padStart(4, '0')}`
 }
 
 export function householdIdForOrdinal(ordinal: number): string {
-  if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 9999) throw new RangeError('Household ordinal must be an integer from 1 through 9999')
+  if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 10_000) throw new RangeError('Household ordinal must be an integer from 1 through 10000')
   return `household-${ordinal.toString().padStart(4, '0')}`
 }

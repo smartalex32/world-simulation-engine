@@ -117,6 +117,14 @@ HTTP API is intentionally limited to `/health`, owner-authorized run projection,
 and owner-authorized typed run commands. It is not collaboration, a public API,
 or a multi-node scheduler.
 
+Milestone 44 adds a reproducible detailed-agent scale benchmark: `pnpm
+benchmark:scale` creates a 128 × 128 blank-land world with 10,000 people,
+advances it one hour, and verifies snapshot restoration against the canonical
+digest. Hosts may opt into that same initial population using
+`HOSTED_WORLD_POPULATION=10000`; the browser world-builder deliberately retains
+its 500-person authoring guardrail. The benchmark reports elapsed time as local
+evidence only—hardware timing does not affect simulation output.
+
 ## Testing
 
 * Vitest

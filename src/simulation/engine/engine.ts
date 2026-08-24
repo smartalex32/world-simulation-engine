@@ -143,6 +143,9 @@ export class SimulationEngine {
   private readonly communityByCellId: Map<string, CommunitySimulationState>
   private readonly communityCountersById: Map<string, RuntimeCommunityCounters>
   private readonly schoolTravelCosts = new Map<string, number | null>()
+  /** Reused for a simulation hour; lifecycle changes explicitly invalidate it. */
+  private livingPersonCache: SimulationState['people'][number][] | undefined
+  private livingPersonIndexBuilds = 0
 
   private constructor(private state: SimulationState, random: RandomProvider) {
     this.random = random
@@ -270,7 +273,8 @@ export class SimulationEngine {
     const statistics: StatisticSample[] = []
     for (let index = 0; index < count; index += 1) {
       this.state.tick += 1
-      this.advanceAges(pushEvent)
+      this.livingPersonCache = undefined
+      if (this.advanceAges(pushEvent)) this.livingPersonCache = undefined
       for (const person of this.livingPeople()) {
         adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, HOURLY_HUNGER_INCREASE)
         adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, HOURLY_FATIGUE_INCREASE)
@@ -444,6 +448,11 @@ export class SimulationEngine {
       version: 1,
       payload,
     }
+  }
+
+  /** Non-authoritative instrumentation for scale benchmarks and diagnostics. */
+  performanceDiagnostics(): Readonly<{ livingPersonIndexBuilds: number }> {
+    return { livingPersonIndexBuilds: this.livingPersonIndexBuilds }
   }
 
   private sampleDailyStatistics(): StatisticSample[] {
@@ -912,7 +921,8 @@ export class SimulationEngine {
     }
   }
 
-  private advanceAges(pushEvent: (event: SimulationEvent) => void): void {
+  private advanceAges(pushEvent: (event: SimulationEvent) => void): boolean {
+    let personDied = false
     for (const person of this.livingPeople()) {
       person.ageHoursIntoYear += BASE_TICK_HOURS
       if (person.ageHoursIntoYear < 8760) continue
@@ -940,6 +950,7 @@ export class SimulationEngine {
       const mortalityPermille = Math.min(1000, baseMortalityPermille + healthMortalityRiskPermille)
       if (mortalityPermille > 0 && this.random.stream(LIFE_CYCLE_STREAM.mortality).nextInt(1000) < mortalityPermille) {
         person.lifeStatus = 'dead'
+        personDied = true
         person.deathTick = this.state.tick
         if (person.journey) {
           person.locationCellId = person.homeCellId
@@ -956,6 +967,7 @@ export class SimulationEngine {
         pushEvent(this.event('PERSON_DIED', { personId: person.id, ageYears: person.ageYears, mortalityPermille, baseMortalityPermille, healthMortalityRiskPermille }))
       }
     }
+    return personDied
   }
 
   /** Scheduled after hourly behavior, so sharing is based on real household stores and existing relationships. */
@@ -1109,6 +1121,9 @@ export class SimulationEngine {
       if (!second || first.id > second.id || !birthEligible(first, second)) continue
       if (this.random.stream(LIFE_CYCLE_STREAM.birth).nextInt(1000) < 140) this.birthChild(first, second, pushEvent)
     }
+    // Newborns are living authoritative people. Later daily sampling and
+    // invariants in the same tick must observe them without waiting a tick.
+    this.livingPersonCache = undefined
   }
 
   /**
@@ -1233,7 +1248,11 @@ export class SimulationEngine {
   }
 
   private livingPeople(): SimulationState['people'][number][] {
-    return this.state.people.filter((person) => person.lifeStatus !== 'dead')
+    if (this.livingPersonCache === undefined) {
+      this.livingPersonCache = this.state.people.filter((person) => person.lifeStatus !== 'dead')
+      this.livingPersonIndexBuilds += 1
+    }
+    return this.livingPersonCache
   }
 
   private applyEncounter(encounter: ResolvedEncounter, pushEvent: (event: SimulationEvent) => void): boolean {

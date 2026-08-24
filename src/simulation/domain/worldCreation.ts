@@ -22,7 +22,8 @@ export const WORLD_CREATION_LIMITS = Object.freeze({
   maximumHeight: 128,
   maximumCellCount: 16_384,
   minimumPopulation: 1,
-  maximumPopulation: 500,
+  /** The engine/hosted-run ceiling; the interactive draft UI retains its 500-person authoring guardrail. */
+  maximumPopulation: 10_000,
   maximumSettlementCatchmentCells: 512,
 })
 
