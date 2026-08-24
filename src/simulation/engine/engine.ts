@@ -306,7 +306,13 @@ export class SimulationEngine {
         this.economicCounters().agriculturalFoodProduced += outcome.agriculturalFoodProduced
         if (decision.action === 'work') {
           const household = this.householdById.get(person.householdId)
-          const technique = household?.inventory ? attemptPracticalExperiment(person, household.inventory, this.state.tick, this.random.stream(INNOVATION_STREAM)) : undefined
+          const eligible = household?.inventory !== undefined
+            && household.inventory.tools > 0
+            && (person.knowledge?.['knowledge.foraging'] ?? 0) >= 500
+            && !person.techniques?.some((candidate) => candidate.id === 'technique.foraging.efficient-harvest')
+          const technique = eligible && household?.inventory
+            ? attemptPracticalExperiment(person, household.inventory, this.state.tick, this.random.stream(INNOVATION_STREAM))
+            : undefined
           if (technique) pushEvent(this.event('PERSON_KNOWLEDGE_DISCOVERED', { personId: person.id, techniqueId: technique.id, knowledgePermille: technique.knowledgePermille, toolCost: technique.toolCost, successRollPermille: technique.successRollPermille }))
         }
         if (decision.action === 'work') this.economicCounters().productiveHours += 1
