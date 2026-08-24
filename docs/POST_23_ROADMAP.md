@@ -352,6 +352,10 @@ unbounded parallelism, or sacrificing hooked-person inspection.
 
 ### Milestone 38 — World Builder and Workbench Maturity
 
+**Status:** Implemented — the workbench now provides an interactive minimap
+showing settlement anchors and the current viewport, so users can navigate a
+large authored world without changing authoritative simulation state.
+
 **Objective:** Make the existing real features discoverable and efficient for
 world creation, observation, and debugging.
 
