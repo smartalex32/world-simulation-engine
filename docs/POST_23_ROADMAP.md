@@ -272,6 +272,11 @@ simulation, weather visuals, or terraforming.
 
 ### Milestone 34 — Health, Disease, and Demographic Stress
 
+**Status:** Implemented — a fictional, daily health-stress model records
+actual crowding, co-presence, water access, and hunger. Its trace is available
+in the person inspector and its bounded risk contribution is explicit in
+annual mortality events. Pathogens and medical simulation remain deferred.
+
 **Objective:** Add a cautious, small health system only after environmental,
 household, and movement evidence supports it.
 

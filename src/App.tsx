@@ -788,6 +788,11 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
       </div> : <p>No community catchment covers the current cell.</p>}
     </section>
     <PersonVariableSections definitions={variableDefinitions} values={variableValues(person)} layers={['state', 'need']} />
+    {person.lastHealthStressTrace && <section className="community-exposure-panel" aria-labelledby="health-stress-heading">
+      <div className="section-heading"><h3 id="health-stress-heading">Health stress</h3><span>Fictional exposure model</span></div>
+      <div className="activity-details"><Metric label="Current" value={formatPermille(person.lastHealthStressTrace.currentValue)} /><Metric label="Daily change" value={formatSignedPermille(person.lastHealthStressTrace.appliedDelta)} /><Metric label="Annual risk" value={`${person.lastHealthStressTrace.annualMortalityRiskPermille}‰`} /></div>
+      <small>Recovery {formatSignedPermille(person.lastHealthStressTrace.recoveryDelta)} · crowding {formatSignedPermille(person.lastHealthStressTrace.crowdingDelta)} · co-presence {formatSignedPermille(person.lastHealthStressTrace.coPresenceDelta)} · water {formatSignedPermille(person.lastHealthStressTrace.waterDelta)} · hunger {formatSignedPermille(person.lastHealthStressTrace.hungerDelta)}</small>
+    </section>}
     <section className="community-exposure-panel" aria-labelledby="knowledge-heading">
       <div className="section-heading"><h3 id="knowledge-heading">Knowledge</h3><span>Learned, transferable</span></div>
       <div className="activity-details"><Metric label="Foraging" value={formatPermille(person.knowledge?.['knowledge.foraging'] ?? 0)} /><Metric label="Local terrain" value={formatPermille(person.knowledge?.['knowledge.localTerrain'] ?? 0)} /></div>

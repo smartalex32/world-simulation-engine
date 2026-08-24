@@ -15,6 +15,7 @@ import { occupationFor } from '../economy/model'
 import { createCulturalState } from '../culture/model'
 import { initialLanguage } from '../language/model'
 import { initialKnowledge } from '../knowledge/model'
+import { emptyHealthExposure } from '../health/model'
 
 type BasePersonState = Omit<PersonState, 'ageHoursIntoYear' | 'locationCellId' | 'homeCellId' | 'householdId' | 'activityScheduleId' | 'currentActivity' | 'originTraces' | 'development'> & { initialHomeCellId: string }
 
@@ -104,6 +105,7 @@ export function generatePopulation(cells: GeographicCell[], zonesOrRandom: reado
       originTraces,
       development: { exposures: [{ ...createParentCuriosityExposureAccumulator(1), sourcePersonIds: [] }], broader: createBroaderDevelopmentState(1) },
       environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0, waterAvailabilityPermilleHours: 0 },
+      healthExposure: emptyHealthExposure(),
       variables,
       knownCellIds: knownCells(assignment.homeCellId, byId),
     }

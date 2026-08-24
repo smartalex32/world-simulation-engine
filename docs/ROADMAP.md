@@ -134,10 +134,11 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 31 — Territorial Governance and Civic Legitimacy
 * Milestone 32 — Collective Conflict and Resolution
 * Milestone 33 — Seasonal Climate, Agriculture, and Ecology
+* Milestone 34 — Health, Disease, and Demographic Stress
 
 ## Next Slice
 
-* Milestone 34 — Health, Disease, and Demographic Stress
+* Milestone 35 — Skills, Experimentation, and Practical Innovation
 
 Detailed current implementation is documented in `README.md`.
 

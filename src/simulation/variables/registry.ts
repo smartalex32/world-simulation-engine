@@ -9,6 +9,7 @@ export const PERSON_VARIABLE_ID = Object.freeze({
   persistence: 'person.trait.persistence',
   hunger: 'person.state.hunger',
   fatigue: 'person.state.fatigue',
+  healthStress: 'person.state.healthStress',
   socialConnection: 'person.need.socialConnection',
 } as const satisfies Record<string, PersonVariableId>)
 
@@ -123,6 +124,20 @@ const definitions = [
     defaultValue: 0,
     initializationMinimum: 0,
     initializationMaximum: 300,
+    enabled: true,
+  },
+  {
+    id: PERSON_VARIABLE_ID.healthStress,
+    label: 'Health stress',
+    layer: 'state',
+    category: 'physical',
+    unit: 'permille',
+    order: 85,
+    minimum: 0,
+    maximum: 1000,
+    defaultValue: 0,
+    initializationMinimum: 0,
+    initializationMaximum: 0,
     enabled: true,
   },
   {
