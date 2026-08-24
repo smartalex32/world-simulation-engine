@@ -74,6 +74,7 @@ import { calculateCuriosityInheritance } from '../households/inheritance'
 import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STREAM, partnershipEligible } from '../lifecycle/model'
 import { createInitialMarkets, resolveFoodShares, resolveToolExchanges } from '../economy/model'
 import { createInitialSchools } from '../organizations/model'
+import { evaluateSchoolAttendance, SCHOOL_ATTENDANCE, SCHOOL_ATTENDANCE_STREAM, schoolAttendanceTrace, schoolTravelCost } from '../organizations/attendance'
 import { createCulturalState, transmitCulture } from '../culture/model'
 import { acquireLanguage, initialLanguage } from '../language/model'
 import { createLocalGovernance, updateLegitimacy } from '../governance/model'
@@ -134,6 +135,7 @@ export class SimulationEngine {
   private readonly parentIdsByChildId: Map<string, readonly string[]>
   private readonly communityByCellId: Map<string, CommunitySimulationState>
   private readonly communityCountersById: Map<string, RuntimeCommunityCounters>
+  private readonly schoolTravelCosts = new Map<string, number | null>()
 
   private constructor(private state: SimulationState, random: RandomProvider) {
     this.random = random
@@ -176,7 +178,8 @@ export class SimulationEngine {
       return { ...createCommunityState(catchment, 500, foodSecurity), lastUpdatedTick: 0, latestTraces: [] }
     })
     const runId = `run-${world.id.slice(6)}-${creation.width}x${creation.height}`
-    const organizations = createInitialSchools(generatedPopulation.people, [...new Set(generatedPopulation.people.filter((person) => person.ageYears < 18).map((person) => person.homeCellId))])
+    // A school is an authored place service; an unmarked home cell is never silently promoted into one.
+    const organizations = createInitialSchools(generatedPopulation.people, world.settlements.map((settlement) => settlement.anchorCellId))
     const governance = createLocalGovernance(communities, generatedPopulation.people)
     return new SimulationEngine({
       runId,
@@ -277,13 +280,14 @@ export class SimulationEngine {
       }
 
       this.resolveActivities(pushEvent)
+      this.resolveSchoolAttendance(pushEvent)
 
       const occupantsByCell = this.buildOccupancy(true)
       const occupantsByActivityLocation = this.buildActivityOccupancy()
       const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: new Set((this.state.world.roads ?? []).flatMap((road) => road.cellIds)), cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById }
       const actionRng = this.random.stream('actions')
       const decisions = this.livingPeople()
-        .filter((person) => !person.journey)
+        .filter((person) => !person.journey && person.schoolAttendance === undefined)
         .map((person) => ({ person, decision: chooseAction(person, context, actionRng) }))
       for (const { person, decision } of decisions) {
         const outcome = resolveAction(person, decision, context)
@@ -684,6 +688,61 @@ export class SimulationEngine {
         currentLocationId: next.locationId,
       }))
     }
+  }
+
+  /** Resolves a bounded, place-based school service window; no settlement membership is consulted. */
+  private resolveSchoolAttendance(pushEvent: (event: SimulationEvent) => void): void {
+    for (const person of this.livingPeople()) {
+      if (!person.schoolAttendance || this.state.tick < person.schoolAttendance.returnTick) continue
+      const household = this.householdById.get(person.householdId)
+      if (!household) throw new Error(`School attendee ${person.id} belongs to a missing household`)
+      person.locationCellId = household.homeCellId
+      person.currentActivity = { kind: 'home', locationId: household.homeActivityLocationId, sinceTick: this.state.tick }
+      person.schoolAttendance = undefined
+    }
+    if (this.state.tick % 24 !== SCHOOL_ATTENDANCE.startHour) return
+    const roadCellIds = new Set((this.state.world.roads ?? []).flatMap((road) => road.cellIds))
+    const stream = this.random.stream(SCHOOL_ATTENDANCE_STREAM)
+    for (const school of [...this.state.organizations].sort((first, second) => compareIds(first.id, second.id))) {
+      let occupiedSeats = 0
+      const learners = school.members.map((member) => this.personById.get(member.personId))
+        .filter((person): person is SimulationState['people'][number] => person !== undefined && person.lifeStatus !== 'dead')
+        .sort((first, second) => compareIds(first.id, second.id))
+      for (const person of learners) {
+        const roll = stream.nextInt(1000)
+        const household = this.householdById.get(person.householdId)
+        if (person.journey) {
+          person.lastSchoolAttendance = { tick: this.state.tick, schoolId: school.id, schoolCellId: school.locationCellId, travelCost: null, householdCapacityPermille: 0, curiosityPermille: getPersonVariable(person.variables, PERSON_VARIABLE_ID.curiosity), persistencePermille: getPersonVariable(person.variables, PERSON_VARIABLE_ID.persistence), probabilityPermille: 0, randomRollPermille: roll, attended: false, reason: 'traveling' }
+          pushEvent(this.event('PERSON_MISSED_SCHOOL', { personId: person.id, schoolId: school.id, reason: 'traveling', randomRollPermille: roll }))
+          continue
+        }
+        const evaluation = evaluateSchoolAttendance({ school, person, household, peopleById: this.personById, cells: this.state.world.grid.cells, roadCellIds, travelCost: this.cachedSchoolTravelCost(person.homeCellId, school.id, school.locationCellId, roadCellIds) })
+        const attended = evaluation.reason === 'available' && occupiedSeats < school.serviceCapacity && roll < evaluation.probabilityPermille
+        const reason = attended ? 'available' : evaluation.reason === 'available' && occupiedSeats >= school.serviceCapacity ? 'capacity' : evaluation.reason === 'available' ? 'declined' : evaluation.reason
+        const trace = schoolAttendanceTrace(evaluation, this.state.tick, roll, attended, reason)
+        person.lastSchoolAttendance = trace
+        if (!attended) {
+          pushEvent(this.event('PERSON_MISSED_SCHOOL', { personId: person.id, schoolId: school.id, reason, travelCost: trace.travelCost, probabilityPermille: trace.probabilityPermille, randomRollPermille: roll }))
+          continue
+        }
+        occupiedSeats += 1
+        person.locationCellId = school.locationCellId
+        person.currentActivity = { kind: 'commons', locationId: school.activityLocationId, sinceTick: this.state.tick }
+        person.schoolAttendance = { schoolId: school.id, returnTick: this.state.tick + SCHOOL_ATTENDANCE.durationHours }
+        person.schoolLearningHours = (person.schoolLearningHours ?? 0) + SCHOOL_ATTENDANCE.durationHours
+        if (trace.travelCost !== null) this.recordTravel(trace.travelCost * 2)
+        pushEvent(this.event('PERSON_ATTENDED_SCHOOL', { personId: person.id, schoolId: school.id, schoolCellId: school.locationCellId, travelCost: trace.travelCost, probabilityPermille: trace.probabilityPermille, randomRollPermille: roll, learningHours: SCHOOL_ATTENDANCE.durationHours }))
+      }
+    }
+  }
+
+  private cachedSchoolTravelCost(homeCellId: string, schoolId: string, schoolCellId: string, roadCellIds: ReadonlySet<string>): number | null {
+    const key = `${homeCellId}|${schoolId}`
+    const cached = this.schoolTravelCosts.get(key)
+    if (cached !== undefined || this.schoolTravelCosts.has(key)) return cached ?? null
+    const travelCost = schoolTravelCost(homeCellId, schoolCellId, this.state.world.grid.cells, roadCellIds)
+    this.schoolTravelCosts.set(key, travelCost)
+    return travelCost
   }
 
   private recordActivityPersonHours(): void {
@@ -1098,6 +1157,7 @@ export class SimulationEngine {
       culture: createCulturalState(),
       language: initialLanguage(this.cellById.get(household.homeCellId)?.q ?? 0),
       knowledge: initialKnowledge(0, 'dependent'),
+      schoolLearningHours: 0,
       activityScheduleId: scheduleForAge(0), currentActivity: { kind: 'home', locationId: household.homeActivityLocationId, sinceTick: this.state.tick },
       originTraces: [inheritance.trace], development: { exposures: [{ ...createParentCuriosityExposureAccumulator(Math.floor(this.state.tick / 720) * 720 + 1), sourcePersonIds: [] }], broader: createBroaderDevelopmentState(Math.floor(this.state.tick / 720) * 720 + 1) },
       environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0 }, variables, knownCellIds: [household.homeCellId],
@@ -1267,11 +1327,14 @@ export class SimulationEngine {
     for (const organization of this.state.organizations) {
       if (organization.kind !== 'school') throw new Error(`Organization ${organization.id} has invalid kind`)
       if (organization.members.some((member) => member.role !== 'learner')) throw new Error(`Organization ${organization.id} has invalid member role`)
+      if (!Number.isSafeInteger(organization.serviceCapacity) || organization.serviceCapacity < 1) throw new Error(`Organization ${organization.id} has invalid service capacity`)
     }
     for (const person of this.state.people) {
       if (!this.cellById.has(person.locationCellId)) throw new Error(`Person ${person.id} occupies a missing cell`)
       validatePersonVariableValues(person.variables)
       if (!person.knowledge || Object.values(person.knowledge).some((value) => !Number.isSafeInteger(value) || value < 0 || value > 1000)) throw new Error(`Person ${person.id} has invalid knowledge values`)
+      if (typeof person.schoolLearningHours !== 'number' || !Number.isSafeInteger(person.schoolLearningHours) || person.schoolLearningHours < 0) throw new Error(`Person ${person.id} has invalid school learning hours`)
+      if (person.schoolAttendance && (!this.state.organizations.some((organization) => organization.id === person.schoolAttendance?.schoolId) || !Number.isSafeInteger(person.schoolAttendance.returnTick) || person.schoolAttendance.returnTick <= this.state.tick)) throw new Error(`Person ${person.id} has invalid school attendance state`)
       if (person.journey) {
         const destination = this.cellById.get(person.journey.destinationCellId)
         if (!destination?.movementCost) throw new Error(`Person ${person.id} is traveling to an invalid cell`)

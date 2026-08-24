@@ -139,6 +139,8 @@ stable order. Every transfer preserves tool totals and records counterparties.
 
 ### Milestone 28 — Settlement Services and Institutions
 
+**Status:** Implemented (bounded school-service access foundation)
+
 **Objective:** Connect existing schools, households, and organizations to
 places through actual attendance and service access.
 
@@ -152,6 +154,16 @@ inspectors show attendance and missed-opportunity causes.
 
 **Explicit non-goals:** Universal public services, budgets, administrative
 hierarchies, religion, or government ownership of every institution.
+
+**Implemented boundary:** Settlement-anchored schools provide a fixed-capacity,
+daily eight-hour service window to explicitly enrolled learners. Each learner
+receives one stable-order draw from the dedicated attendance stream; available
+access is evaluated from a real path's road-adjusted travel cost, an available
+adult household member, curiosity, and persistence. Attending children occupy
+the school commons for the service window and accumulate inspectable learning
+hours; missed opportunities retain a no-route, household-capacity, distance,
+capacity, or declined trace. This is neither school ownership of a settlement
+nor a general education, budget, or institutional hierarchy model.
 
 ### Milestone 29 — Regional Routes and Inter-Settlement Networks
 

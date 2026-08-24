@@ -120,6 +120,7 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
     validatePersonVariableValues(person.variables)
     if (!person.knowledge || Object.keys(person.knowledge).sort().join('|') !== 'knowledge.foraging|knowledge.localTerrain') throw new Error(`Person ${person.id} contains invalid knowledge records`)
     if (Object.values(person.knowledge).some((value) => !Number.isSafeInteger(value) || value < 0 || value > 1000)) throw new Error(`Person ${person.id} contains invalid knowledge values`)
+    if (typeof person.schoolLearningHours !== 'number' || !Number.isSafeInteger(person.schoolLearningHours) || person.schoolLearningHours < 0) throw new Error(`Person ${person.id} contains invalid school learning hours`)
   }
   validateHouseholdActivityState(snapshot.state)
   validateCommunitySimulationState(snapshot.state)
