@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ElevationOverride, ResourceCapacityOverride, Terrain, TerrainTypeOverride, WorldDraftPreview, WorldPlacementPreset, WorldTerrainBase } from '../simulation/domain/types'
+import { SETTLEMENT_TEMPLATES, type SettlementTemplateId } from '../simulation/spatial/settlementTemplates'
 import { DraftZoneMap, type DraftZoneViewport, type DraftZoneViewportRequest } from './DraftZoneMap'
 
 export type PlacementRegion = 'west' | 'center' | 'east'
@@ -17,6 +18,7 @@ export interface WorldSetupPlacement {
   settlementName?: string
   /** Exact imported/previously-resolved cells. They are never converted to a preset implicitly. */
   cellIds?: string[]
+  template?: SettlementTemplateId
 }
 
 /** A named geographic point. It deliberately carries no demographic or social state. */
@@ -26,6 +28,7 @@ export interface WorldSetupSettlement {
   anchorCellId?: string
   preset?: WorldPlacementPreset
   catchmentCellIds?: string[]
+  template?: Exclude<SettlementTemplateId, 'dispersed-homesteads'>
 }
 
 export interface WorldSetupRoad { id: string; cellIds: string[] }
@@ -121,6 +124,17 @@ export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draft
   }, [editablePlacements, selectedZoneId])
   const update = <K extends keyof WorldSetupValues>(key: K, next: WorldSetupValues[K]) => onChange((current) => ({ ...current, [key]: next }))
   const updatePlacement = (id: string, patch: Partial<WorldSetupPlacement>) => onChange((current) => ({ ...current, placements: current.placements.map((placement) => placement.id === id ? { ...placement, ...patch } : placement) }))
+  const applyTemplate = (placement: WorldSetupPlacement, template: SettlementTemplateId | undefined) => onChange((current) => {
+    if (template === undefined) return { ...current, placements: current.placements.map((candidate) => candidate.id === placement.id ? { ...candidate, template: undefined } : candidate), settlements: current.settlements.map((settlement) => settlement.id === placement.settlementId ? { ...settlement, template: undefined } : settlement) }
+    const definition = SETTLEMENT_TEMPLATES.find((candidate) => candidate.id === template)!
+    if (!definition.requiresSettlementMarker) {
+      return { ...current, placements: current.placements.map((candidate) => candidate.id === placement.id ? { ...candidate, template, settlementId: undefined, settlementName: undefined } : candidate), settlements: current.settlements.filter((settlement) => settlement.id !== placement.settlementId) }
+    }
+    const settlementId = placement.settlementId ?? `settlement-draft-${current.nextSettlementId}`
+    const settlementName = placement.settlementName || placement.name || `Settlement ${current.settlements.length + 1}`
+    const settlement = { id: settlementId, name: settlementName, preset: placement.preset, template: template as Exclude<SettlementTemplateId, 'dispersed-homesteads'> }
+    return { ...current, nextSettlementId: placement.settlementId ? current.nextSettlementId : current.nextSettlementId + 1, placements: current.placements.map((candidate) => candidate.id === placement.id ? { ...candidate, template, settlementId, settlementName } : candidate), settlements: current.settlements.some((candidate) => candidate.id === settlementId) ? current.settlements.map((candidate) => candidate.id === settlementId ? { ...candidate, template: template as Exclude<SettlementTemplateId, 'dispersed-homesteads'> } : candidate) : [...current.settlements, settlement] }
+  })
   const addPlacement = () => {
     const index = value.placements.length + 1
     const zoneId = `population-zone-draft-${value.nextPlacementId}`
@@ -176,6 +190,7 @@ export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draft
               {previewReady && preview && <small className="placement-preview">Accepted preview: {preview.creation.populationZones.find((zone) => zone.id === placement.id)?.cellIds.length ?? 0} resolved cells</small>}
             </section>)}
           </div>
+          <div className="placement-template-list" aria-label="Placement templates">{value.placements.map((placement, index) => <label key={placement.id}><span>Zone {index + 1} starting profile</span><select aria-label={`Zone ${index + 1} starting profile`} value={placement.template ?? ''} onChange={(event) => applyTemplate(placement, event.target.value === '' ? undefined : event.target.value as SettlementTemplateId)}><option value="">Custom placement</option>{SETTLEMENT_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.label}</option>)}</select></label>)}</div>
           <button type="button" className="secondary add-zone" onClick={addPlacement}>Add placement zone</button>
           <div className="authoring-layer-toggle" role="group" aria-label="Draft map editor"><button type="button" className={authoringLayer === 'zones' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('zones')}>Placement zones</button><button type="button" className={authoringLayer === 'settlements' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('settlements')}>Settlements</button><button type="button" className={authoringLayer === 'catchments' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('catchments')}>Catchments</button><button type="button" className={authoringLayer === 'roads' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('roads')}>Roads</button><button type="button" className={authoringLayer === 'terrain' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('terrain')}>Terrain</button><button type="button" className={authoringLayer === 'elevation' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('elevation')}>Elevation</button><button type="button" className={authoringLayer === 'resources' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('resources')}>Resources</button></div>
           {authoringLayer === 'zones' && <section className="placement-drawing" aria-labelledby="zone-drawing-title">

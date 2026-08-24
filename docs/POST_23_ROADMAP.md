@@ -415,6 +415,8 @@ procedural continents, a full sculpting tool, or changing live worlds.
 
 ### Milestone 41 — Settlement Seeds and Authoring Profiles
 
+**Status: Implemented (2026-08-24).**
+
 **Objective:** Let authors choose where people begin and select a bounded
 starting settlement shape without fabricating later society-level properties.
 

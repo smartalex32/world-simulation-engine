@@ -653,11 +653,11 @@ function worldSetupFromCreation(creation: WorldCreationRequest): WorldSetupValue
     placements: creation.populationZones.map((zone, index) => {
       const settlement = creation.settlements.find((candidate) => candidate.id === zone.settlementId)
       const region = index === 0 ? 'west' : index === 1 ? 'east' : 'center'
-      return { id: zone.id, name: zone.name, region, preset: region, radiusCells: 3, allocation: zone.populationCount, settlementId: zone.settlementId, settlementName: settlement?.name, cellIds: [...zone.cellIds] }
+      return { id: zone.id, name: zone.name, region, preset: region, radiusCells: 3, allocation: zone.populationCount, settlementId: zone.settlementId, settlementName: settlement?.name, template: zone.template, cellIds: [...zone.cellIds] }
     }),
     nextPlacementId: nextDraftSequence(creation.populationZones.map((zone) => zone.id), creation.settlements.map((settlement) => settlement.id)),
     nextSettlementId: nextDraftSequence(creation.settlements.map((settlement) => settlement.id)),
-    settlements: creation.settlements.map((settlement) => ({ id: settlement.id, name: settlement.name, anchorCellId: settlement.anchorCellId, ...(settlement.catchmentCellIds === undefined ? {} : { catchmentCellIds: [...settlement.catchmentCellIds] }) })),
+    settlements: creation.settlements.map((settlement) => ({ id: settlement.id, name: settlement.name, template: settlement.template, anchorCellId: settlement.anchorCellId, ...(settlement.catchmentCellIds === undefined ? {} : { catchmentCellIds: [...settlement.catchmentCellIds] }) })),
     nextRoadId: nextDraftSequence((creation.roads ?? []).map((road) => road.id)),
     roads: (creation.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })),
     terrainOverrides: creation.terrainOverrides.map((override) => ({ ...override })),
@@ -683,6 +683,7 @@ function creationDraftFromSetup(setup: WorldSetupValues): WorldCreationDraft {
       id: placement.id,
       name: placement.name,
       populationCount: placement.allocation,
+      ...(placement.template === undefined ? {} : { template: placement.template }),
       ...(placement.settlementId ? { settlementId: placement.settlementId } : {}),
       ...(placement.cellIds !== undefined ? { cellIds: [...placement.cellIds] } : { preset: placement.preset, radiusCells: placement.radiusCells }),
     })),
@@ -711,7 +712,7 @@ function worldSetupFromDraft(draft: WorldCreationDraft): WorldSetupValues {
     placements: draft.populationZones.map((zone, index) => {
       const settlement = draft.settlements.find((candidate) => candidate.id === zone.settlementId)
       const preset = zone.preset ?? (index === 0 ? 'west' : index === 1 ? 'east' : 'center')
-      return { id: zone.id, name: zone.name, region: regionForPreset(preset), preset, radiusCells: zone.radiusCells ?? 3, allocation: zone.populationCount, settlementId: zone.settlementId, settlementName: settlement?.name, ...(zone.cellIds !== undefined ? { cellIds: [...zone.cellIds] } : {}) }
+      return { id: zone.id, name: zone.name, region: regionForPreset(preset), preset, radiusCells: zone.radiusCells ?? 3, allocation: zone.populationCount, settlementId: zone.settlementId, settlementName: settlement?.name, template: zone.template, ...(zone.cellIds !== undefined ? { cellIds: [...zone.cellIds] } : {}) }
     }),
     nextPlacementId: nextDraftSequence(draft.populationZones.map((zone) => zone.id), draft.settlements.map((settlement) => settlement.id)),
     nextSettlementId: nextDraftSequence(draft.settlements.map((settlement) => settlement.id)),

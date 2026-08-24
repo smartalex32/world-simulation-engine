@@ -13,6 +13,7 @@ import {
   type RoadState,
   type WorldTerrainBase,
 } from './types'
+import { isSettlementTemplateId, settlementTemplate } from '../spatial/settlementTemplates'
 
 export const WORLD_CREATION_LIMITS = Object.freeze({
   minimumWidth: 8,
@@ -95,13 +96,15 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
       if (assignedCells.has(cellId)) throw new Error(`Population zones overlap at ${cellId}`)
       assignedCells.add(cellId)
     }
+    const template = normalizeSettlementTemplate(zone.template)
     if (zone.settlementId !== undefined && !settlementIds.has(zone.settlementId)) throw new Error(`Population zone ${zone.id} references an unknown settlement`)
+    if (template !== undefined && settlementTemplate(template).requiresSettlementMarker !== (zone.settlementId !== undefined)) throw new Error(`Population zone ${zone.id} has an incompatible settlement template`)
     if (zone.settlementId !== undefined && !cellIds.includes(settlements.find((settlement) => settlement.id === zone.settlementId)?.anchorCellId ?? '')) {
       throw new Error(`Population zone ${zone.id} does not contain its settlement anchor`)
     }
-    return zone.settlementId === undefined
-      ? { id: zone.id, name: zoneName, cellIds, populationCount }
-      : { id: zone.id, name: zoneName, cellIds, populationCount, settlementId: zone.settlementId }
+    const anchorCellId = zone.settlementId === undefined ? undefined : settlements.find((settlement) => settlement.id === zone.settlementId)?.anchorCellId
+    const homeCellIds = template === undefined ? undefined : resolveTemplateHomeCells(template, cellIds, anchorCellId, cellsById)
+    return { id: zone.id, name: zoneName, cellIds, populationCount, ...(zone.settlementId === undefined ? {} : { settlementId: zone.settlementId }), ...(template === undefined ? {} : { template, homeCellIds }) }
   }).sort((a, b) => compareText(a.id, b.id))
   if (zones.reduce((sum, zone) => sum + zone.populationCount, 0) !== initialPopulationCount) throw new Error('Population zone allocations must equal the initial population')
   return { seed, name, width, height, initialPopulationCount, ...(terrainBase === 'seeded-valley' ? {} : { terrainBase }), populationZones: zones, settlements, ...(roads.length ? { roads } : {}), terrainOverrides, elevationOverrides, resourceCapacityOverrides }
@@ -187,7 +190,7 @@ export function fixedWorldScale() {
   return { layout: 'axial-pointy' as const, hexRadiusMeters: WORLD_CELL_RADIUS_METERS }
 }
 
-function normalizeSettlements(value: readonly { id: string; name: string; anchorCellId?: string; preset?: WorldPlacementPreset; catchmentCellIds?: string[] }[], cells: readonly GeographicCell[], width: number, height: number): SettlementState[] {
+function normalizeSettlements(value: readonly { id: string; name: string; anchorCellId?: string; preset?: WorldPlacementPreset; catchmentCellIds?: string[]; template?: Exclude<import('../spatial/settlementTemplates').SettlementTemplateId, 'dispersed-homesteads'> }[], cells: readonly GeographicCell[], width: number, height: number): SettlementState[] {
   const cellsById = new Map(cells.map((cell) => [cell.id, cell]))
   const ids = new Set<string>()
   const assignedCatchmentCells = new Set<string>()
@@ -199,8 +202,29 @@ function normalizeSettlements(value: readonly { id: string; name: string; anchor
     const anchor = cellsById.get(anchorCellId)
     if (!anchor?.movementCost) throw new Error(`Settlement ${settlement.id} has an invalid anchor cell`)
     const catchmentCellIds = settlement.catchmentCellIds === undefined ? undefined : normalizeSettlementCatchment(settlement.id, settlement.catchmentCellIds, anchorCellId, cellsById, assignedCatchmentCells)
-    return { id: settlement.id, name: requiredText(settlement.name, `Settlement ${settlement.id} name`, 80), anchorCellId, ...(catchmentCellIds === undefined ? {} : { catchmentCellIds }) }
+    const template = settlement.template === undefined ? undefined : normalizeSettlementTemplate(settlement.template)
+    if (template === 'dispersed-homesteads') throw new Error(`Settlement ${settlement.id} has an invalid template`)
+    return { id: settlement.id, name: requiredText(settlement.name, `Settlement ${settlement.id} name`, 80), anchorCellId, ...(template === undefined ? {} : { template }), ...(catchmentCellIds === undefined ? {} : { catchmentCellIds }) }
   }).sort((a, b) => compareText(a.id, b.id))
+}
+
+function normalizeSettlementTemplate(value: unknown) {
+  if (value === undefined) return undefined
+  if (!isSettlementTemplateId(value)) throw new Error('Settlement template is invalid')
+  return value
+}
+
+function resolveTemplateHomeCells(template: import('../spatial/settlementTemplates').SettlementTemplateId, cellIds: readonly string[], anchorCellId: string | undefined, cellsById: ReadonlyMap<string, GeographicCell>): string[] {
+  if (template === 'dispersed-homesteads') return [...cellIds]
+  if (!anchorCellId) throw new Error(`Settlement template ${template} requires an anchor`)
+  const anchor = cellsById.get(anchorCellId)
+  if (!anchor) throw new Error(`Settlement template ${template} has an invalid anchor`)
+  const radius = settlementTemplate(template).homeRadiusCells
+  const candidates = cellIds.filter((cellId) => {
+    const cell = cellsById.get(cellId)
+    return cell !== undefined && axialDistance(cell.q, cell.r, anchor.q, anchor.r) <= radius
+  }).sort(compareText)
+  return candidates.length > 0 ? candidates : [anchorCellId]
 }
 
 function normalizeSettlementCatchment(settlementId: string, value: readonly string[], anchorCellId: string, cellsById: ReadonlyMap<string, GeographicCell>, assigned: Set<string>): string[] {

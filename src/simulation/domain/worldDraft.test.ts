@@ -23,6 +23,35 @@ describe('world draft lifecycle domain contract', () => {
     expect(record.revision).toBe(0)
   })
 
+  it('resolves town, village, and dispersed-homestead templates into explicit homes and market anchors', async () => {
+    const record = createWorldDraftRecord('draft-settlement-templates', {
+      ...defaultWorldCreationRequest('settlement-template-seed'),
+      initialPopulationCount: 30,
+      populationZones: [
+        { id: 'town-zone', name: 'Town residents', preset: 'west', radiusCells: 2, populationCount: 10, settlementId: 'town', template: 'town' },
+        { id: 'village-zone', name: 'Village residents', preset: 'center', radiusCells: 3, populationCount: 10, settlementId: 'village', template: 'village' },
+        { id: 'homesteads-zone', name: 'Homesteaders', preset: 'east', radiusCells: 3, populationCount: 10, template: 'dispersed-homesteads' },
+      ],
+      settlements: [{ id: 'town', name: 'Town', preset: 'west', template: 'town' }, { id: 'village', name: 'Village', preset: 'center', template: 'village' }],
+    })
+    const preview = previewWorldDraft(record)
+    const town = preview.creation.populationZones.find((zone) => zone.id === 'town-zone')!
+    const village = preview.creation.populationZones.find((zone) => zone.id === 'village-zone')!
+    const homesteads = preview.creation.populationZones.find((zone) => zone.id === 'homesteads-zone')!
+    const townAnchor = preview.creation.settlements.find((settlement) => settlement.id === 'town')!.anchorCellId
+    expect(town.homeCellIds).toEqual([townAnchor])
+    expect(village.homeCellIds!.length).toBeGreaterThan(0)
+    expect(homesteads.homeCellIds).toEqual(homesteads.cellIds)
+    const engine = await SimulationEngine.create(record.draft)
+    const snapshot = (await engine.snapshot()).state
+    expect(snapshot.markets).toHaveLength(2)
+    expect(snapshot.households.filter((household) => town.cellIds.includes(household.homeCellId)).every((household) => household.homeCellId === townAnchor)).toBe(true)
+    expect(() => previewWorldDraft(createWorldDraftRecord('draft-invalid-template', {
+      ...defaultWorldCreationRequest('invalid-template-seed'), initialPopulationCount: 1,
+      populationZones: [{ id: 'bad-zone', name: 'Bad zone', preset: 'center', populationCount: 1, template: 'town' }], settlements: [],
+    }))).toThrow(/incompatible settlement template/)
+  })
+
   it('uses revision checks and detaches authored collections', () => {
     const source = defaultWorldCreationRequest('revision-seed')
     const created = createWorldDraftRecord('draft-revision', source)
