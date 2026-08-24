@@ -701,6 +701,7 @@ export class SimulationEngine {
       person.schoolAttendance = undefined
     }
     if (this.state.tick % 24 !== SCHOOL_ATTENDANCE.startHour) return
+    if (this.state.organizations.length === 0) return
     const roadCellIds = new Set((this.state.world.roads ?? []).flatMap((road) => road.cellIds))
     const stream = this.random.stream(SCHOOL_ATTENDANCE_STREAM)
     for (const school of [...this.state.organizations].sort((first, second) => compareIds(first.id, second.id))) {
