@@ -647,7 +647,7 @@ export default function App() {
           <div className="snapshot-list">
             {snapshots.slice(0, 5).map((saved) => (
               <div key={saved.key} className="snapshot-row">
-                <button onClick={() => { client.load(saved.snapshot); setSeed(saved.snapshot.state.config.seed) }}><strong>{saved.name}</strong><span>Hour {saved.snapshot.state.tick}</span></button>
+                <button disabled={status === 'starting'} onClick={() => { client.load(saved.snapshot); setSeed(saved.snapshot.state.config.seed) }}><strong>{saved.name}</strong><span>Hour {saved.snapshot.state.tick}</span></button>
                 {saved.kind === 'named' && <button className="delete" title="Delete snapshot" onClick={() => void database.deleteSnapshot(saved.key).then(() => refreshSnapshots())}>×</button>}
               </div>
             ))}

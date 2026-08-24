@@ -451,6 +451,8 @@ has been added.
 
 ### Milestone 43 — Hosted Single-Node Simulation Boundary
 
+**Status:** Implemented (single owner, durable file snapshots, typed HTTP command boundary)
+
 **Objective:** Run a world on a server while keeping the browser a client of
 authoritative commands and bounded projections.
 
@@ -462,6 +464,14 @@ snapshots and the existing worker protocol behind typed server commands.
 
 **Explicit non-goals:** Multi-node scheduling, collaboration editing, browser
 authority, or changed simulation behavior.
+
+**Implemented boundary:** A Node-hosted service now opens one configured run,
+serializes owner-authorized typed run commands, persists complete versioned
+snapshots through atomic file replacement, restores the same canonical run on
+restart, and serves bounded projections. It reuses the worker command/response
+protocol shapes while leaving the simulation engine and browser authority model
+unchanged. Continuous server play scheduling, external identity, collaboration,
+and multi-node ownership remain deferred.
 
 ### Milestone 44 — Measured Ten-Thousand-Person Scale
 

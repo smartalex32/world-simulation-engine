@@ -493,7 +493,7 @@ test('inspects persisted experience and deterministic development at the 720-hou
   await page.reload()
   const developmentSnapshot = page.getByRole('button', { name: /Development fixture Hour 720/ })
   await expect(developmentSnapshot).toBeVisible()
-  await developmentSnapshot.evaluate((button) => (button as HTMLButtonElement).click())
+  await developmentSnapshot.click()
   await expect(page.getByText('Day 30 · 00:00')).toBeVisible()
   const canvas = page.getByLabel('Hex world map')
   await expect.poll(async () => canvas.evaluate((element) => {
@@ -637,6 +637,7 @@ async function hookPersonAtCurrentCell(page: import('@playwright/test').Page, pe
 async function findVisiblePerson(page: import('@playwright/test').Page, people: readonly PersonState[]): Promise<PersonState | undefined> {
   const canvas = page.getByLabel('Hex world map')
   await expect.poll(async () => canvas.getAttribute('data-map-viewport')).not.toBeNull()
+  await waitForMapSettled(canvas)
   const bounds = await canvas.boundingBox()
   const transform = await canvas.getAttribute('data-map-viewport')
   if (!bounds || !transform) return undefined
