@@ -330,6 +330,10 @@ generative narrative.
 
 ### Milestone 37 — Scalable Authoritative Simulation
 
+**Status:** Implemented — the first measured allocation reduction caches the
+immutable authored-road index at engine construction rather than rebuilding it
+on every tick. A larger-world fixed-seed regression guards canonical output.
+
 **Objective:** Address measured simulation bottlenecks while preserving the
 individual-inspection and reproducibility contracts.
 
