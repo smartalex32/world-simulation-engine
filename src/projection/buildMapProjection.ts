@@ -5,6 +5,7 @@ import { getPersonVariable } from '../simulation/variables/storage'
 import { findPathDetailed } from '../simulation/spatial/pathfinding'
 import { buildProjectedSettlements } from './settlements'
 import { buildProjectedSettlementLinks } from './regionalNetwork'
+import { buildProjectedSettlementDiffusion } from './diffusion'
 import { alignRegionOrigin, clampViewportBounds, projectionChunkKey, regionCount, regionKey } from './chunks'
 import {
   MAX_ACTIVITY_MARKERS,
@@ -115,6 +116,7 @@ export class WorkbenchProjectionBuilder {
       world: { id: source.world.id, name: source.world.name, width: this.grid.width, height: this.grid.height, cellCount: this.grid.cells.length, scale: source.world.scale },
       settlements: buildProjectedSettlements(source.world.settlements, source.world.grid.cells, source.people),
       settlementLinks: buildProjectedSettlementLinks(source.world.settlements, source.world.grid.cells, source.world.roads),
+      settlementDiffusion: buildProjectedSettlementDiffusion(source.world.settlements, source.people),
       roads: (source.world.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })).sort((a, b) => a.id.localeCompare(b.id)),
       populationZones: source.populationZones.map((zone) => zone.settlementId === undefined
         ? { id: zone.id, name: zone.name, populationCount: zone.populationCount, cellCount: zone.cellIds.length }

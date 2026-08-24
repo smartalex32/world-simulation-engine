@@ -186,6 +186,8 @@ political territory.
 
 ### Milestone 30 — Spatial Cultural and Language Diffusion
 
+**Status:** Implemented (co-attendance exposure and bounded regional observation foundation)
+
 **Objective:** Extend the current culture and language foundations through
 actual interaction, travel, schools, households, and institutions.
 
@@ -199,6 +201,13 @@ settlement assignment.
 
 **Explicit non-goals:** Detailed constructed languages, religion, propaganda,
 or nation-level identity.
+
+**Implemented boundary:** Culture and language continue to transfer only through
+real resolved encounters. School attendees share a real activity location during
+their service window, so normal encounter transmission supplies an actual
+co-attendance exposure path without a settlement assignment. The workbench now
+derives bounded per-settlement observations of residents' language fluency and
+cultural beliefs; these are read-only measurements, not influences.
 
 ### Milestone 31 — Territorial Governance and Civic Legitimacy
 

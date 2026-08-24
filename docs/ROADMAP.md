@@ -130,6 +130,7 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 23 — Settlement Profiles
 * Milestone 28 — Settlement Services and Institutions
 * Milestone 29 — Regional Routes and Inter-Settlement Networks
+* Milestone 30 — Spatial Cultural and Language Diffusion
 
 ## Next Slice
 
