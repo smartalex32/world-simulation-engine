@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { GeographicCell, PersonState } from '../domain/types'
+import type { GeographicCell, HouseholdState, PersonState } from '../domain/types'
 import { Pcg32, hashSeed } from '../rng/pcg32'
 import { advanceJourney, chooseAction, effectiveMovementCost, evaluateActions, resolveAction, type ActionContext } from './actions'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
@@ -111,6 +111,25 @@ describe('agent actions', () => {
     expect(firstOutcome.foodConsumed).toBe(10)
     expect(secondOutcome.failedMeal).toBe(true)
     expect(scarceCell.foodAmount).toBe(0)
+  })
+
+  it('records inspectable seasonal agricultural production on fertile plains', () => {
+    const summerCell = createCells()[0]!
+    const winterCell = { ...summerCell, foodAmount: 100 }
+    const farmWorker = person()
+    farmWorker.occupation = 'forager'
+    farmWorker.currentActivity = { kind: 'commons', locationId: 'activity.commons.1,1', sinceTick: 0 }
+    const household: HouseholdState = { id: 'household-test', homeCellId: '1,1', homeActivityLocationId: 'activity.home.household-test', memberIds: ['test-person'], inventory: { food: 0, tools: 0 } }
+    const summer = resolveAction(farmWorker, { tick: 720, action: 'work', weight: 1, totalWeight: 1, probabilityPermille: 1000, contributions: [], alternatives: [] }, {
+      ...createContext([summerCell]), tick: 720, householdById: new Map([[household.id, household]]),
+    })
+    const winterWorker = { ...farmWorker, variables: { ...farmWorker.variables } }
+    const winterHousehold = { ...household, inventory: { food: 0, tools: 0 } }
+    const winter = resolveAction(winterWorker, { tick: 2160, action: 'work', weight: 1, totalWeight: 1, probabilityPermille: 1000, contributions: [], alternatives: [] }, {
+      ...createContext([winterCell]), tick: 2160, householdById: new Map([[winterHousehold.id, winterHousehold]]),
+    })
+    expect(summer.agriculturalFoodProduced).toBe(summer.foodProduced)
+    expect(summer.agriculturalFoodProduced).toBeGreaterThan(winter.agriculturalFoodProduced)
   })
 
   it('makes high-curiosity agents explore more often across many seeds', () => {

@@ -28,6 +28,7 @@ import {
 } from './actionConfig'
 import { consumeHouseholdFood, harvestFood } from '../economy/model'
 import { harvestEfficiencyPermille } from '../knowledge/model'
+import { climateConditionsAt, isAgriculturalCell } from '../environment/climate'
 
 export interface Candidate {
   action: ActionName
@@ -61,6 +62,7 @@ export interface ActionOutcome {
   hungerReduced: number
   fatigueReduced: number
   foodProduced: number
+  agriculturalFoodProduced: number
 }
 
 export interface JourneyOutcome {
@@ -145,18 +147,20 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
     contextContribution('people present', company * OTHER_OCCUPANT_SOCIAL_WEIGHT),
     ...communityInfluenceContributions('decision.socialize.utility', person.locationCellId, context),
   ]))
-  if (person.occupation === 'forager' && person.currentActivity.kind === 'commons' && cell.foodAmount > 0 && hour >= 6 && hour < 18) candidates.push(candidate('work', [
-    baseContribution(ACTION_BASE_WEIGHT.work),
-    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.workUtility, person),
-    contextContribution('accessible resource', Math.min(160, cell.foodAmount * 8)),
-    contextContribution('fatigue cost', -Math.floor(getPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue) / 5)),
-  ]))
+  if (person.occupation === 'forager' && person.currentActivity.kind === 'commons' && cell.foodAmount > 0 && hour >= 6 && hour < 18) {
+    candidates.push(candidate('work', [
+      baseContribution(ACTION_BASE_WEIGHT.work),
+      ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.workUtility, person),
+      contextContribution('accessible resource', Math.min(160, cell.foodAmount * 8)),
+      contextContribution('fatigue cost', -Math.floor(getPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue) / 5)),
+    ]))
+  }
   return candidates
 }
 
 export function resolveAction(person: PersonState, decision: ActionDecision, context: ActionContext): ActionOutcome {
   const fromCellId = person.locationCellId
-  const outcome: ActionOutcome = { action: decision.action, fromCellId, targetCellId: decision.targetCellId, arrived: false, travelCost: 0, foodConsumed: 0, failedMeal: false, hungerReduced: 0, fatigueReduced: 0, foodProduced: 0 }
+  const outcome: ActionOutcome = { action: decision.action, fromCellId, targetCellId: decision.targetCellId, arrived: false, travelCost: 0, foodConsumed: 0, failedMeal: false, hungerReduced: 0, fatigueReduced: 0, foodProduced: 0, agriculturalFoodProduced: 0 }
   if (decision.action === 'eat') {
     const household = context.householdById?.get(person.householdId)
     const inventory = household?.inventory
@@ -192,7 +196,11 @@ export function resolveAction(person: PersonState, decision: ActionDecision, con
     const household = context.householdById?.get(person.householdId)
     const cell = context.cellById.get(person.locationCellId)
     if (household?.inventory && cell && person.occupation === 'forager') {
-      outcome.foodProduced = harvestFood(cell, household.inventory, harvestEfficiencyPermille(person.knowledge ?? { 'knowledge.foraging': 0, 'knowledge.localTerrain': 0 }))
+      const agricultural = isAgriculturalCell(cell)
+      const productivity = agricultural ? climateConditionsAt(cell, context.tick).agriculturalProductivityPermille : 1000
+      const efficiency = Math.floor(harvestEfficiencyPermille(person.knowledge ?? { 'knowledge.foraging': 0, 'knowledge.localTerrain': 0 }) * productivity / 1000)
+      outcome.foodProduced = harvestFood(cell, household.inventory, efficiency)
+      outcome.agriculturalFoodProduced = agricultural ? outcome.foodProduced : 0
       adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, WORK_FATIGUE_COST)
     }
   }

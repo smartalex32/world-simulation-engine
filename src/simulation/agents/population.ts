@@ -103,7 +103,7 @@ export function generatePopulation(cells: GeographicCell[], zonesOrRandom: reado
       currentActivity: { kind: activity.kind, locationId: activity.locationId, sinceTick: 0 },
       originTraces,
       development: { exposures: [{ ...createParentCuriosityExposureAccumulator(1), sourcePersonIds: [] }], broader: createBroaderDevelopmentState(1) },
-      environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0 },
+      environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0, waterAvailabilityPermilleHours: 0 },
       variables,
       knownCellIds: knownCells(assignment.homeCellId, byId),
     }

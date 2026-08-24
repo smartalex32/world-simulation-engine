@@ -133,10 +133,11 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 30 — Spatial Cultural and Language Diffusion
 * Milestone 31 — Territorial Governance and Civic Legitimacy
 * Milestone 32 — Collective Conflict and Resolution
+* Milestone 33 — Seasonal Climate, Agriculture, and Ecology
 
 ## Next Slice
 
-* Next simulation slice to be planned after settlement profiles
+* Milestone 34 — Health, Disease, and Demographic Stress
 
 Detailed current implementation is documented in `README.md`.
 

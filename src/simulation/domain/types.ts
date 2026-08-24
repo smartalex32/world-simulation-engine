@@ -7,8 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.29.0'
-export const SNAPSHOT_SCHEMA_VERSION = 29
+export const ENGINE_VERSION = '0.30.0'
+export const SNAPSHOT_SCHEMA_VERSION = 30
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 1
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -18,7 +18,7 @@ export const DEVELOPMENT_REGISTRY_VERSION = 2
 export const COMMUNITY_REGISTRY_VERSION = 1
 export const WORLD_GENERATOR_VERSION = 1
 /** Versioned deterministic calendar/exposure rules used by Milestone 9. */
-export const ENVIRONMENT_MODEL_VERSION = 1
+export const ENVIRONMENT_MODEL_VERSION = 2
 export const LIFE_CYCLE_MODEL_VERSION = 1
 /** Versioned, non-monetary household food production and sharing rules. */
 export const ECONOMY_MODEL_VERSION = 2
@@ -547,6 +547,7 @@ export interface EnvironmentalExposureState {
   foodAccessibleHours: number
   difficultTerrainHours: number
   thermalLoadPermilleHours: number
+  waterAvailabilityPermilleHours: number
 }
 
 export type PersonLifeStage = 'infant' | 'child' | 'adolescent' | 'adult' | 'olderAdult'
@@ -630,9 +631,15 @@ export interface DailyLifeCycleCounters {
 export interface DailyEconomicCounters {
   productiveHours: number
   foodProduced: number
+  agriculturalFoodProduced: number
   foodConsumedFromHouseholds: number
   foodShared: number
   exchangeCount: number
+}
+
+/** Daily environmental recovery remains distinct from person production and use. */
+export interface DailyEnvironmentalCounters {
+  foodRegenerated: number
 }
 
 export interface RunConfiguration {
@@ -688,6 +695,7 @@ export interface SimulationState {
   dailyDevelopmentCounters: DailyDevelopmentCounters
   dailyLifeCycleCounters: DailyLifeCycleCounters
   dailyEconomicCounters?: DailyEconomicCounters
+  dailyEnvironmentalCounters?: DailyEnvironmentalCounters
   randomStreams: RandomStreamSnapshot[]
 }
 
@@ -701,7 +709,7 @@ export interface SimulationEvent {
   payload: Record<string, string | number | boolean | null>
 }
 
-export type WorldStatisticMetricId = 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.aliveCount' | 'population.averageHunger' | 'lifecycle.births' | 'lifecycle.deaths' | 'lifecycle.partnershipsFormed' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodConsumed' | 'resources.failedMeals' | 'economy.householdFood' | 'economy.productiveHours' | 'economy.foodProduced' | 'economy.foodShared' | 'economy.exchangeCount' | 'social.encounters' | 'social.encountersPer1000People' | 'social.relationshipCount' | 'social.networkDensityPermille' | 'social.averageFamiliarity' | 'social.positiveEncounters' | 'social.tenseEncounters' | 'activity.homePersonHours' | 'activity.commonsPersonHours' | 'activity.travelPersonHours' | 'household.parentChildCoExposureSourceHours' | 'development.experiences' | 'development.curiosityChanges' | 'development.absoluteCuriosityChange' | 'development.broaderExperiences' | 'development.broaderChanges'
+export type WorldStatisticMetricId = 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.aliveCount' | 'population.averageHunger' | 'lifecycle.births' | 'lifecycle.deaths' | 'lifecycle.partnershipsFormed' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodRegenerated' | 'resources.foodConsumed' | 'resources.failedMeals' | 'economy.householdFood' | 'economy.productiveHours' | 'economy.foodProduced' | 'economy.agriculturalFoodProduced' | 'economy.foodShared' | 'economy.exchangeCount' | 'social.encounters' | 'social.encountersPer1000People' | 'social.relationshipCount' | 'social.networkDensityPermille' | 'social.averageFamiliarity' | 'social.positiveEncounters' | 'social.tenseEncounters' | 'activity.homePersonHours' | 'activity.commonsPersonHours' | 'activity.travelPersonHours' | 'household.parentChildCoExposureSourceHours' | 'development.experiences' | 'development.curiosityChanges' | 'development.absoluteCuriosityChange' | 'development.broaderExperiences' | 'development.broaderChanges'
 
 export type CommunityStatisticMetricId = 'community.emergent.socialTrust' | 'community.emergent.cohesion' | 'community.emergent.cooperation' | 'community.emergent.conflict' | 'community.emergent.innovationClimate' | 'community.structural.foodSecurity' | 'community.exposedPersonHours' | 'community.encounters'
 

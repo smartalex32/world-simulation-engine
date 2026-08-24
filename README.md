@@ -57,6 +57,7 @@ Implemented:
 * Milestone 21 — Optional Narrative Presentation (deterministic template presentation)
 * Milestone 22 — Simulation Workbench Experience (map-first presentation foundation)
 * Milestone 23 — Settlement Profiles (nearby-home scale foundation)
+* Milestone 33 — Seasonal Climate, Agriculture, and Ecology (first environmental feedback foundation)
 
 Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. The workbench derives a read-only landmark/hamlet/village/town/city profile from living homes near an anchor, making its geographic basis explicit rather than assigning residents a settlement field. Linked population zones retain their existing anchor-containment validation.
 
@@ -68,7 +69,9 @@ Historical inspection reads bounded, indexed event and sampled-metric evidence f
 
 The workbench now provides coherent world, simulation, analytics, entities, history, tools, and settings navigation. Tools connect to the worker-owned world authoring flow; settings expose presentation diagnostics only. The map remains the primary surface, with existing level-of-detail behavior, live inspectors, controls, sampled aggregates, and responsive layouts. This presentation layer does not alter simulation state or consume simulation RNG.
 
-Next: plan and prioritize the next simulation vertical slice after settlement profiles.
+Seasonal climate is a small static classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Daily environmental recovery is measured separately from household food production and consumption; no weather simulation, biome editor, or ecosystem model is implied.
+
+Next: Milestone 34 — Health, Disease, and Demographic Stress.
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 

@@ -87,7 +87,7 @@ async function controlledSnapshot(seed: string, personCount: number): Promise<Sn
   state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
   state.dailyActivityCounters = { homePersonHours: personCount * state.tick, commonsPersonHours: 0, travelPersonHours: 0 }
   for (const person of state.people) {
-    person.environmentalExposure = { observedHours: state.tick, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0 }
+    person.environmentalExposure = { observedHours: state.tick, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0, waterAvailabilityPermilleHours: 0 }
   }
   const catchments = createTwoCatchmentGeography({ cells: state.world.grid.cells, width: 2, height: 1 })
   state.communities = catchments.map((catchment) => ({ ...createCommunityState(catchment, 500, 0), lastUpdatedTick: 0, latestTraces: [] }))
