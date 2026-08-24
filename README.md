@@ -106,6 +106,17 @@ See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferre
 * Import/export support
 * Explicit migration or rejection boundaries
 
+## Optional hosted single-node runtime
+
+The browser-hosted workbench remains the default. Milestone 43 also provides a
+small Node-hosted boundary for one owner-controlled run. It reuses typed worker
+command/response shapes, serializes authoritative commands on the host, writes
+versioned snapshots through an atomic file store, and returns bounded
+projections. Start it with `HOSTED_OWNER_TOKEN=<secret> pnpm host`; its local
+HTTP API is intentionally limited to `/health`, owner-authorized run projection,
+and owner-authorized typed run commands. It is not collaboration, a public API,
+or a multi-node scheduler.
+
 ## Testing
 
 * Vitest

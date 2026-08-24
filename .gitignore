@@ -4,5 +4,6 @@ dist/
 test-results/
 playwright-report/
 coverage/
+.world-simulation-hosted/
 *.tsbuildinfo
 .DS_Store
