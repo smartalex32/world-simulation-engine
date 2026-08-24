@@ -131,6 +131,7 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 28 — Settlement Services and Institutions
 * Milestone 29 — Regional Routes and Inter-Settlement Networks
 * Milestone 30 — Spatial Cultural and Language Diffusion
+* Milestone 31 — Territorial Governance and Civic Legitimacy
 
 ## Next Slice
 

@@ -211,6 +211,8 @@ cultural beliefs; these are read-only measurements, not influences.
 
 ### Milestone 31 — Territorial Governance and Civic Legitimacy
 
+**Status:** Implemented (local food-relief legitimacy foundation)
+
 **Objective:** Extend the local-governance foundation only after services,
 movement, and regional relationships produce inspectable civic evidence.
 
