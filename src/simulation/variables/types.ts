@@ -7,6 +7,7 @@ export const PERSON_VARIABLE_IDS = Object.freeze([
   'person.trait.persistence',
   'person.state.hunger',
   'person.state.fatigue',
+  'person.state.healthStress',
   'person.need.socialConnection',
 ] as const)
 

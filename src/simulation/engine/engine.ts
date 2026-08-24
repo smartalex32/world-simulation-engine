@@ -12,6 +12,7 @@ import {
   LANGUAGE_MODEL_VERSION,
   GOVERNANCE_MODEL_VERSION,
   CONFLICT_MODEL_VERSION,
+  HEALTH_MODEL_VERSION,
   KNOWLEDGE_MODEL_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
@@ -82,6 +83,7 @@ import { createLocalGovernance, updateLegitimacy } from '../governance/model'
 import { applyDispute, disputeId, resolveCommunityContentions } from '../conflict/model'
 import { discoverLocalTerrain, initialKnowledge, transmitKnowledge } from '../knowledge/model'
 import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION_STREAM, relocationTrace } from '../households/relocation'
+import { emptyHealthExposure, healthStressMortalityRiskPermille, resolveDailyHealthStress } from '../health/model'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -208,6 +210,7 @@ export class SimulationEngine {
         governanceModelVersion: GOVERNANCE_MODEL_VERSION,
         conflictModelVersion: CONFLICT_MODEL_VERSION,
         knowledgeModelVersion: KNOWLEDGE_MODEL_VERSION,
+        healthModelVersion: HEALTH_MODEL_VERSION,
       },
       world,
       people: generatedPopulation.people,
@@ -332,6 +335,7 @@ export class SimulationEngine {
       this.resolveMarketExchanges(postActionActivityOccupancy, pushEvent)
       this.recordActivityPersonHours()
       this.recordEnvironmentalExposure()
+      this.recordHealthExposure(postActionActivityOccupancy)
       this.recordCommunityPersonHours()
       this.recordCommunityDevelopmentExposure()
       this.accumulateDevelopmentExposure()
@@ -342,6 +346,7 @@ export class SimulationEngine {
       }
       if (this.state.tick % 8760 === 0) this.resolveAnnualLifeCycle(pushEvent)
       if (this.state.tick % 24 === 0) {
+        this.resolveDailyHealthStress()
         this.resolveDailyFoodSharing(pushEvent)
         this.aggregateCommunities(pushEvent)
         for (const governance of this.state.governance) { const community = this.state.communities.find((value) => value.catchment.id === governance.communityId); if (community) updateLegitimacy(governance, community, this.state.tick) }
@@ -514,6 +519,25 @@ export class SimulationEngine {
       exposure.thermalLoadPermilleHours += season.thermalExposurePermille
       exposure.waterAvailabilityPermilleHours += climateConditionsAt(cell, this.state.tick).waterAvailabilityPermille
     }
+  }
+
+  private recordHealthExposure(occupantsByActivity: ReadonlyMap<string, readonly string[]>): void {
+    const occupancy = this.buildOccupancy(true)
+    for (const person of this.livingPeople()) {
+      const cell = this.cellById.get(person.locationCellId)
+      if (!cell) throw new Error(`Person ${person.id} occupies a missing health-exposure cell`)
+      const exposure = person.healthExposure ?? (person.healthExposure = emptyHealthExposure())
+      const peopleHere = occupancy.get(cell.id)?.length ?? 1
+      const activityPeople = person.currentActivity.locationId === null ? 1 : occupantsByActivity.get(person.currentActivity.locationId)?.length ?? 1
+      exposure.observedHours += 1
+      exposure.crowdingPersonHours += peopleHere
+      exposure.coPresenceHours += Math.max(0, activityPeople - 1)
+      exposure.waterAvailabilityPermilleHours += climateConditionsAt(cell, this.state.tick).waterAvailabilityPermille
+    }
+  }
+
+  private resolveDailyHealthStress(): void {
+    for (const person of this.livingPeople()) resolveDailyHealthStress(person, this.state.tick)
   }
 
   private recordTravel(cost: number): void {
@@ -889,7 +913,9 @@ export class SimulationEngine {
         this.state.dailyLifeCycleCounters.lifeStageTransitions += 1
         pushEvent(this.event('PERSON_LIFE_STAGE_CHANGED', { personId: person.id, previousLifeStage, nextLifeStage, ageYears: person.ageYears }))
       }
-      const mortalityPermille = annualMortalityPermille(person.ageYears)
+      const baseMortalityPermille = annualMortalityPermille(person.ageYears)
+      const healthMortalityRiskPermille = healthStressMortalityRiskPermille(getPersonVariable(person.variables, PERSON_VARIABLE_ID.healthStress))
+      const mortalityPermille = Math.min(1000, baseMortalityPermille + healthMortalityRiskPermille)
       if (mortalityPermille > 0 && this.random.stream(LIFE_CYCLE_STREAM.mortality).nextInt(1000) < mortalityPermille) {
         person.lifeStatus = 'dead'
         person.deathTick = this.state.tick
@@ -905,7 +931,7 @@ export class SimulationEngine {
           person.partnerId = undefined
         }
         this.state.dailyLifeCycleCounters.deaths += 1
-        pushEvent(this.event('PERSON_DIED', { personId: person.id, ageYears: person.ageYears, mortalityPermille }))
+        pushEvent(this.event('PERSON_DIED', { personId: person.id, ageYears: person.ageYears, mortalityPermille, baseMortalityPermille, healthMortalityRiskPermille }))
       }
     }
   }
@@ -1170,7 +1196,7 @@ export class SimulationEngine {
       schoolLearningHours: 0,
       activityScheduleId: scheduleForAge(0), currentActivity: { kind: 'home', locationId: household.homeActivityLocationId, sinceTick: this.state.tick },
       originTraces: [inheritance.trace], development: { exposures: [{ ...createParentCuriosityExposureAccumulator(Math.floor(this.state.tick / 720) * 720 + 1), sourcePersonIds: [] }], broader: createBroaderDevelopmentState(Math.floor(this.state.tick / 720) * 720 + 1) },
-      environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0, waterAvailabilityPermilleHours: 0 }, variables, knownCellIds: [household.homeCellId],
+      environmentalExposure: { observedHours: 0, foodAccessibleHours: 0, difficultTerrainHours: 0, thermalLoadPermilleHours: 0, waterAvailabilityPermilleHours: 0 }, healthExposure: emptyHealthExposure(), variables, knownCellIds: [household.homeCellId],
     }
     this.state.people = [...this.state.people, child].sort((a, b) => compareIds(a.id, b.id))
     this.personById.set(child.id, child)

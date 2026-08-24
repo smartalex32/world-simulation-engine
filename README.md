@@ -58,6 +58,7 @@ Implemented:
 * Milestone 22 — Simulation Workbench Experience (map-first presentation foundation)
 * Milestone 23 — Settlement Profiles (nearby-home scale foundation)
 * Milestone 33 — Seasonal Climate, Agriculture, and Ecology (first environmental feedback foundation)
+* Milestone 34 — Health, Disease, and Demographic Stress (fictional health-stress foundation)
 
 Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. The workbench derives a read-only landmark/hamlet/village/town/city profile from living homes near an anchor, making its geographic basis explicit rather than assigning residents a settlement field. Linked population zones retain their existing anchor-containment validation.
 
@@ -71,7 +72,9 @@ The workbench now provides coherent world, simulation, analytics, entities, hist
 
 Seasonal climate is a small static classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Daily environmental recovery is measured separately from household food production and consumption; no weather simulation, biome editor, or ecosystem model is implied.
 
-Next: Milestone 34 — Health, Disease, and Demographic Stress.
+Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
+
+Next: Milestone 35 — Skills, Experimentation, and Practical Innovation.
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 

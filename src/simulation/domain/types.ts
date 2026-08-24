@@ -7,10 +7,10 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 
-export const ENGINE_VERSION = '0.30.0'
-export const SNAPSHOT_SCHEMA_VERSION = 30
+export const ENGINE_VERSION = '0.31.0'
+export const SNAPSHOT_SCHEMA_VERSION = 31
 export const BASE_TICK_HOURS = 1
-export const VARIABLE_REGISTRY_VERSION = 1
+export const VARIABLE_REGISTRY_VERSION = 2
 export const INFLUENCE_REGISTRY_VERSION = 1
 export const HOUSEHOLD_MODEL_VERSION = 3
 export const ACTIVITY_REGISTRY_VERSION = 1
@@ -27,6 +27,8 @@ export const CULTURE_MODEL_VERSION = 1
 export const LANGUAGE_MODEL_VERSION = 1
 export const GOVERNANCE_MODEL_VERSION = 2
 export const CONFLICT_MODEL_VERSION = 2
+/** Fictional health-stress exposure and risk rules; not a disease model. */
+export const HEALTH_MODEL_VERSION = 1
 /** Versioned, person-owned knowledge acquisition and application rules. */
 export const KNOWLEDGE_MODEL_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
@@ -550,6 +552,28 @@ export interface EnvironmentalExposureState {
   waterAvailabilityPermilleHours: number
 }
 
+/** Daily, location-derived evidence used only by the health-stress system. */
+export interface HealthExposureState {
+  observedHours: number
+  crowdingPersonHours: number
+  coPresenceHours: number
+  waterAvailabilityPermilleHours: number
+}
+
+export interface HealthStressTrace {
+  tick: number
+  previousValue: number
+  recoveryDelta: number
+  crowdingDelta: number
+  coPresenceDelta: number
+  waterDelta: number
+  hungerDelta: number
+  requestedDelta: number
+  appliedDelta: number
+  currentValue: number
+  annualMortalityRiskPermille: number
+}
+
 export type PersonLifeStage = 'infant' | 'child' | 'adolescent' | 'adult' | 'olderAdult'
 export type PersonLifeStatus = 'alive' | 'dead'
 
@@ -582,6 +606,8 @@ export interface PersonState {
   originTraces: CuriosityInheritanceTrace[]
   development: PersonDevelopmentState
   environmentalExposure?: EnvironmentalExposureState
+  healthExposure?: HealthExposureState
+  lastHealthStressTrace?: HealthStressTrace
   variables: PersonVariableValues
   knownCellIds: string[]
   journey?: JourneyState
@@ -664,6 +690,7 @@ export interface RunConfiguration {
   governanceModelVersion?: number
   conflictModelVersion?: number
   knowledgeModelVersion?: number
+  healthModelVersion?: number
 }
 
 export interface RandomStreamSnapshot {
