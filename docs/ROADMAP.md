@@ -135,10 +135,11 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 32 — Collective Conflict and Resolution
 * Milestone 33 — Seasonal Climate, Agriculture, and Ecology
 * Milestone 34 — Health, Disease, and Demographic Stress
+* Milestone 35 — Skills, Experimentation, and Practical Innovation
 
 ## Next Slice
 
-* Milestone 35 — Skills, Experimentation, and Practical Innovation
+* Milestone 36 — Historical Snapshots and Causal Replay
 
 Detailed current implementation is documented in `README.md`.
 

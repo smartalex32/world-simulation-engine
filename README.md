@@ -482,6 +482,8 @@ Bounded integer permille values are used where appropriate.
 
 Knowledge is person-owned learned state, separate from traits and skills. The first version includes foraging and local-terrain knowledge. Completed exploration adds local-terrain knowledge; positive, co-present encounters may transfer a bounded portion of a knowledge gap according to the recipient's directional relationship trust. Foraging knowledge produces a bounded harvest-yield improvement. These outcomes are visible in per-person traces and meaningful events. No global technology tree or automatic organization-membership transfer exists.
 
+Practical innovation is likewise person-owned. During real productive work, a forager with sufficient foraging knowledge and a household tool may make a seeded experiment attempt. A success consumes the tool, records provenance, and grants only that person a bounded efficient-harvest technique; it does not create an era, global technology, or instant diffusion.
+
 ---
 
 # Influence System

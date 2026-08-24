@@ -292,6 +292,10 @@ treatment simulation, or pandemic-scale modeling.
 
 ### Milestone 35 — Skills, Experimentation, and Practical Innovation
 
+**Status:** Implemented — a bounded, seeded foraging experiment requires
+knowledge, a household tool, and productive work. A successful local technique
+retains provenance and affects only the inventor's harvesting output.
+
 **Objective:** Extend the knowledge foundation into small useful innovations
 without imposing a global technology tree.
 

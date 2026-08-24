@@ -14,6 +14,7 @@ import {
   CONFLICT_MODEL_VERSION,
   HEALTH_MODEL_VERSION,
   KNOWLEDGE_MODEL_VERSION,
+  INNOVATION_MODEL_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
@@ -84,6 +85,7 @@ import { applyDispute, disputeId, resolveCommunityContentions } from '../conflic
 import { discoverLocalTerrain, initialKnowledge, transmitKnowledge } from '../knowledge/model'
 import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION_STREAM, relocationTrace } from '../households/relocation'
 import { emptyHealthExposure, healthStressMortalityRiskPermille, resolveDailyHealthStress } from '../health/model'
+import { attemptPracticalExperiment, INNOVATION_STREAM } from '../innovation/model'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -211,6 +213,7 @@ export class SimulationEngine {
         conflictModelVersion: CONFLICT_MODEL_VERSION,
         knowledgeModelVersion: KNOWLEDGE_MODEL_VERSION,
         healthModelVersion: HEALTH_MODEL_VERSION,
+        innovationModelVersion: INNOVATION_MODEL_VERSION,
       },
       world,
       people: generatedPopulation.people,
@@ -301,6 +304,11 @@ export class SimulationEngine {
         this.economicCounters().foodConsumedFromHouseholds += outcome.foodConsumed
         this.economicCounters().foodProduced += outcome.foodProduced
         this.economicCounters().agriculturalFoodProduced += outcome.agriculturalFoodProduced
+        if (decision.action === 'work') {
+          const household = this.householdById.get(person.householdId)
+          const technique = household?.inventory ? attemptPracticalExperiment(person, household.inventory, this.state.tick, this.random.stream(INNOVATION_STREAM)) : undefined
+          if (technique) pushEvent(this.event('PERSON_KNOWLEDGE_DISCOVERED', { personId: person.id, techniqueId: technique.id, knowledgePermille: technique.knowledgePermille, toolCost: technique.toolCost, successRollPermille: technique.successRollPermille }))
+        }
         if (decision.action === 'work') this.economicCounters().productiveHours += 1
         if (outcome.failedMeal) this.state.dailySpatialCounters.failedMeals += 1
         this.recordCommunityAction(decision.action, outcome)

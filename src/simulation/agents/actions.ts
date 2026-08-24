@@ -29,6 +29,7 @@ import {
 import { consumeHouseholdFood, harvestFood } from '../economy/model'
 import { harvestEfficiencyPermille } from '../knowledge/model'
 import { climateConditionsAt, isAgriculturalCell } from '../environment/climate'
+import { techniqueHarvestBonusPermille } from '../innovation/model'
 
 export interface Candidate {
   action: ActionName
@@ -198,7 +199,7 @@ export function resolveAction(person: PersonState, decision: ActionDecision, con
     if (household?.inventory && cell && person.occupation === 'forager') {
       const agricultural = isAgriculturalCell(cell)
       const productivity = agricultural ? climateConditionsAt(cell, context.tick).agriculturalProductivityPermille : 1000
-      const efficiency = Math.floor(harvestEfficiencyPermille(person.knowledge ?? { 'knowledge.foraging': 0, 'knowledge.localTerrain': 0 }) * productivity / 1000)
+      const efficiency = Math.floor(harvestEfficiencyPermille(person.knowledge ?? { 'knowledge.foraging': 0, 'knowledge.localTerrain': 0 }) * (1000 + techniqueHarvestBonusPermille(person)) * productivity / 1_000_000)
       outcome.foodProduced = harvestFood(cell, household.inventory, efficiency)
       outcome.agriculturalFoodProduced = agricultural ? outcome.foodProduced : 0
       adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, WORK_FATIGUE_COST)
