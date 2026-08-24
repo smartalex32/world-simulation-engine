@@ -33,7 +33,12 @@ export function buildProjectedSettlements(
       let nearbyResidentCount = 0
       let currentVisitorCount = 0
       let catchmentResourceCapacity = 0
+      let waterAccessCellCount = 0
       for (const cellId of catchment) catchmentResourceCapacity += cellsById.get(cellId)?.resourceCapacity ?? 0
+      for (const cellId of catchment) {
+        const cell = cellsById.get(cellId)
+        if (cell && cells.some((candidate) => candidate.terrain === 'water' && hexDistance(cell, candidate) <= 1)) waterAccessCellCount += 1
+      }
       if (anchor) {
         for (const person of people) {
           if (person.lifeStatus === 'dead') continue
@@ -53,6 +58,7 @@ export function buildProjectedSettlements(
         catchmentSource: settlement.catchmentCellIds === undefined ? 'anchor-radius' : 'authored',
         currentVisitorCount,
         catchmentResourceCapacity,
+        waterAccessCellCount,
       }
     })
 }

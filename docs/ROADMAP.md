@@ -1361,7 +1361,7 @@ Deep simulation semantics belong in focused design documents.
 Completed through:
 
 ```text
-Milestone 24 — Settlement Catchments and Inspection
+Milestone 25 — Water, Routes, and Geographic Accessibility
 ```
 
 Current milestone:
@@ -1373,7 +1373,7 @@ No active implementation milestone
 Next independently reviewable slice:
 
 ```text
-Milestone 25 — Water, Routes, and Geographic Accessibility
+Milestone 26 — Household Relocation and Settlement Change
 ```
 
 Completed immediate sequence:

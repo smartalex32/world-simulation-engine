@@ -143,6 +143,7 @@ export interface ProjectedSettlement {
   catchmentSource: 'authored' | 'anchor-radius'
   currentVisitorCount: number
   catchmentResourceCapacity: number
+  waterAccessCellCount: number
 }
 /** Bounded metadata; geometry is drawn only where the active cell projection is exact. */
 export interface ProjectedRoad { id: string; cellIds: string[] }

@@ -12,7 +12,7 @@ describe('settlement presentation profiles', () => {
 
     const profiles = buildProjectedSettlements(source.world.settlements, source.world.grid.cells, source.people)
 
-    expect(profiles).toEqual([{ id: 'anchor', name: 'Anchor', anchorCellId: anchor.id, scale: 'village', nearbyResidentCount: 25, nearbyHomeCellCount: 1, catchmentCellCount: expect.any(Number), catchmentSource: 'anchor-radius', currentVisitorCount: 0, catchmentResourceCapacity: expect.any(Number) }])
+    expect(profiles).toEqual([{ id: 'anchor', name: 'Anchor', anchorCellId: anchor.id, scale: 'village', nearbyResidentCount: 25, nearbyHomeCellCount: 1, catchmentCellCount: expect.any(Number), catchmentSource: 'anchor-radius', currentVisitorCount: 0, catchmentResourceCapacity: expect.any(Number), waterAccessCellCount: expect.any(Number) }])
     expect(SETTLEMENT_PROFILE_RADIUS_CELLS).toBe(4)
   })
 
