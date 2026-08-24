@@ -78,7 +78,7 @@ import { evaluateSchoolAttendance, SCHOOL_ATTENDANCE, SCHOOL_ATTENDANCE_STREAM, 
 import { createCulturalState, transmitCulture } from '../culture/model'
 import { acquireLanguage, initialLanguage } from '../language/model'
 import { createLocalGovernance, updateLegitimacy } from '../governance/model'
-import { applyDispute, disputeId } from '../conflict/model'
+import { applyDispute, disputeId, resolveCommunityContentions } from '../conflict/model'
 import { discoverLocalTerrain, initialKnowledge, transmitKnowledge } from '../knowledge/model'
 import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION_STREAM, relocationTrace } from '../households/relocation'
 
@@ -342,6 +342,7 @@ export class SimulationEngine {
         this.resolveDailyFoodSharing(pushEvent)
         this.aggregateCommunities(pushEvent)
         for (const governance of this.state.governance) { const community = this.state.communities.find((value) => value.catchment.id === governance.communityId); if (community) updateLegitimacy(governance, community, this.state.tick) }
+        for (const contention of resolveCommunityContentions(this.disputeById.values(), new Map(this.state.governance.map((governance) => [governance.communityId, governance.legitimacy])))) pushEvent(this.event('COMMUNITY_CONTENTION_RESOLVED', { ...contention }))
         this.regenerateFood()
         statistics.push(...this.sampleDailyStatistics())
         this.decayRelationshipFrequencies()
