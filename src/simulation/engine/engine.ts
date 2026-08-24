@@ -914,7 +914,12 @@ export class SimulationEngine {
         pushEvent(this.event('PERSON_LIFE_STAGE_CHANGED', { personId: person.id, previousLifeStage, nextLifeStage, ageYears: person.ageYears }))
       }
       const baseMortalityPermille = annualMortalityPermille(person.ageYears)
-      const healthMortalityRiskPermille = healthStressMortalityRiskPermille(getPersonVariable(person.variables, PERSON_VARIABLE_ID.healthStress))
+      // Preserve the existing lifecycle stream contract for people below the
+      // established age-risk threshold. Health stress modifies an already
+      // evaluated mortality opportunity; it does not create a new one.
+      const healthMortalityRiskPermille = baseMortalityPermille > 0
+        ? healthStressMortalityRiskPermille(getPersonVariable(person.variables, PERSON_VARIABLE_ID.healthStress))
+        : 0
       const mortalityPermille = Math.min(1000, baseMortalityPermille + healthMortalityRiskPermille)
       if (mortalityPermille > 0 && this.random.stream(LIFE_CYCLE_STREAM.mortality).nextInt(1000) < mortalityPermille) {
         person.lifeStatus = 'dead'
