@@ -11,6 +11,7 @@ import {
   type TerrainTypeOverride,
   type ResourceCapacityOverride,
   type RoadState,
+  type WorldTerrainBase,
 } from './types'
 
 export const WORLD_CREATION_LIMITS = Object.freeze({
@@ -65,6 +66,7 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
   if (enforceCreatorLimits && width * height > WORLD_CREATION_LIMITS.maximumCellCount) throw new RangeError('World cell count exceeds the 8A creation limit')
   if (cells.length !== width * height) throw new Error('Generated world dimensions do not match creation request')
   const initialPopulationCount = boundedInteger(value.initialPopulationCount, WORLD_CREATION_LIMITS.minimumPopulation, enforceCreatorLimits ? WORLD_CREATION_LIMITS.maximumPopulation : Number.MAX_SAFE_INTEGER, 'Initial population')
+  const terrainBase = normalizeTerrainBase(value.terrainBase)
   const elevationOverrides = normalizeElevationOverrides(value.elevationOverrides, cells)
   const terrainOverrides = normalizeTerrainOverrides(value.terrainOverrides, cells)
   const resourceCapacityOverrides = normalizeResourceCapacityOverrides(value.resourceCapacityOverrides, cells)
@@ -102,7 +104,7 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
       : { id: zone.id, name: zoneName, cellIds, populationCount, settlementId: zone.settlementId }
   }).sort((a, b) => compareText(a.id, b.id))
   if (zones.reduce((sum, zone) => sum + zone.populationCount, 0) !== initialPopulationCount) throw new Error('Population zone allocations must equal the initial population')
-  return { seed, name, width, height, initialPopulationCount, populationZones: zones, settlements, ...(roads.length ? { roads } : {}), terrainOverrides, elevationOverrides, resourceCapacityOverrides }
+  return { seed, name, width, height, initialPopulationCount, ...(terrainBase === 'seeded-valley' ? {} : { terrainBase }), populationZones: zones, settlements, ...(roads.length ? { roads } : {}), terrainOverrides, elevationOverrides, resourceCapacityOverrides }
 }
 
 /** Applies sparse terrain edits without randomness; derived cell values remain coherent. */
@@ -281,6 +283,12 @@ function normalizedSeed(value: string): string {
   const normalized = typeof value === 'string' ? value.trim() : ''
   if (normalized.length > 160) throw new Error('World seed must contain at most 160 characters')
   return normalized || 'valley-001'
+}
+
+function normalizeTerrainBase(value: WorldTerrainBase | undefined): WorldTerrainBase {
+  if (value === undefined || value === 'seeded-valley') return 'seeded-valley'
+  if (value === 'blank-land') return value
+  throw new Error('World terrain baseline is invalid')
 }
 
 function validIdentifier(value: string, label: string): void {

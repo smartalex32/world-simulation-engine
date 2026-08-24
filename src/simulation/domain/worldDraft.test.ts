@@ -195,6 +195,30 @@ describe('world draft lifecycle domain contract', () => {
     expect(() => paintWorldDraftTerrain(active, Array(513).fill(target.id), 'hill')).toThrow(/1 through 512/)
   })
 
+  it('uses a reproducible blank-land baseline and retains only deliberate water edits', async () => {
+    const draft = {
+      ...defaultWorldCreationRequest('blank-land-seed'),
+      terrainBase: 'blank-land' as const,
+      initialPopulationCount: 10,
+      populationZones: [{ id: 'population-zone-0001', name: 'Initial', preset: 'center' as const, populationCount: 10 }],
+    }
+    const active = createWorldDraftRecord('draft-blank-land', draft)
+    const preview = previewWorldDraft(active)
+
+    expect(preview.terrainCounts).toEqual({ water: 0, plain: 32 * 24, hill: 0 })
+    expect(preview.passableCellCount).toBe(32 * 24)
+    const target = projectWorldDraftViewport(active, { revision: 1, bounds: { minQ: 0, maxQ: 0, minR: 0, maxR: 0 } }).cells[0]!
+    const water = paintWorldDraftTerrain(active, [target.id], 'water', active.revision)
+    const restored = paintWorldDraftTerrain(water, [target.id], 'plain', water.revision)
+
+    expect(water.draft.terrainOverrides).toEqual([{ cellId: target.id, terrain: 'water' }])
+    expect(restored.draft.terrainOverrides).toEqual([])
+    const [first, second] = await Promise.all([SimulationEngine.create(water.draft).snapshot(), SimulationEngine.create(water.draft).snapshot()])
+    expect(first.digest).toBe(second.digest)
+    expect(first.state.config.worldCreation.terrainBase).toBe('blank-land')
+    expect(first.state.world.grid.cells.find((cell) => cell.id === target.id)).toMatchObject({ terrain: 'water', movementCost: 0 })
+  })
+
   it('paints a bounded elevation override without overriding an explicit terrain type', async () => {
     const active = createWorldDraftRecord('draft-elevation', {
       ...defaultWorldCreationRequest('elevation-paint-seed'), initialPopulationCount: 10,

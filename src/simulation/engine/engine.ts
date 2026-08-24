@@ -170,10 +170,10 @@ export class SimulationEngine {
     const draft = typeof seedOrDraft === 'string' ? defaultWorldCreationRequest(seedOrDraft, width, height) : seedOrDraft
     validateWorldCreationDraftLimits(draft)
     // Terrain generation is pure for a seed, so resolve presets before starting the authoritative RNG provider.
-    const preliminary = generateValley(draft.seed.trim() || 'valley-001', draft.width, draft.height, { terrainOverrides: draft.terrainOverrides, elevationOverrides: draft.elevationOverrides, resourceCapacityOverrides: draft.resourceCapacityOverrides })
+    const preliminary = generateValley(draft.seed.trim() || 'valley-001', draft.width, draft.height, { terrainBase: draft.terrainBase, terrainOverrides: draft.terrainOverrides, elevationOverrides: draft.elevationOverrides, resourceCapacityOverrides: draft.resourceCapacityOverrides })
     const creation = normalizeWorldCreationRequest(draft, preliminary.world.grid.cells)
     const creationKey = JSON.stringify(creation)
-    const { world, random } = generateValley(creation.seed, creation.width, creation.height, { name: creation.name, settlements: creation.settlements, roads: creation.roads, terrainOverrides: creation.terrainOverrides, elevationOverrides: creation.elevationOverrides, resourceCapacityOverrides: creation.resourceCapacityOverrides, idSuffix: creationKey })
+    const { world, random } = generateValley(creation.seed, creation.width, creation.height, { name: creation.name, settlements: creation.settlements, roads: creation.roads, terrainBase: creation.terrainBase, terrainOverrides: creation.terrainOverrides, elevationOverrides: creation.elevationOverrides, resourceCapacityOverrides: creation.resourceCapacityOverrides, idSuffix: creationKey })
     const preserveLegacyHomePlacement = typeof seedOrDraft === 'string' || (draft.populationZones.length === 0 && draft.initialPopulationCount === 200)
     const generatedPopulation = generatePopulation(world.grid.cells, creation.populationZones, random, preserveLegacyHomePlacement)
     const catchments = createTwoCatchmentGeography({ cells: world.grid.cells, width: creation.width, height: creation.height })
