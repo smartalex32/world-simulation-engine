@@ -10,6 +10,7 @@ const MAX_TICK = Number.MAX_SAFE_INTEGER
 
 export const DEFAULT_HISTORY_EVENT_LIMIT = 200
 export const DEFAULT_HISTORY_SAMPLE_LIMIT = 365
+export const DEFAULT_CHECKPOINT_LIMIT = 24
 
 export interface RunRecord {
   runId: string
@@ -23,7 +24,7 @@ export interface RunRecord {
 export interface SavedSnapshot {
   key: string
   runId: string
-  kind: 'autosave' | 'named'
+  kind: 'autosave' | 'named' | 'checkpoint'
   name: string
   createdAt: string
   snapshot: WorkbenchSnapshotEnvelope
@@ -57,15 +58,15 @@ export interface RunHistory {
 export class WorkbenchDatabase {
   private databasePromise?: Promise<IDBDatabase>
 
-  async saveSnapshot(snapshot: WorkbenchSnapshotEnvelope, kind: 'autosave' | 'named', name?: string): Promise<SavedSnapshot> {
+  async saveSnapshot(snapshot: WorkbenchSnapshotEnvelope, kind: 'autosave' | 'named' | 'checkpoint', name?: string): Promise<SavedSnapshot> {
     const database = await this.open()
     const now = new Date().toISOString()
-    const key = kind === 'autosave' ? `${snapshot.state.runId}:autosave` : `${snapshot.state.runId}:named:${crypto.randomUUID()}`
+    const key = kind === 'autosave' ? `${snapshot.state.runId}:autosave` : kind === 'checkpoint' ? `${snapshot.state.runId}:checkpoint:${snapshot.state.tick}` : `${snapshot.state.runId}:named:${crypto.randomUUID()}`
     const saved: SavedSnapshot = {
       key,
       runId: snapshot.state.runId,
       kind,
-      name: kind === 'autosave' ? 'Autosave' : (name?.trim() || `Snapshot at hour ${snapshot.state.tick}`),
+      name: kind === 'autosave' ? 'Autosave' : kind === 'checkpoint' ? `Checkpoint at hour ${snapshot.state.tick}` : (name?.trim() || `Snapshot at hour ${snapshot.state.tick}`),
       createdAt: now,
       snapshot,
     }
@@ -83,7 +84,14 @@ export class WorkbenchDatabase {
     runs.put(run)
     transaction.objectStore('snapshots').put(saved)
     await transactionDone(transaction)
+    if (kind === 'checkpoint') await this.trimCheckpoints(snapshot.state.runId)
     return saved
+  }
+
+  /** Retains only bounded checkpoint evidence; named saves remain user-owned. */
+  private async trimCheckpoints(runId: string): Promise<void> {
+    const checkpoints = (await this.listSnapshots(runId)).filter((snapshot) => snapshot.kind === 'checkpoint')
+    await Promise.all(checkpoints.slice(DEFAULT_CHECKPOINT_LIMIT).map((snapshot) => this.deleteSnapshot(snapshot.key)))
   }
 
   async appendTelemetry(events: SimulationEvent[], statistics: StatisticSample[]): Promise<void> {

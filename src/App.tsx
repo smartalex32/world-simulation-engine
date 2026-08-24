@@ -84,6 +84,7 @@ export default function App() {
   const [processingMs, setProcessingMs] = useState(0)
   const [saveName, setSaveName] = useState('')
   const lastAutosavedTick = useRef(-1)
+  const lastCheckpointTick = useRef(-1)
   const statusRef = useRef<typeof status>('starting')
   const importRef = useRef<HTMLInputElement>(null)
   const requestViewport = useCallback((request: import('./projection').MapProjectionRequest) => client.setViewport(request), [client])
@@ -267,6 +268,10 @@ export default function App() {
     try {
       const snapshot = await client.snapshot()
       await database.saveSnapshot(snapshot, 'autosave')
+      if (snapshot.state.tick > 0 && snapshot.state.tick % 168 === 0 && snapshot.state.tick !== lastCheckpointTick.current) {
+        await database.saveSnapshot(snapshot, 'checkpoint')
+        lastCheckpointTick.current = snapshot.state.tick
+      }
       lastAutosavedTick.current = snapshot.state.tick
       await refreshSnapshots(snapshot.state.runId)
     } catch (reason) {
