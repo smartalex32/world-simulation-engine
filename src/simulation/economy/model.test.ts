@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ECONOMY, consumeHouseholdFood, harvestFood, initialInventory, occupationFor, resolveFoodShares } from './model'
+import { ECONOMY, consumeHouseholdFood, harvestFood, initialInventory, occupationFor, resolveFoodShares, resolveToolExchanges } from './model'
 
 describe('economy model', () => {
   it('assigns only adults productive roles and transfers public food into household ownership', () => {
@@ -17,12 +17,24 @@ describe('economy model', () => {
 
   it('shares only across nearby household relationships with demonstrated familiarity', () => {
     const households = [
-      { id: 'household-1', homeCellId: '0,0', homeActivityLocationId: 'a', memberIds: ['p1'], inventory: { food: 30 } },
-      { id: 'household-2', homeCellId: '1,0', homeActivityLocationId: 'b', memberIds: ['p2'], inventory: { food: 0 } },
+      { id: 'household-1', homeCellId: '0,0', homeActivityLocationId: 'a', memberIds: ['p1'], inventory: { food: 30, tools: 0 } },
+      { id: 'household-2', homeCellId: '1,0', homeActivityLocationId: 'b', memberIds: ['p2'], inventory: { food: 0, tools: 0 } },
     ]
     const cells = new Map([['0,0', { id: '0,0', q: 0, r: 0 }], ['1,0', { id: '1,0', q: 1, r: 0 }]])
     const people = new Map([['p1', { householdId: 'household-1' }], ['p2', { householdId: 'household-2' }]])
     const relationships = [{ id: 'p1|p2', personAId: 'p1', personBId: 'p2', familiarity: 300 }]
     expect(resolveFoodShares(households, cells as never, relationships as never, people)).toEqual([{ donorHouseholdId: 'household-1', recipientHouseholdId: 'household-2', amount: 8 }])
+  })
+
+  it('exchanges one durable tool only between households co-present at the explicit market', () => {
+    const households = [
+      { id: 'household-1', homeCellId: '0,0', homeActivityLocationId: 'a', memberIds: ['p1'], inventory: { food: 1, tools: 3 } },
+      { id: 'household-2', homeCellId: '2,0', homeActivityLocationId: 'b', memberIds: ['p2'], inventory: { food: 1, tools: 0 } },
+    ]
+    const market = { id: 'market-1', cellId: '1,0', activityLocationId: 'activity.commons.1,0' }
+    const people = new Map([['p1', { householdId: 'household-1' }], ['p2', { householdId: 'household-2' }]])
+    const before = households.reduce((sum, household) => sum + household.inventory.tools, 0)
+    expect(resolveToolExchanges(households, [market], new Map([[market.activityLocationId, ['p1', 'p2']]]), people)).toEqual([{ marketId: 'market-1', donorHouseholdId: 'household-1', recipientHouseholdId: 'household-2', amount: 1 }])
+    expect(households.reduce((sum, household) => sum + household.inventory.tools, 0)).toBe(before)
   })
 })

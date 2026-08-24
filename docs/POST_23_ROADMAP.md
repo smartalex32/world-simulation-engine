@@ -115,6 +115,8 @@ housing market, or migration system.
 
 ### Milestone 27 — Local Goods and Exchange Places
 
+**Status:** Implemented (bounded co-present tool exchange foundation)
+
 **Objective:** Extend the existing food-production foundation into a small,
 spatial local-exchange loop.
 
@@ -129,6 +131,11 @@ conservation and deterministic exchange ordering are tested.
 
 **Explicit non-goals:** Currency, banking, firms, dynamic price discovery,
 taxes, corporations, or a global economy.
+
+**Implemented boundary:** One market is attached to a real passable commons
+cell. Household-owned durable tools have deterministic initial scarcity and
+surplus; co-present households exchange at most one tool per market interval in
+stable order. Every transfer preserves tool totals and records counterparties.
 
 ### Milestone 28 — Settlement Services and Institutions
 

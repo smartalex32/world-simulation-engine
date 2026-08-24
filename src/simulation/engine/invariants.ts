@@ -26,7 +26,7 @@ export function validateHouseholdActivityState(state: SimulationState): void {
     if (household.lastRelocation) validateHouseholdRelocation(household, state)
     if (household.homeActivityLocationId !== householdHomeActivityId(household.id)) throw new Error(`Household ${household.id} has a non-canonical home activity ID`)
     if (!isSortedUnique(household.memberIds) || household.memberIds.length === 0) throw new Error(`Household ${household.id} has invalid members`)
-    if (!household.inventory || !Number.isSafeInteger(household.inventory.food) || household.inventory.food < 0) throw new Error(`Household ${household.id} has invalid food inventory`)
+    if (!household.inventory || !Number.isSafeInteger(household.inventory.food) || household.inventory.food < 0 || !Number.isSafeInteger(household.inventory.tools) || household.inventory.tools < 0) throw new Error(`Household ${household.id} has invalid inventory`)
     for (const personId of household.memberIds) {
       if (!peopleById.has(personId)) throw new Error(`Household ${household.id} contains missing person ${personId}`)
       if (memberships.has(personId)) throw new Error(`Person ${personId} belongs to multiple households`)
@@ -110,6 +110,11 @@ export function validateHouseholdActivityState(state: SimulationState): void {
     }
   }
   if (memberships.size !== state.people.length) throw new Error('Not every person belongs to exactly one household')
+  const marketIds = new Set<string>()
+  for (const market of state.markets) {
+    if (marketIds.has(market.id) || !cellsById.get(market.cellId)?.movementCost || market.activityLocationId !== commonsActivityId(market.cellId)) throw new Error(`Market ${market.id} is invalid`)
+    marketIds.add(market.id)
+  }
   validateInitialPopulationPlacement(state)
 
   const activityCounters = state.dailyActivityCounters

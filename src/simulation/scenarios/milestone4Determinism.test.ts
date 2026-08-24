@@ -50,6 +50,7 @@ async function controlledSnapshot(seed: string, personCount: number): Promise<Sn
   }
   const secondCell = { ...cell, id: '1,0', q: 1 }
   state.world.grid = { width: 2, height: 1, cells: [cell, secondCell] }
+  state.markets = []
   state.config.worldWidth = 2
   state.config.worldHeight = 1
   state.tick = 5
