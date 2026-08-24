@@ -132,6 +132,8 @@ export interface AdvanceOptions {
 export class SimulationEngine {
   private random: RandomProvider
   private readonly cellById: Map<string, SimulationState['world']['grid']['cells'][number]>
+  /** Static authored-road index: avoids rebuilding the same set every tick. */
+  private readonly roadCellIds: ReadonlySet<string>
   private readonly personById: Map<string, SimulationState['people'][number]>
   private readonly relationshipById: Map<string, SimulationState['relationships'][number]>
   private readonly disputeById: Map<string, SimulationState['disputes'][number]>
@@ -145,6 +147,7 @@ export class SimulationEngine {
   private constructor(private state: SimulationState, random: RandomProvider) {
     this.random = random
     this.cellById = new Map(state.world.grid.cells.map((cell) => [cell.id, cell]))
+    this.roadCellIds = new Set((state.world.roads ?? []).flatMap((road) => road.cellIds))
     this.personById = new Map(state.people.map((person) => [person.id, person]))
     this.relationshipById = new Map(state.relationships.map((relationship) => [relationship.id, relationship]))
     this.disputeById = new Map(state.disputes.map((dispute) => [dispute.id, dispute]))
@@ -292,7 +295,7 @@ export class SimulationEngine {
 
       const occupantsByCell = this.buildOccupancy(true)
       const occupantsByActivityLocation = this.buildActivityOccupancy()
-      const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: new Set((this.state.world.roads ?? []).flatMap((road) => road.cellIds)), cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById }
+      const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: this.roadCellIds, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById }
       const actionRng = this.random.stream('actions')
       const decisions = this.livingPeople()
         .filter((person) => !person.journey && person.schoolAttendance === undefined)
