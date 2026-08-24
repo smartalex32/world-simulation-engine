@@ -9,6 +9,11 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    container:
+      # Keep this aligned with @playwright/test in package.json and pnpm-lock.yaml.
+      # The image supplies Chromium, Firefox, WebKit, and their Linux dependencies.
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+      options: --user 1001
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -22,5 +27,4 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      - run: pnpm exec playwright install --with-deps chromium firefox webkit
       - run: pnpm test:e2e
