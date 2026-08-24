@@ -372,6 +372,11 @@ moving engine logic into React.
 
 ### Milestone 39 — Collaboration and Shared Worlds
 
+**Status:** Design complete; implementation deliberately deferred until the
+hosted-server foundation is selected. The authority, revision, lease, conflict,
+and reproducibility contract is recorded in
+[`COLLABORATION_AND_SHARED_WORLDS.md`](./COLLABORATION_AND_SHARED_WORLDS.md).
+
 **Objective:** Consider multi-user world authoring only after draft semantics,
 authorship, persistence, and conflict handling are deliberately designed.
 
@@ -381,12 +386,106 @@ merge behavior, permissions, durable storage, and reproducibility boundaries.
 **Explicit non-goals:** Opportunistic real-time collaboration, multiplayer
 simulation, or shared mutable drafts without a conflict model.
 
+## Phase F — Designed Worlds and Hosted Simulation
+
+### Milestone 40 — Designed Landmass and Water Authoring
+
+**Objective:** Let an author intentionally compose a world’s land/water shape
+and usable scale before placing settlements and people.
+
+**Smallest vertical slice:** Add an explicit draft creation mode for a blank
+water or blank land canvas, then let the existing worker-owned terrain editor
+author bounded land/water regions with a clear passability and placement
+preview. World dimensions and hex scale remain explicit inputs, not rendering
+choices.
+
+**Acceptance evidence:** A fixed seed plus the same ordered draft commands
+produces the same committed landmask and population-placement validation. A
+user can identify land, water, passable area, and unavailable placement area
+without inspecting raw draft JSON.
+
+**Explicit non-goals:** Hydrology, rivers, erosion, climate simulation,
+procedural continents, a full sculpting tool, or changing live worlds.
+
+### Milestone 41 — Settlement Seeds and Authoring Profiles
+
+**Objective:** Let authors choose where people begin and select a bounded
+starting settlement shape without fabricating later society-level properties.
+
+**Smallest vertical slice:** Provide town, village, and dispersed-homestead
+placement templates that produce explicit zones, homes, and initial resource
+access through the existing draft and world-creation boundary.
+
+**Explicit non-goals:** Kingdoms, cultures, classes, professions, or automatic
+community membership.
+
+### Milestone 42 — Food Security, Settlement Growth, and Migration Signals
+
+**Objective:** Make population growth, decline, and relocation visibly respond
+to actual food access, household conditions, and reachable places.
+
+**Smallest vertical slice:** Expose the existing material and relocation
+evidence in settlement inspection, then add one controlled food-security
+pressure that feeds a bounded household migration decision.
+
+**Explicit non-goals:** Detailed markets, prices, national economics, or
+scripted city growth totals.
+
+### Milestone 43 — Hosted Single-Node Simulation Boundary
+
+**Objective:** Run a world on a server while keeping the browser a client of
+authoritative commands and bounded projections.
+
+**Entry gate:** Milestone 39’s authority model and a chosen durable hosted
+persistence implementation.
+
+**Smallest vertical slice:** Host one owner-controlled run with durable
+snapshots and the existing worker protocol behind typed server commands.
+
+**Explicit non-goals:** Multi-node scheduling, collaboration editing, browser
+authority, or changed simulation behavior.
+
+### Milestone 44 — Measured Ten-Thousand-Person Scale
+
+**Objective:** Support the first useful hosted world scale with measured,
+reproducible performance rather than speculative billion-cell claims.
+
+**Smallest vertical slice:** Establish a 10,000-person benchmark and optimize
+one measured bottleneck while preserving digest, restore, and inspection
+contracts.
+
+**Explicit non-goals:** Hundred-thousand-person guarantees, cohorts, or
+unbounded in-browser state transfer.
+
+### Milestone 45 — Fidelity Regions and Population Aggregation
+
+**Objective:** Establish explicit, inspectable fidelity boundaries for distant
+populations only after detailed-agent scale has been measured.
+
+**Smallest vertical slice:** Introduce one reversible, versioned aggregate
+region representation with a documented handoff to detailed simulation.
+
+**Explicit non-goals:** Invisible approximation, arbitrary offscreen behavior,
+or replacing hooked people with aggregate statistics.
+
+### Milestone 46 — Long-Term World History and Change Inspection
+
+**Objective:** Let authors inspect why a world grew, contracted, relocated, or
+diverged over long simulated spans.
+
+**Smallest vertical slice:** Add bounded settlement and population change
+timelines derived from retained authoritative checkpoints, events, and samples.
+
+**Explicit non-goals:** Invented narratives, unlimited raw history, or replay
+that mutates the active run.
+
 ## Recommended Next Slice
 
-Start with **Milestone 24 — Settlement Catchments and Inspection**. It builds
-directly on the newly implemented settlement profiles, creates the spatial
-evidence needed for later mobility and local services, and avoids prematurely
-turning geographic labels into social or political membership.
+Start with **Milestone 40 — Designed Landmass and Water Authoring**. The
+existing draft editor already proves sparse terrain, elevation, water, resource,
+settlement, and road mutation; the next product slice should make deliberate
+landmass composition and usable world scale the first-class authoring workflow
+before adding shared hosting.
 
 Before beginning each future milestone, update `docs/ROADMAP.md` with its
 status, confirm the prerequisite evidence is present, and create a dedicated
