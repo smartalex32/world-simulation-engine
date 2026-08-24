@@ -18,6 +18,7 @@ import {
   MAX_RELATIONSHIP_DETAILS,
   MAX_RELATIONSHIP_SEGMENTS,
   MAX_TERRAIN_PRIMITIVES,
+  POPULATION_FIDELITY_VERSION,
   PROJECTION_CHUNK_SIZE,
   PROJECTION_PROTOCOL_VERSION,
   PROJECTION_REGION_SIZES,
@@ -176,6 +177,7 @@ export class WorkbenchProjectionBuilder {
       exactCells,
       regions,
       populationMarkers,
+      populationFidelity: buildPopulationFidelity(exactCells, regions, request.hookedPersonId, hookedPersonMarker),
       activityMarkers,
       householdMarkers,
       relationshipSegments,
@@ -307,6 +309,36 @@ export class WorkbenchProjectionBuilder {
     aggregate.dominantTerrain = dominantTerrain(aggregate.terrainCounts)
     boundedCacheSet(this.staticRegions, key, aggregate, MAX_STATIC_REGION_CACHE_ENTRIES)
     return aggregate
+  }
+}
+
+function buildPopulationFidelity(exactCells: readonly ProjectedMapCell[], regions: readonly AggregateMapRegion[], hookedPersonId: string | undefined, hookedPersonMarker: PopulationMapMarker | undefined): MapProjection['populationFidelity'] {
+  if (regions.length === 0) return {
+    version: POPULATION_FIDELITY_VERSION,
+    mode: 'detailed',
+    visiblePopulationCount: exactCells.reduce((total, cell) => total + cell.populationCount, 0),
+    aggregateRegions: [],
+    authoritativeModel: 'detailed-agent',
+    detailHandoff: 'zoom-or-focus',
+    hookedPersonPreserved: hookedPersonId !== undefined && hookedPersonMarker?.personId === hookedPersonId,
+  }
+  const aggregateRegions = regions.map((region) => ({
+    id: `population-fidelity:${region.key}`,
+    q: region.q,
+    r: region.r,
+    qMax: region.qMax,
+    rMax: region.rMax,
+    size: region.size,
+    populationCount: region.populationCount,
+  }))
+  return {
+    version: POPULATION_FIDELITY_VERSION,
+    mode: 'aggregate',
+    visiblePopulationCount: aggregateRegions.reduce((total, region) => total + region.populationCount, 0),
+    aggregateRegions,
+    authoritativeModel: 'detailed-agent',
+    detailHandoff: 'zoom-or-focus',
+    hookedPersonPreserved: hookedPersonId !== undefined && hookedPersonMarker?.personId === hookedPersonId,
   }
 }
 

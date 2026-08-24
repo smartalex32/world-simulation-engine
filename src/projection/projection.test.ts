@@ -3,7 +3,7 @@ import type { GeographicCell, PersonState } from '../simulation/domain/types'
 import { SimulationEngine } from '../simulation/engine/engine'
 import { projectionChunkKey, regionCount, regionKey } from './chunks'
 import { selectRegionSize, WorkbenchProjectionBuilder } from './buildMapProjection'
-import { MAX_PERSON_DETAILS, MAX_POPULATION_MARKERS, MAX_TERRAIN_PRIMITIVES, PROJECTION_PROTOCOL_VERSION, type MapProjectionRequest } from './types'
+import { MAX_PERSON_DETAILS, MAX_POPULATION_MARKERS, MAX_TERRAIN_PRIMITIVES, POPULATION_FIDELITY_VERSION, PROJECTION_PROTOCOL_VERSION, type MapProjectionRequest } from './types'
 
 describe('bounded workbench projection', () => {
   it('selects globally aligned dynamic regions without exceeding the terrain budget', () => {
@@ -45,6 +45,8 @@ describe('bounded workbench projection', () => {
     expect(projection.map.regions.reduce((sum, region) => sum + (region.foodAmount ?? 0), 0)).toBe(source.world.grid.cells.reduce((sum, cell) => sum + cell.foodAmount, 0))
     expect(projection.map.regions.reduce((sum, region) => sum + region.resourceCapacity, 0)).toBe(source.world.grid.cells.reduce((sum, cell) => sum + cell.resourceCapacity, 0))
     expect(projection.map.regions.reduce((sum, region) => sum + region.populationCount, 0)).toBe(source.people.length)
+    expect(projection.map.populationFidelity).toMatchObject({ version: POPULATION_FIDELITY_VERSION, mode: 'aggregate', authoritativeModel: 'detailed-agent', detailHandoff: 'zoom-or-focus', visiblePopulationCount: source.people.length })
+    expect(projection.map.populationFidelity.aggregateRegions.reduce((sum, region) => sum + region.populationCount, 0)).toBe(source.people.length)
     expect(projection.communities.every((community) => !('cellIds' in community.catchment))).toBe(true)
     expect(projection).not.toHaveProperty('activityLocations')
     expect(projection.world).not.toHaveProperty('grid')
@@ -74,6 +76,20 @@ describe('bounded workbench projection', () => {
     expect(projection.people).toHaveLength(MAX_PERSON_DETAILS)
     expect(projection.detailBudget.peopleTruncated).toBe(true)
     expect(projection.relationships).toEqual([])
+  })
+
+  it('uses an explicit reversible aggregate region while preserving a hooked person as detailed data', () => {
+    const source = SimulationEngine.create('projection-fidelity', 64, 48).project()
+    const template = source.people[0]
+    const cell = source.world.grid.cells.find((candidate) => candidate.movementCost > 0)
+    if (!template || !cell) throw new Error('Population fixture needs a passable template')
+    source.people = Array.from({ length: MAX_PERSON_DETAILS + 10 }, (_, index) => personAt(template, cell, index))
+    const hooked = source.people.at(-1)
+    if (!hooked) throw new Error('Population fixture needs a hooked person')
+    const projection = new WorkbenchProjectionBuilder(source).build(source, { ...request({ minQ: 0, maxQ: 63, minR: 0, maxR: 47 }, 0.2), hookedPersonId: hooked.id })
+    expect(projection.map.populationFidelity).toMatchObject({ mode: 'aggregate', visiblePopulationCount: source.people.length, authoritativeModel: 'detailed-agent', detailHandoff: 'zoom-or-focus', hookedPersonPreserved: true })
+    expect(projection.people.map((person) => person.id)).toContain(hooked.id)
+    expect(projection.map.hookedPersonMarker).toMatchObject({ personId: hooked.id, visible: true })
   })
 
   it('enumerates activity markers only from intersecting 32-cell chunks and preserves visible counts', () => {

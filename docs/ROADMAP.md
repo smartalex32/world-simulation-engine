@@ -136,10 +136,20 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 33 — Seasonal Climate, Agriculture, and Ecology
 * Milestone 34 — Health, Disease, and Demographic Stress
 * Milestone 35 — Skills, Experimentation, and Practical Innovation
+* Milestone 36 — Historical Snapshots and Causal Replay
+* Milestone 37 — Scalable Authoritative Simulation
+* Milestone 38 — World Builder and Workbench Maturity
+* Milestone 39 — Collaboration and Shared Worlds
+* Milestone 40 — Designed Landmass and Water Authoring
+* Milestone 41 — Settlement Seeds and Authoring Profiles
+* Milestone 42 — Food Security, Settlement Growth, and Migration Signals
+* Milestone 43 — Hosted Single-Node Simulation Boundary
+* Milestone 44 — Measured Ten-Thousand-Person Scale
+* Milestone 45 — Fidelity Regions and Population Aggregation
 
 ## Next Slice
 
-* Milestone 36 — Historical Snapshots and Causal Replay
+* Milestone 46 — Long-Term World History and Change Inspection
 
 Detailed current implementation is documented in `README.md`.
 

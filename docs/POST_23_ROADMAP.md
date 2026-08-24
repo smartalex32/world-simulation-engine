@@ -510,6 +510,15 @@ region representation with a documented handoff to detailed simulation.
 **Explicit non-goals:** Invisible approximation, arbitrary offscreen behavior,
 or replacing hooked people with aggregate statistics.
 
+**Implemented boundary:** The versioned worker projection now labels every map
+as either detailed population cells or exact aggregate population regions. Each
+aggregate region exposes aligned bounds and a reconciled population count; the
+projection declares that its authoritative model remains detailed agents and
+that `zoom-or-focus` is the reversible path back to local detail. Hooked people
+remain independently projected and prioritized in inspector transport. This
+does not yet introduce cohorts, change simulation fidelity, or approximate an
+off-screen person's behavior.
+
 ### Milestone 46 — Long-Term World History and Change Inspection
 
 **Objective:** Let authors inspect why a world grew, contracted, relocated, or
