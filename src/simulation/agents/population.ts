@@ -96,6 +96,7 @@ export function generatePopulation(cells: GeographicCell[], zonesOrRandom: reado
       householdId: household.id,
       occupation: occupationFor(assignment.ageYears, Number(base.id.slice(-4))),
       knowledge: initialKnowledge(assignment.ageYears, occupationFor(assignment.ageYears, Number(base.id.slice(-4)))),
+      schoolLearningHours: 0,
       culture: createCulturalState(),
       language: initialLanguage(byId.get(assignment.homeCellId)?.q ?? 0),
       activityScheduleId: activity.scheduleId,

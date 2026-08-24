@@ -591,6 +591,15 @@ commons location. Co-present households may deterministically exchange one
 durable tool when one has surplus and another has need. No currency, price, or
 settlement membership is inferred.
 
+Schools are worker-owned, fixed-capacity services at real commons locations.
+At the scheduled daily service hour, each enrolled living learner receives one
+draw from the named school-attendance stream. Route cost (including road
+discounts), an available adult in the household, curiosity, and persistence
+determine the inspectable attendance probability. Successful attendees occupy
+the school location for the eight-hour window and accumulate learning hours;
+missed opportunities retain an explicit reason. School enrollment and a school
+location do not assign settlement membership, culture, or beliefs.
+
 ---
 
 # Exposure and Development

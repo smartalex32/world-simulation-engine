@@ -128,6 +128,7 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 21 — Optional Narrative Presentation
 * Milestone 22 — Simulation Workbench Experience
 * Milestone 23 — Settlement Profiles
+* Milestone 28 — Settlement Services and Institutions
 
 ## Next Slice
 

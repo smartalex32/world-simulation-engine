@@ -792,6 +792,15 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
       <div className="activity-details"><Metric label="Foraging" value={formatPermille(person.knowledge?.['knowledge.foraging'] ?? 0)} /><Metric label="Local terrain" value={formatPermille(person.knowledge?.['knowledge.localTerrain'] ?? 0)} /></div>
       {person.lastKnowledgeTrace && <small>Latest: {person.lastKnowledgeTrace.source === 'exploration' ? 'discovered through exploration' : 'learned through a positive encounter'} · {person.lastKnowledgeTrace.knowledgeId.replace('knowledge.', '')} +{person.lastKnowledgeTrace.gain / 10}% at tick {person.lastKnowledgeTrace.tick}</small>}
     </section>
+    <section className="community-exposure-panel" aria-labelledby="school-access-heading">
+      <div className="section-heading"><h3 id="school-access-heading">School access</h3><span>{person.schoolLearningHours ?? 0} learning hours</span></div>
+      {person.lastSchoolAttendance ? <div className="activity-details">
+        <Metric label="Latest school" value={person.lastSchoolAttendance.schoolId} />
+        <Metric label="Outcome" value={person.lastSchoolAttendance.attended ? 'Attended' : `Missed · ${person.lastSchoolAttendance.reason}`} />
+        <Metric label="Route cost" value={person.lastSchoolAttendance.travelCost ?? 'No route'} />
+        <Metric label="Chance / roll" value={`${(person.lastSchoolAttendance.probabilityPermille / 10).toFixed(1)}% / ${(person.lastSchoolAttendance.randomRollPermille / 10).toFixed(1)}%`} />
+      </div> : <p>No school opportunity recorded.</p>}
+    </section>
     <section className="community-exposure-panel" aria-labelledby="cultural-beliefs-heading"><div className="section-heading"><h3 id="cultural-beliefs-heading">Learned beliefs</h3><span>Social exposure only</span></div>{person.culture ? <div className="activity-details"><Metric label="Exploration" value={`${(person.culture.beliefs['belief.exploration'] / 10).toFixed(1)}%`} /><Metric label="Cooperation" value={`${(person.culture.beliefs['belief.cooperation'] / 10).toFixed(1)}%`} /><Metric label="Exposures" value={person.culture.exposureCount} /></div> : <p>No cultural exposure recorded.</p>}</section>
     <section className="household-panel" aria-labelledby="household-heading">
       <div className="section-heading"><h3 id="household-heading">Household</h3><span>{household ? household.memberIds.length : 0} members</span></div>
