@@ -797,6 +797,7 @@ function PersonInspector({ person, tick, routeHome, variableDefinitions, communi
       <div className="section-heading"><h3 id="household-heading">Household</h3><span>{household ? household.memberIds.length : 0} members</span></div>
       {household ? <>
         <div className="activity-details"><Metric label="Household ID" value={household.id} /><Metric label="Home" value={household.homeCellId} /><Metric label="Food store" value={`${household.inventory?.food ?? 0} units`} /></div>
+        {household.lastRelocation && <div className="inheritance-trace"><strong>Latest relocation · tick {household.lastRelocation.tick}</strong><span>{household.lastRelocation.sourceCellId} → {household.lastRelocation.destinationCellId}</span><small>Food access {formatSignedPermille(household.lastRelocation.foodAccessDeltaPermille)} · travel {household.lastRelocation.travelCost} · ties +{(household.lastRelocation.householdTiePermille / 10).toFixed(1)}% · crowding {household.lastRelocation.crowdingDelta >= 0 ? '+' : ''}{household.lastRelocation.crowdingDelta} · utility {household.lastRelocation.utilityPermille} · accepted at {household.lastRelocation.randomRollPermille / 10}% of {(household.lastRelocation.probabilityPermille / 10).toFixed(1)}%</small></div>}
         <div className="household-members">
           {householdMembers.map((member) => <button key={member.id} onClick={() => onHookPerson(member.id)} aria-label={`Hook ${member.id}`}><span><strong>{member.id}</strong><small>{member.role}</small></span><span>{member.ageYears} years</span></button>)}
         </div>
@@ -903,6 +904,7 @@ function DevelopmentSources({ ids, onHookPerson }: { ids: readonly string[]; onH
 }
 
 function formatPermille(value: number): string { return `${(value / 10).toFixed(1)}% · ${value} permille` }
+function formatSignedPermille(value: number): string { return `${value >= 0 ? '+' : ''}${(value / 10).toFixed(1)}%` }
 function signed(value: number): string { return value > 0 ? `+${value}` : String(value) }
 
 function EventParticipants({ event, onInspect, onInspectCommunity }: { event: SimulationEvent; onInspect: (id: string) => void; onInspectCommunity: (id: string) => void }) {

@@ -23,6 +23,7 @@ export function validateHouseholdActivityState(state: SimulationState): void {
   for (const household of state.households) {
     const homeCell = cellsById.get(household.homeCellId)
     if (!homeCell?.movementCost) throw new Error(`Household ${household.id} has an invalid home cell`)
+    if (household.lastRelocation) validateHouseholdRelocation(household, state)
     if (household.homeActivityLocationId !== householdHomeActivityId(household.id)) throw new Error(`Household ${household.id} has a non-canonical home activity ID`)
     if (!isSortedUnique(household.memberIds) || household.memberIds.length === 0) throw new Error(`Household ${household.id} has invalid members`)
     if (!household.inventory || !Number.isSafeInteger(household.inventory.food) || household.inventory.food < 0) throw new Error(`Household ${household.id} has invalid food inventory`)
@@ -123,6 +124,17 @@ export function validateHouseholdActivityState(state: SimulationState): void {
   if (!lifeCycleCounters || Object.values(lifeCycleCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily life-cycle counters are invalid')
   const economicCounters = state.dailyEconomicCounters
   if (!economicCounters || Object.values(economicCounters).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily economic counters are invalid')
+}
+
+function validateHouseholdRelocation(household: SimulationState['households'][number], state: SimulationState): void {
+  const trace = household.lastRelocation
+  if (!trace) return
+  if (trace.destinationCellId !== household.homeCellId || trace.sourceCellId === trace.destinationCellId) throw new Error(`Household ${household.id} has an invalid relocation home trace`)
+  if (!Number.isSafeInteger(trace.tick) || trace.tick < 1 || trace.tick > state.tick || trace.tick % 720 !== 0) throw new Error(`Household ${household.id} has an invalid relocation tick`)
+  const nonNegative = [trace.travelCost, trace.householdTiePermille, trace.riskCostPermille, trace.probabilityPermille, trace.randomRollPermille]
+  if (nonNegative.some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error(`Household ${household.id} has invalid relocation values`)
+  if (!Number.isSafeInteger(trace.foodAccessDeltaPermille) || !Number.isSafeInteger(trace.crowdingDelta) || !Number.isSafeInteger(trace.utilityPermille)) throw new Error(`Household ${household.id} has invalid relocation modifiers`)
+  if (trace.probabilityPermille > 1000 || trace.randomRollPermille >= 1000 || trace.randomRollPermille >= trace.probabilityPermille) throw new Error(`Household ${household.id} has an invalid relocation resolution`)
 }
 
 /** Starting homes retain authored zone totals after later household moves. */
