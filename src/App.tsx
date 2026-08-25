@@ -656,7 +656,7 @@ export default function App() {
       </section>
 
       {activeMode === 'history'
-        ? <HistoryPanel events={history?.events ?? []} statistics={history?.statistics ?? []} selectedPersonId={selectedPersonId} onInspectPerson={inspectPerson} onRefresh={() => void refreshHistory()} loading={historyLoading} />
+        ? <HistoryPanel events={history?.events ?? []} statistics={history?.statistics ?? []} checkpoints={history?.checkpoints ?? []} selectedPersonId={selectedPersonId} onInspectPerson={inspectPerson} onRefresh={() => void refreshHistory()} loading={historyLoading} />
         : <section className="event-panel panel">
         <PanelTitle title="Simulation events" subtitle="Meaningful state transitions; calculations are intentionally omitted" />
         <div className="event-table" role="log">

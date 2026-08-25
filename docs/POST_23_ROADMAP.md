@@ -530,6 +530,13 @@ timelines derived from retained authoritative checkpoints, events, and samples.
 **Explicit non-goals:** Invented narratives, unlimited raw history, or replay
 that mutates the active run.
 
+**Implemented boundary:** Local history loading derives a compact summary from
+the existing bounded weekly authoritative checkpoints. It displays chronological
+living-population checkpoints and each settlement's geographically measured
+home-catchment resident/household delta between first and latest retained
+checkpoints. The UI receives no full checkpoint state, does not replay, and
+does not fill unretained intervals with inferred values.
+
 ## Recommended Next Slice
 
 Start with **Milestone 41 — Settlement Seeds and Authoring Profiles**. It

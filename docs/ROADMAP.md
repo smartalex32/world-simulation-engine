@@ -146,10 +146,11 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 43 — Hosted Single-Node Simulation Boundary
 * Milestone 44 — Measured Ten-Thousand-Person Scale
 * Milestone 45 — Fidelity Regions and Population Aggregation
+* Milestone 46 — Long-Term World History and Change Inspection
 
 ## Next Slice
 
-* Milestone 46 — Long-Term World History and Change Inspection
+* No active implementation milestone
 
 Detailed current implementation is documented in `README.md`.
 

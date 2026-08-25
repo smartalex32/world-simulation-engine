@@ -1,4 +1,5 @@
 import type { SimulationEvent, StatisticSample, WorldDraftRecord, WorldStatisticMetricId } from '../simulation/domain/types'
+import { summarizeCheckpoint, type HistoricalCheckpoint } from '../history/checkpoints'
 import { validateWorldDraftRecord } from '../simulation/domain/worldDraft'
 import { validateSnapshot } from '../simulation/serialization/snapshot'
 import { validateWorkerContinuation } from '../worker/frameScheduler'
@@ -53,6 +54,7 @@ export interface RunHistoryQuery {
 export interface RunHistory {
   events: SimulationEvent[]
   statistics: StatisticSample[]
+  checkpoints: HistoricalCheckpoint[]
 }
 
 export class WorkbenchDatabase {
@@ -179,6 +181,11 @@ export class WorkbenchDatabase {
       statistics: statistics
         .map(({ storageKey: _, ...sample }) => sample)
         .sort((first, second) => first.tick - second.tick || first.metricId.localeCompare(second.metricId)),
+      checkpoints: (await this.listSnapshots(runId))
+        .filter((snapshot) => snapshot.kind === 'checkpoint')
+        .slice(0, DEFAULT_CHECKPOINT_LIMIT)
+        .map((snapshot) => summarizeCheckpoint(snapshot.snapshot))
+        .sort((first, second) => first.tick - second.tick),
     }
   }
 
