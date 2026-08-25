@@ -2,8 +2,9 @@
 
 ## Purpose
 
-This document plans the next stages after Milestone 23. It is a forward-looking
-plan, not a claim that these systems are already implemented.
+This document preserves the detailed plans and implementation record for
+Milestones 24–46. Active sequencing after Milestone 49 is maintained in
+`docs/ROADMAP.md`.
 
 The intended product loop remains:
 
@@ -537,13 +538,8 @@ home-catchment resident/household delta between first and latest retained
 checkpoints. The UI receives no full checkpoint state, does not replay, and
 does not fill unretained intervals with inferred values.
 
-## Recommended Next Slice
+## Current Sequence
 
-Start with **Milestone 41 — Settlement Seeds and Authoring Profiles**. It
-builds directly on authored landmass composition by making initial town,
-village, and dispersed-homestead choices explicit without inferring later
-social or political membership.
-
-Before beginning each future milestone, update `docs/ROADMAP.md` with its
-status, confirm the prerequisite evidence is present, and create a dedicated
-branch and pull request when implementation starts.
+See `docs/ROADMAP.md` for the current priority and all work after Milestone 49.
+This historical file should change only when correcting the record for
+Milestones 24–46.
