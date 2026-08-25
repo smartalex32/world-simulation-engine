@@ -6,7 +6,7 @@ type SnapshotLike = Omit<SnapshotEnvelope, 'schemaVersion'> & { schemaVersion: n
 export type SnapshotMigration = (snapshot: SnapshotLike) => SnapshotLike
 
 /**
- * Each supported schema crosses exactly one audited boundary. Schemas 30–32
+ * Each supported schema crosses exactly one audited boundary. Schemas 30–33
  * share the current state shape; retaining distinct steps keeps future schema
  * changes explicit instead of silently treating old data as current.
  */
@@ -14,6 +14,9 @@ const migrations = new Map<number, SnapshotMigration>([
   [30, (snapshot) => ({ ...snapshot, schemaVersion: 31 })],
   [31, (snapshot) => ({ ...snapshot, schemaVersion: 32 })],
   [32, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 33, state: { ...snapshot.state, config: { ...snapshot.state.config, cohortModelVersion: 1 }, cohorts: [] } })],
+  // Scale is optional on legacy settlement markers. The engine initializes it
+  // on creation and accepts the missing value as the legacy derived scale.
+  [33, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 34 })],
 ])
 
 export function migrateSnapshotSchema(value: unknown, targetSchema: number): SnapshotLike {

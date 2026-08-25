@@ -116,7 +116,8 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   }
   const normalizedCreation = normalizeWorldCreationRequest(snapshot.state.config.worldCreation, snapshot.state.world.grid.cells, { enforceCreatorLimits: false })
   if (canonicalStringify(normalizedCreation) !== canonicalStringify(snapshot.state.config.worldCreation)) throw new Error('Snapshot contains a non-canonical world creation request')
-  if (snapshot.state.world.name !== normalizedCreation.name || canonicalStringify(snapshot.state.world.settlements) !== canonicalStringify(normalizedCreation.settlements) || canonicalStringify(snapshot.state.world.roads ?? []) !== canonicalStringify(normalizedCreation.roads ?? [])) {
+  const authoredSettlements = snapshot.state.world.settlements.map(({ scale: _scale, ...settlement }) => settlement)
+  if (snapshot.state.world.name !== normalizedCreation.name || canonicalStringify(authoredSettlements) !== canonicalStringify(normalizedCreation.settlements) || canonicalStringify(snapshot.state.world.roads ?? []) !== canonicalStringify(normalizedCreation.roads ?? [])) {
     throw new Error('Snapshot world does not match creation request')
   }
   if (!Array.isArray(snapshot.state.people)) throw new Error('Snapshot contains an invalid population')

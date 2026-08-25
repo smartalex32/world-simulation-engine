@@ -190,7 +190,7 @@ describe('world draft lifecycle domain contract', () => {
     }, active.revision)
 
     expect(previewWorldDraft(updated).creation.settlements).toEqual([{ id: 'northwatch', name: 'Northwatch', anchorCellId: target.id }])
-    expect((await SimulationEngine.create(updated.draft).snapshot()).state.world.settlements).toEqual([{ id: 'northwatch', name: 'Northwatch', anchorCellId: target.id }])
+    expect((await SimulationEngine.create(updated.draft).snapshot()).state.world.settlements).toEqual([{ id: 'northwatch', name: 'Northwatch', anchorCellId: target.id, scale: expect.any(String) }])
     expect(() => previewWorldDraft(updateWorldDraftRecord(active, { ...active.draft, settlements: [{ id: 'bad-anchor', name: 'Bad anchor', anchorCellId: 'unknown-cell' }] }))).toThrow(/invalid anchor cell/)
   })
 

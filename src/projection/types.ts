@@ -1,5 +1,5 @@
 import type { CommunityAggregationTrace, CommunityEmergentValues, CommunityStructuralId, CommunityVariableDefinition, CommunityVariableId, CommunityFeedbackEdgeDefinition } from '../simulation/community/types'
-import type { DisputeState, GeographicCell, HouseholdState, LocalGovernanceState, OrganizationState, ParentChildLink, PersonState, PopulationPlacementZone, RelationshipState, SettlementState, Terrain, WorldScale } from '../simulation/domain/types'
+import type { DisputeState, GeographicCell, HouseholdState, LocalGovernanceState, OrganizationState, ParentChildLink, PersonState, PopulationPlacementZone, RelationshipState, SettlementScale, SettlementState, Terrain, WorldScale } from '../simulation/domain/types'
 import type { PersonVariableDefinition } from '../simulation/variables/types'
 import type { WorldChunkLayout } from '../simulation/spatial/worldChunks'
 
@@ -164,8 +164,8 @@ export interface WorldDescriptor {
   scale: WorldScale
 }
 
-/** A presentation-only scale derived from nearby homes, never a person membership. */
-export type SettlementScale = 'landmark' | 'hamlet' | 'village' | 'town' | 'city'
+/** A retained geographic scale; it never assigns people settlement membership. */
+export type { SettlementScale } from '../simulation/domain/types'
 export interface ProjectedSettlement {
   id: string
   name: string
@@ -186,6 +186,7 @@ export interface ProjectedSettlement {
   currentVisitorCount: number
   catchmentResourceCapacity: number
   waterAccessCellCount: number
+  scaleEvidence: { suggestedScale: SettlementScale; direction: 'stable' | 'growth-ready' | 'decline-ready'; densityPerHomeCell: number; resourceUnitsPerResident: number; accessPermille: number }
 }
 export interface ProjectedSettlementLink { id: string; fromSettlementId: string; toSettlementId: string; fromCellId: string; toCellId: string; steps: number; travelCost: number; roadCellCount: number }
 export interface ProjectedSettlementDiffusion { settlementId: string; observedResidentCount: number; averageValleyFluency: number; averageExplorationBelief: number }
