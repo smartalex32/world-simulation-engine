@@ -1464,6 +1464,15 @@ retaining important and hooked people in full detail. Preserve exact population,
 age, household, resource, migration, trait-distribution, and event totals. Every
 aggregate decision and rounding residual remains inspectable.
 
+The first delivered slice adds a versioned, authoritative static cohort ledger
+for explicitly authored distant people. A placement zone may retain up to 500
+detailed people while assigning up to one billion ordinary people to a cohort.
+The cohort preserves exact zone, cell allocation, population, household, food,
+age-band, and birth/death/migration totals; it contributes to canonical
+population and map counts without consuming RNG or materializing people.
+Lifecycle advancement, trait distributions, cohort decisions, and transitions
+to detailed people remain intentionally deferred to Milestones 57–58.
+
 ## Milestone 57 — Fidelity Materialization and Dematerialization
 
 Deterministically materialize cohorts into detailed people when a region is

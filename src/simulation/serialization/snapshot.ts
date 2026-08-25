@@ -27,6 +27,7 @@ import { HOUSEHOLD_GENERATION_STREAM } from '../households/config'
 import { validateHouseholdActivityState } from '../engine/invariants'
 import { validatePersonVariableValues } from '../variables/storage'
 import { validateCommunitySimulationState } from '../community/invariants'
+import { COHORT_MODEL_VERSION } from '../cohorts/model'
 import { migrateSnapshotSchema } from './migrations'
 
 export function canonicalStringify(value: unknown): string {
@@ -103,6 +104,7 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   if (snapshot.state.config.knowledgeModelVersion !== KNOWLEDGE_MODEL_VERSION) throw new Error(`Unsupported knowledge model version: ${String(snapshot.state.config.knowledgeModelVersion)}`)
   if (snapshot.state.config.healthModelVersion !== HEALTH_MODEL_VERSION) throw new Error(`Unsupported health model version: ${String(snapshot.state.config.healthModelVersion)}`)
   if (snapshot.state.config.innovationModelVersion !== INNOVATION_MODEL_VERSION) throw new Error(`Unsupported innovation model version: ${String(snapshot.state.config.innovationModelVersion)}`)
+  if (snapshot.state.config.cohortModelVersion !== COHORT_MODEL_VERSION) throw new Error(`Unsupported cohort model version: ${String(snapshot.state.config.cohortModelVersion)}`)
   if (snapshot.state.config.worldGeneratorVersion !== WORLD_GENERATOR_VERSION) {
     throw new Error(`Unsupported world generator version: ${String(snapshot.state.config.worldGeneratorVersion)}`)
   }

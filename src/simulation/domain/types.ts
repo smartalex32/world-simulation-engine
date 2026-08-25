@@ -8,8 +8,8 @@ import type {
 } from '../community/types'
 import type { SettlementTemplateId } from '../spatial/settlementTemplates'
 
-export const ENGINE_VERSION = '0.33.0'
-export const SNAPSHOT_SCHEMA_VERSION = 32
+export const ENGINE_VERSION = '0.34.0'
+export const SNAPSHOT_SCHEMA_VERSION = 33
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 2
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -102,6 +102,8 @@ export interface PopulationPlacementZone {
   name: string
   cellIds: string[]
   populationCount: number
+  /** Ordinary people represented by a deterministic distant cohort, not detailed agents. */
+  cohortPopulationCount?: number
   settlementId?: string
   /** Explicit authoring profile controlling initial home dispersion only. */
   template?: SettlementTemplateId
@@ -116,6 +118,7 @@ export interface PopulationPlacementZoneDraft {
   id: string
   name: string
   populationCount: number
+  cohortPopulationCount?: number
   settlementId?: string
   cellIds?: string[]
   preset?: WorldPlacementPreset
@@ -733,6 +736,20 @@ export interface RunConfiguration {
   knowledgeModelVersion?: number
   healthModelVersion?: number
   innovationModelVersion?: number
+  cohortModelVersion: number
+}
+
+/** Exact, authoritative aggregate for ordinary distant people. It is static until later cohort systems own advancement. */
+export interface PopulationCohortState {
+  version: 1
+  id: string
+  sourceZoneId: string
+  populationCount: number
+  householdCount: number
+  foodUnits: number
+  cellAllocations: { cellId: string; populationCount: number }[]
+  ageBands: { children: number; adults: number; elders: number }
+  eventTotals: { births: number; deaths: number; migrationIn: number; migrationOut: number }
 }
 
 export interface RandomStreamSnapshot {
@@ -748,6 +765,7 @@ export interface SimulationState {
   config: RunConfiguration
   world: WorldState
   people: PersonState[]
+  cohorts: PopulationCohortState[]
   households: HouseholdState[]
   markets: MarketState[]
   organizations: OrganizationState[]
@@ -809,6 +827,7 @@ export interface WorldProjection {
   world: WorldState
   populationZones: PopulationPlacementZone[]
   people: PersonState[]
+  cohorts: PopulationCohortState[]
   households: HouseholdState[]
   organizations: OrganizationState[]
   governance: LocalGovernanceState[]

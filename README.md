@@ -114,6 +114,13 @@ home-to-marker travel evidence. Profile capacities are authoring guidance, not
 population caps or social membership; detailed browser authoring remains
 bounded to 500 people until cohort allocation is introduced.
 
+Milestone 56 begins cohort simulation with a versioned authoritative ledger for
+explicit distant-population allocations. A zone may retain its bounded detailed
+people while assigning a much larger static cohort; exact population,
+household, food, age-band, event-total, and cell-allocation evidence is stored
+in snapshots and included in population/map summaries. Cohorts do not yet
+advance, form relationships, or materialize into detailed people.
+
 Milestone 53 begins large-landmass authoring with an explicit physical hex
 radius. Authors may choose a 100 m–10 km axial-cell radius; it is normalized,
 preserved in world creation and snapshots, and shown in the setup surface. The

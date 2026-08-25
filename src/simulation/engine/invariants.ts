@@ -4,8 +4,10 @@ import type { CuriosityInheritanceTrace, SimulationState } from '../domain/types
 import { PARENT_CURIOSITY_EXPOSURE_CHANNEL, PARENT_CURIOSITY_EXPOSURE_WINDOW_TICKS, PARENT_CURIOSITY_EXPERIENCE_TYPE } from '../exposure/model'
 import { DEVELOPMENT_PARENT_CURIOSITY_EDGE_ID, DEVELOPMENT_PLASTICITY_REGISTRY } from '../development/model'
 import { BROADER_DEVELOPMENT_DEFINITIONS, BROADER_DEVELOPMENT_WINDOW_TICKS } from '../development/broader'
+import { validatePopulationCohorts } from '../cohorts/model'
 
 export function validateHouseholdActivityState(state: SimulationState): void {
+  validatePopulationCohorts(state.cohorts, state.config.worldCreation.populationZones, state.world.grid.cells)
   if (!Array.isArray(state.households)) throw new Error('Simulation contains invalid households')
   if (!Array.isArray(state.parentChildLinks)) throw new Error('Simulation contains invalid parent-child links')
   if (!Array.isArray(state.activityLocations)) throw new Error('Simulation contains invalid activity locations')

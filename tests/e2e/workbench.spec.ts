@@ -75,6 +75,18 @@ test('authors a city seed and inspects its pre-commit placement evidence', async
   await expect(setup.locator('.placement-card').first().locator('.placement-preview')).toContainText('steps to anchor')
 })
 
+test('creates an inspectable distant cohort without materializing every person', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.getByRole('button', { name: 'Commit & create world', exact: true })).toBeEnabled()
+  await setup.getByLabel('Zone 1 distant cohort people').fill('100000')
+  await expect(setup.locator('.placement-card').first().locator('.placement-preview')).toContainText('100,000 distant cohort people')
+  await setup.getByRole('button', { name: 'Commit & create world', exact: true }).click()
+  await expect(setup).toBeHidden()
+  await expect(page.locator('.world-overview')).toContainText('100200')
+})
+
 test('authors a deterministic blank-land canvas before committing a world', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
