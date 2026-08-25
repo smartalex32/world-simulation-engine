@@ -52,6 +52,36 @@ describe('world draft lifecycle domain contract', () => {
     }))).toThrow(/incompatible settlement template/)
   })
 
+  it('reports stable settlement-seed capacity, density, resource access, and marker travel evidence', () => {
+    const record = createWorldDraftRecord('draft-seed-preview-evidence', {
+      ...defaultWorldCreationRequest('seed-preview-evidence'),
+      initialPopulationCount: 30,
+      populationZones: [
+        { id: 'homestead-zone', name: 'Homestead', preset: 'west', radiusCells: 1, populationCount: 6, settlementId: 'homestead', template: 'homestead' },
+        { id: 'hamlet-zone', name: 'Hamlet', preset: 'center', radiusCells: 2, populationCount: 12, settlementId: 'hamlet', template: 'hamlet' },
+        { id: 'city-zone', name: 'City', preset: 'east', radiusCells: 5, populationCount: 12, settlementId: 'city', template: 'city' },
+      ],
+      settlements: [
+        { id: 'homestead', name: 'Homestead', preset: 'west', template: 'homestead' },
+        { id: 'hamlet', name: 'Hamlet', preset: 'center', template: 'hamlet' },
+        { id: 'city', name: 'City', preset: 'east', template: 'city' },
+      ],
+    })
+
+    const preview = previewWorldDraft(record)
+    const homestead = preview.settlementSeedPreviews.find((seed) => seed.zoneId === 'homestead-zone')!
+    const hamlet = preview.settlementSeedPreviews.find((seed) => seed.zoneId === 'hamlet-zone')!
+    const city = preview.settlementSeedPreviews.find((seed) => seed.zoneId === 'city-zone')!
+
+    expect(preview.version).toBe(2)
+    expect(homestead).toMatchObject({ template: 'homestead', requestedPopulationCount: 6, recommendedPopulationCapacity: 12, eligibleHomeCellCount: 1, peoplePerHomeCell: 6, averageAnchorTravelSteps: 0 })
+    expect(hamlet).toMatchObject({ template: 'hamlet', requestedPopulationCount: 12, recommendedPopulationCapacity: 80 })
+    expect(city).toMatchObject({ template: 'city', requestedPopulationCount: 12, recommendedPopulationCapacity: 50_000 })
+    expect(hamlet.eligibleHomeCellCount).toBeGreaterThan(1)
+    expect(city.eligibleHomeCellCount).toBeGreaterThan(hamlet.eligibleHomeCellCount)
+    expect(preview.settlementSeedPreviews.every((seed) => seed.resourceCapacityPerPerson >= 0)).toBe(true)
+  })
+
   it('uses revision checks and detaches authored collections', () => {
     const source = defaultWorldCreationRequest('revision-seed')
     const created = createWorldDraftRecord('draft-revision', source)

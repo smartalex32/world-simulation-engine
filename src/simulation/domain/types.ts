@@ -198,7 +198,7 @@ export interface WorldDraftRecord {
 
 /** A bounded, deterministic result used by authoring UI before commit. */
 export interface WorldDraftPreview {
-  version: 1
+  version: 2
   draftId: string
   revision: number
   creation: WorldCreationRequest
@@ -206,6 +206,23 @@ export interface WorldDraftPreview {
   cellCount: number
   passableCellCount: number
   terrainCounts: Record<Terrain, number>
+  /** Derived placement evidence only; it is not persisted simulation state. */
+  settlementSeedPreviews: SettlementSeedPreview[]
+}
+
+/** Bounded pre-commit evidence for one starting-population placement zone. */
+export interface SettlementSeedPreview {
+  zoneId: string
+  template?: SettlementTemplateId
+  requestedPopulationCount: number
+  recommendedPopulationCapacity?: number
+  eligibleHomeCellCount: number
+  /** Integer people per eligible home cell, rounded up for a conservative density signal. */
+  peoplePerHomeCell: number
+  /** Average axial home-to-anchor distance in steps; absent when no marker exists. */
+  averageAnchorTravelSteps?: number
+  /** Renewable food capacity available across the authored placement per initial resident. */
+  resourceCapacityPerPerson: number
 }
 
 /** A bounded spatial request for read-only, generated draft terrain. */

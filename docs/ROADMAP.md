@@ -1450,6 +1450,13 @@ and cohort-distant allocation. Preview capacity, access, density, and travel
 before commit. Settlement association remains separate from exposure and civic
 membership.
 
+The first delivered slice adds those five explicit, deterministic seed profiles
+to the bounded world creator, with profile guidance and pre-commit evidence for
+eligible homes, people-per-home density, renewable resource capacity per
+resident, and axial travel to a marker. The interactive creator remains capped
+at 500 detailed people; the 100,000+ detailed-local/cohort allocation boundary
+belongs to Milestone 56 and must not be implied by a city profile alone.
+
 ## Milestone 56 — Regional Population Cohorts
 
 Add authoritative, versioned cohorts for distant ordinary populations while

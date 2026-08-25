@@ -107,6 +107,13 @@ or terminal basin sink in the cell inspector. This is derived evidence from
 authored elevation, not mutable water simulation; lakes, river rendering,
 watershed fill, climate expansion, and ecology remain later slices.
 
+Milestone 55 begins settlement-seed authoring with homestead, hamlet, village,
+town, city, and dispersed-homestead profiles. Before a draft is committed, the
+creator reports derived home-cell, density, renewable-resource, and
+home-to-marker travel evidence. Profile capacities are authoring guidance, not
+population caps or social membership; detailed browser authoring remains
+bounded to 500 people until cohort allocation is introduced.
+
 Milestone 53 begins large-landmass authoring with an explicit physical hex
 radius. Authors may choose a 100 m–10 km axial-cell radius; it is normalized,
 preserved in world creation and snapshots, and shown in the setup surface. The

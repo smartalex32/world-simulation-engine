@@ -1,6 +1,7 @@
 import { generateValley } from '../spatial/worldGenerator'
 import type { DraftViewportProjection, DraftViewportRequest, ElevationOverride, ResourceCapacityOverride, Terrain, TerrainTypeOverride, WorldCreationDraft, WorldDraftPreview, WorldDraftRecord } from './types'
 import { normalizeWorldCreationRequest, validateWorldCreationDraftLimits } from './worldCreation'
+import { settlementTemplate } from '../spatial/settlementTemplates'
 
 export const WORLD_DRAFT_RECORD_VERSION = 2 as const
 export const MAX_TERRAIN_PAINT_CELLS = 512
@@ -198,8 +199,29 @@ export function previewWorldDraft(record: WorldDraftRecord): WorldDraftPreview {
     terrainCounts[cell.terrain] += 1
     if (cell.movementCost > 0) passableCellCount += 1
   }
+  const cellsById = new Map(generated.world.grid.cells.map((cell) => [cell.id, cell]))
+  const settlementsById = new Map(creation.settlements.map((settlement) => [settlement.id, settlement]))
+  const settlementSeedPreviews = creation.populationZones.map((zone) => {
+    const homeCellIds = zone.homeCellIds ?? zone.cellIds
+    const anchor = zone.settlementId === undefined ? undefined : settlementsById.get(zone.settlementId)
+    const anchorCell = anchor === undefined ? undefined : cellsById.get(anchor.anchorCellId)
+    const totalResourceCapacity = zone.cellIds.reduce((total, cellId) => total + (cellsById.get(cellId)?.resourceCapacity ?? 0), 0)
+    const averageAnchorTravelSteps = anchorCell === undefined || homeCellIds.length === 0 ? undefined : Math.round(homeCellIds.reduce((total, cellId) => {
+      const cell = cellsById.get(cellId)
+      return total + (cell === undefined ? 0 : axialDistance(cell.q, cell.r, anchorCell.q, anchorCell.r))
+    }, 0) / homeCellIds.length * 100) / 100
+    return {
+      zoneId: zone.id,
+      ...(zone.template === undefined ? {} : { template: zone.template, recommendedPopulationCapacity: settlementTemplate(zone.template).recommendedPopulationCapacity }),
+      requestedPopulationCount: zone.populationCount,
+      eligibleHomeCellCount: homeCellIds.length,
+      peoplePerHomeCell: homeCellIds.length === 0 ? 0 : Math.ceil(zone.populationCount / homeCellIds.length),
+      ...(averageAnchorTravelSteps === undefined ? {} : { averageAnchorTravelSteps }),
+      resourceCapacityPerPerson: zone.populationCount === 0 ? 0 : Math.round(totalResourceCapacity / zone.populationCount * 100) / 100,
+    }
+  })
   return {
-    version: 1,
+    version: 2,
     draftId: current.draftId,
     revision: current.revision,
     creation,
@@ -207,6 +229,7 @@ export function previewWorldDraft(record: WorldDraftRecord): WorldDraftPreview {
     cellCount: generated.world.grid.cells.length,
     passableCellCount,
     terrainCounts,
+    settlementSeedPreviews,
   }
 }
 
@@ -232,4 +255,8 @@ function generateDraftTerrain(draft: WorldCreationDraft) {
 
 function compareText(first: string, second: string): number {
   return first < second ? -1 : first > second ? 1 : 0
+}
+
+function axialDistance(q: number, r: number, targetQ: number, targetR: number): number {
+  return (Math.abs(q - targetQ) + Math.abs(r - targetR) + Math.abs((q + r) - (targetQ + targetR)) ) / 2
 }

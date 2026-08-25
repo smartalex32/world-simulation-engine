@@ -61,6 +61,20 @@ test('opens the world setup surface with explicit scale and placement allocation
   await expect(page.locator('.world-overview strong')).toHaveText('Ardentia')
 })
 
+test('authors a city seed and inspects its pre-commit placement evidence', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.getByRole('button', { name: 'Commit & create world', exact: true })).toBeEnabled()
+
+  await setup.getByLabel('Zone 1 starting profile').selectOption('city')
+  await expect(setup.getByLabel('Zone 1 radius')).toHaveValue('8')
+  await expect(setup.getByLabel('Zone 1 has settlement')).toBeChecked()
+  await expect(setup.locator('.placement-card').first().locator('.placement-preview')).toContainText('profile guide 50,000')
+  await expect(setup.locator('.placement-card').first().locator('.placement-preview')).toContainText('home cells')
+  await expect(setup.locator('.placement-card').first().locator('.placement-preview')).toContainText('steps to anchor')
+})
+
 test('authors a deterministic blank-land canvas before committing a world', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
