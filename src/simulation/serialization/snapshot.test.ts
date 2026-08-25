@@ -29,6 +29,14 @@ describe('canonical serialization', () => {
     ]))
   })
 
+  it('upgrades each supported prior snapshot schema without changing canonical state', async () => {
+    const current = await SimulationEngine.create('schema-rolling-migration').snapshot()
+    for (const schemaVersion of [30, 31]) {
+      const legacy = { ...structuredClone(current), schemaVersion }
+      await expect(validateSnapshot(legacy)).resolves.toEqual(current)
+    }
+  })
+
   it('rejects unsupported household, activity, development, community, and life-cycle registry versions', async () => {
     const base = await SimulationEngine.create('schema-6-registry-rejection').snapshot()
     const householdMismatch = structuredClone(base.state)

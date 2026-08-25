@@ -32,6 +32,7 @@ export class SimulationWorkerClient {
       for (const listener of this.listeners) listener(response)
     })
     this.worker.addEventListener('error', (event) => {
+      this.rejectPending(new Error(`Simulation worker crashed: ${event.message || 'unknown error'}`))
       const response: SimulationResponse = { type: 'ERROR', message: event.message }
       for (const listener of this.listeners) listener(response)
     })
@@ -70,15 +71,33 @@ export class SimulationWorkerClient {
     const id = requestId()
     return new Promise((resolve, reject) => {
       this.pendingSnapshots.set(id, { resolve, reject })
+      const timeout = window.setTimeout(() => {
+        const pending = this.pendingSnapshots.get(id)
+        if (!pending) return
+        this.pendingSnapshots.delete(id)
+        pending.reject(new Error('Simulation worker snapshot request timed out'))
+      }, 15_000)
+      const pending = this.pendingSnapshots.get(id)
+      if (pending) this.pendingSnapshots.set(id, {
+        resolve: (snapshot) => { window.clearTimeout(timeout); resolve(snapshot) },
+        reject: (error) => { window.clearTimeout(timeout); reject(error) },
+      })
       this.send({ type: 'REQUEST_SNAPSHOT', requestId: id })
     })
   }
 
   dispose(): void {
+    this.rejectPending(new Error('Simulation worker client was disposed'))
     this.send({ type: 'DISPOSE', requestId: requestId() })
+    this.worker.terminate()
   }
 
   private send(command: SimulationCommand): void {
     this.worker.postMessage(command)
+  }
+
+  private rejectPending(error: Error): void {
+    for (const pending of this.pendingSnapshots.values()) pending.reject(error)
+    this.pendingSnapshots.clear()
   }
 }
