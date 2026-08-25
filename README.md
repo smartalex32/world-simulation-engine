@@ -101,9 +101,11 @@ Seasonal climate is a small static classification derived from terrain and eleva
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
 
-Next: Milestone 51 — Persistence Compatibility and Deterministic Portability.
-This adds rolling migration and cross-runtime reproducibility contracts before
-large-world authoring resumes.
+Next: Milestone 52 — Maintainability and Performance Foundation. Milestone 51
+adds a rolling snapshot migration registry for schemas 30–32, preserving the
+existing full validation contract after each one-step migration. Browser worker
+snapshot callers now receive explicit timeout, crash, and disposal failures,
+and hosted persistence ordering uses a locale-independent binary comparator.
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 

@@ -1353,7 +1353,7 @@ rejected explicitly; rolling compatibility begins in Milestone 51.
 **Non-goals:** Distributed execution, multiple authoritative hosts, public API
 stability, and collaboration.
 
-## Milestone 51 — Persistence Compatibility and Deterministic Portability
+## Milestone 51 — Persistence Compatibility and Deterministic Portability *(implemented)*
 
 **Goal:** Keep valuable worlds recoverable across releases and reproducible
 across supported runtimes.
@@ -1373,6 +1373,15 @@ Implement:
 * Rejection and timeout of pending worker requests on worker crash or disposal.
 * Node, Chromium, Firefox, and WebKit golden-digest checks at meaningful
   long-run checkpoints.
+
+Delivered boundary: schemas 30, 31, and 32 use an explicit one-step migration
+registry before the existing full snapshot validation. The historical schemas
+share the current state shape, so their migrations are intentionally structural
+version transitions rather than silent state reinterpretation. Snapshot worker
+requests now reject on timeout, worker crash, or disposal, and hosted record
+lists use a locale-independent identifier comparator. Broader cross-runtime
+golden fixtures and transactional bundle telemetry imports remain the next
+compatibility slice when actual schema/model migrations require them.
 
 **Non-goals:** Indefinite compatibility with every pre-release schema or silent
 reinterpretation of incompatible state.

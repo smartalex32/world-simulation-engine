@@ -28,6 +28,7 @@ import { HOUSEHOLD_GENERATION_STREAM } from '../households/config'
 import { validateHouseholdActivityState } from '../engine/invariants'
 import { validatePersonVariableValues } from '../variables/storage'
 import { validateCommunitySimulationState } from '../community/invariants'
+import { migrateSnapshotSchema } from './migrations'
 
 export function canonicalStringify(value: unknown): string {
   return JSON.stringify(sortValue(value))
@@ -62,9 +63,7 @@ export async function createSnapshot(state: SimulationState): Promise<SnapshotEn
 }
 
 export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope> {
-  if (!value || typeof value !== 'object') throw new Error('Snapshot is not an object')
-  const snapshot = value as Partial<SnapshotEnvelope>
-  if (snapshot.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) throw new Error(`Unsupported snapshot schema: ${String(snapshot.schemaVersion)}`)
+  const snapshot = migrateSnapshotSchema(value, SNAPSHOT_SCHEMA_VERSION) as Partial<SnapshotEnvelope>
   if (snapshot.engineVersion !== ENGINE_VERSION) throw new Error(`Unsupported engine version: ${String(snapshot.engineVersion)}`)
   if (!snapshot.state || typeof snapshot.digest !== 'string') throw new Error('Snapshot is missing state or digest')
   if (snapshot.state.config?.baseTickHours !== 1 || !Number.isSafeInteger(snapshot.state.tick) || snapshot.state.tick < 0) {

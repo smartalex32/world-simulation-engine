@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedSimulationJob, type HostedRunRecord, type HostedRunStore } from './types'
+import { compareStableText } from '../shared/stableOrder'
 
 /** In-memory store used only by tests and embedding hosts. */
 export class MemoryHostedRunStore implements HostedRunStore, HostedJobStore {
@@ -16,14 +17,14 @@ export class MemoryHostedRunStore implements HostedRunStore, HostedJobStore {
     const valid = validateHostedRunRecord(record)
     this.records.set(valid.runId, structuredClone(valid))
   }
-  async list(ownerId: string): Promise<HostedRunRecord[]> { return [...this.records.values()].map((record) => validateHostedRunRecord(structuredClone(record))).filter((record) => record.ownerId === ownerId).sort((a, b) => a.runId.localeCompare(b.runId)) }
+  async list(ownerId: string): Promise<HostedRunRecord[]> { return [...this.records.values()].map((record) => validateHostedRunRecord(structuredClone(record))).filter((record) => record.ownerId === ownerId).sort((a, b) => compareStableText(a.runId, b.runId)) }
   async loadJob(runId: string, jobId: string): Promise<HostedSimulationJob | undefined> {
     const job = this.jobs.get(jobKey(runId, jobId))
     return job === undefined ? undefined : validateHostedJob(structuredClone(job))
   }
   async saveJob(job: HostedSimulationJob): Promise<void> { const valid = validateHostedJob(job); this.jobs.set(jobKey(valid.runId, valid.jobId), structuredClone(valid)) }
   async listJobs(runId: string): Promise<HostedSimulationJob[]> {
-    return [...this.jobs.values()].map((job) => validateHostedJob(structuredClone(job))).filter((job) => job.runId === runId).sort((a, b) => a.queueOrder - b.queueOrder || a.jobId.localeCompare(b.jobId))
+    return [...this.jobs.values()].map((job) => validateHostedJob(structuredClone(job))).filter((job) => job.runId === runId).sort((a, b) => a.queueOrder - b.queueOrder || compareStableText(a.jobId, b.jobId))
   }
 }
 
@@ -53,7 +54,7 @@ export class FileHostedRunStore implements HostedRunStore, HostedJobStore {
     try {
       const names = (await readdir(this.directory)).filter((name) => name.endsWith('.json')).sort()
       const records = await Promise.all(names.map(async (name) => validateHostedRunRecord(JSON.parse(await readFile(join(this.directory, name), 'utf8')))))
-      return records.filter((record) => record.ownerId === ownerId).sort((a, b) => a.runId.localeCompare(b.runId))
+      return records.filter((record) => record.ownerId === ownerId).sort((a, b) => compareStableText(a.runId, b.runId))
     } catch (error) { if (isMissingFile(error)) return []; throw error }
   }
 
@@ -75,7 +76,7 @@ export class FileHostedRunStore implements HostedRunStore, HostedJobStore {
     const directory = join(this.directory, 'jobs', validatedId(runId))
     try {
       const names = (await readdir(directory)).filter((name) => name.endsWith('.json')).sort()
-      return (await Promise.all(names.map(async (name) => validateHostedJob(JSON.parse(await readFile(join(directory, name), 'utf8')))))).sort((a, b) => a.queueOrder - b.queueOrder || a.jobId.localeCompare(b.jobId))
+      return (await Promise.all(names.map(async (name) => validateHostedJob(JSON.parse(await readFile(join(directory, name), 'utf8')))))).sort((a, b) => a.queueOrder - b.queueOrder || compareStableText(a.jobId, b.jobId))
     } catch (error) { if (isMissingFile(error)) return []; throw error }
   }
 
