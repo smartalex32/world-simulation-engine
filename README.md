@@ -121,6 +121,12 @@ household, food, age-band, event-total, and cell-allocation evidence is stored
 in snapshots and included in population/map summaries. Cohorts do not yet
 advance, form relationships, or materialize into detailed people.
 
+Milestone 57 begins fidelity transitions with a deterministic, non-mutating
+materialization plan. It exposes exact requested and residual totals plus
+canonical cell allocations, and refuses automatic conversion whenever protected
+detailed identities (including a hook) are present. Actual materialization and
+dematerialization remain separate authoritative state transitions.
+
 Milestone 53 begins large-landmass authoring with an explicit physical hex
 radius. Authors may choose a 100 m–10 km axial-cell radius; it is normalized,
 preserved in world creation and snapshots, and shown in the setup surface. The

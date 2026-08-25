@@ -85,6 +85,8 @@ test('creates an inspectable distant cohort without materializing every person',
   await setup.getByRole('button', { name: 'Commit & create world', exact: true }).click()
   await expect(setup).toBeHidden()
   await expect(page.locator('.world-overview')).toContainText('100200')
+  await expect(page.getByRole('button', { name: /Cohorts/ })).toContainText('1')
+  await expect(page.locator('.organization-list')).toContainText('Distant cohort · population-zone-1')
 })
 
 test('authors a deterministic blank-land canvas before committing a world', async ({ page }) => {

@@ -1481,6 +1481,13 @@ or history. Persist transition seeds, inputs, outputs, rounding, and residuals.
 Never dematerialize hooked, historically important, or explicitly protected
 people.
 
+The first delivered slice adds a deterministic, read-only materialization plan
+for each cohort request. It reports requested, available, materializable, and
+residual totals with canonical cell allocations; protected detailed identities
+block automatic conversion rather than being silently dropped. The workbench
+also exposes cohort evidence and a ready/empty transition status. No person is
+created, removed, or changed in this planning slice.
+
 ## Milestone 58 — Settlement Growth, Decline, and Regional Migration
 
 Derive reversible homestead-to-city transitions from real population, occupied
