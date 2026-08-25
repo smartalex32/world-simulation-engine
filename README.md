@@ -110,6 +110,11 @@ Settlement inspection also exposes read-only infrastructure evidence from real
 catchment-local markets, schools and their seats, and authored road cells. It
 does not imply civic membership or directly modify people.
 
+The analytics surface also reports read-only household material distribution:
+food and tools remain separate, alongside zero-food households, separate Gini
+indicators, and living occupation counts. This is not a combined wealth score
+or a money, price, ownership, or trade model.
+
 Seasonal climate is a small static classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Daily environmental recovery is measured separately from household food production and consumption; no weather simulation, biome editor, or ecosystem model is implied.
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.

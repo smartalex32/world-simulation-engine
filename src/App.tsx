@@ -620,6 +620,17 @@ export default function App() {
             <Metric label="Avg familiarity" value={`${((recentMetrics['social.averageFamiliarity'] ?? averageFamiliarity(projection)) / 10).toFixed(1)}%`} />
             <Metric label="Tense encounters" value={recentMetrics['social.tenseEncounters'] ?? 0} />
           </div>
+          {projection && <><PanelTitle title="Household materials" subtitle="Read-only distribution; not a combined wealth score" />
+          <div className="metric-list" aria-label="Household material distribution">
+            <Metric label="Households" value={projection.economy.householdCount} />
+            <Metric label="Food stores" value={projection.economy.foodUnits} />
+            <Metric label="No food stores" value={projection.economy.householdsWithoutFoodCount} />
+            <Metric label="Food inequality" value={`${(projection.economy.foodGiniPermille / 10).toFixed(1)}%`} />
+            <Metric label="Tools" value={projection.economy.toolUnits} />
+            <Metric label="Tool inequality" value={`${(projection.economy.toolGiniPermille / 10).toFixed(1)}%`} />
+            <Metric label="Foragers" value={projection.economy.occupationCounts.forager} />
+            <Metric label="Household roles" value={projection.economy.occupationCounts.household} />
+          </div></>}
           {projection && <CommunitySignals
             communities={projection.communities}
             definitions={projection.communityVariableDefinitions}
