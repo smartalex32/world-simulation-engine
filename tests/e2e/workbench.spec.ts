@@ -52,6 +52,7 @@ test('opens the world setup surface with explicit scale and placement allocation
   await expect(page.locator('.settlement-list')).toContainText('town')
   await expect(page.locator('.settlement-list')).toContainText('Infrastructure:')
   await expect(page.getByLabel('Organization evidence')).toContainText('reputation not-measured')
+  await expect(page.getByLabel('Governance evidence')).toContainText('territory not-modeled')
   await expect(page.locator('.settlement-list')).toContainText(/(stable|growth-ready|decline-ready) →/)
   await expect(page.locator('.settlement-list')).toContainText('Scale evidence:')
   await expect(page.getByText('Settlement scale and catchments are geographic home/location profiles, not membership.')).toBeVisible()
