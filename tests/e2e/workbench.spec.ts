@@ -52,6 +52,7 @@ test('opens the world setup surface with explicit scale and placement allocation
   await expect(page.locator('.settlement-list')).toContainText('town')
   await expect(page.locator('.settlement-list')).toContainText('Infrastructure:')
   await expect(page.getByLabel('Organization evidence')).toContainText('reputation not-measured')
+  await expect(page.getByLabel('Governance evidence')).toContainText('territory not-modeled')
   await expect(page.locator('.settlement-list')).toContainText(/(stable|growth-ready|decline-ready) →/)
   await expect(page.locator('.settlement-list')).toContainText('Scale evidence:')
   await expect(page.getByText('Settlement scale and catchments are geographic home/location profiles, not membership.')).toBeVisible()
@@ -92,7 +93,7 @@ test('creates an inspectable distant cohort without materializing every person',
   await expect(setup).toBeHidden()
   await expect(page.locator('.world-overview')).toContainText('100200')
   await expect(page.getByRole('button', { name: /Cohorts/ })).toContainText('1')
-  await expect(page.locator('.organization-list')).toContainText('Distant cohort · population-zone-1')
+  await expect(page.getByLabel('Organization evidence')).toContainText('Distant cohort · population-zone-1')
 })
 
 test('authors a deterministic blank-land canvas before committing a world', async ({ page }) => {

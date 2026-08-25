@@ -1580,6 +1580,13 @@ separate. Polities may form, merge, fragment, expand, contract, and disappear
 through inspectable demographic, institutional, legitimacy, and territorial
 processes.
 
+**Delivered first slice:** Existing local-governance records now have a
+read-only workbench profile tied to their observed geographic catchment. It
+shows active representatives, legitimacy, food-relief access, contribution
+fairness, and whether the referenced council organization actually exists.
+The profile explicitly leaves legal territory and civic membership unmodeled
+and keeps culture/identity separate rather than inferred from the catchment.
+
 ## Milestone 65 — Law, Public Finance, and State Capacity ([Issue #69](https://github.com/smartalex32/world-simulation-engine/issues/69))
 
 Add laws, taxation, budgets, administration, public works, enforcement,

@@ -4,7 +4,7 @@ import type { PersonVariableDefinition } from '../simulation/variables/types'
 import type { WorldChunkLayout } from '../simulation/spatial/worldChunks'
 
 /** Incremented when the bounded worker-to-workbench projection shape changes. */
-export const PROJECTION_PROTOCOL_VERSION = 8
+export const PROJECTION_PROTOCOL_VERSION = 9
 /** Versioned independently so later cohort simulation cannot masquerade as this read-only map aggregation. */
 export const POPULATION_FIDELITY_VERSION = 1
 export const PROJECTION_CHUNK_SIZE = 32
@@ -193,6 +193,8 @@ export interface ProjectedSettlementLink { id: string; fromSettlementId: string;
 export interface ProjectedSettlementService { settlementId: string; marketCount: number; schoolCount: number; schoolCapacity: number; roadCellCount: number }
 /** Existing explicit group evidence; unavailable social/economic attributes are not inferred. */
 export interface ProjectedOrganizationProfile { id: string; name: string; kind: OrganizationState['kind']; locationCellId: string; goal: 'education' | 'unspecified'; memberCount: number; roleCounts: Record<string, number>; serviceCapacity: number; sharedRuleIds: string[]; internalRelationshipCount: number; internalAverageFamiliarity: number; reputationStatus: 'not-measured'; ownedResourcesStatus: 'not-modeled' }
+/** Read-only local-governance evidence; a catchment is not legal territory or civic membership. */
+export interface ProjectedGovernanceProfile { id: string; communityId: string; catchmentName: string; catchmentCellCount: number; representativeIds: string[]; activeRepresentativeCount: number; councilOrganizationId: string; councilOrganizationStatus: 'recorded' | 'referenced-not-modeled'; legitimacyPermille: number; serviceAccessPermille: number; contributionFairnessPermille: number; publicGood: LocalGovernanceState['publicGood']; lastUpdatedTick: number; jurisdictionBasis: 'geographic-catchment'; territoryStatus: 'not-modeled'; civicMembershipStatus: 'not-modeled'; cultureAndIdentityStatus: 'separate-not-inferred' }
 /** Read-only household materials and living work roles; not a synthesized wealth model. */
 export interface ProjectedEconomicSummary { householdCount: number; householdsWithoutFoodCount: number; foodUnits: number; toolUnits: number; foodGiniPermille: number; toolGiniPermille: number; occupationCounts: { dependent: number; household: number; forager: number; unassigned: number } }
 export interface ProjectedSettlementDiffusion { settlementId: string; observedResidentCount: number; averageValleyFluency: number; averageExplorationBelief: number }
@@ -255,6 +257,7 @@ export interface WorkbenchProjection {
   settlementLinks: ProjectedSettlementLink[]
   settlementServices: ProjectedSettlementService[]
   organizationProfiles: ProjectedOrganizationProfile[]
+  governanceProfiles: ProjectedGovernanceProfile[]
   economy: ProjectedEconomicSummary
   settlementDiffusion: ProjectedSettlementDiffusion[]
   roads: ProjectedRoad[]

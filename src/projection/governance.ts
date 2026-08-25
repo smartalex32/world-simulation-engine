@@ -1,0 +1,36 @@
+import type { LocalGovernanceState, OrganizationState, PersonState } from '../simulation/domain/types'
+import type { ProjectedCommunityState, ProjectedGovernanceProfile } from './types'
+
+/**
+ * Governance projection keeps observed geographic catchments separate from
+ * territory, civic membership, culture, and identity. It does not create a
+ * council organization merely because an early governance record references one.
+ */
+export function buildProjectedGovernanceProfiles(governance: readonly LocalGovernanceState[], communities: readonly ProjectedCommunityState[], people: readonly PersonState[], organizations: readonly OrganizationState[]): ProjectedGovernanceProfile[] {
+  const communityById = new Map(communities.map((community) => [community.catchment.id, community]))
+  const peopleById = new Map(people.map((person) => [person.id, person]))
+  const organizationIds = new Set(organizations.map((organization) => organization.id))
+  return [...governance].sort((first, second) => first.id.localeCompare(second.id)).map((record) => {
+    const community = communityById.get(record.communityId)
+    const representativeIds = [...new Set(record.representativeIds)].sort()
+    return {
+      id: record.id,
+      communityId: record.communityId,
+      catchmentName: community?.catchment.displayName ?? record.communityId,
+      catchmentCellCount: community?.catchment.cellCount ?? 0,
+      representativeIds,
+      activeRepresentativeCount: representativeIds.filter((id) => peopleById.get(id)?.lifeStatus !== 'dead').length,
+      councilOrganizationId: record.councilOrganizationId,
+      councilOrganizationStatus: organizationIds.has(record.councilOrganizationId) ? 'recorded' : 'referenced-not-modeled',
+      legitimacyPermille: record.legitimacy,
+      serviceAccessPermille: record.serviceAccessPermille,
+      contributionFairnessPermille: record.contributionFairnessPermille,
+      publicGood: record.publicGood,
+      lastUpdatedTick: record.lastUpdatedTick,
+      jurisdictionBasis: 'geographic-catchment',
+      territoryStatus: 'not-modeled',
+      civicMembershipStatus: 'not-modeled',
+      cultureAndIdentityStatus: 'separate-not-inferred',
+    }
+  })
+}
