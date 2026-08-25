@@ -1511,6 +1511,13 @@ evidence. Add regional comparisons, settlement timelines, change maps, and
 causal drill-down. Time-lapse views use retained evidence without mutating or
 silently replaying the active run.
 
+First delivered slice: retained checkpoints now preserve detailed/cohort
+population, cohort households, available food, and settlement scale/household
+store evidence. The History workspace compares only those checkpoints, showing
+regional detailed-versus-cohort and food deltas plus settlement scale changes.
+This is a bounded, read-only comparison surface; migration, environment, and
+fidelity timelines require their corresponding authoritative events first.
+
 ## Milestone 60 — Workbench UI Convergence ([Issue #64](https://github.com/smartalex32/world-simulation-engine/issues/64))
 
 Move the application toward the intended map-first product surface: coherent

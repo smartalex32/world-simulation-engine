@@ -120,6 +120,7 @@ test('loads persisted historical evidence without changing the active world', as
   await page.getByRole('button', { name: 'history', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Recorded evidence over time' })).toBeVisible()
   await expect(page.getByText('Major recorded events')).toBeVisible()
+  await expect(page.getByText('Regional change evidence')).toBeVisible()
   await expect(page.getByText('Person timeline')).toBeVisible()
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
 })
