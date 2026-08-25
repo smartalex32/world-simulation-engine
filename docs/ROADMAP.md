@@ -1504,14 +1504,14 @@ only population/movement authorities. Service capacity, abandonment,
 resettlement, and inter-settlement migration remain later slices rather than
 being implied by the scale label.
 
-## Milestone 59 — World History at Regional Scale
+## Milestone 59 — World History at Regional Scale ([Issue #63](https://github.com/smartalex32/world-simulation-engine/issues/63))
 
 Retain bounded settlement, cohort, migration, environment, and fidelity-change
 evidence. Add regional comparisons, settlement timelines, change maps, and
 causal drill-down. Time-lapse views use retained evidence without mutating or
 silently replaying the active run.
 
-## Milestone 60 — Workbench UI Convergence
+## Milestone 60 — Workbench UI Convergence ([Issue #64](https://github.com/smartalex32/world-simulation-engine/issues/64))
 
 Move the application toward the intended map-first product surface: coherent
 World, Simulation, Analytics, Entities, History, Tools, and Settings workspaces;
@@ -1521,26 +1521,26 @@ settlements, regions, institutions, and polities only when authoritative models
 exist. Hooking a person never forces camera follow. UI-impacting PRs include
 review screenshots in the PR, not the repository.
 
-## Milestone 61 — Infrastructure, Services, and Trade Networks
+## Milestone 61 — Infrastructure, Services, and Trade Networks ([Issue #65](https://github.com/smartalex32/world-simulation-engine/issues/65))
 
 Extend roads, rivers, ports, markets, schools, storage, and public services into
 regional networks with capacity, maintenance, accessibility, and disruption.
 Settlement service levels derive from real institutions and infrastructure.
 
-## Milestone 62 — Regional Economy, Labor, Wealth, and Inequality
+## Milestone 62 — Regional Economy, Labor, Wealth, and Inequality ([Issue #66](https://github.com/smartalex32/world-simulation-engine/issues/66))
 
 Add occupations, production chains, goods, prices, trade flows, household
 wealth, ownership, labor, scarcity, and inequality. Money, goods, ownership,
 labor, and institutional resources remain semantically distinct.
 
-## Milestone 63 — Groups, Associations, Institutions, and Factions
+## Milestone 63 — Groups, Associations, Institutions, and Factions ([Issue #67](https://github.com/smartalex32/world-simulation-engine/issues/67))
 
 Add explicit groups with membership, roles, goals, resources, reputation, and
 internal relationships. Typed specializations may include guilds, councils,
 religious organizations, and political factions, but shared activity and social
 evidence—not arbitrary labels—create or strengthen them.
 
-## Milestone 64 — Territorial Governance and Polity Formation
+## Milestone 64 — Territorial Governance and Polity Formation ([Issue #68](https://github.com/smartalex32/world-simulation-engine/issues/68))
 
 Add explicit settlements, regions, cities, city-states, kingdoms, and other
 polities. Keep territory, jurisdiction, civic membership, culture, and identity
@@ -1548,14 +1548,14 @@ separate. Polities may form, merge, fragment, expand, contract, and disappear
 through inspectable demographic, institutional, legitimacy, and territorial
 processes.
 
-## Milestone 65 — Law, Public Finance, and State Capacity
+## Milestone 65 — Law, Public Finance, and State Capacity ([Issue #69](https://github.com/smartalex32/world-simulation-engine/issues/69))
 
 Add laws, taxation, budgets, administration, public works, enforcement,
 legitimacy, corruption, and institutional effectiveness. Compliance emerges
 through incentives, exposure, beliefs, relationships, and enforcement rather
 than a direct polity-membership modifier.
 
-## Milestone 66 — Culture, Religion, Language, and Collective Identity
+## Milestone 66 — Culture, Religion, Language, and Collective Identity ([Issue #70](https://github.com/smartalex32/world-simulation-engine/issues/70))
 
 Extend existing culture and language foundations into traditions, values,
 belief institutions, rituals, identities, and cultural boundaries. Transmission
@@ -1563,21 +1563,21 @@ occurs through households, peers, schools, organizations, travel, prestige, and
 real contact. Religion, culture, language, identity, and polity membership
 remain distinct.
 
-## Milestone 67 — Diplomacy, Organized Conflict, and Warfare
+## Milestone 67 — Diplomacy, Organized Conflict, and Warfare ([Issue #71](https://github.com/smartalex32/world-simulation-engine/issues/71))
 
 Build alliances, claims, mobilization, military organizations, logistics,
 conflict, occupation, diplomacy, and peace on the polity and economic systems.
 Record casualties, displacement, trauma, territorial change, and long-term
 social effects. No aggression threshold may create an abstract instant war.
 
-## Milestone 68 — Technology, Knowledge, and Innovation Diffusion
+## Milestone 68 — Technology, Knowledge, and Innovation Diffusion ([Issue #72](https://github.com/smartalex32/world-simulation-engine/issues/72))
 
 Extend practical experimentation into inventions, tools, techniques, education,
 adoption, and diffusion. Innovation depends on knowledge, resources,
 institutions, incentives, communication, and successful experimentation rather
 than a universal linear technology tree.
 
-## Milestone 69 — Generational Society Feedback
+## Milestone 69 — Generational Society Feedback ([Issue #73](https://github.com/smartalex32/world-simulation-engine/issues/73))
 
 Complete the household/community/development loop across generations. Childhood
 development combines configured inheritance, household behavior, peers,
@@ -1585,7 +1585,7 @@ institutions, environment, community conditions, and structured experiences.
 Multi-generation explanations show how developed adults change the environment
 experienced by later children.
 
-## Milestone 70 — Civilization-Scale Validation and Product Completion
+## Milestone 70 — Civilization-Scale Validation and Product Completion ([Issue #74](https://github.com/smartalex32/world-simulation-engine/issues/74))
 
 Validate long-running worlds across geography, cohorts, settlements, polities,
 economies, cultures, technology, conflict, and generations. Complete scenario
@@ -1627,6 +1627,12 @@ collaborative editing remain unplanned unless explicitly promoted later.
 Update this file when a milestone completes, splits, reorders, or discovers a
 new prerequisite. Keep current architecture in `README.md`, development rules
 in `AGENTS.md`, and deep simulation semantics in focused design documents.
+
+Every planned milestone must have a corresponding GitHub issue linked directly
+from its heading. Treat this file as the source of truth: when adding a
+milestone, create and link its issue; when changing scope, title, sequencing,
+or status, update the matching issue; and when removing a milestone, delete its
+matching issue. Do this in the same change/PR as the roadmap update.
 
 Current priority:
 

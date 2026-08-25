@@ -451,6 +451,23 @@ Update documentation according to ownership:
 
 Do not duplicate detailed architecture or roadmap content in `AGENTS.md`.
 
+## 9. Pull Request Visual Evidence
+
+For a pull request that changes a user-visible UI surface, capture an updated
+screenshot during validation and add it to the pull request description or a
+pull request comment when GitHub upload access is available.
+
+Do not commit validation screenshots or other review-only media to the
+repository. If upload access is unavailable, state that briefly in the PR and
+provide the screenshot directly to the user when requested.
+
+## 10. Roadmap and Issue Synchronization
+
+`docs/ROADMAP.md` is the source of truth for planned milestones. Every planned
+milestone must link to a corresponding GitHub issue. In the same change/PR,
+create and link an issue for a new milestone, update the issue for a changed
+title/scope/status/sequence, and delete the issue when the milestone is removed.
+
 ---
 
 # Validation Strategy
