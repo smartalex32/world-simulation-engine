@@ -322,6 +322,21 @@ test('recenters the map from the world minimap without changing simulation state
   await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
 })
 
+test('supports keyboard recentering from the accessible world minimap', async ({ page }) => {
+  await page.goto('/')
+  const canvas = page.getByLabel('Hex world map')
+  await waitForMapSettled(canvas)
+  await canvas.focus()
+  await page.keyboard.press('ArrowRight')
+  const displaced = await canvas.getAttribute('data-map-viewport')
+  const minimap = page.getByLabel('World minimap')
+  await minimap.focus()
+  await page.keyboard.press('Enter')
+  await expect.poll(async () => canvas.getAttribute('data-map-viewport')).not.toBe(displaced)
+  await waitForMapSettled(canvas)
+  await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
+})
+
 test('switches to bounded world overview rendering without distant hex outlines', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
