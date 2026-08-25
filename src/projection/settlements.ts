@@ -1,6 +1,7 @@
 import type { GeographicCell, HouseholdState, PersonState, SettlementState } from '../simulation/domain/types'
 import { hexDistance } from '../simulation/spatial/hex'
 import type { ProjectedSettlement, SettlementScale } from './types'
+import { evaluateSettlementScale, scaleForPopulation } from '../simulation/settlements/growth'
 
 /**
  * Read-only display rules for authored settlement anchors. These are not a
@@ -57,11 +58,13 @@ export function buildProjectedSettlements(
           if (household.lastRelocation?.destinationCellId === household.homeCellId) recordedRelocationArrivalCount += 1
         }
       }
+      const scale = settlement.scale ?? settlementScaleForResidents(nearbyResidentCount)
+      const scaleEvidence = evaluateSettlementScale({ currentScale: scale, population: nearbyResidentCount, homeCellCount: nearbyHomeCellIds.size, resourceCapacity: catchmentResourceCapacity, waterAccessCellCount })
       return {
         id: settlement.id,
         name: settlement.name,
         anchorCellId: settlement.anchorCellId,
-        scale: settlementScaleForResidents(nearbyResidentCount),
+        scale,
         nearbyResidentCount,
         nearbyHomeCellCount: nearbyHomeCellIds.size,
         nearbyHouseholdCount,
@@ -72,14 +75,11 @@ export function buildProjectedSettlements(
         currentVisitorCount,
         catchmentResourceCapacity,
         waterAccessCellCount,
+        scaleEvidence,
       }
     })
 }
 
 export function settlementScaleForResidents(nearbyResidentCount: number): SettlementScale {
-  if (nearbyResidentCount >= SETTLEMENT_SCALE_THRESHOLDS.city) return 'city'
-  if (nearbyResidentCount >= SETTLEMENT_SCALE_THRESHOLDS.town) return 'town'
-  if (nearbyResidentCount >= SETTLEMENT_SCALE_THRESHOLDS.village) return 'village'
-  if (nearbyResidentCount >= SETTLEMENT_SCALE_THRESHOLDS.hamlet) return 'hamlet'
-  return 'landmark'
+  return scaleForPopulation(nearbyResidentCount)
 }

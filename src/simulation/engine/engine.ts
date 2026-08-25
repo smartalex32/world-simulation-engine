@@ -87,6 +87,7 @@ import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION
 import { emptyHealthExposure, healthStressMortalityRiskPermille, resolveDailyHealthStress } from '../health/model'
 import { attemptPracticalExperiment, INNOVATION_STREAM } from '../innovation/model'
 import { COHORT_MODEL_VERSION, createInitialCohorts } from '../cohorts/model'
+import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -190,6 +191,9 @@ export class SimulationEngine {
       return { ...createCommunityState(catchment, 500, foodSecurity), lastUpdatedTick: 0, latestTraces: [] }
     })
     const runId = `run-${world.id.slice(6)}-${creation.width}x${creation.height}`
+    // Initialize retained scale from physical homes/resources before the first
+    // projection. It remains independent from authored settlement markers.
+    initializeSettlementScales({ settlements: world.settlements, cells: world.grid.cells, people: generatedPopulation.people })
     // A school is an authored place service; an unmarked home cell is never silently promoted into one.
     const organizations = createInitialSchools(generatedPopulation.people, world.settlements.map((settlement) => settlement.anchorCellId))
     const governance = createLocalGovernance(communities, generatedPopulation.people)
@@ -367,6 +371,17 @@ export class SimulationEngine {
         this.processDevelopment(pushEvent)
         this.processBroaderDevelopment(pushEvent)
         this.resolveMonthlyHouseholdRelocations(pushEvent)
+        for (const transition of updateSettlementScales({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, people: this.state.people })) {
+          pushEvent(this.event('SETTLEMENT_SCALE_CHANGED', {
+            settlementId: transition.settlementId,
+            previousScale: transition.previousScale,
+            nextScale: transition.nextScale,
+            population: transition.evidence.population,
+            densityPerHomeCell: Math.round(transition.evidence.densityPerHomeCell * 1000),
+            resourceUnitsPerResident: Math.round(transition.evidence.resourceUnitsPerResident * 1000),
+            accessPermille: transition.evidence.accessPermille,
+          }))
+        }
       }
       if (this.state.tick % 8760 === 0) this.resolveAnnualLifeCycle(pushEvent)
       if (this.state.tick % 24 === 0) {

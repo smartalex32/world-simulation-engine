@@ -50,6 +50,8 @@ test('opens the world setup surface with explicit scale and placement allocation
   await expect(page.locator('.settlement-list')).toContainText('Westhaven')
   await expect(page.locator('.settlement-list')).toContainText('Eastwatch')
   await expect(page.locator('.settlement-list')).toContainText('town')
+  await expect(page.locator('.settlement-list')).toContainText(/(stable|growth-ready|decline-ready) →/)
+  await expect(page.locator('.settlement-list')).toContainText('Scale evidence:')
   await expect(page.getByText('Settlement scale and catchments are geographic home/location profiles, not membership.')).toBeVisible()
   await page.getByRole('button', { name: 'analytics', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Daily samples' })).toBeVisible()

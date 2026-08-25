@@ -127,6 +127,14 @@ canonical cell allocations, and refuses automatic conversion whenever protected
 detailed identities (including a hook) are present. Actual materialization and
 dematerialization remain separate authoritative state transitions.
 
+Milestone 58 begins retained settlement scale. Each geographic settlement
+evaluates nearby living homes, catchment resource capacity, and water access on
+a monthly cadence. A 20% lower-population buffer prevents a retained
+homestead/hamlet/village/town/city scale from oscillating at a boundary.
+Transitions are explicit events with population, density, resource, and access
+evidence. The system does not assign people settlement membership or invent
+unimplemented regional migration behavior.
+
 Milestone 53 begins large-landmass authoring with an explicit physical hex
 radius. Authors may choose a 100 m–10 km axial-cell radius; it is normalized,
 preserved in world creation and snapshots, and shown in the setup surface. The

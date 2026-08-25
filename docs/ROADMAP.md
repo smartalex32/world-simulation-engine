@@ -1495,6 +1495,15 @@ homes, resources, services, accessibility, and density. Use hysteresis to avoid
 scale oscillation. Model household movement, births, deaths, abandonment,
 resettlement, and regional migration with inspectable contributing factors.
 
+The first delivered slice retains a settlement's geographic scale and evaluates
+it monthly from nearby living homes, catchment resource capacity, and water
+access. A 20% lower-population hysteresis buffer prevents boundary oscillation;
+every scale change is emitted with explicit population, density, resource, and
+access evidence. Existing lifecycle and household relocation systems remain the
+only population/movement authorities. Service capacity, abandonment,
+resettlement, and inter-settlement migration remain later slices rather than
+being implied by the scale label.
+
 ## Milestone 59 — World History at Regional Scale
 
 Retain bounded settlement, cohort, migration, environment, and fidelity-change
