@@ -7,6 +7,7 @@ import { worldChunkLayout } from '../simulation/spatial/worldChunks'
 import { buildProjectedSettlements } from './settlements'
 import { buildProjectedSettlementLinks } from './regionalNetwork'
 import { buildProjectedSettlementDiffusion } from './diffusion'
+import { buildLocationChunkIndex, visibleIndexedLocations, type IndexedProjectionLocation } from './locationIndex'
 import { alignRegionOrigin, clampViewportBounds, projectionChunkKey, regionCount, regionKey } from './chunks'
 import {
   MAX_ACTIVITY_MARKERS,
@@ -70,18 +71,13 @@ interface StaticLocationGroup {
   count: number
 }
 
-interface IndexedLocationEntry {
-  id: string
-  cellId: string
-}
-
 export class WorkbenchProjectionBuilder {
   private readonly grid: HexGrid
   private readonly staticRegions = new Map<string, StaticRegionAggregate>()
   private readonly cellById: Map<string, GeographicCell>
   private readonly communityIdByCellId = new Map<string, string>()
-  private readonly activityEntriesByChunk: ReadonlyMap<string, readonly IndexedLocationEntry[]>
-  private readonly householdEntriesByChunk: ReadonlyMap<string, readonly IndexedLocationEntry[]>
+  private readonly activityEntriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]>
+  private readonly householdEntriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]>
   private readonly activityCellById: ReadonlyMap<string, string>
   private readonly householdCellById: ReadonlyMap<string, string>
   private readonly routeCache = new Map<string, RouteHomeProjection>()
@@ -92,8 +88,8 @@ export class WorkbenchProjectionBuilder {
     for (const community of source.communities) for (const cellId of community.catchment.cellIds) this.communityIdByCellId.set(cellId, community.catchment.id)
     const activityEntries = source.activityLocations.map(({ id, cellId }) => ({ id, cellId }))
     const householdEntries = source.households.map(({ id, homeCellId }) => ({ id, cellId: homeCellId }))
-    this.activityEntriesByChunk = indexLocationsByChunk(activityEntries, this.cellById)
-    this.householdEntriesByChunk = indexLocationsByChunk(householdEntries, this.cellById)
+    this.activityEntriesByChunk = buildLocationChunkIndex(activityEntries, this.cellById)
+    this.householdEntriesByChunk = buildLocationChunkIndex(householdEntries, this.cellById)
     this.activityCellById = new Map(activityEntries.map(({ id, cellId }) => [id, cellId]))
     this.householdCellById = new Map(householdEntries.map(({ id, cellId }) => [id, cellId]))
   }
@@ -221,8 +217,8 @@ export class WorkbenchProjectionBuilder {
     return summary
   }
 
-  private buildLocationMarkers<T extends ActivityMapMarker | HouseholdMapMarker>(entriesByChunk: ReadonlyMap<string, readonly IndexedLocationEntry[]>, cellByEntryId: ReadonlyMap<string, string>, bounds: AxialViewportBounds, terrainSize: ProjectionRegionSize, cap: number, prefix: string, selectedId?: string): T[] {
-    const entries = visibleLocationEntries(entriesByChunk, this.cellById, bounds)
+  private buildLocationMarkers<T extends ActivityMapMarker | HouseholdMapMarker>(entriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]>, cellByEntryId: ReadonlyMap<string, string>, bounds: AxialViewportBounds, terrainSize: ProjectionRegionSize, cap: number, prefix: string, selectedId?: string): T[] {
+    const entries = visibleIndexedLocations(entriesByChunk, this.cellById, bounds)
     let size = terrainSize
     let visible = locationGroups(entries, this.cellById, size)
     while (visible.length > cap) {
@@ -398,36 +394,7 @@ function countPeopleByCell(people: readonly PersonState[]): Map<string, number> 
   return result
 }
 
-function indexLocationsByChunk(entries: readonly IndexedLocationEntry[], cells: ReadonlyMap<string, GeographicCell>): ReadonlyMap<string, readonly IndexedLocationEntry[]> {
-  const chunks = new Map<string, IndexedLocationEntry[]>()
-  for (const entry of entries) {
-    const cell = cells.get(entry.cellId)
-    if (!cell) continue
-    const key = projectionChunkKey(cell.q, cell.r)
-    const values = chunks.get(key)
-    if (values) values.push(entry)
-    else chunks.set(key, [entry])
-  }
-  return new Map([...chunks.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, values]) => [key, values.sort((a, b) => a.id.localeCompare(b.id))]))
-}
-
-function visibleLocationEntries(entriesByChunk: ReadonlyMap<string, readonly IndexedLocationEntry[]>, cells: ReadonlyMap<string, GeographicCell>, bounds: AxialViewportBounds): IndexedLocationEntry[] {
-  const visible: IndexedLocationEntry[] = []
-  const firstChunkQ = Math.floor(bounds.minQ / PROJECTION_CHUNK_SIZE)
-  const lastChunkQ = Math.floor(bounds.maxQ / PROJECTION_CHUNK_SIZE)
-  const firstChunkR = Math.floor(bounds.minR / PROJECTION_CHUNK_SIZE)
-  const lastChunkR = Math.floor(bounds.maxR / PROJECTION_CHUNK_SIZE)
-  for (let chunkR = firstChunkR; chunkR <= lastChunkR; chunkR += 1) for (let chunkQ = firstChunkQ; chunkQ <= lastChunkQ; chunkQ += 1) {
-    const entries = entriesByChunk.get(projectionChunkKey(chunkQ * PROJECTION_CHUNK_SIZE, chunkR * PROJECTION_CHUNK_SIZE)) ?? []
-    for (const entry of entries) {
-      const cell = cells.get(entry.cellId)
-      if (cell && inBounds(cell, bounds)) visible.push(entry)
-    }
-  }
-  return visible.sort((a, b) => a.id.localeCompare(b.id))
-}
-
-function locationGroups(entries: readonly IndexedLocationEntry[], cells: ReadonlyMap<string, GeographicCell>, size: ProjectionRegionSize): StaticLocationGroup[] {
+function locationGroups(entries: readonly IndexedProjectionLocation[], cells: ReadonlyMap<string, GeographicCell>, size: ProjectionRegionSize): StaticLocationGroup[] {
   const groups = new Map<string, StaticLocationGroup>()
   for (const entry of entries) {
     const cell = cells.get(entry.cellId)
