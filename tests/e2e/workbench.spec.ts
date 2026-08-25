@@ -403,14 +403,15 @@ test('creates, steps, inspects, and saves a deterministic world', async ({ page 
 test('the same seed and step count produce the same digest', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
-  await page.getByTitle('Advance one hour').click()
-  await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
+  // A click merely queues a worker command.  Synchronize on the authoritative
+  // tick rather than formatted clock text, which can briefly reflect a prior
+  // frame while WebKit is applying the reset projection.
+  await advanceOneHour(page, 1)
   const firstDigest = await page.locator('.fact').filter({ hasText: 'SAVED HASH' }).locator('strong').textContent()
   expect(firstDigest).toMatch(/^[0-9a-f]{10}$/)
   await page.getByRole('button', { name: 'Reset' }).click()
-  await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
-  await page.getByTitle('Advance one hour').click()
-  await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '0')
+  await advanceOneHour(page, 1)
   await expect(page.locator('.fact').filter({ hasText: 'SAVED HASH' }).locator('strong')).toHaveText(firstDigest ?? '')
 })
 
