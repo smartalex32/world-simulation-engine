@@ -132,6 +132,11 @@ social-trust, and conflict-absence inputs. Taxation, budgets, law,
 enforcement, and corruption are explicitly not modeled in this first public-
 capacity slice.
 
+Culture and language analytics summarize the existing person-owned learned
+beliefs and language fluencies only across observed home catchments. These
+observations do not assign collective culture, religion, identity, or polity
+membership, and they do not alter behavior.
+
 Seasonal climate is a small static classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Daily environmental recovery is measured separately from household food production and consumption; no weather simulation, biome editor, or ecosystem model is implied.
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
