@@ -62,6 +62,16 @@ describe('Milestone 8A world creation validation', () => {
     expect(fixedWorldScale()).toEqual({ layout: 'axial-pointy', hexRadiusMeters: 1_000 })
   })
 
+  it('preserves an authored physical cell scale through generation and snapshots', async () => {
+    const draft = { ...defaultWorldCreationRequest('m53-scale', 32, 24), hexRadiusMeters: 5_000 }
+    const engine = SimulationEngine.create(draft)
+    const snapshot = await engine.snapshot()
+    expect(snapshot.state.world.scale).toEqual({ layout: 'axial-pointy', hexRadiusMeters: 5_000 })
+    expect(snapshot.state.config.worldCreation.hexRadiusMeters).toBe(5_000)
+    await expect(validateSnapshot(structuredClone(snapshot))).resolves.toMatchObject({ digest: snapshot.digest })
+    expect(() => SimulationEngine.create({ ...draft, hexRadiusMeters: 99 })).toThrow('Hex radius')
+  })
+
   it('round-trips schema 12 and rejects the prior schema explicitly', async () => {
     const snapshot = await SimulationEngine.create('m8a-schema-round-trip').snapshot()
     expect(snapshot.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION)

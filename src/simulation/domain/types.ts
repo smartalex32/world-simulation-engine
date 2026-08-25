@@ -150,6 +150,8 @@ export interface WorldCreationDraft {
   width: number
   height: number
   initialPopulationCount: number
+  /** Physical radius of one axial hex. Omitted preserves the 1 km legacy default. */
+  hexRadiusMeters?: number
   /** Omitted for legacy seeded-valley worlds; blank-land is an explicit authored canvas. */
   terrainBase?: WorldTerrainBase
   populationZones: PopulationPlacementZoneDraft[]
@@ -167,6 +169,8 @@ export interface WorldCreationRequest {
   width: number
   height: number
   initialPopulationCount: number
+  /** Present only when authored scale differs from the 1 km legacy default. */
+  hexRadiusMeters?: number
   /** Present only when the authored world does not use the legacy seeded valley baseline. */
   terrainBase?: Exclude<WorldTerrainBase, 'seeded-valley'>
   populationZones: PopulationPlacementZone[]

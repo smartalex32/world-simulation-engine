@@ -25,6 +25,8 @@ export const WORLD_CREATION_LIMITS = Object.freeze({
   /** The engine/hosted-run ceiling; the interactive draft UI retains its 500-person authoring guardrail. */
   maximumPopulation: 10_000,
   maximumSettlementCatchmentCells: 512,
+  minimumHexRadiusMeters: 100,
+  maximumHexRadiusMeters: 10_000,
 })
 
 const IDENTIFIER = /^[a-z][a-z0-9-]*$/
@@ -55,6 +57,7 @@ export function validateWorldCreationDraftLimits(value: WorldCreationDraft): voi
   const height = boundedInteger(value.height, WORLD_CREATION_LIMITS.minimumHeight, WORLD_CREATION_LIMITS.maximumHeight, 'World height')
   if (width * height > WORLD_CREATION_LIMITS.maximumCellCount) throw new RangeError('World cell count exceeds the 8A creation limit')
   boundedInteger(value.initialPopulationCount, WORLD_CREATION_LIMITS.minimumPopulation, WORLD_CREATION_LIMITS.maximumPopulation, 'Initial population')
+  normalizeHexRadiusMeters(value.hexRadiusMeters)
   if (!Array.isArray(value.populationZones) || !Array.isArray(value.settlements) || (value.roads !== undefined && !Array.isArray(value.roads)) || (value.terrainOverrides !== undefined && !Array.isArray(value.terrainOverrides)) || (value.elevationOverrides !== undefined && !Array.isArray(value.elevationOverrides)) || (value.resourceCapacityOverrides !== undefined && !Array.isArray(value.resourceCapacityOverrides))) throw new Error('World creation collections are invalid')
 }
 
@@ -68,6 +71,7 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
   if (enforceCreatorLimits && width * height > WORLD_CREATION_LIMITS.maximumCellCount) throw new RangeError('World cell count exceeds the 8A creation limit')
   if (cells.length !== width * height) throw new Error('Generated world dimensions do not match creation request')
   const initialPopulationCount = boundedInteger(value.initialPopulationCount, WORLD_CREATION_LIMITS.minimumPopulation, enforceCreatorLimits ? WORLD_CREATION_LIMITS.maximumPopulation : Number.MAX_SAFE_INTEGER, 'Initial population')
+  const hexRadiusMeters = normalizeHexRadiusMeters(value.hexRadiusMeters)
   const terrainBase = normalizeTerrainBase(value.terrainBase)
   const elevationOverrides = normalizeElevationOverrides(value.elevationOverrides, cells)
   const terrainOverrides = normalizeTerrainOverrides(value.terrainOverrides, cells)
@@ -108,7 +112,7 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
     return { id: zone.id, name: zoneName, cellIds, populationCount, ...(zone.settlementId === undefined ? {} : { settlementId: zone.settlementId }), ...(template === undefined ? {} : { template, homeCellIds }) }
   }).sort((a, b) => compareText(a.id, b.id))
   if (zones.reduce((sum, zone) => sum + zone.populationCount, 0) !== initialPopulationCount) throw new Error('Population zone allocations must equal the initial population')
-  return { seed, name, width, height, initialPopulationCount, ...(terrainBase === 'seeded-valley' ? {} : { terrainBase }), populationZones: zones, settlements, ...(roads.length ? { roads } : {}), terrainOverrides, elevationOverrides, resourceCapacityOverrides }
+  return { seed, name, width, height, initialPopulationCount, ...(hexRadiusMeters === WORLD_CELL_RADIUS_METERS ? {} : { hexRadiusMeters }), ...(terrainBase === 'seeded-valley' ? {} : { terrainBase }), populationZones: zones, settlements, ...(roads.length ? { roads } : {}), terrainOverrides, elevationOverrides, resourceCapacityOverrides }
 }
 
 /** Applies sparse terrain edits without randomness; derived cell values remain coherent. */
@@ -187,8 +191,13 @@ function withTerrainAndElevation(cell: GeographicCell, terrain: Terrain, elevati
   return { ...cell, terrain, elevation, habitability, movementCost: terrain === 'water' ? 0 : terrain === 'hill' ? 1800 : 1000, resourceCapacity, foodAmount: terrain === 'water' ? 0 : Math.min(cell.foodAmount, resourceCapacity), foodRegenerationPerDay: terrain === 'water' || resourceCapacity === 0 ? 0 : Math.max(1, Math.floor(resourceCapacity / 12)) }
 }
 
-export function fixedWorldScale() {
-  return { layout: 'axial-pointy' as const, hexRadiusMeters: WORLD_CELL_RADIUS_METERS }
+export function fixedWorldScale(hexRadiusMeters = WORLD_CELL_RADIUS_METERS) {
+  return { layout: 'axial-pointy' as const, hexRadiusMeters: normalizeHexRadiusMeters(hexRadiusMeters) }
+}
+
+export function normalizeHexRadiusMeters(value: number | undefined): number {
+  if (value === undefined) return WORLD_CELL_RADIUS_METERS
+  return boundedInteger(value, WORLD_CREATION_LIMITS.minimumHexRadiusMeters, WORLD_CREATION_LIMITS.maximumHexRadiusMeters, 'Hex radius')
 }
 
 function normalizeSettlements(value: readonly { id: string; name: string; anchorCellId?: string; preset?: WorldPlacementPreset; catchmentCellIds?: string[]; template?: Exclude<import('../spatial/settlementTemplates').SettlementTemplateId, 'dispersed-homesteads'> }[], cells: readonly GeographicCell[], width: number, height: number): SettlementState[] {

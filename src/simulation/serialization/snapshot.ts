@@ -18,7 +18,6 @@ import {
   INFLUENCE_REGISTRY_VERSION,
   SNAPSHOT_SCHEMA_VERSION,
   VARIABLE_REGISTRY_VERSION,
-  WORLD_CELL_RADIUS_METERS,
   WORLD_GENERATOR_VERSION,
   type SimulationState,
   type SnapshotEnvelope,
@@ -110,7 +109,7 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   if (snapshot.state.config.worldWidth !== snapshot.state.world.grid.width || snapshot.state.config.worldHeight !== snapshot.state.world.grid.height) {
     throw new Error('Snapshot world dimensions do not match configuration')
   }
-  if (snapshot.state.world.scale?.layout !== 'axial-pointy' || snapshot.state.world.scale.hexRadiusMeters !== WORLD_CELL_RADIUS_METERS) {
+  if (snapshot.state.world.scale?.layout !== 'axial-pointy' || snapshot.state.world.scale.hexRadiusMeters < 100 || snapshot.state.world.scale.hexRadiusMeters > 10_000 || !Number.isSafeInteger(snapshot.state.world.scale.hexRadiusMeters)) {
     throw new Error('Snapshot contains an unsupported world scale')
   }
   const normalizedCreation = normalizeWorldCreationRequest(snapshot.state.config.worldCreation, snapshot.state.world.grid.cells, { enforceCreatorLimits: false })

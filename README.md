@@ -101,8 +101,13 @@ Seasonal climate is a small static classification derived from terrain and eleva
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
 
-Next: Milestone 52 — Maintainability and Performance Foundation. Milestone 51
-adds a rolling snapshot migration registry for schemas 30–32, preserving the
+Milestone 53 begins large-landmass authoring with an explicit physical hex
+radius. Authors may choose a 100 m–10 km axial-cell radius; it is normalized,
+preserved in world creation and snapshots, and shown in the setup surface. The
+default remains 1 km for legacy worlds. Terrain remains dense within the
+existing bounded creator until sparse chunk allocation is introduced.
+
+Milestone 51 added a rolling snapshot migration registry for schemas 30–32, preserving the
 existing full validation contract after each one-step migration. Browser worker
 snapshot callers now receive explicit timeout, crash, and disposal failures,
 and hosted persistence ordering uses a locale-independent binary comparator.
