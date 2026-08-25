@@ -2,7 +2,9 @@ import { WorkbenchProjectionBuilder, type MapProjectionRequest } from '../projec
 import { SimulationEngine } from '../simulation/engine/engine'
 import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
 import type { SimulationResponse, WorkbenchSnapshotEnvelope } from '../worker/protocol'
-import { HOSTED_PROTOCOL_VERSION, type HostedCommandResult, type HostedRunBootstrap, type HostedRunCommand, type HostedRunRecord, type HostedRunStore, type HostedRunView } from './types'
+import { HOSTED_PROTOCOL_VERSION, validateHostedRunRecord, type HostedCommandResult, type HostedRunBootstrap, type HostedRunCommand, type HostedRunRecord, type HostedRunStore, type HostedRunView } from './types'
+
+export interface HostedRunObservation { tick: number; digest: string }
 
 /**
  * Serial authoritative executor for one server-owned run. It deliberately
@@ -49,9 +51,32 @@ export class HostedRunService {
   /** Narrow host-only observations used to resume durable background jobs. */
   runId(): string { return this.bootstrap.runId }
   async tick(ownerToken: string): Promise<number> {
+    return (await this.observe(ownerToken)).tick
+  }
+
+  async observe(ownerToken: string): Promise<HostedRunObservation> {
     this.authorize(ownerToken)
     await this.commandQueue
-    return this.engine.project().tick
+    const snapshot = await this.snapshot()
+    return { tick: snapshot.state.tick, digest: snapshot.digest }
+  }
+
+  /** A job quantum commits only when its durable precondition still names this exact run state. */
+  async advanceJob(ownerToken: string, expected: HostedRunObservation, count: number): Promise<HostedRunObservation> {
+    this.authorize(ownerToken)
+    if (!Number.isSafeInteger(count) || count < 1) throw new Error('Hosted job step count must be a positive safe integer')
+    let observation!: HostedRunObservation
+    const operation = this.commandQueue.then(async () => {
+      const before = await this.snapshot()
+      if (before.state.tick !== expected.tick || before.digest !== expected.digest) throw new Error('Hosted job run state conflict')
+      this.engine.advance(count)
+      const after = await this.snapshot()
+      await this.persist(after)
+      observation = { tick: after.state.tick, digest: after.digest }
+    })
+    this.commandQueue = operation.then(() => undefined, () => undefined)
+    await operation
+    return observation
   }
 
   private async apply(command: HostedRunCommand): Promise<HostedCommandResult> {
@@ -135,7 +160,7 @@ function normalizeViewport(viewport: MapProjectionRequest): MapProjectionRequest
 }
 
 function validateStoredRecord(record: HostedRunRecord, bootstrap: HostedRunBootstrap): void {
-  if (record.protocolVersion !== HOSTED_PROTOCOL_VERSION) throw new Error('Hosted run protocol version is unsupported')
+  validateHostedRunRecord(record)
   if (record.runId !== bootstrap.runId || record.ownerId !== bootstrap.ownerId) throw new Error('Hosted run record does not match its configured owner')
 }
 

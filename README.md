@@ -83,6 +83,7 @@ Implemented:
 * Milestone 47 — Large World Coordinate and Chunk Contract
 * Milestone 48 — Server-Owned World Runs (foundation)
 * Milestone 49 — Background Simulation Jobs and Checkpoints (foundation)
+* Milestone 50 — Hosted Authority and Background-Job Correctness
 
 Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. The workbench derives a read-only landmark/hamlet/village/town/city profile from living homes near an anchor, making its geographic basis explicit rather than assigning residents a settlement field. Linked population zones retain their existing anchor-containment validation.
 
@@ -100,9 +101,9 @@ Seasonal climate is a small static classification derived from terrain and eleva
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
 
-Next: Milestone 50 — Hosted Authority and Background-Job Correctness. This
-hardens the Milestone 48–49 hosted foundations before large-world authoring
-resumes.
+Next: Milestone 51 — Persistence Compatibility and Deterministic Portability.
+This adds rolling migration and cross-runtime reproducibility contracts before
+large-world authoring resumes.
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 
@@ -169,8 +170,21 @@ owner can create a bounded deterministic job through the local host, inspect
 its persisted progress, or cancel it between advancement quanta. Every quantum
 persists the authoritative snapshot; reopening a host reconciles an incomplete
 job against that snapshot before continuing. Wall-clock scheduling affects only
-when a quantum begins, never the simulation result. This remains a single-node,
-single-owner foundation rather than a distributed queue or public scheduler.
+when a quantum begins, never the simulation result.
+
+Milestone 50 hardens that foundation. A catalog deduplicates concurrent opens,
+and one FIFO job manager owns authoritative advancement for each hosted run.
+Every job quantum records its expected tick/digest before execution and commits
+the resulting tick/digest afterward; a restart can recover that exact pending
+quantum but marks unrelated run mutation as a visible job failure. Queued jobs
+cancel immediately, running jobs cancel at their next persisted quantum
+boundary, and direct step/reset commands are rejected while a job owns the run.
+Hosted run and job records are validated before use. The local HTTP boundary
+uses owner authorization, bounded JSON bodies, sanitized errors, and a
+configurable `HOSTED_BIND_HOST` (default `127.0.0.1`). Hosted job record version
+1 is explicitly rejected; rolling migration support is Milestone 51. This
+remains a single-node, single-owner foundation rather than a distributed queue
+or public scheduler.
 
 ## Testing
 

@@ -154,11 +154,12 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 46 — Long-Term World History and Change Inspection
 * Milestone 47 — Large World Coordinate and Chunk Contract
 * Milestone 48 — Server-Owned World Runs (foundation)
-* Milestone 49 — Background Simulation Jobs and Checkpoints (foundation; hardening required)
+* Milestone 49 — Background Simulation Jobs and Checkpoints (foundation)
+* Milestone 50 — Hosted Authority and Background-Job Correctness
 
 ## Next Slice
 
-* Milestone 50 — Hosted Authority and Background-Job Correctness
+* Milestone 51 — Persistence Compatibility and Deterministic Portability
 
 Detailed current implementation is documented in `README.md`.
 
@@ -1314,7 +1315,7 @@ capability.
 
 ## Milestone 50 — Hosted Authority and Background-Job Correctness
 
-**Status:** Next
+**Status:** Implemented
 
 **Goal:** Make the server-owned run and background-job foundations safe under
 concurrency, cancellation, failure, and restart.
@@ -1338,6 +1339,16 @@ Implement:
 
 Acceptance requires concurrent-job, concurrent-open, cancellation, injected
 storage failure, corrupt-record, and restart-at-every-commit-boundary tests.
+
+**Delivered boundary:** Each host run has one catalog-coordinated service and
+one FIFO job manager. Jobs use a durable write-ahead quantum plus committed
+tick/digest, recover only a matching interrupted quantum, and fail explicitly
+when the authoritative run changes outside the queue. Queued cancellation is
+immediate; running cancellation resolves at the next quantum boundary. Run/job
+records are validated on every store boundary. The HTTP transport has bounded
+JSON bodies, sanitized status errors, configurable bind host, and rejects
+interactive mutation while a job owns advancement. Job record version 1 is
+rejected explicitly; rolling compatibility begins in Milestone 51.
 
 **Non-goals:** Distributed execution, multiple authoritative hosts, public API
 stability, and collaboration.
@@ -1568,7 +1579,7 @@ in `AGENTS.md`, and deep simulation semantics in focused design documents.
 Current priority:
 
 ```text
-Milestone 50 — Hosted Authority and Background-Job Correctness
+Milestone 51 — Persistence Compatibility and Deterministic Portability
 ```
 
 The user may explicitly override roadmap priority for any development request.
