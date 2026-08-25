@@ -1,4 +1,5 @@
 import type { LocalGovernanceState, OrganizationState, PersonState } from '../simulation/domain/types'
+import { evaluateLegitimacy } from '../simulation/governance/model'
 import type { ProjectedCommunityState, ProjectedGovernanceProfile } from './types'
 
 /**
@@ -13,6 +14,7 @@ export function buildProjectedGovernanceProfiles(governance: readonly LocalGover
   return [...governance].sort((first, second) => first.id.localeCompare(second.id)).map((record) => {
     const community = communityById.get(record.communityId)
     const representativeIds = [...new Set(record.representativeIds)].sort()
+    const legitimacy = evaluateLegitimacy({ serviceAccessPermille: record.serviceAccessPermille, contributionFairnessPermille: record.contributionFairnessPermille, socialTrustPermille: community?.emergent?.['community.emergent.socialTrust'] ?? 0, conflictPermille: community?.emergent?.['community.emergent.conflict'] ?? 1000 })
     return {
       id: record.id,
       communityId: record.communityId,
@@ -23,6 +25,13 @@ export function buildProjectedGovernanceProfiles(governance: readonly LocalGover
       councilOrganizationId: record.councilOrganizationId,
       councilOrganizationStatus: organizationIds.has(record.councilOrganizationId) ? 'recorded' : 'referenced-not-modeled',
       legitimacyPermille: record.legitimacy,
+      legitimacyFactors: [
+        { id: 'food-relief-access', label: 'Food-relief access', valuePermille: legitimacy.serviceAccessPermille },
+        { id: 'contribution-fairness', label: 'Contribution fairness', valuePermille: legitimacy.contributionFairnessPermille },
+        { id: 'social-trust', label: 'Social trust', valuePermille: legitimacy.socialTrustPermille },
+        { id: 'conflict-absence', label: 'Conflict absence', valuePermille: legitimacy.conflictAbsencePermille },
+      ],
+      evaluatedLegitimacyPermille: legitimacy.legitimacyPermille,
       serviceAccessPermille: record.serviceAccessPermille,
       contributionFairnessPermille: record.contributionFairnessPermille,
       publicGood: record.publicGood,
@@ -31,6 +40,7 @@ export function buildProjectedGovernanceProfiles(governance: readonly LocalGover
       territoryStatus: 'not-modeled',
       civicMembershipStatus: 'not-modeled',
       cultureAndIdentityStatus: 'separate-not-inferred',
+      taxationStatus: 'not-modeled', budgetStatus: 'not-modeled', lawAndEnforcementStatus: 'not-modeled', corruptionStatus: 'not-modeled',
     }
   })
 }

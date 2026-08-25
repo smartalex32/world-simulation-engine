@@ -631,6 +631,10 @@ export default function App() {
             <Metric label="Foragers" value={projection.economy.occupationCounts.forager} />
             <Metric label="Household roles" value={projection.economy.occupationCounts.household} />
           </div></>}
+          {projection && projection.governanceProfiles.length > 0 && <><PanelTitle title="Public capacity evidence" subtitle="Legitimacy inputs; not a tax, budget, law, or enforcement model" />
+          <div className="public-capacity-list" aria-label="Public capacity evidence">
+            {projection.governanceProfiles.map((governance) => <span key={governance.id}>{governance.catchmentName}<small>Legitimacy {(governance.evaluatedLegitimacyPermille / 10).toFixed(1)}% · recorded {(governance.legitimacyPermille / 10).toFixed(1)}%</small><small>{governance.legitimacyFactors.map((factor) => `${factor.label} ${(factor.valuePermille / 10).toFixed(1)}%`).join(' · ')}</small><small>Taxation {governance.taxationStatus} · budget {governance.budgetStatus} · law/enforcement {governance.lawAndEnforcementStatus} · corruption {governance.corruptionStatus}</small></span>)}
+          </div></>}
           {projection && <CommunitySignals
             communities={projection.communities}
             definitions={projection.communityVariableDefinitions}
