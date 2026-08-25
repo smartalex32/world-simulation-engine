@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { HostedJobStore, HostedSimulationJob, HostedRunRecord, HostedRunStore } from './types'
+import { validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedSimulationJob, type HostedRunRecord, type HostedRunStore } from './types'
 
 /** In-memory store used only by tests and embedding hosts. */
 export class MemoryHostedRunStore implements HostedRunStore, HostedJobStore {
@@ -9,20 +9,21 @@ export class MemoryHostedRunStore implements HostedRunStore, HostedJobStore {
 
   async load(runId: string): Promise<HostedRunRecord | undefined> {
     const record = this.records.get(runId)
-    return record === undefined ? undefined : structuredClone(record)
+    return record === undefined ? undefined : validateHostedRunRecord(structuredClone(record))
   }
 
   async save(record: HostedRunRecord): Promise<void> {
-    this.records.set(record.runId, structuredClone(record))
+    const valid = validateHostedRunRecord(record)
+    this.records.set(valid.runId, structuredClone(valid))
   }
-  async list(ownerId: string): Promise<HostedRunRecord[]> { return [...this.records.values()].filter((record) => record.ownerId === ownerId).map((record) => structuredClone(record)).sort((a, b) => a.runId.localeCompare(b.runId)) }
+  async list(ownerId: string): Promise<HostedRunRecord[]> { return [...this.records.values()].map((record) => validateHostedRunRecord(structuredClone(record))).filter((record) => record.ownerId === ownerId).sort((a, b) => a.runId.localeCompare(b.runId)) }
   async loadJob(runId: string, jobId: string): Promise<HostedSimulationJob | undefined> {
     const job = this.jobs.get(jobKey(runId, jobId))
-    return job === undefined ? undefined : structuredClone(job)
+    return job === undefined ? undefined : validateHostedJob(structuredClone(job))
   }
-  async saveJob(job: HostedSimulationJob): Promise<void> { this.jobs.set(jobKey(job.runId, job.jobId), structuredClone(job)) }
+  async saveJob(job: HostedSimulationJob): Promise<void> { const valid = validateHostedJob(job); this.jobs.set(jobKey(valid.runId, valid.jobId), structuredClone(valid)) }
   async listJobs(runId: string): Promise<HostedSimulationJob[]> {
-    return [...this.jobs.values()].filter((job) => job.runId === runId).map((job) => structuredClone(job)).sort((a, b) => a.jobId.localeCompare(b.jobId))
+    return [...this.jobs.values()].map((job) => validateHostedJob(structuredClone(job))).filter((job) => job.runId === runId).sort((a, b) => a.queueOrder - b.queueOrder || a.jobId.localeCompare(b.jobId))
   }
 }
 
@@ -32,7 +33,7 @@ export class FileHostedRunStore implements HostedRunStore, HostedJobStore {
 
   async load(runId: string): Promise<HostedRunRecord | undefined> {
     try {
-      return JSON.parse(await readFile(this.pathFor(runId), 'utf8')) as HostedRunRecord
+      return validateHostedRunRecord(JSON.parse(await readFile(this.pathFor(runId), 'utf8')))
     } catch (error) {
       if (isMissingFile(error)) return undefined
       throw error
@@ -40,31 +41,33 @@ export class FileHostedRunStore implements HostedRunStore, HostedJobStore {
   }
 
   async save(record: HostedRunRecord): Promise<void> {
-    const path = this.pathFor(record.runId)
+    const valid = validateHostedRunRecord(record)
+    const path = this.pathFor(valid.runId)
     await mkdir(dirname(path), { recursive: true })
     const temporary = `${path}.tmp`
-    await writeFile(temporary, JSON.stringify(record), 'utf8')
+    await writeFile(temporary, JSON.stringify(valid), 'utf8')
     await rename(temporary, path)
   }
 
   async list(ownerId: string): Promise<HostedRunRecord[]> {
     try {
       const names = (await readdir(this.directory)).filter((name) => name.endsWith('.json')).sort()
-      const records = await Promise.all(names.map(async (name) => JSON.parse(await readFile(join(this.directory, name), 'utf8')) as HostedRunRecord))
+      const records = await Promise.all(names.map(async (name) => validateHostedRunRecord(JSON.parse(await readFile(join(this.directory, name), 'utf8')))))
       return records.filter((record) => record.ownerId === ownerId).sort((a, b) => a.runId.localeCompare(b.runId))
     } catch (error) { if (isMissingFile(error)) return []; throw error }
   }
 
   async loadJob(runId: string, jobId: string): Promise<HostedSimulationJob | undefined> {
-    try { return JSON.parse(await readFile(this.jobPathFor(runId, jobId), 'utf8')) as HostedSimulationJob }
+    try { return validateHostedJob(JSON.parse(await readFile(this.jobPathFor(runId, jobId), 'utf8'))) }
     catch (error) { if (isMissingFile(error)) return undefined; throw error }
   }
 
   async saveJob(job: HostedSimulationJob): Promise<void> {
-    const path = this.jobPathFor(job.runId, job.jobId)
+    const valid = validateHostedJob(job)
+    const path = this.jobPathFor(valid.runId, valid.jobId)
     await mkdir(dirname(path), { recursive: true })
     const temporary = `${path}.tmp`
-    await writeFile(temporary, JSON.stringify(job), 'utf8')
+    await writeFile(temporary, JSON.stringify(valid), 'utf8')
     await rename(temporary, path)
   }
 
@@ -72,7 +75,7 @@ export class FileHostedRunStore implements HostedRunStore, HostedJobStore {
     const directory = join(this.directory, 'jobs', validatedId(runId))
     try {
       const names = (await readdir(directory)).filter((name) => name.endsWith('.json')).sort()
-      return await Promise.all(names.map(async (name) => JSON.parse(await readFile(join(directory, name), 'utf8')) as HostedSimulationJob))
+      return (await Promise.all(names.map(async (name) => validateHostedJob(JSON.parse(await readFile(join(directory, name), 'utf8')))))).sort((a, b) => a.queueOrder - b.queueOrder || a.jobId.localeCompare(b.jobId))
     } catch (error) { if (isMissingFile(error)) return []; throw error }
   }
 
