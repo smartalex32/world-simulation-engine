@@ -137,6 +137,11 @@ beliefs and language fluencies only across observed home catchments. These
 observations do not assign collective culture, religion, identity, or polity
 membership, and they do not alter behavior.
 
+Contention analytics summarize only recorded interpersonal disputes within an
+observed catchment. They make current non-lethal local resolution evidence
+visible but do not imply diplomacy, military organization, occupation, or
+warfare.
+
 Seasonal climate is a small static classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Daily environmental recovery is measured separately from household food production and consumption; no weather simulation, biome editor, or ecosystem model is implied.
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.

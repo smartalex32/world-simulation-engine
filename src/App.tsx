@@ -639,6 +639,10 @@ export default function App() {
           <div className="public-capacity-list" aria-label="Culture and language evidence">
             {projection.collectiveCultures.map((culture) => <span key={culture.communityId}>{culture.catchmentName}<small>{culture.observedResidentCount} observed residents · Valley fluency {(culture.averageValleyFluency / 10).toFixed(1)}% · Ridge fluency {(culture.averageRidgeFluency / 10).toFixed(1)}%</small><small>Exploration belief {(culture.averageExplorationBelief / 10).toFixed(1)}% · cooperation belief {(culture.averageCooperationBelief / 10).toFixed(1)}% · {culture.cultureExposureCount} cultural exposures · {culture.languageAcquisitionCount} language acquisitions</small><small>Religion {culture.religionStatus} · identity {culture.identityStatus} · polity membership {culture.polityMembershipStatus}</small></span>)}
           </div></>}
+          {projection && <><PanelTitle title="Contention evidence" subtitle="Recorded interpersonal disputes; not organized conflict" />
+          <div className="public-capacity-list" aria-label="Contention evidence">
+            {projection.contentionProfiles.map((contention) => <span key={contention.communityId}>{contention.catchmentName}<small>{contention.activeContentionCount} active of {contention.recordedDisputeCount} recorded disputes · {contention.totalIncidentCount} incidents · severity {contention.severity}</small><small>Average grievance {(contention.averageActiveGrievancePermille / 10).toFixed(1)}% · local resolution {contention.resolutionScope} · latest incident {contention.latestIncidentTick ?? 'none'}</small><small>Diplomacy {contention.diplomacyStatus} · military organization {contention.militaryOrganizationStatus} · occupation {contention.occupationStatus} · warfare {contention.warfareStatus}</small></span>)}
+          </div></>}
           {projection && <CommunitySignals
             communities={projection.communities}
             definitions={projection.communityVariableDefinitions}
