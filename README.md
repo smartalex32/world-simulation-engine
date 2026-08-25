@@ -132,6 +132,12 @@ visible population count, and the reversible `zoom-or-focus` handoff. This is
 presentation-only: the authoritative engine remains detailed-agent simulation,
 and a hooked person always retains a live marker and inspector record.
 
+Milestone 46 extends Historical Inspection with compact, read-only checkpoint
+summaries. The History view compares living population and geographically
+measured settlement home-catchment residents/households only at retained weekly
+checkpoints. It neither replays a run nor changes the active world; missing
+checkpoints remain visible as missing evidence rather than inferred history.
+
 ## Testing
 
 * Vitest

@@ -1,4 +1,5 @@
 import { HISTORY_METRICS, historicalHighlights, metricDelta, metricTimeline, personTimeline } from '../history/history'
+import { populationCheckpointTimeline, settlementChangeSummaries, type HistoricalCheckpoint } from '../history/checkpoints'
 import { buildChronicle } from '../history/chronicle'
 import { useState } from 'react'
 import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
@@ -6,17 +7,20 @@ import type { SimulationEvent, StatisticSample } from '../simulation/domain/type
 interface HistoryPanelProps {
   events: readonly SimulationEvent[]
   statistics: readonly StatisticSample[]
+  checkpoints: readonly HistoricalCheckpoint[]
   selectedPersonId?: string
   onInspectPerson: (personId: string) => void
   onRefresh: () => void
   loading: boolean
 }
 
-export function HistoryPanel({ events, statistics, selectedPersonId, onInspectPerson, onRefresh, loading }: HistoryPanelProps) {
+export function HistoryPanel({ events, statistics, checkpoints, selectedPersonId, onInspectPerson, onRefresh, loading }: HistoryPanelProps) {
   const [showChronicle, setShowChronicle] = useState(false)
   const timeline = selectedPersonId ? personTimeline(events, selectedPersonId, 24) : []
   const highlights = historicalHighlights(events, 12)
   const chronicle = buildChronicle(events, 12)
+  const checkpointTimeline = populationCheckpointTimeline(checkpoints)
+  const settlementChanges = settlementChangeSummaries(checkpoints)
   return <section className="history-panel" aria-label="Historical inspection">
     <header className="history-heading">
       <div><span className="eyebrow">HISTORICAL INSPECTION</span><h2>Recorded evidence over time</h2><p>Events and sampled metrics are read from local run history; nothing is inferred.</p></div>
@@ -33,10 +37,25 @@ export function HistoryPanel({ events, statistics, selectedPersonId, onInspectPe
         })}
       </section>
       <section className="history-section">
+        <h3>Retained population checkpoints</h3>
+        {checkpointTimeline.length === 0 && <p className="history-empty">No weekly checkpoints are retained yet.</p>}
+        <div className="history-event-list">{checkpointTimeline.map((checkpoint, index) => {
+          const previous = checkpointTimeline[index - 1]
+          const delta = previous ? checkpoint.populationCount - previous.populationCount : undefined
+          return <article className="history-event" key={checkpoint.tick}><span>Tick {checkpoint.tick}</span><strong>{checkpoint.populationCount} living people</strong>{delta !== undefined && <em>{signed(delta)} since prior checkpoint</em>}</article>
+        })}</div>
+      </section>
+      <section className="history-section">
         <h3>{showChronicle ? 'Deterministic chronicle' : 'Major recorded events'}</h3>
         {showChronicle
           ? <><p className="chronicle-note">Fixed templates from recorded evidence; this never affects the simulation.</p>{chronicle.length === 0 && <p className="history-empty">No significant recorded events are available yet.</p>}<div className="history-event-list">{chronicle.map((entry) => <article className="history-event chronicle-entry" key={entry.id}><span>Tick {entry.tick}</span><strong>{entry.text}</strong><em>{entry.category}</em><small>Evidence: {entry.evidenceEventId}</small></article>)}</div></>
           : <>{highlights.length === 0 && <p className="history-empty">No significant recorded events are available yet.</p>}<div className="history-event-list">{highlights.map(({ event, reason }) => <HistoryEvent key={event.id} event={event} label={reason.replace('-', ' ')} onInspectPerson={onInspectPerson} />)}</div></>}
+      </section>
+      <section className="history-section">
+        <h3>Settlement change</h3>
+        <p className="chronicle-note">Home catchments are measured at retained checkpoints; these are not settlement memberships.</p>
+        {settlementChanges.length === 0 && <p className="history-empty">No settlement checkpoint comparison is available yet.</p>}
+        <div className="history-event-list">{settlementChanges.map((settlement) => <article className="history-event" key={settlement.settlementId}><span>Ticks {settlement.firstTick}–{settlement.latestTick}</span><strong>{settlement.name} · {settlement.latestResidentCount} residents</strong><em>{signed(settlement.residentDelta)} residents · {signed(settlement.householdDelta)} households</em></article>)}</div>
       </section>
       <section className="history-section">
         <h3>{selectedPersonId ? `Timeline · ${selectedPersonId}` : 'Person timeline'}</h3>
