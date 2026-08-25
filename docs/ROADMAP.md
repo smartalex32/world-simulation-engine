@@ -1565,6 +1565,13 @@ internal relationships. Typed specializations may include guilds, councils,
 religious organizations, and political factions, but shared activity and social
 evidence—not arbitrary labels—create or strengthen them.
 
+**Delivered first slice:** Existing explicit school organizations now have a
+read-only group profile in the workbench. It displays the education goal,
+member-role counts, place-service capacity, shared rules, and relationships
+that actually exist between members. Membership does not infer reputation,
+owned resources, or person effects; those properties remain visibly
+not-measured/not-modeled until an authoritative group system owns them.
+
 ## Milestone 64 — Territorial Governance and Polity Formation ([Issue #68](https://github.com/smartalex32/world-simulation-engine/issues/68))
 
 Add explicit settlements, regions, cities, city-states, kingdoms, and other
