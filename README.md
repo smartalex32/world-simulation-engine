@@ -142,6 +142,11 @@ observed catchment. They make current non-lethal local resolution evidence
 visible but do not imply diplomacy, military organization, occupation, or
 warfare.
 
+Knowledge and innovation analytics summarize existing person-owned learned
+knowledge and practical techniques by observed home catchment. They do not
+assign a technology tier, shared tool ownership, or automatic diffusion, and
+they do not alter innovation behavior.
+
 Seasonal climate is a small static classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Daily environmental recovery is measured separately from household food production and consumption; no weather simulation, biome editor, or ecosystem model is implied.
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
