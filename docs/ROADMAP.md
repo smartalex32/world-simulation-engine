@@ -1648,6 +1648,12 @@ institutions, environment, community conditions, and structured experiences.
 Multi-generation explanations show how developed adults change the environment
 experienced by later children.
 
+**Delivered first slice:** The workbench now summarizes retained child
+development evidence by observed home catchment: parent links, inheritance
+traces, parent/peer/activity/community experiences, and recorded changes. It
+explicitly marks adult feedback and next-generation society feedback as not
+modeled; this is evidence inspection, not a completed multi-generational rule.
+
 ## Milestone 70 — Civilization-Scale Validation and Product Completion ([Issue #74](https://github.com/smartalex32/world-simulation-engine/issues/74))
 
 Validate long-running worlds across geography, cohorts, settlements, polities,

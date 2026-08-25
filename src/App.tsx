@@ -647,6 +647,10 @@ export default function App() {
           <div className="public-capacity-list" aria-label="Knowledge and innovation evidence">
             {projection.collectiveKnowledge.map((knowledge) => <span key={knowledge.communityId}>{knowledge.catchmentName}<small>{knowledge.observedResidentCount} observed residents · foraging knowledge {(knowledge.averageForagingKnowledge / 10).toFixed(1)}% · terrain knowledge {(knowledge.averageTerrainKnowledge / 10).toFixed(1)}%</small><small>{knowledge.practicalTechniqueCount} practical techniques · {knowledge.practicalInventorCount} inventors · latest technique {knowledge.latestTechniqueTick ?? 'none'}</small><small>Technology level {knowledge.technologyLevelStatus} · shared tools {knowledge.sharedToolOwnershipStatus} · automatic diffusion {knowledge.automaticDiffusionStatus}</small></span>)}
           </div></>}
+          {projection && <><PanelTitle title="Generational evidence" subtitle="Retained child development records; not completed feedback" />
+          <div className="public-capacity-list" aria-label="Generational evidence">
+            {projection.generationalEvidence.map((generation) => <span key={generation.communityId}>{generation.catchmentName}<small>{generation.observedChildCount} observed children · {generation.linkedChildCount} with parent links · {generation.inheritanceTraceCount} inheritance traces</small><small>{generation.parentModelingExperienceCount} parent-modeling experiences · {generation.broaderDevelopmentExperienceCount} broader experiences · {generation.recordedDevelopmentChangeCount} recorded development changes</small><small>Household/exposure {generation.householdAndExposureStatus} · adult feedback {generation.adultFeedbackStatus} · next-generation society feedback {generation.nextGenerationSocietyFeedbackStatus}</small></span>)}
+          </div></>}
           {projection && <CommunitySignals
             communities={projection.communities}
             definitions={projection.communityVariableDefinitions}

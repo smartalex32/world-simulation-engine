@@ -147,6 +147,11 @@ knowledge and practical techniques by observed home catchment. They do not
 assign a technology tier, shared tool ownership, or automatic diffusion, and
 they do not alter innovation behavior.
 
+Generational analytics summarize retained child development records by observed
+home catchment: parent links, inheritance traces, completed experiences, and
+recorded changes. They do not yet model adult feedback into the next generation
+or infer a society-level developmental loop.
+
 Seasonal climate is a small static classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Daily environmental recovery is measured separately from household food production and consumption; no weather simulation, biome editor, or ecosystem model is implied.
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
