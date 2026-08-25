@@ -1528,6 +1528,12 @@ settlements, regions, institutions, and polities only when authoritative models
 exist. Hooking a person never forces camera follow. UI-impacting PRs include
 review screenshots in the PR, not the repository.
 
+First delivered slice: the minimap is now an explicitly labelled keyboard
+control. Enter or Space recenters the world map, focus is visible, and its
+assistive description distinguishes presentation navigation from simulation
+state. The map remains worker-projected; this UI behavior does not consume RNG
+or alter canonical output.
+
 ## Milestone 61 — Infrastructure, Services, and Trade Networks ([Issue #65](https://github.com/smartalex32/world-simulation-engine/issues/65))
 
 Extend roads, rivers, ports, markets, schools, storage, and public services into

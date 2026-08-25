@@ -129,6 +129,9 @@ export function HexMap({ world, settlements = [], roads = [], settlementLinks = 
   const worldPixelHeight = 1.5 * HEX_SIZE * (world.height + 1)
   const minimapScale = Math.min(minimapWidth / worldPixelWidth, minimapHeight / worldPixelHeight)
   const minimapViewport = { x: Math.max(0, -viewport.x / viewport.scale * minimapScale), y: Math.max(0, -viewport.y / viewport.scale * minimapScale), width: Math.min(minimapWidth, viewport.width / viewport.scale * minimapScale), height: Math.min(minimapHeight, viewport.height / viewport.scale * minimapScale) }
+  function recenterFromMinimap(x: number, y: number): void {
+    setViewport((view) => ({ ...view, x: view.width / 2 - x / minimapScale * view.scale, y: view.height / 2 - y / minimapScale * view.scale }))
+  }
   return <div className="map-container" ref={containerRef}>
     <canvas
       ref={canvasRef}
@@ -180,15 +183,20 @@ export function HexMap({ world, settlements = [], roads = [], settlementLinks = 
       }}
     />
     <button className="map-fit" onClick={() => setViewport(fitWorld(world, viewport.width, viewport.height, HEX_SIZE))}>Fit world</button>
-    <svg className="map-minimap" aria-label="World minimap" viewBox={`0 0 ${minimapWidth} ${minimapHeight}`} onPointerDown={(event) => {
+    <svg className="map-minimap" aria-label="World minimap" aria-describedby="map-minimap-help" role="button" tabIndex={0} viewBox={`0 0 ${minimapWidth} ${minimapHeight}`} onPointerDown={(event) => {
       const bounds = event.currentTarget.getBoundingClientRect(); const x = (event.clientX - bounds.left) * minimapWidth / bounds.width; const y = (event.clientY - bounds.top) * minimapHeight / bounds.height
-      setViewport((view) => ({ ...view, x: view.width / 2 - x / minimapScale * view.scale, y: view.height / 2 - y / minimapScale * view.scale }))
+      recenterFromMinimap(x, y)
+    }} onKeyDown={(event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      event.preventDefault()
+      recenterFromMinimap(minimapWidth / 2, minimapHeight / 2)
     }}>
       <rect width={minimapWidth} height={minimapHeight} fill="#0d1311" />
       <rect x={0} y={0} width={worldPixelWidth * minimapScale} height={worldPixelHeight * minimapScale} fill="#315746" opacity=".65" />
       {settlements.map((settlement) => { const [q, r] = settlement.anchorCellId.split(',').map(Number); const point = axialToPixel({ q: q ?? 0, r: r ?? 0 }, HEX_SIZE); return <circle key={settlement.id} cx={point.x * minimapScale} cy={point.y * minimapScale} r="2" fill="#f2c94c" /> })}
       <rect className="minimap-view" x={minimapViewport.x} y={minimapViewport.y} width={minimapViewport.width} height={minimapViewport.height} />
     </svg>
+    <span id="map-minimap-help" className="sr-only">Click a location to recenter the map. Press Enter or Space to recenter on the world.</span>
     {map.overlay === 'community' && <CommunityLegend communities={communities} definitions={communityVariableDefinitions} measureId={map.communityMeasureId ?? communityMeasureId} selectedCommunityId={selectedCommunityId} />}
     <div id="map-render-status" className="map-lod" aria-live="polite">{map.lod === 'cell' ? (map.borderAlpha > 0 ? 'hex detail' : 'terrain overview') : map.lod === 'region' ? 'regional overview' : 'world overview'} · {(map.exactCells.length + map.regions.length).toLocaleString()} primitives · {map.populationFidelity.mode === 'detailed' ? 'detailed population' : 'exact aggregate population'} {map.populationFidelity.visiblePopulationCount.toLocaleString()}{map.populationFidelity.hookedPersonPreserved ? ' · hooked person preserved' : ''}{hookedOffscreen ? ' · hooked person outside view' : ''}</div>
     <div className="map-help">Drag or arrows/WASD to pan · Wheel or +/- to zoom · F to fit · Click to inspect</div>
