@@ -1,6 +1,7 @@
 import type { CommunityAggregationTrace, CommunityEmergentValues, CommunityStructuralId, CommunityVariableDefinition, CommunityVariableId, CommunityFeedbackEdgeDefinition } from '../simulation/community/types'
 import type { DisputeState, GeographicCell, HouseholdState, LocalGovernanceState, OrganizationState, ParentChildLink, PersonState, PopulationPlacementZone, RelationshipState, SettlementState, Terrain, WorldScale } from '../simulation/domain/types'
 import type { PersonVariableDefinition } from '../simulation/variables/types'
+import type { WorldChunkLayout } from '../simulation/spatial/worldChunks'
 
 /** Incremented when the bounded worker-to-workbench projection shape changes. */
 export const PROJECTION_PROTOCOL_VERSION = 5
@@ -158,6 +159,7 @@ export interface WorldDescriptor {
   width: number
   height: number
   cellCount: number
+  chunkLayout: WorldChunkLayout
   scale: WorldScale
 }
 
