@@ -17,6 +17,7 @@ export interface HostedRunRecord {
 export interface HostedRunStore {
   load(runId: string): Promise<HostedRunRecord | undefined>
   save(record: HostedRunRecord): Promise<void>
+  list(ownerId: string): Promise<HostedRunRecord[]>
 }
 
 export interface HostedRunBootstrap {
@@ -49,3 +50,5 @@ export interface HostedRunView {
   observedTick: number
   projection: WorkbenchProjection
 }
+
+export interface HostedRunSummary { runId: string; ownerId: string; tick: number; savedAt: string }

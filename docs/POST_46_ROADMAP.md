@@ -9,7 +9,9 @@ inspectable mixed fidelity; it does not assume one million detailed agents.
 47. **Large World Coordinate and Chunk Contract** — Implemented. Versioned
 chunk keys, bounds, and layouts provide sparse-storage-ready addressing without
 changing current dense simulation behavior.
-48. **Server-Owned World Runs** — Durable authenticated single-owner cloud runs.
+48. **Server-Owned World Runs** — Implemented foundation. Durable owner-scoped
+run catalog and service reuse around the existing authenticated command and
+bounded-projection boundary; no collaboration or browser authority.
 49. **Background Simulation Jobs and Checkpoints** — Server scheduling,
 progress, cancellation, and restart-safe advancement.
 50. **Designed Landmass and Regional Map Authoring** — Chunk-scoped terrain,
