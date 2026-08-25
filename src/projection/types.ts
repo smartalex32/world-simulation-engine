@@ -3,7 +3,9 @@ import type { DisputeState, GeographicCell, HouseholdState, LocalGovernanceState
 import type { PersonVariableDefinition } from '../simulation/variables/types'
 
 /** Incremented when the bounded worker-to-workbench projection shape changes. */
-export const PROJECTION_PROTOCOL_VERSION = 4
+export const PROJECTION_PROTOCOL_VERSION = 5
+/** Versioned independently so later cohort simulation cannot masquerade as this read-only map aggregation. */
+export const POPULATION_FIDELITY_VERSION = 1
 export const PROJECTION_CHUNK_SIZE = 32
 export const PROJECTION_REGION_SIZES = Object.freeze([1, 4, 16, 64, 256] as const)
 export const MAX_TERRAIN_PRIMITIVES = 4096
@@ -75,6 +77,36 @@ export interface PopulationMapMarker {
   visible?: boolean
 }
 
+/**
+ * A read-only population summary for one rendered map region. The authoritative
+ * engine continues to retain detailed people; this is never an off-screen
+ * simulation substitute.
+ */
+export interface PopulationFidelityRegion {
+  id: string
+  q: number
+  r: number
+  qMax: number
+  rMax: number
+  size: ProjectionRegionSize
+  populationCount: number
+}
+
+/**
+ * Makes the current presentation fidelity explicit. Zooming or focusing a
+ * person reversibly returns a region to cell detail; a hook always retains its
+ * person-level marker and inspector data.
+ */
+export interface PopulationFidelityProjection {
+  version: typeof POPULATION_FIDELITY_VERSION
+  mode: 'detailed' | 'aggregate'
+  visiblePopulationCount: number
+  aggregateRegions: PopulationFidelityRegion[]
+  authoritativeModel: 'detailed-agent'
+  detailHandoff: 'zoom-or-focus'
+  hookedPersonPreserved: boolean
+}
+
 export interface ActivityMapMarker {
   id: string
   q: number
@@ -111,6 +143,7 @@ export interface MapProjection {
   exactCells: ProjectedMapCell[]
   regions: AggregateMapRegion[]
   populationMarkers: PopulationMapMarker[]
+  populationFidelity: PopulationFidelityProjection
   activityMarkers: ActivityMapMarker[]
   householdMarkers: HouseholdMapMarker[]
   relationshipSegments: RelationshipMapSegment[]

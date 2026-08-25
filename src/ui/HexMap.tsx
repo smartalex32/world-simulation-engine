@@ -143,6 +143,9 @@ export function HexMap({ world, settlements = [], roads = [], settlementLinks = 
       data-map-border-alpha={map.borderAlpha}
       data-map-primitive-count={map.exactCells.length + map.regions.length}
       data-map-population-markers={map.populationMarkers.length}
+      data-population-fidelity={map.populationFidelity.mode}
+      data-population-fidelity-regions={map.populationFidelity.aggregateRegions.length}
+      data-population-fidelity-count={map.populationFidelity.visiblePopulationCount}
       data-hooked-person-id={map.hookedPersonMarker?.personId}
       data-hooked-cell={map.hookedPersonMarker ? `${map.hookedPersonMarker.q},${map.hookedPersonMarker.r}` : undefined}
       data-hooked-visible={map.hookedPersonMarker?.visible}
@@ -187,7 +190,7 @@ export function HexMap({ world, settlements = [], roads = [], settlementLinks = 
       <rect className="minimap-view" x={minimapViewport.x} y={minimapViewport.y} width={minimapViewport.width} height={minimapViewport.height} />
     </svg>
     {map.overlay === 'community' && <CommunityLegend communities={communities} definitions={communityVariableDefinitions} measureId={map.communityMeasureId ?? communityMeasureId} selectedCommunityId={selectedCommunityId} />}
-    <div id="map-render-status" className="map-lod" aria-live="polite">{map.lod === 'cell' ? (map.borderAlpha > 0 ? 'hex detail' : 'terrain overview') : map.lod === 'region' ? 'regional overview' : 'world overview'} · {(map.exactCells.length + map.regions.length).toLocaleString()} primitives{hookedOffscreen ? ' · hooked person outside view' : ''}</div>
+    <div id="map-render-status" className="map-lod" aria-live="polite">{map.lod === 'cell' ? (map.borderAlpha > 0 ? 'hex detail' : 'terrain overview') : map.lod === 'region' ? 'regional overview' : 'world overview'} · {(map.exactCells.length + map.regions.length).toLocaleString()} primitives · {map.populationFidelity.mode === 'detailed' ? 'detailed population' : 'exact aggregate population'} {map.populationFidelity.visiblePopulationCount.toLocaleString()}{map.populationFidelity.hookedPersonPreserved ? ' · hooked person preserved' : ''}{hookedOffscreen ? ' · hooked person outside view' : ''}</div>
     <div className="map-help">Drag or arrows/WASD to pan · Wheel or +/- to zoom · F to fit · Click to inspect</div>
   </div>
 }

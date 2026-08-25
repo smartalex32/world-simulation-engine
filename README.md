@@ -125,6 +125,13 @@ digest. Hosts may opt into that same initial population using
 its 500-person authoring guardrail. The benchmark reports elapsed time as local
 evidence only—hardware timing does not affect simulation output.
 
+Milestone 45 makes far-map population aggregation explicit rather than an
+implicit rendering shortcut. Every map projection now reports a versioned
+population-fidelity contract: detailed cells or exact aggregate regions, the
+visible population count, and the reversible `zoom-or-focus` handoff. This is
+presentation-only: the authoritative engine remains detailed-agent simulation,
+and a hooked person always retains a live marker and inspector record.
+
 ## Testing
 
 * Vitest
