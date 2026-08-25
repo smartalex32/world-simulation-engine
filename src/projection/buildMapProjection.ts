@@ -14,6 +14,7 @@ import { buildProjectedGovernanceProfiles } from './governance'
 import { buildProjectedCollectiveCultures } from './collectiveCulture'
 import { buildProjectedContentionProfiles } from './conflict'
 import { buildProjectedCollectiveKnowledge } from './collectiveKnowledge'
+import { buildProjectedGenerationalEvidence } from './generations'
 import { deriveDrainage, type DrainageCell } from '../simulation/environment/hydrology'
 import { cohortPopulationByCell } from '../simulation/cohorts/model'
 import { buildLocationChunkIndex, visibleIndexedLocations, type IndexedProjectionLocation } from './locationIndex'
@@ -134,6 +135,7 @@ export class WorkbenchProjectionBuilder {
       collectiveCultures: buildProjectedCollectiveCultures(source.communities, source.people),
       contentionProfiles: buildProjectedContentionProfiles(projectedCommunities, source.disputes),
       collectiveKnowledge: buildProjectedCollectiveKnowledge(source.communities, source.people),
+      generationalEvidence: buildProjectedGenerationalEvidence(source.communities, source.people, source.parentChildLinks),
       roads: (source.world.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })).sort((a, b) => a.id.localeCompare(b.id)),
       populationZones: source.populationZones.map((zone) => zone.settlementId === undefined
         ? { id: zone.id, name: zone.name, populationCount: zone.populationCount, cellCount: zone.cellIds.length }
