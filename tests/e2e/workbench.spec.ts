@@ -63,6 +63,7 @@ test('opens the world setup surface with explicit scale and placement allocation
   await expect(page.getByLabel('Public capacity evidence')).toContainText('Taxation not-modeled')
   await expect(page.getByLabel('Culture and language evidence')).toContainText('Religion not-modeled')
   await expect(page.getByLabel('Contention evidence')).toContainText('Diplomacy not-modeled')
+  await expect(page.getByLabel('Knowledge and innovation evidence')).toContainText('Technology level not-modeled')
   await expect(page.getByRole('region', { name: 'Entity categories' })).toBeHidden()
   await page.getByRole('button', { name: 'entities', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Entity categories' })).toBeVisible()

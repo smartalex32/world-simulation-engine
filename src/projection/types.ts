@@ -4,7 +4,7 @@ import type { PersonVariableDefinition } from '../simulation/variables/types'
 import type { WorldChunkLayout } from '../simulation/spatial/worldChunks'
 
 /** Incremented when the bounded worker-to-workbench projection shape changes. */
-export const PROJECTION_PROTOCOL_VERSION = 12
+export const PROJECTION_PROTOCOL_VERSION = 13
 /** Versioned independently so later cohort simulation cannot masquerade as this read-only map aggregation. */
 export const POPULATION_FIDELITY_VERSION = 1
 export const PROJECTION_CHUNK_SIZE = 32
@@ -202,6 +202,8 @@ export interface ProjectedSettlementDiffusion { settlementId: string; observedRe
 export interface ProjectedCollectiveCulture { communityId: string; catchmentName: string; observedResidentCount: number; averageValleyFluency: number; averageRidgeFluency: number; averageExplorationBelief: number; averageCooperationBelief: number; cultureExposureCount: number; languageAcquisitionCount: number; religionStatus: 'not-modeled'; identityStatus: 'not-modeled'; polityMembershipStatus: 'separate-not-inferred' }
 /** Community-level evidence from recorded interpersonal disputes, not organized conflict. */
 export interface ProjectedContentionProfile { communityId: string; catchmentName: string; recordedDisputeCount: number; activeContentionCount: number; averageActiveGrievancePermille: number; totalIncidentCount: number; latestIncidentTick?: number; severity: 'none' | 'low' | 'elevated' | 'high'; resolutionScope: 'none' | 'local-non-lethal-contention'; diplomacyStatus: 'not-modeled'; militaryOrganizationStatus: 'not-modeled'; occupationStatus: 'not-modeled'; warfareStatus: 'not-modeled' }
+/** Geographic observation of person-owned knowledge and inventions, not a technology tier. */
+export interface ProjectedCollectiveKnowledge { communityId: string; catchmentName: string; observedResidentCount: number; averageForagingKnowledge: number; averageTerrainKnowledge: number; practicalTechniqueCount: number; practicalInventorCount: number; latestTechniqueTick?: number; technologyLevelStatus: 'not-modeled'; sharedToolOwnershipStatus: 'not-inferred'; automaticDiffusionStatus: 'not-modeled' }
 /** Bounded metadata; geometry is drawn only where the active cell projection is exact. */
 export interface ProjectedRoad { id: string; cellIds: string[] }
 export interface ProjectedPopulationZone { id: string; name: string; populationCount: number; cellCount: number; settlementId?: string }
@@ -266,6 +268,7 @@ export interface WorkbenchProjection {
   settlementDiffusion: ProjectedSettlementDiffusion[]
   collectiveCultures: ProjectedCollectiveCulture[]
   contentionProfiles: ProjectedContentionProfile[]
+  collectiveKnowledge: ProjectedCollectiveKnowledge[]
   roads: ProjectedRoad[]
   populationZones: ProjectedPopulationZone[]
   cohorts: ProjectedCohort[]

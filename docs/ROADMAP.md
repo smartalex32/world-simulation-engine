@@ -1634,6 +1634,12 @@ adoption, and diffusion. Innovation depends on knowledge, resources,
 institutions, incentives, communication, and successful experimentation rather
 than a universal linear technology tree.
 
+**Delivered first slice:** The workbench now summarizes existing person-owned
+foraging/terrain knowledge and practical techniques by observed home catchment,
+including inventor and recency evidence. It explicitly does not create a
+technology level, shared tool ownership, or automatic diffusion; no behavior
+or innovation rule changes in this observation slice.
+
 ## Milestone 69 — Generational Society Feedback ([Issue #73](https://github.com/smartalex32/world-simulation-engine/issues/73))
 
 Complete the household/community/development loop across generations. Childhood

@@ -643,6 +643,10 @@ export default function App() {
           <div className="public-capacity-list" aria-label="Contention evidence">
             {projection.contentionProfiles.map((contention) => <span key={contention.communityId}>{contention.catchmentName}<small>{contention.activeContentionCount} active of {contention.recordedDisputeCount} recorded disputes · {contention.totalIncidentCount} incidents · severity {contention.severity}</small><small>Average grievance {(contention.averageActiveGrievancePermille / 10).toFixed(1)}% · local resolution {contention.resolutionScope} · latest incident {contention.latestIncidentTick ?? 'none'}</small><small>Diplomacy {contention.diplomacyStatus} · military organization {contention.militaryOrganizationStatus} · occupation {contention.occupationStatus} · warfare {contention.warfareStatus}</small></span>)}
           </div></>}
+          {projection && <><PanelTitle title="Knowledge and innovation evidence" subtitle="Observed person knowledge; not a technology tier" />
+          <div className="public-capacity-list" aria-label="Knowledge and innovation evidence">
+            {projection.collectiveKnowledge.map((knowledge) => <span key={knowledge.communityId}>{knowledge.catchmentName}<small>{knowledge.observedResidentCount} observed residents · foraging knowledge {(knowledge.averageForagingKnowledge / 10).toFixed(1)}% · terrain knowledge {(knowledge.averageTerrainKnowledge / 10).toFixed(1)}%</small><small>{knowledge.practicalTechniqueCount} practical techniques · {knowledge.practicalInventorCount} inventors · latest technique {knowledge.latestTechniqueTick ?? 'none'}</small><small>Technology level {knowledge.technologyLevelStatus} · shared tools {knowledge.sharedToolOwnershipStatus} · automatic diffusion {knowledge.automaticDiffusionStatus}</small></span>)}
+          </div></>}
           {projection && <CommunitySignals
             communities={projection.communities}
             definitions={projection.communityVariableDefinitions}
