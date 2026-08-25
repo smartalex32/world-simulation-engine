@@ -7,6 +7,7 @@ import { worldChunkLayout } from '../simulation/spatial/worldChunks'
 import { buildProjectedSettlements } from './settlements'
 import { buildProjectedSettlementLinks } from './regionalNetwork'
 import { buildProjectedSettlementDiffusion } from './diffusion'
+import { deriveDrainage, type DrainageCell } from '../simulation/environment/hydrology'
 import { buildLocationChunkIndex, visibleIndexedLocations, type IndexedProjectionLocation } from './locationIndex'
 import { alignRegionOrigin, clampViewportBounds, projectionChunkKey, regionCount, regionKey } from './chunks'
 import {
@@ -75,6 +76,7 @@ export class WorkbenchProjectionBuilder {
   private readonly grid: HexGrid
   private readonly staticRegions = new Map<string, StaticRegionAggregate>()
   private readonly cellById: Map<string, GeographicCell>
+  private readonly drainageByCellId: ReadonlyMap<string, DrainageCell>
   private readonly communityIdByCellId = new Map<string, string>()
   private readonly activityEntriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]>
   private readonly householdEntriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]>
@@ -85,6 +87,7 @@ export class WorkbenchProjectionBuilder {
   constructor(source: WorldProjection) {
     this.grid = source.world.grid
     this.cellById = new Map(this.grid.cells.map((cell) => [cell.id, cell]))
+    this.drainageByCellId = deriveDrainage(this.grid)
     for (const community of source.communities) for (const cellId of community.catchment.cellIds) this.communityIdByCellId.set(cellId, community.catchment.id)
     const activityEntries = source.activityLocations.map(({ id, cellId }) => ({ id, cellId }))
     const householdEntries = source.households.map(({ id, homeCellId }) => ({ id, cellId: homeCellId }))
@@ -187,7 +190,8 @@ export class WorkbenchProjectionBuilder {
   private projectCell(cell: GeographicCell, populationByCellId: ReadonlyMap<string, number>, communitiesById: ReadonlyMap<string, CommunitySimulationState>, measureId?: CommunityVariableId): ProjectedMapCell {
     const communityId = this.communityIdByCellId.get(cell.id)
     const community = communityId ? communitiesById.get(communityId) : undefined
-    return { ...cell, populationCount: populationByCellId.get(cell.id) ?? 0, communityId, communityValuePermille: community && measureId ? communityValue(community, measureId) : undefined }
+    const drainage = this.drainageByCellId.get(cell.id)
+    return { ...cell, populationCount: populationByCellId.get(cell.id) ?? 0, ...(drainage ? { drainage: { ...(drainage.downstreamCellId === undefined ? {} : { downstreamCellId: drainage.downstreamCellId }), basinId: drainage.basinId } } : {}), communityId, communityValuePermille: community && measureId ? communityValue(community, measureId) : undefined }
   }
 
   private focusCellException(id: string | undefined, exact: boolean, bounds: AxialViewportBounds, populationByCellId: ReadonlyMap<string, number>, communitiesById: ReadonlyMap<string, CommunitySimulationState>, measureId?: CommunityVariableId): ProjectedMapCell | undefined {

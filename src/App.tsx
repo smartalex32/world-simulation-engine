@@ -772,7 +772,7 @@ function worldSetupSignature(setup: WorldSetupValues): string {
   return JSON.stringify(creationDraftFromSetup(setup))
 }
 
-function CellInspector({ cell, people, onSelectPerson, detailsTruncated }: { cell: GeographicCell & { populationCount?: number }; people: PersonState[]; onSelectPerson: (id: string) => void; detailsTruncated: boolean }) {
+function CellInspector({ cell, people, onSelectPerson, detailsTruncated }: { cell: GeographicCell & { populationCount?: number; drainage?: { downstreamCellId?: string; basinId: string } }; people: PersonState[]; onSelectPerson: (id: string) => void; detailsTruncated: boolean }) {
   return <div className="inspector-grid">
     <Metric label="Coordinates" value={`q ${cell.q} · r ${cell.r}`} />
     <Metric label="Terrain" value={cell.terrain} />
@@ -781,6 +781,7 @@ function CellInspector({ cell, people, onSelectPerson, detailsTruncated }: { cel
     <Metric label="Move cost" value={cell.movementCost === 0 ? 'Blocked' : (cell.movementCost / 1000).toFixed(2)} />
     <Metric label="Food stock" value={`${cell.foodAmount} / ${cell.resourceCapacity}`} />
     <Metric label="Daily regrowth" value={cell.foodRegenerationPerDay} />
+    {cell.drainage && <Metric label="Drainage" value={cell.drainage.downstreamCellId ? `→ ${cell.drainage.downstreamCellId}` : `Basin sink ${cell.drainage.basinId}`} />}
     <div className="occupant-list"><span>People here ({cell.populationCount ?? people.length})</span>{people.slice(0, 12).map((person) => <button key={person.id} onClick={() => onSelectPerson(person.id)}>{person.id}<small>authoritative person state</small></button>)}{people.length === 0 && <em>{cell.populationCount ? 'Details are paged at this scale.' : 'None'}</em>}{detailsTruncated && people.length < (cell.populationCount ?? 0) && <small>Showing bounded local details; hook a person to inspect them.</small>}</div>
     <div className="neighbor-list"><span>Six neighbors</span><code>{hexNeighbors(cell).map((coord) => `${coord.q},${coord.r}`).join('  ')}</code></div>
   </div>
