@@ -301,8 +301,11 @@ export default function App() {
     }
   }
 
-  async function refreshSnapshots(runId = projectionRef.current?.runId) {
-    try { setSnapshots(await database.listSnapshots(runId)) } catch (reason) { setError(messageOf(reason)) }
+  async function refreshSnapshots(_runId = projectionRef.current?.runId) {
+    // Named snapshots are explicit cross-world load choices. Filtering this
+    // list to the transient startup run can hide a valid imported run before
+    // the user has an opportunity to load it.
+    try { setSnapshots(await database.listSnapshots()) } catch (reason) { setError(messageOf(reason)) }
   }
 
   async function refreshHistory(runId = projectionRef.current?.runId) {
