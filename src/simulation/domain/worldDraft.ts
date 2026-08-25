@@ -79,7 +79,7 @@ export function paintWorldDraftTerrain(record: WorldDraftRecord, cellIds: readon
   if (expectedRevision !== undefined && expectedRevision !== current.revision) throw new Error(`World draft revision conflict: expected ${expectedRevision}, current ${current.revision}`)
   if (!Array.isArray(cellIds) || cellIds.length === 0 || cellIds.length > MAX_TERRAIN_PAINT_CELLS) throw new Error(`Terrain paint must contain from 1 through ${MAX_TERRAIN_PAINT_CELLS} cells`)
   if (terrain !== 'water' && terrain !== 'plain' && terrain !== 'hill') throw new Error('Terrain paint type is invalid')
-  const base = generateValley(current.draft.seed.trim() || 'valley-001', current.draft.width, current.draft.height, { terrainBase: current.draft.terrainBase })
+  const base = generateValley(current.draft.seed.trim() || 'valley-001', current.draft.width, current.draft.height, { hexRadiusMeters: current.draft.hexRadiusMeters, terrainBase: current.draft.terrainBase })
   const baseTerrainByCellId = new Map(base.world.grid.cells.map((cell) => [cell.id, cell.terrain]))
   const next = new Map((current.draft.terrainOverrides ?? []).map((override) => [override.cellId, override.terrain]))
   const resourceOverrides = new Map((current.draft.resourceCapacityOverrides ?? []).map((override) => [override.cellId, override.resourceCapacity]))
@@ -105,7 +105,7 @@ export function paintWorldDraftElevation(record: WorldDraftRecord, cellIds: read
   if (expectedRevision !== undefined && expectedRevision !== current.revision) throw new Error(`World draft revision conflict: expected ${expectedRevision}, current ${current.revision}`)
   if (!Array.isArray(cellIds) || cellIds.length === 0 || cellIds.length > MAX_ELEVATION_PAINT_CELLS) throw new Error(`Elevation paint must contain from 1 through ${MAX_ELEVATION_PAINT_CELLS} cells`)
   if (!Number.isSafeInteger(elevation) || elevation < 0 || elevation > 1000) throw new Error('Elevation paint value must be an integer from 0 through 1000')
-  const base = generateValley(current.draft.seed.trim() || 'valley-001', current.draft.width, current.draft.height, { terrainBase: current.draft.terrainBase })
+  const base = generateValley(current.draft.seed.trim() || 'valley-001', current.draft.width, current.draft.height, { hexRadiusMeters: current.draft.hexRadiusMeters, terrainBase: current.draft.terrainBase })
   const baseElevationByCellId = new Map(base.world.grid.cells.map((cell) => [cell.id, cell.elevation]))
   const next = new Map((current.draft.elevationOverrides ?? []).map((override) => [override.cellId, override.elevation]))
   for (const cellId of [...cellIds].sort(compareText)) {
@@ -127,7 +127,7 @@ export function paintWorldDraftResources(record: WorldDraftRecord, cellIds: read
   if (!Array.isArray(cellIds) || cellIds.length === 0 || cellIds.length > MAX_RESOURCE_PAINT_CELLS) throw new Error(`Resource paint must contain from 1 through ${MAX_RESOURCE_PAINT_CELLS} cells`)
   if (!Number.isSafeInteger(resourceCapacity) || resourceCapacity < 0 || resourceCapacity > 1000) throw new Error('Resource paint value must be an integer from 0 through 1000')
   const generated = generateDraftTerrain(current.draft)
-  const base = generateValley(current.draft.seed.trim() || 'valley-001', current.draft.width, current.draft.height, { terrainBase: current.draft.terrainBase })
+  const base = generateValley(current.draft.seed.trim() || 'valley-001', current.draft.width, current.draft.height, { hexRadiusMeters: current.draft.hexRadiusMeters, terrainBase: current.draft.terrainBase })
   const baseCapacityByCellId = new Map(base.world.grid.cells.map((cell) => [cell.id, cell.resourceCapacity]))
   const paintedCells = new Map(generated.world.grid.cells.map((cell) => [cell.id, cell]))
   const next = new Map((current.draft.resourceCapacityOverrides ?? []).map((override) => [override.cellId, override.resourceCapacity]))
@@ -227,7 +227,7 @@ function cloneDraft(value: WorldCreationDraft): WorldCreationDraft {
 }
 
 function generateDraftTerrain(draft: WorldCreationDraft) {
-  return generateValley(draft.seed.trim() || 'valley-001', draft.width, draft.height, { terrainBase: draft.terrainBase, terrainOverrides: draft.terrainOverrides, elevationOverrides: draft.elevationOverrides, resourceCapacityOverrides: draft.resourceCapacityOverrides })
+  return generateValley(draft.seed.trim() || 'valley-001', draft.width, draft.height, { hexRadiusMeters: draft.hexRadiusMeters, terrainBase: draft.terrainBase, terrainOverrides: draft.terrainOverrides, elevationOverrides: draft.elevationOverrides, resourceCapacityOverrides: draft.resourceCapacityOverrides })
 }
 
 function compareText(first: string, second: string): number {

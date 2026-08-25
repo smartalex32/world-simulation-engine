@@ -36,7 +36,7 @@ export default function App() {
   const [setupOpen, setSetupOpen] = useState(false)
   const [activeMode, setActiveMode] = useState<'world' | 'simulation' | 'analytics' | 'entities' | 'history' | 'tools' | 'settings'>('world')
   const [worldSetup, setWorldSetup] = useState<WorldSetupValues>({
-    name: 'The Seeded Valley', seed: 'valley-001', width: 32, height: 24, population: 200,
+    name: 'The Seeded Valley', seed: 'valley-001', width: 32, height: 24, hexRadiusMeters: 1000, population: 200,
     placements: [
       { id: 'population-zone-1', name: 'Westhaven residents', region: 'west', preset: 'west', radiusCells: 3, allocation: 100, settlementId: 'settlement-1', settlementName: 'Westhaven' },
       { id: 'population-zone-2', name: 'Eastwatch residents', region: 'east', preset: 'east', radiusCells: 3, allocation: 100, settlementId: 'settlement-2', settlementName: 'Eastwatch' },
@@ -680,6 +680,7 @@ function worldSetupFromCreation(creation: WorldCreationRequest): WorldSetupValue
     seed: creation.seed,
     width: creation.width,
     height: creation.height,
+    hexRadiusMeters: creation.hexRadiusMeters ?? 1000,
     population: creation.initialPopulationCount,
     terrainBase: creation.terrainBase ?? 'seeded-valley',
     // Resolved imports remain resolved. This editor intentionally does not
@@ -706,6 +707,7 @@ function creationDraftFromSetup(setup: WorldSetupValues): WorldCreationDraft {
     name: setup.name,
     width: setup.width,
     height: setup.height,
+    ...(setup.hexRadiusMeters === 1000 ? {} : { hexRadiusMeters: setup.hexRadiusMeters }),
     initialPopulationCount: setup.population,
     ...(setup.terrainBase === 'seeded-valley' ? {} : { terrainBase: setup.terrainBase }),
     terrainOverrides: setup.terrainOverrides.map((override) => ({ ...override })),
@@ -741,6 +743,7 @@ function worldSetupFromDraft(draft: WorldCreationDraft): WorldSetupValues {
     seed: draft.seed,
     width: draft.width,
     height: draft.height,
+    hexRadiusMeters: draft.hexRadiusMeters ?? 1000,
     population: draft.initialPopulationCount,
     terrainBase: draft.terrainBase ?? 'seeded-valley',
     placements: draft.populationZones.map((zone, index) => {

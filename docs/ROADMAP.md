@@ -1422,6 +1422,11 @@ streaming previews, deterministic generation, import/export, and draft undo.
 Regional and world zoom use continuous/aggregate geography without visible
 hexes. Detailed hydrology remains Milestone 54.
 
+First delivered slice: configurable 100 m–10 km physical hex radius is an
+explicit authored world input, validated and persisted without changing the
+legacy 1 km default. Sparse hierarchical chunks, streamed previews, and undo
+remain subsequent slices of this milestone.
+
 ## Milestone 54 — Regional Environment, Hydrology, Climate, and Ecology
 
 Add deterministic drainage, rivers, lakes, watersheds, regional climate,
