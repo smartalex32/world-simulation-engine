@@ -502,8 +502,13 @@ test('inspects persisted experience and deterministic development at the 720-hou
   // worker has established its authoritative starting projection.
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const developmentSnapshot = page.getByRole('button', { name: /Development fixture Hour 720/ })
-  await expect(developmentSnapshot).toBeEnabled()
-  await developmentSnapshot.click()
+  // Snapshot-list hydration and the replacement worker both trigger React
+  // renders after reload. Wait for the persisted control itself, then use a
+  // direct click so Playwright does not mistake that harmless re-render for an
+  // unstable target.
+  await expect.poll(() => developmentSnapshot.count(), { timeout: 30_000 }).toBe(1)
+  await expect(developmentSnapshot).toBeEnabled({ timeout: 30_000 })
+  await developmentSnapshot.click({ force: true })
   await expect(page.getByText('Day 30 · 00:00')).toBeVisible()
   const canvas = page.getByLabel('Hex world map')
   await expect.poll(async () => canvas.evaluate((element) => {
