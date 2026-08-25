@@ -1608,6 +1608,12 @@ occurs through households, peers, schools, organizations, travel, prestige, and
 real contact. Religion, culture, language, identity, and polity membership
 remain distinct.
 
+**Delivered first slice:** The workbench now summarizes existing person-owned
+language fluency and learned beliefs by observed home catchment, with recorded
+cultural-exposure and language-acquisition totals. It explicitly marks religion
+and identity as not modeled and polity membership as separate/not inferred;
+the observation neither assigns a collective identity nor changes behavior.
+
 ## Milestone 67 — Diplomacy, Organized Conflict, and Warfare ([Issue #71](https://github.com/smartalex32/world-simulation-engine/issues/71))
 
 Build alliances, claims, mobilization, military organizations, logistics,

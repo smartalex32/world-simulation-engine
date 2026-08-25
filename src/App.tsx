@@ -635,6 +635,10 @@ export default function App() {
           <div className="public-capacity-list" aria-label="Public capacity evidence">
             {projection.governanceProfiles.map((governance) => <span key={governance.id}>{governance.catchmentName}<small>Legitimacy {(governance.evaluatedLegitimacyPermille / 10).toFixed(1)}% · recorded {(governance.legitimacyPermille / 10).toFixed(1)}%</small><small>{governance.legitimacyFactors.map((factor) => `${factor.label} ${(factor.valuePermille / 10).toFixed(1)}%`).join(' · ')}</small><small>Taxation {governance.taxationStatus} · budget {governance.budgetStatus} · law/enforcement {governance.lawAndEnforcementStatus} · corruption {governance.corruptionStatus}</small></span>)}
           </div></>}
+          {projection && <><PanelTitle title="Culture and language evidence" subtitle="Observed person values; not collective identity" />
+          <div className="public-capacity-list" aria-label="Culture and language evidence">
+            {projection.collectiveCultures.map((culture) => <span key={culture.communityId}>{culture.catchmentName}<small>{culture.observedResidentCount} observed residents · Valley fluency {(culture.averageValleyFluency / 10).toFixed(1)}% · Ridge fluency {(culture.averageRidgeFluency / 10).toFixed(1)}%</small><small>Exploration belief {(culture.averageExplorationBelief / 10).toFixed(1)}% · cooperation belief {(culture.averageCooperationBelief / 10).toFixed(1)}% · {culture.cultureExposureCount} cultural exposures · {culture.languageAcquisitionCount} language acquisitions</small><small>Religion {culture.religionStatus} · identity {culture.identityStatus} · polity membership {culture.polityMembershipStatus}</small></span>)}
+          </div></>}
           {projection && <CommunitySignals
             communities={projection.communities}
             definitions={projection.communityVariableDefinitions}

@@ -4,7 +4,7 @@ import type { PersonVariableDefinition } from '../simulation/variables/types'
 import type { WorldChunkLayout } from '../simulation/spatial/worldChunks'
 
 /** Incremented when the bounded worker-to-workbench projection shape changes. */
-export const PROJECTION_PROTOCOL_VERSION = 10
+export const PROJECTION_PROTOCOL_VERSION = 11
 /** Versioned independently so later cohort simulation cannot masquerade as this read-only map aggregation. */
 export const POPULATION_FIDELITY_VERSION = 1
 export const PROJECTION_CHUNK_SIZE = 32
@@ -198,6 +198,8 @@ export interface ProjectedGovernanceProfile { id: string; communityId: string; c
 /** Read-only household materials and living work roles; not a synthesized wealth model. */
 export interface ProjectedEconomicSummary { householdCount: number; householdsWithoutFoodCount: number; foodUnits: number; toolUnits: number; foodGiniPermille: number; toolGiniPermille: number; occupationCounts: { dependent: number; household: number; forager: number; unassigned: number } }
 export interface ProjectedSettlementDiffusion { settlementId: string; observedResidentCount: number; averageValleyFluency: number; averageExplorationBelief: number }
+/** Geographic observation of person-owned culture/language; it assigns no collective identity. */
+export interface ProjectedCollectiveCulture { communityId: string; catchmentName: string; observedResidentCount: number; averageValleyFluency: number; averageRidgeFluency: number; averageExplorationBelief: number; averageCooperationBelief: number; cultureExposureCount: number; languageAcquisitionCount: number; religionStatus: 'not-modeled'; identityStatus: 'not-modeled'; polityMembershipStatus: 'separate-not-inferred' }
 /** Bounded metadata; geometry is drawn only where the active cell projection is exact. */
 export interface ProjectedRoad { id: string; cellIds: string[] }
 export interface ProjectedPopulationZone { id: string; name: string; populationCount: number; cellCount: number; settlementId?: string }
@@ -260,6 +262,7 @@ export interface WorkbenchProjection {
   governanceProfiles: ProjectedGovernanceProfile[]
   economy: ProjectedEconomicSummary
   settlementDiffusion: ProjectedSettlementDiffusion[]
+  collectiveCultures: ProjectedCollectiveCulture[]
   roads: ProjectedRoad[]
   populationZones: ProjectedPopulationZone[]
   cohorts: ProjectedCohort[]
