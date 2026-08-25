@@ -451,6 +451,16 @@ Update documentation according to ownership:
 
 Do not duplicate detailed architecture or roadmap content in `AGENTS.md`.
 
+## 9. Pull Request Visual Evidence
+
+For a pull request that changes a user-visible UI surface, capture an updated
+screenshot during validation and add it to the pull request description or a
+pull request comment when GitHub upload access is available.
+
+Do not commit validation screenshots or other review-only media to the
+repository. If upload access is unavailable, state that briefly in the PR and
+provide the screenshot directly to the user when requested.
+
 ---
 
 # Validation Strategy
