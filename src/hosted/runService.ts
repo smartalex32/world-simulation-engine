@@ -46,6 +46,14 @@ export class HostedRunService {
     return { protocolVersion: HOSTED_PROTOCOL_VERSION, runId: this.bootstrap.runId, observedTick: this.engine.project().tick, projection: this.frame().projection }
   }
 
+  /** Narrow host-only observations used to resume durable background jobs. */
+  runId(): string { return this.bootstrap.runId }
+  async tick(ownerToken: string): Promise<number> {
+    this.authorize(ownerToken)
+    await this.commandQueue
+    return this.engine.project().tick
+  }
+
   private async apply(command: HostedRunCommand): Promise<HostedCommandResult> {
     const responses: SimulationResponse[] = []
     switch (command.type) {

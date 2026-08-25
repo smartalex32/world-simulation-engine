@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
+    "typecheck:hosted": "tsc -p tsconfig.hosted.json --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

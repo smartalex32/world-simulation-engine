@@ -5,6 +5,7 @@ import { defaultWorldCreationRequest, WORLD_CREATION_LIMITS } from '../simulatio
 import type { HostedRunCommand } from './types'
 import { FileHostedRunStore } from './store'
 import { HostedRunService } from './runService'
+import { HostedSimulationJobManager, type HostedJobRequest } from './jobs'
 
 const port = numberEnvironment('PORT', 8787)
 const runId = process.env.HOSTED_RUN_ID ?? 'hosted-run'
@@ -13,12 +14,16 @@ const ownerToken = requiredEnvironment('HOSTED_OWNER_TOKEN')
 const dataDirectory = resolve(process.env.HOSTED_DATA_DIRECTORY ?? '.world-simulation-hosted')
 const hostedPopulation = boundedIntegerEnvironment('HOSTED_WORLD_POPULATION', 200, WORLD_CREATION_LIMITS.minimumPopulation, WORLD_CREATION_LIMITS.maximumPopulation)
 
-const service = await HostedRunService.open({
+const store = new FileHostedRunStore(dataDirectory)
+const bootstrap = {
   runId,
   ownerId,
   ownerToken,
   creation: { ...defaultWorldCreationRequest(process.env.HOSTED_WORLD_SEED ?? 'hosted-valley'), initialPopulationCount: hostedPopulation },
-}, new FileHostedRunStore(dataDirectory))
+}
+const service = await HostedRunService.open(bootstrap, store)
+const jobs = new HostedSimulationJobManager(service, store, ownerId, ownerToken)
+void jobs.resumePending()
 
 createServer(async (request, response) => {
   try {
@@ -27,6 +32,12 @@ createServer(async (request, response) => {
     const token = bearerToken(request)
     if (request.method === 'GET' && pathname === `/runs/${runId}/projection`) return sendJson(response, 200, await service.view(token))
     if (request.method === 'POST' && pathname === `/runs/${runId}/commands`) return sendJson(response, 200, await service.execute(token, validateHostedCommand(await readJson(request))))
+    if (request.method === 'GET' && pathname === `/runs/${runId}/jobs`) { authorizeToken(token); return sendJson(response, 200, await jobs.list()) }
+    if (request.method === 'POST' && pathname === `/runs/${runId}/jobs`) { authorizeToken(token); return sendJson(response, 202, await jobs.start(validateJobRequest(await readJson(request)))) }
+    const cancelMatch = new RegExp(`^/runs/${runId}/jobs/([a-zA-Z0-9_-]+)/cancel$`).exec(pathname)
+    if (request.method === 'POST' && cancelMatch) { authorizeToken(token); return sendJson(response, 200, await jobs.cancel(cancelMatch[1]!)) }
+    const jobMatch = new RegExp(`^/runs/${runId}/jobs/([a-zA-Z0-9_-]+)$`).exec(pathname)
+    if (request.method === 'GET' && jobMatch) { authorizeToken(token); return sendJson(response, 200, await jobs.get(jobMatch[1]!)) }
     return sendJson(response, 404, { error: 'Not found' })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -42,6 +53,8 @@ function bearerToken(request: IncomingMessage): string {
   if (!authorization?.startsWith('Bearer ')) throw new Error('Hosted run authorization failed')
   return authorization.slice('Bearer '.length)
 }
+
+function authorizeToken(token: string): void { if (token !== ownerToken) throw new Error('Hosted run authorization failed') }
 
 async function readJson(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
@@ -64,6 +77,18 @@ function validateHostedCommand(value: unknown): HostedRunCommand {
     case 'SET_VIEWPORT':
       return { type: 'SET_VIEWPORT', requestId: value.requestId, viewport: parseViewport(value.viewport) }
     default: throw new Error(`Unsupported hosted command: ${value.type}`)
+  }
+}
+
+function validateJobRequest(value: unknown): HostedJobRequest {
+  if (!isRecord(value) || typeof value.jobId !== 'string' || !isSafeInteger(value.totalTicks)) throw new Error('Hosted job is invalid')
+  if (value.quantumTicks !== undefined && !isSafeInteger(value.quantumTicks)) throw new Error('Hosted job quantum is invalid')
+  if (value.checkpointIntervalTicks !== undefined && !isSafeInteger(value.checkpointIntervalTicks)) throw new Error('Hosted job checkpoint interval is invalid')
+  return {
+    jobId: value.jobId,
+    totalTicks: value.totalTicks,
+    ...(value.quantumTicks === undefined ? {} : { quantumTicks: value.quantumTicks }),
+    ...(value.checkpointIntervalTicks === undefined ? {} : { checkpointIntervalTicks: value.checkpointIntervalTicks }),
   }
 }
 
