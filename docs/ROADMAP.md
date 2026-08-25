@@ -1552,6 +1552,12 @@ Add occupations, production chains, goods, prices, trade flows, household
 wealth, ownership, labor, scarcity, and inequality. Money, goods, ownership,
 labor, and institutional resources remain semantically distinct.
 
+**Delivered first slice:** Read-only workbench material evidence now reports
+separately held household food and tools, zero-food households,
+material-specific Gini indicators, and living occupation counts. It is a
+projection only: no money, prices, ownership model, trade routing, or new
+economic behavior is implied.
+
 ## Milestone 63 — Groups, Associations, Institutions, and Factions ([Issue #67](https://github.com/smartalex32/world-simulation-engine/issues/67))
 
 Add explicit groups with membership, roles, goals, resources, reputation, and

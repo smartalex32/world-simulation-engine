@@ -4,7 +4,7 @@ import type { PersonVariableDefinition } from '../simulation/variables/types'
 import type { WorldChunkLayout } from '../simulation/spatial/worldChunks'
 
 /** Incremented when the bounded worker-to-workbench projection shape changes. */
-export const PROJECTION_PROTOCOL_VERSION = 6
+export const PROJECTION_PROTOCOL_VERSION = 7
 /** Versioned independently so later cohort simulation cannot masquerade as this read-only map aggregation. */
 export const POPULATION_FIDELITY_VERSION = 1
 export const PROJECTION_CHUNK_SIZE = 32
@@ -191,6 +191,8 @@ export interface ProjectedSettlement {
 export interface ProjectedSettlementLink { id: string; fromSettlementId: string; toSettlementId: string; fromCellId: string; toCellId: string; steps: number; travelCost: number; roadCellCount: number }
 /** Read-only service evidence from physical markets, schools, and roads. */
 export interface ProjectedSettlementService { settlementId: string; marketCount: number; schoolCount: number; schoolCapacity: number; roadCellCount: number }
+/** Read-only household materials and living work roles; not a synthesized wealth model. */
+export interface ProjectedEconomicSummary { householdCount: number; householdsWithoutFoodCount: number; foodUnits: number; toolUnits: number; foodGiniPermille: number; toolGiniPermille: number; occupationCounts: { dependent: number; household: number; forager: number; unassigned: number } }
 export interface ProjectedSettlementDiffusion { settlementId: string; observedResidentCount: number; averageValleyFluency: number; averageExplorationBelief: number }
 /** Bounded metadata; geometry is drawn only where the active cell projection is exact. */
 export interface ProjectedRoad { id: string; cellIds: string[] }
@@ -250,6 +252,7 @@ export interface WorkbenchProjection {
   settlements: ProjectedSettlement[]
   settlementLinks: ProjectedSettlementLink[]
   settlementServices: ProjectedSettlementService[]
+  economy: ProjectedEconomicSummary
   settlementDiffusion: ProjectedSettlementDiffusion[]
   roads: ProjectedRoad[]
   populationZones: ProjectedPopulationZone[]
