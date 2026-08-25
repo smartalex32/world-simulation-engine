@@ -1,4 +1,4 @@
-import type { SnapshotEnvelope } from '../domain/types'
+import { ENGINE_VERSION, type SnapshotEnvelope } from '../domain/types'
 
 export const OLDEST_SUPPORTED_SNAPSHOT_SCHEMA = 30
 
@@ -13,6 +13,7 @@ export type SnapshotMigration = (snapshot: SnapshotLike) => SnapshotLike
 const migrations = new Map<number, SnapshotMigration>([
   [30, (snapshot) => ({ ...snapshot, schemaVersion: 31 })],
   [31, (snapshot) => ({ ...snapshot, schemaVersion: 32 })],
+  [32, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 33, state: { ...snapshot.state, config: { ...snapshot.state.config, cohortModelVersion: 1 }, cohorts: [] } })],
 ])
 
 export function migrateSnapshotSchema(value: unknown, targetSchema: number): SnapshotLike {

@@ -86,6 +86,7 @@ import { discoverLocalTerrain, initialKnowledge, transmitKnowledge } from '../kn
 import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION_STREAM, relocationTrace } from '../households/relocation'
 import { emptyHealthExposure, healthStressMortalityRiskPermille, resolveDailyHealthStress } from '../health/model'
 import { attemptPracticalExperiment, INNOVATION_STREAM } from '../innovation/model'
+import { COHORT_MODEL_VERSION, createInitialCohorts } from '../cohorts/model'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -220,9 +221,11 @@ export class SimulationEngine {
         knowledgeModelVersion: KNOWLEDGE_MODEL_VERSION,
         healthModelVersion: HEALTH_MODEL_VERSION,
         innovationModelVersion: INNOVATION_MODEL_VERSION,
+        cohortModelVersion: COHORT_MODEL_VERSION,
       },
       world,
       people: generatedPopulation.people,
+      cohorts: createInitialCohorts(world.grid.cells, creation.populationZones),
       households: generatedPopulation.households,
       markets: createInitialMarkets(world.grid.cells, world.settlements),
       organizations,
@@ -416,6 +419,7 @@ export class SimulationEngine {
       world: this.state.world,
       populationZones: this.state.config.worldCreation.populationZones,
       people: this.state.people,
+      cohorts: this.state.cohorts,
       households: this.state.households,
       organizations: this.state.organizations,
       governance: this.state.governance,
@@ -458,9 +462,11 @@ export class SimulationEngine {
   private sampleDailyStatistics(): StatisticSample[] {
     const cells = this.state.world.grid.cells
     const livingPeople = this.livingPeople()
-    const population = livingPeople.length
+    const detailedPopulation = livingPeople.length
+    const cohortPopulation = this.state.cohorts.reduce((sum, cohort) => sum + cohort.populationCount, 0)
+    const population = detailedPopulation + cohortPopulation
     const relationshipCount = this.state.relationships.length
-    const possibleRelationships = population > 1 ? population * (population - 1) / 2 : 0
+    const possibleRelationships = detailedPopulation > 1 ? detailedPopulation * (detailedPopulation - 1) / 2 : 0
     const averageFamiliarity = relationshipCount > 0
       ? Math.round(this.state.relationships.reduce((sum, relationship) => sum + relationship.familiarity, 0) / relationshipCount)
       : 0
@@ -469,14 +475,14 @@ export class SimulationEngine {
       { ...base, metricId: 'world.cellCount', value: cells.length },
       { ...base, metricId: 'world.habitableCells', value: cells.filter((cell) => cell.habitability > 0).length },
       { ...base, metricId: 'engine.simulatedDays', value: this.state.tick / 24 },
-      { ...base, metricId: 'population.count', value: this.state.people.length },
+      { ...base, metricId: 'population.count', value: this.state.people.length + this.state.cohorts.reduce((sum, cohort) => sum + cohort.populationCount, 0) },
       { ...base, metricId: 'population.aliveCount', value: population },
-      { ...base, metricId: 'population.averageHunger', value: population === 0 ? 0 : Math.round(livingPeople.reduce((sum, person) => sum + getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger), 0) / population) },
+      { ...base, metricId: 'population.averageHunger', value: detailedPopulation === 0 ? 0 : Math.round(livingPeople.reduce((sum, person) => sum + getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger), 0) / detailedPopulation) },
       { ...base, metricId: 'lifecycle.births', value: this.state.dailyLifeCycleCounters.births },
       { ...base, metricId: 'lifecycle.deaths', value: this.state.dailyLifeCycleCounters.deaths },
       { ...base, metricId: 'lifecycle.partnershipsFormed', value: this.state.dailyLifeCycleCounters.partnershipsFormed },
       { ...base, metricId: 'spatial.occupiedCells', value: this.buildOccupancy().size },
-      { ...base, metricId: 'spatial.averageTravelCost', value: population === 0 ? 0 : Math.round(this.state.dailySpatialCounters.travelCost / population) },
+      { ...base, metricId: 'spatial.averageTravelCost', value: detailedPopulation === 0 ? 0 : Math.round(this.state.dailySpatialCounters.travelCost / detailedPopulation) },
       { ...base, metricId: 'resources.totalFood', value: cells.reduce((sum, cell) => sum + cell.foodAmount, 0) },
       { ...base, metricId: 'resources.foodRegenerated', value: this.environmentalCounters().foodRegenerated },
       { ...base, metricId: 'resources.foodConsumed', value: this.state.dailySpatialCounters.foodConsumed },
@@ -488,7 +494,7 @@ export class SimulationEngine {
       { ...base, metricId: 'economy.foodShared', value: this.economicCounters().foodShared },
       { ...base, metricId: 'economy.exchangeCount', value: this.economicCounters().exchangeCount },
       { ...base, metricId: 'social.encounters', value: this.state.dailySocialCounters.encounters },
-      { ...base, metricId: 'social.encountersPer1000People', value: population > 0 ? Math.round(this.state.dailySocialCounters.encounters * 1000 / population) : 0 },
+      { ...base, metricId: 'social.encountersPer1000People', value: detailedPopulation > 0 ? Math.round(this.state.dailySocialCounters.encounters * 1000 / detailedPopulation) : 0 },
       { ...base, metricId: 'social.relationshipCount', value: relationshipCount },
       { ...base, metricId: 'social.networkDensityPermille', value: possibleRelationships > 0 ? Math.round(relationshipCount * 1000 / possibleRelationships) : 0 },
       { ...base, metricId: 'social.averageFamiliarity', value: averageFamiliarity },

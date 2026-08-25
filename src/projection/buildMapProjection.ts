@@ -8,6 +8,7 @@ import { buildProjectedSettlements } from './settlements'
 import { buildProjectedSettlementLinks } from './regionalNetwork'
 import { buildProjectedSettlementDiffusion } from './diffusion'
 import { deriveDrainage, type DrainageCell } from '../simulation/environment/hydrology'
+import { cohortPopulationByCell } from '../simulation/cohorts/model'
 import { buildLocationChunkIndex, visibleIndexedLocations, type IndexedProjectionLocation } from './locationIndex'
 import { alignRegionOrigin, clampViewportBounds, projectionChunkKey, regionCount, regionKey } from './chunks'
 import {
@@ -107,6 +108,7 @@ export class WorkbenchProjectionBuilder {
       .sort(([first], [second]) => first.localeCompare(second)))
     const livingPeople = source.people.filter((person) => person.lifeStatus !== 'dead')
     const hungerTotal = livingPeople.reduce((sum, person) => sum + getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger), 0)
+    const cohortPopulation = source.cohorts.reduce((sum, cohort) => sum + cohort.populationCount, 0)
     return {
       projectionProtocolVersion: PROJECTION_PROTOCOL_VERSION,
       projectionEpoch,
@@ -137,7 +139,7 @@ export class WorkbenchProjectionBuilder {
       communityVariableDefinitions: source.communityVariableDefinitions,
       communityFeedbackDefinitions: source.communityFeedbackDefinitions,
       summary: {
-        populationCount: livingPeople.length,
+        populationCount: livingPeople.length + cohortPopulation,
         relationshipCount: source.relationships.length,
         householdCount: source.households.length,
         activityLocationCount: source.activityLocations.length,
@@ -156,10 +158,11 @@ export class WorkbenchProjectionBuilder {
     const exact = size === 1
     const livingPeople = source.people.filter((person) => person.lifeStatus !== 'dead')
     const populationByCellId = countPeopleByCell(livingPeople)
+    for (const [cellId, count] of cohortPopulationByCell(source.cohorts)) populationByCellId.set(cellId, (populationByCellId.get(cellId) ?? 0) + count)
     const communitiesById = new Map(source.communities.map((community) => [community.catchment.id, community]))
     const exactCells = exact ? cellsInBounds(this.grid, bounds).map((cell) => this.projectCell(cell, populationByCellId, communitiesById, request.communityMeasureId)) : []
     const regions = exact ? [] : this.aggregateRegions(source, bounds, size, request.overlay === 'food', request.communityMeasureId)
-    const populationMarkers = buildPopulationMarkers(livingPeople, this.cellById, bounds, exact ? 1 : size)
+    const populationMarkers = buildPopulationMarkers(livingPeople, this.cellById, bounds, exact ? 1 : size, cohortPopulationByCell(source.cohorts))
     const hookedPersonMarker = buildHookedMarker(livingPeople, this.cellById, bounds, request.hookedPersonId)
     const selectedPerson = request.hookedPersonId ? source.people.find((person) => person.id === request.hookedPersonId) : undefined
     const activityMarkers = this.buildLocationMarkers(this.activityEntriesByChunk, this.activityCellById, bounds, size, MAX_ACTIVITY_MARKERS, 'activity', selectedPerson?.currentActivity.locationId ?? undefined)
@@ -237,6 +240,10 @@ export class WorkbenchProjectionBuilder {
   private aggregateRegions(source: WorldProjection, bounds: AxialViewportBounds, size: ProjectionRegionSize, includeFood: boolean, measureId?: CommunityVariableId): AggregateMapRegion[] {
     const result: AggregateMapRegion[] = []
     const populationByRegion = countPeopleByRegion(source.people, this.cellById, size)
+    for (const [cellId, count] of cohortPopulationByCell(source.cohorts)) {
+      const cell = this.cellById.get(cellId)
+      if (cell) populationByRegion.set(regionKey(size, cell.q, cell.r), (populationByRegion.get(regionKey(size, cell.q, cell.r)) ?? 0) + count)
+    }
     const communityById = new Map(source.communities.map((community) => [community.catchment.id, community]))
     for (let r = alignRegionOrigin(bounds.minR, size); r <= bounds.maxR; r += size) {
       for (let q = alignRegionOrigin(bounds.minQ, size); q <= bounds.maxQ; q += size) {
@@ -411,12 +418,12 @@ function locationGroups(entries: readonly IndexedProjectionLocation[], cells: Re
   return [...groups.values()].sort((a, b) => a.key.localeCompare(b.key))
 }
 
-function buildPopulationMarkers(people: readonly PersonState[], cells: ReadonlyMap<string, GeographicCell>, bounds: AxialViewportBounds, terrainSize: ProjectionRegionSize): PopulationMapMarker[] {
+function buildPopulationMarkers(people: readonly PersonState[], cells: ReadonlyMap<string, GeographicCell>, bounds: AxialViewportBounds, terrainSize: ProjectionRegionSize, cohorts: ReadonlyMap<string, number>): PopulationMapMarker[] {
   let markerSize = terrainSize
-  let groups = populationGroups(people, cells, bounds, markerSize)
+  let groups = populationGroups(people, cells, bounds, markerSize, cohorts)
   while (groups.length > MAX_POPULATION_MARKERS) {
     markerSize = nextRegionSize(markerSize)
-    groups = populationGroups(people, cells, bounds, markerSize)
+    groups = populationGroups(people, cells, bounds, markerSize, cohorts)
   }
   return groups
 }
@@ -466,11 +473,14 @@ function projectInspectorDetails(source: WorldProjection, map: MapProjection, re
   }
 }
 
-function populationGroups(people: readonly PersonState[], cells: ReadonlyMap<string, GeographicCell>, bounds: AxialViewportBounds, size: ProjectionRegionSize): PopulationMapMarker[] {
-  if (size === 1) return people.flatMap((person) => {
+function populationGroups(people: readonly PersonState[], cells: ReadonlyMap<string, GeographicCell>, bounds: AxialViewportBounds, size: ProjectionRegionSize, cohorts: ReadonlyMap<string, number>): PopulationMapMarker[] {
+  if (size === 1) return [...people.flatMap((person) => {
     const cell = cells.get(person.locationCellId)
     return cell && inBounds(cell, bounds) ? [{ id: person.id, q: cell.q, r: cell.r, count: 1, personId: person.id }] : []
-  }).sort((a, b) => a.id.localeCompare(b.id))
+  }), ...[...cohorts.entries()].flatMap(([cellId, count]) => {
+    const cell = cells.get(cellId)
+    return cell && inBounds(cell, bounds) ? [{ id: `cohort:${cellId}`, q: cell.q, r: cell.r, count }] : []
+  })].sort((a, b) => a.id.localeCompare(b.id))
   const groups = new Map<string, PopulationMapMarker>()
   for (const person of people) {
     const cell = cells.get(person.locationCellId)
@@ -479,6 +489,14 @@ function populationGroups(people: readonly PersonState[], cells: ReadonlyMap<str
     const current = groups.get(key)
     if (current) current.count += 1
     else groups.set(key, { id: `population:${key}`, q: alignRegionOrigin(cell.q, size) + (size - 1) / 2, r: alignRegionOrigin(cell.r, size) + (size - 1) / 2, count: 1 })
+  }
+  for (const [cellId, count] of cohorts) {
+    const cell = cells.get(cellId)
+    if (!cell || !inBounds(cell, bounds)) continue
+    const key = regionKey(size, cell.q, cell.r)
+    const current = groups.get(key)
+    if (current) current.count += count
+    else groups.set(key, { id: `population:${key}`, q: alignRegionOrigin(cell.q, size) + (size - 1) / 2, r: alignRegionOrigin(cell.r, size) + (size - 1) / 2, count })
   }
   return [...groups.values()].sort((a, b) => a.id.localeCompare(b.id))
 }
