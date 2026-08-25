@@ -833,6 +833,7 @@ export interface WorldProjection {
   people: PersonState[]
   cohorts: PopulationCohortState[]
   households: HouseholdState[]
+  markets: MarketState[]
   organizations: OrganizationState[]
   governance: LocalGovernanceState[]
   disputes: DisputeState[]
