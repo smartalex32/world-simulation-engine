@@ -125,6 +125,7 @@ export class WorkbenchProjectionBuilder {
         ? { id: zone.id, name: zone.name, populationCount: zone.populationCount, cellCount: zone.cellIds.length }
         : { id: zone.id, name: zone.name, populationCount: zone.populationCount, cellCount: zone.cellIds.length, settlementId: zone.settlementId })
         .sort((a, b) => a.id.localeCompare(b.id)),
+      cohorts: source.cohorts.map((cohort) => ({ id: cohort.id, sourceZoneId: cohort.sourceZoneId, populationCount: cohort.populationCount, householdCount: cohort.householdCount, foodUnits: cohort.foodUnits, cellAllocationCount: cohort.cellAllocations.length, ageBands: { ...cohort.ageBands }, transitionStatus: cohort.populationCount > 0 ? 'ready' as const : 'empty' as const })).sort((a, b) => a.id.localeCompare(b.id)),
       map,
       people: details.people,
       households: details.households,

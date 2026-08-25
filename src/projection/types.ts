@@ -192,6 +192,8 @@ export interface ProjectedSettlementDiffusion { settlementId: string; observedRe
 /** Bounded metadata; geometry is drawn only where the active cell projection is exact. */
 export interface ProjectedRoad { id: string; cellIds: string[] }
 export interface ProjectedPopulationZone { id: string; name: string; populationCount: number; cellCount: number; settlementId?: string }
+/** Read-only authoritative cohort evidence; it never exposes synthetic people. */
+export interface ProjectedCohort { id: string; sourceZoneId: string; populationCount: number; householdCount: number; foodUnits: number; cellAllocationCount: number; ageBands: { children: number; adults: number; elders: number }; transitionStatus: 'ready' | 'empty' }
 
 export interface ProjectedCommunityCatchment {
   id: string
@@ -247,6 +249,7 @@ export interface WorkbenchProjection {
   settlementDiffusion: ProjectedSettlementDiffusion[]
   roads: ProjectedRoad[]
   populationZones: ProjectedPopulationZone[]
+  cohorts: ProjectedCohort[]
   map: MapProjection
   people: PersonState[]
   households: HouseholdState[]
