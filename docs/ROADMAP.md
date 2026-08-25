@@ -1621,6 +1621,12 @@ conflict, occupation, diplomacy, and peace on the polity and economic systems.
 Record casualties, displacement, trauma, territorial change, and long-term
 social effects. No aggression threshold may create an abstract instant war.
 
+**Delivered first slice:** The workbench now summarizes recorded interpersonal
+disputes by observed catchment: active contention, grievance, incidents,
+recency, and the existing local non-lethal resolution scope. Diplomacy,
+military organizations, occupation, and warfare are explicitly not modeled;
+this observation does not create collective conflict or change outcomes.
+
 ## Milestone 68 — Technology, Knowledge, and Innovation Diffusion ([Issue #72](https://github.com/smartalex32/world-simulation-engine/issues/72))
 
 Extend practical experimentation into inventions, tools, techniques, education,
