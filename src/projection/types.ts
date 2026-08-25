@@ -65,6 +65,7 @@ export interface AggregateMapRegion {
 
 export interface ProjectedMapCell extends GeographicCell {
   populationCount: number
+  drainage?: { downstreamCellId?: string; basinId: string }
   communityId?: string
   communityValuePermille?: number
 }

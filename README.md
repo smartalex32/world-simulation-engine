@@ -101,6 +101,12 @@ Seasonal climate is a small static classification derived from terrain and eleva
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
 
+Milestone 54 begins environmental hydrology with a deterministic derived
+drainage graph. Each exact map cell exposes its strictly downhill flow target
+or terminal basin sink in the cell inspector. This is derived evidence from
+authored elevation, not mutable water simulation; lakes, river rendering,
+watershed fill, climate expansion, and ecology remain later slices.
+
 Milestone 53 begins large-landmass authoring with an explicit physical hex
 radius. Authors may choose a 100 m–10 km axial-cell radius; it is normalized,
 preserved in world creation and snapshots, and shown in the setup surface. The

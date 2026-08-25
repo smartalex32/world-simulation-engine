@@ -1435,6 +1435,12 @@ Authored overrides remain distinct from generated state. Environment affects
 people and settlements only through measurable access, exposure, production,
 hazard, and opportunity.
 
+First delivered slice: exact-cell inspection derives a stable, acyclic
+strictly-downhill drainage graph from authored elevation. It exposes flow and
+terminal basin evidence without mutating terrain or applying environmental
+effects to people. Lakes, filled depressions, rivers, climate expansion, and
+ecology remain separate follow-up slices.
+
 ## Milestone 55 — Settlement Seeds and Starting Population Placement
 
 Allow authors to place homestead, hamlet, village, town, and city seeds; choose
