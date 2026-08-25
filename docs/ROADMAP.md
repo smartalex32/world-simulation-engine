@@ -33,7 +33,7 @@ Future systems should be introduced only when lower-level mechanisms provide a c
 
 # Roadmap Rules
 
-The detailed plan for post-23 work is in [POST_23_ROADMAP.md](POST_23_ROADMAP.md).
+The detailed plans are in [POST_23_ROADMAP.md](POST_23_ROADMAP.md) and [POST_46_ROADMAP.md](POST_46_ROADMAP.md).
 
 ## Vertical Slices
 

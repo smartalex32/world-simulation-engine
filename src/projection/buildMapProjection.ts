@@ -3,6 +3,7 @@ import type { GeographicCell, HexGrid, PersonState, Terrain, WorldProjection } f
 import { PERSON_VARIABLE_ID } from '../simulation/variables/registry'
 import { getPersonVariable } from '../simulation/variables/storage'
 import { findPathDetailed } from '../simulation/spatial/pathfinding'
+import { worldChunkLayout } from '../simulation/spatial/worldChunks'
 import { buildProjectedSettlements } from './settlements'
 import { buildProjectedSettlementLinks } from './regionalNetwork'
 import { buildProjectedSettlementDiffusion } from './diffusion'
@@ -114,7 +115,7 @@ export class WorkbenchProjectionBuilder {
       tick: source.tick,
       seed: source.seed,
       engineVersion: source.engineVersion,
-      world: { id: source.world.id, name: source.world.name, width: this.grid.width, height: this.grid.height, cellCount: this.grid.cells.length, scale: source.world.scale },
+      world: { id: source.world.id, name: source.world.name, width: this.grid.width, height: this.grid.height, cellCount: this.grid.cells.length, chunkLayout: worldChunkLayout(this.grid.width, this.grid.height), scale: source.world.scale },
       settlements: buildProjectedSettlements(source.world.settlements, source.world.grid.cells, source.people, source.households),
       settlementLinks: buildProjectedSettlementLinks(source.world.settlements, source.world.grid.cells, source.world.roads),
       settlementDiffusion: buildProjectedSettlementDiffusion(source.world.settlements, source.people),
