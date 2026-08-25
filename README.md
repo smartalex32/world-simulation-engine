@@ -115,6 +115,12 @@ food and tools remain separate, alongside zero-food households, separate Gini
 indicators, and living occupation counts. This is not a combined wealth score
 or a money, price, ownership, or trade model.
 
+Existing school organizations also have read-only group profiles in the entity
+catalog. These show the explicit goal, member roles, capacity, shared rules,
+and member-to-member relationships already recorded by the simulation. Group
+membership does not create a relationship, reputation, resource ownership, or
+automatic person-level effect.
+
 Seasonal climate is a small static classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Daily environmental recovery is measured separately from household food production and consumption; no weather simulation, biome editor, or ecosystem model is implied.
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
