@@ -138,6 +138,14 @@ measured settlement home-catchment residents/households only at retained weekly
 checkpoints. It neither replays a run nor changes the active world; missing
 checkpoints remain visible as missing evidence rather than inferred history.
 
+Milestone 49 adds the first host-owned background advancement boundary. An
+owner can create a bounded deterministic job through the local host, inspect
+its persisted progress, or cancel it between advancement quanta. Every quantum
+persists the authoritative snapshot; reopening a host reconciles an incomplete
+job against that snapshot before continuing. Wall-clock scheduling affects only
+when a quantum begins, never the simulation result. This remains a single-node,
+single-owner foundation rather than a distributed queue or public scheduler.
+
 ## Testing
 
 * Vitest

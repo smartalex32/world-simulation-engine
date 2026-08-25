@@ -52,3 +52,29 @@ export interface HostedRunView {
 }
 
 export interface HostedRunSummary { runId: string; ownerId: string; tick: number; savedAt: string }
+
+/** Durable, inspectable progress for a host-owned bounded advancement job. */
+export const HOSTED_JOB_VERSION = 1
+export type HostedJobStatus = 'queued' | 'running' | 'cancelled' | 'completed'
+export interface HostedSimulationJob {
+  version: typeof HOSTED_JOB_VERSION
+  jobId: string
+  runId: string
+  ownerId: string
+  status: HostedJobStatus
+  startTick: number
+  totalTicks: number
+  advancedTicks: number
+  quantumTicks: number
+  checkpointIntervalTicks: number
+  lastCheckpointTick: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** Job durability is deliberately separate from run snapshots. */
+export interface HostedJobStore {
+  loadJob(runId: string, jobId: string): Promise<HostedSimulationJob | undefined>
+  saveJob(job: HostedSimulationJob): Promise<void>
+  listJobs(runId: string): Promise<HostedSimulationJob[]>
+}
