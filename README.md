@@ -57,8 +57,32 @@ Implemented:
 * Milestone 21 — Optional Narrative Presentation (deterministic template presentation)
 * Milestone 22 — Simulation Workbench Experience (map-first presentation foundation)
 * Milestone 23 — Settlement Profiles (nearby-home scale foundation)
+* Milestone 24 — Settlement Catchments and Inspection
+* Milestone 25 — Water, Routes, and Geographic Accessibility
+* Milestone 26 — Household Relocation and Settlement Change
+* Milestone 27 — Local Goods and Exchange Places
+* Milestone 28 — Settlement Services and Institutions
+* Milestone 29 — Regional Routes and Inter-Settlement Networks
+* Milestone 30 — Spatial Cultural and Language Diffusion
+* Milestone 31 — Territorial Governance and Civic Legitimacy
+* Milestone 32 — Collective Conflict and Resolution
 * Milestone 33 — Seasonal Climate, Agriculture, and Ecology (first environmental feedback foundation)
 * Milestone 34 — Health, Disease, and Demographic Stress (fictional health-stress foundation)
+* Milestone 35 — Skills, Experimentation, and Practical Innovation
+* Milestone 36 — Historical Snapshots and Causal Replay
+* Milestone 37 — Scalable Authoritative Simulation
+* Milestone 38 — World Builder and Workbench Maturity
+* Milestone 39 — Collaboration and Shared Worlds
+* Milestone 40 — Designed Landmass and Water Authoring
+* Milestone 41 — Settlement Seeds and Authoring Profiles
+* Milestone 42 — Food Security, Settlement Growth, and Migration Signals
+* Milestone 43 — Hosted Single-Node Simulation Boundary
+* Milestone 44 — Measured Ten-Thousand-Person Scale
+* Milestone 45 — Fidelity Regions and Population Aggregation
+* Milestone 46 — Long-Term World History and Change Inspection
+* Milestone 47 — Large World Coordinate and Chunk Contract
+* Milestone 48 — Server-Owned World Runs (foundation)
+* Milestone 49 — Background Simulation Jobs and Checkpoints (foundation)
 
 Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. The workbench derives a read-only landmark/hamlet/village/town/city profile from living homes near an anchor, making its geographic basis explicit rather than assigning residents a settlement field. Linked population zones retain their existing anchor-containment validation.
 
@@ -76,7 +100,9 @@ Seasonal climate is a small static classification derived from terrain and eleva
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
 
-Next: Milestone 35 — Skills, Experimentation, and Practical Innovation.
+Next: Milestone 50 — Hosted Authority and Background-Job Correctness. This
+hardens the Milestone 48–49 hosted foundations before large-world authoring
+resumes.
 
 See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferred systems.
 
@@ -843,11 +869,8 @@ silently reinterpreting them.
 
 Terrain and elevation painting store sparse, canonically ordered cell overrides in the worker-owned draft. Bounded paint commands update terrain-derived passability and preview validation deterministically. Elevation uses the generator's explicit 0–1000 cell scale; an explicit terrain-type edit remains authoritative when both edit the same cell. The same overrides are applied by the authoritative creation path only when the draft is explicitly committed.
 
-Next:
-
-* Milestone 9 — Environmental and Resource Dynamics
-
-See `docs/ROADMAP.md` for subsequent settlement editing, roads, import/export, and later authoring work.
+See `docs/ROADMAP.md` for the current milestone, acceptance criteria, and later
+authoring work.
 
 ---
 

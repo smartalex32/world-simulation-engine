@@ -33,7 +33,8 @@ Future systems should be introduced only when lower-level mechanisms provide a c
 
 # Roadmap Rules
 
-The detailed plans are in [POST_23_ROADMAP.md](POST_23_ROADMAP.md) and [POST_46_ROADMAP.md](POST_46_ROADMAP.md).
+Completed post-23 implementation history remains in [POST_23_ROADMAP.md](POST_23_ROADMAP.md).
+This document is the sole authority for current and future milestone sequencing.
 
 ## Vertical Slices
 
@@ -128,6 +129,10 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 21 — Optional Narrative Presentation
 * Milestone 22 — Simulation Workbench Experience
 * Milestone 23 — Settlement Profiles
+* Milestone 24 — Settlement Catchments and Inspection
+* Milestone 25 — Water, Routes, and Geographic Accessibility
+* Milestone 26 — Household Relocation and Settlement Change
+* Milestone 27 — Local Goods and Exchange Places
 * Milestone 28 — Settlement Services and Institutions
 * Milestone 29 — Regional Routes and Inter-Settlement Networks
 * Milestone 30 — Spatial Cultural and Language Diffusion
@@ -147,10 +152,13 @@ Do not implement distant systems merely because they appear later in this roadma
 * Milestone 44 — Measured Ten-Thousand-Person Scale
 * Milestone 45 — Fidelity Regions and Population Aggregation
 * Milestone 46 — Long-Term World History and Change Inspection
+* Milestone 47 — Large World Coordinate and Chunk Contract
+* Milestone 48 — Server-Owned World Runs (foundation)
+* Milestone 49 — Background Simulation Jobs and Checkpoints (foundation; hardening required)
 
 ## Next Slice
 
-* No active implementation milestone
+* Milestone 50 — Hosted Authority and Background-Job Correctness
 
 Detailed current implementation is documented in `README.md`.
 
@@ -1297,114 +1305,270 @@ Deferred: settlement boundary/catchment authoring, markets, institutions tied to
 
 ---
 
-# Deferred Areas
+# Active and Future Roadmap
 
-Unless explicitly promoted into active work, do not proactively implement:
+The next three milestones deliberately strengthen the engineering foundation
+before large-world authoring resumes. Later milestones may contain several
+closely related tasks, but each must still produce one coherent, testable
+capability.
 
-* Detailed hydrology
-* Full climate simulation
-* Complete ecosystems
-* Genetics
-* Detailed disease simulation
-* Complex agriculture
-* Banking
-* Financial markets
-* Corporations
-* Political borders
-* Kingdoms
-* Warfare
-* Detailed religion
-* Language
-* Technology trees
-* Narrative generation
-* Multiplayer
-* Collaborative editing
-* Massive cohort simulation
+## Milestone 50 — Hosted Authority and Background-Job Correctness
 
-Deferred systems may influence an architectural boundary only when a current requirement creates a concrete need.
+**Status:** Next
+
+**Goal:** Make the server-owned run and background-job foundations safe under
+concurrency, cancellation, failure, and restart.
+
+Implement:
+
+* One per-run coordinator and exactly one active authoritative advancement
+  operation per run.
+* A durable FIFO job queue whose completed jobs advance the world by the sum of
+  their requested ticks.
+* Explicit `queued`, `running`, `cancelling`, `cancelled`, `completed`, and
+  `failed` states with committed tick/digest and sanitized failure evidence.
+* Immediate queued-job cancellation and deterministic running-job cancellation
+  at quantum boundaries.
+* Reconciliation from the job's committed tick/digest rather than an
+  unqualified global-tick delta.
+* In-flight catalog-open deduplication and a per-run mutation lock.
+* Runtime validation for run, job, and checkpoint records.
+* Handled background failures, bounded request bodies, accurate HTTP status
+  codes, configurable binding, and authenticated job operations.
+
+Acceptance requires concurrent-job, concurrent-open, cancellation, injected
+storage failure, corrupt-record, and restart-at-every-commit-boundary tests.
+
+**Non-goals:** Distributed execution, multiple authoritative hosts, public API
+stability, and collaboration.
+
+## Milestone 51 — Persistence Compatibility and Deterministic Portability
+
+**Goal:** Keep valuable worlds recoverable across releases and reproducible
+across supported runtimes.
+
+Implement:
+
+* An explicit migration registry supporting the three most recent released
+  snapshot schemas, applied one version at a time with validation after every
+  step.
+* Original-save backup retention until migration commits successfully.
+* Equivalent versioned validation for hosted runs, jobs, checkpoints, drafts,
+  and import bundles.
+* Transactional import with event/statistic shape, ownership, tick, metric, and
+  payload validation.
+* One locale-independent binary identifier comparator for all authoritative
+  ordering and tie-breaking.
+* Rejection and timeout of pending worker requests on worker crash or disposal.
+* Node, Chromium, Firefox, and WebKit golden-digest checks at meaningful
+  long-run checkpoints.
+
+**Non-goals:** Indefinite compatibility with every pre-release schema or silent
+reinterpretation of incompatible state.
+
+## Milestone 52 — Maintainability and Performance Foundation
+
+**Goal:** Reduce change risk and remove current full-state projection work
+without changing simulation behavior.
+
+Implement:
+
+* A small simulation orchestrator delegating to owned hourly, daily,
+  developmental, lifecycle, economy, organization, encounter, and community
+  systems.
+* Focused application controllers for simulation session, persistence,
+  world-draft authoring, selection, and history, with presentational panels kept
+  separate.
+* Separate static-geography, population-index, inspector-detail, route, and
+  regional-aggregate projection modules.
+* Maintained spatial/population indexes so routine viewport requests do not
+  repeatedly scan every detailed person.
+* Shared validation, stable-ordering, hosted-ID, and structured-error helpers.
+* Explicit browser and hosted typecheck steps in CI.
+
+This milestone is behavior-preserving: canonical digests, snapshot fixtures,
+worker contracts, and user workflows must remain unchanged. Acceptance requires
+projection-equivalence tests, full browser coverage, and measured non-regression
+at 10,000 detailed people. Later milestones reserve refactoring capacity for
+every oversized module they touch.
+
+## Milestone 53 — Designed Landmass and Regional Map Authoring
+
+**Goal:** Author very large fictional geographies without dense allocation.
+
+Implement sparse hierarchical chunks, configurable physical cell scale, local
+fine-detail editing, terrain, water, elevation, coastlines, resources, bounded
+streaming previews, deterministic generation, import/export, and draft undo.
+Regional and world zoom use continuous/aggregate geography without visible
+hexes. Detailed hydrology remains Milestone 54.
+
+## Milestone 54 — Regional Environment, Hydrology, Climate, and Ecology
+
+Add deterministic drainage, rivers, lakes, watersheds, regional climate,
+biomes, renewable resources, and regionally appropriate ecological fidelity.
+Authored overrides remain distinct from generated state. Environment affects
+people and settlements only through measurable access, exposure, production,
+hazard, and opportunity.
+
+## Milestone 55 — Settlement Seeds and Starting Population Placement
+
+Allow authors to place homestead, hamlet, village, town, and city seeds; choose
+placement areas and population totals; and configure household and trait
+distributions. Support 100,000+ starting people through explicit detailed-local
+and cohort-distant allocation. Preview capacity, access, density, and travel
+before commit. Settlement association remains separate from exposure and civic
+membership.
+
+## Milestone 56 — Regional Population Cohorts
+
+Add authoritative, versioned cohorts for distant ordinary populations while
+retaining important and hooked people in full detail. Preserve exact population,
+age, household, resource, migration, trait-distribution, and event totals. Every
+aggregate decision and rounding residual remains inspectable.
+
+## Milestone 57 — Fidelity Materialization and Dematerialization
+
+Deterministically materialize cohorts into detailed people when a region is
+focused and reconcile them back without losing totals, important relationships,
+or history. Persist transition seeds, inputs, outputs, rounding, and residuals.
+Never dematerialize hooked, historically important, or explicitly protected
+people.
+
+## Milestone 58 — Settlement Growth, Decline, and Regional Migration
+
+Derive reversible homestead-to-city transitions from real population, occupied
+homes, resources, services, accessibility, and density. Use hysteresis to avoid
+scale oscillation. Model household movement, births, deaths, abandonment,
+resettlement, and regional migration with inspectable contributing factors.
+
+## Milestone 59 — World History at Regional Scale
+
+Retain bounded settlement, cohort, migration, environment, and fidelity-change
+evidence. Add regional comparisons, settlement timelines, change maps, and
+causal drill-down. Time-lapse views use retained evidence without mutating or
+silently replaying the active run.
+
+## Milestone 60 — Workbench UI Convergence
+
+Move the application toward the intended map-first product surface: coherent
+World, Simulation, Analytics, Entities, History, Tools, and Settings workspaces;
+modular overview/map/inspector/history regions; minimap and layers; responsive
+and accessible layouts; and entity navigation for people, households, groups,
+settlements, regions, institutions, and polities only when authoritative models
+exist. Hooking a person never forces camera follow. UI-impacting PRs include
+review screenshots in the PR, not the repository.
+
+## Milestone 61 — Infrastructure, Services, and Trade Networks
+
+Extend roads, rivers, ports, markets, schools, storage, and public services into
+regional networks with capacity, maintenance, accessibility, and disruption.
+Settlement service levels derive from real institutions and infrastructure.
+
+## Milestone 62 — Regional Economy, Labor, Wealth, and Inequality
+
+Add occupations, production chains, goods, prices, trade flows, household
+wealth, ownership, labor, scarcity, and inequality. Money, goods, ownership,
+labor, and institutional resources remain semantically distinct.
+
+## Milestone 63 — Groups, Associations, Institutions, and Factions
+
+Add explicit groups with membership, roles, goals, resources, reputation, and
+internal relationships. Typed specializations may include guilds, councils,
+religious organizations, and political factions, but shared activity and social
+evidence—not arbitrary labels—create or strengthen them.
+
+## Milestone 64 — Territorial Governance and Polity Formation
+
+Add explicit settlements, regions, cities, city-states, kingdoms, and other
+polities. Keep territory, jurisdiction, civic membership, culture, and identity
+separate. Polities may form, merge, fragment, expand, contract, and disappear
+through inspectable demographic, institutional, legitimacy, and territorial
+processes.
+
+## Milestone 65 — Law, Public Finance, and State Capacity
+
+Add laws, taxation, budgets, administration, public works, enforcement,
+legitimacy, corruption, and institutional effectiveness. Compliance emerges
+through incentives, exposure, beliefs, relationships, and enforcement rather
+than a direct polity-membership modifier.
+
+## Milestone 66 — Culture, Religion, Language, and Collective Identity
+
+Extend existing culture and language foundations into traditions, values,
+belief institutions, rituals, identities, and cultural boundaries. Transmission
+occurs through households, peers, schools, organizations, travel, prestige, and
+real contact. Religion, culture, language, identity, and polity membership
+remain distinct.
+
+## Milestone 67 — Diplomacy, Organized Conflict, and Warfare
+
+Build alliances, claims, mobilization, military organizations, logistics,
+conflict, occupation, diplomacy, and peace on the polity and economic systems.
+Record casualties, displacement, trauma, territorial change, and long-term
+social effects. No aggression threshold may create an abstract instant war.
+
+## Milestone 68 — Technology, Knowledge, and Innovation Diffusion
+
+Extend practical experimentation into inventions, tools, techniques, education,
+adoption, and diffusion. Innovation depends on knowledge, resources,
+institutions, incentives, communication, and successful experimentation rather
+than a universal linear technology tree.
+
+## Milestone 69 — Generational Society Feedback
+
+Complete the household/community/development loop across generations. Childhood
+development combines configured inheritance, household behavior, peers,
+institutions, environment, community conditions, and structured experiences.
+Multi-generation explanations show how developed adults change the environment
+experienced by later children.
+
+## Milestone 70 — Civilization-Scale Validation and Product Completion
+
+Validate long-running worlds across geography, cohorts, settlements, polities,
+economies, cultures, technology, conflict, and generations. Complete scenario
+comparison, reproducibility audits, performance budgets, recovery, migrations,
+analytics, import/export, diagnostics, and production-readiness documentation.
+This is an integration milestone, not a place to introduce major new systems.
 
 ---
 
-# Milestone Completion
+# Cross-Cutting Acceptance Policy
 
-A milestone or slice is complete when:
+* One independently reviewable branch and PR per milestone.
+* `pnpm typecheck`, hosted typecheck, unit tests, build, E2E tests, and GitHub
+  verification pass before merge.
+* Simulation changes include fixed-seed, invariant, controlled-scenario,
+  statistical, snapshot, and explanation coverage as applicable.
+* Scaling changes include measured budgets at 10,000 detailed people, 100,000+
+  mixed-fidelity people, and sparse large-world fixtures.
+* UI changes include cross-browser, constrained-width, accessibility, and PR
+  screenshot evidence.
+* Persistence changes explicitly migrate or reject incompatible data.
+* Supporting abstractions alone do not complete a milestone.
 
-* Its intended behavior works.
-* The behavior is observable or inspectable where appropriate.
-* Authoritative ownership remains correct.
-* Seeded behavior remains reproducible.
-* Relevant tests pass.
-* Persistence behavior is explicit when affected.
-* Version changes are intentional.
-* Explanation traces exist where appropriate.
-* Performance is acceptable at the intended validation scale.
-* Relevant documentation is current.
-* Explicit non-goals remain deferred.
+---
 
-Supporting abstractions alone do not make a milestone complete.
+# Deferred Until Their Milestone
+
+Do not pull later systems into earlier work merely because they are now
+numbered. Detailed hydrology, cohorts, polities, kingdoms, warfare, religion,
+regional economics, technology diffusion, and civilization-scale behavior
+remain deferred until their listed prerequisites are complete. Genetics,
+clinical disease modeling, generative narrative, multiplayer authority, and
+collaborative editing remain unplanned unless explicitly promoted later.
 
 ---
 
 # Roadmap Maintenance
 
-Update this file when:
+Update this file when a milestone completes, splits, reorders, or discovers a
+new prerequisite. Keep current architecture in `README.md`, development rules
+in `AGENTS.md`, and deep simulation semantics in focused design documents.
 
-* A milestone or slice is completed.
-* A milestone is split or reordered.
-* A new prerequisite is discovered.
-* Deferred work becomes active.
-* Future scope materially changes.
-* A planned capability is intentionally removed.
-
-Keep this document focused on:
-
-* Status
-* Sequencing
-* Goals
-* Scope
-* Dependencies
-* Non-goals
-
-Do not place detailed implementation architecture here.
-
-Current implementation belongs in `README.md`.
-
-Development-agent behavior belongs in `AGENTS.md`.
-
-Deep simulation semantics belong in focused design documents.
-
----
-
-# Current Priority
-
-Completed through:
+Current priority:
 
 ```text
-Milestone 25 — Water, Routes, and Geographic Accessibility
+Milestone 50 — Hosted Authority and Background-Job Correctness
 ```
-
-Current milestone:
-
-```text
-No active implementation milestone
-```
-
-Next independently reviewable slice:
-
-```text
-Milestone 27 — Local Goods and Exchange Places
-```
-
-Completed immediate sequence:
-
-```text
-8B.3 Terrain Painting
-  -> 8B.4 Settlement Editing
-  -> 8B.5 Roads
-  -> 8B.6 Draft Import and Export
-  -> 9 Environmental and Resource Dynamics
-```
-
-Future work should promote a new milestone only after its intended behavior and prerequisite boundaries are explicitly planned.
 
 The user may explicitly override roadmap priority for any development request.
