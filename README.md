@@ -126,6 +126,12 @@ geographic catchment: active representatives, legitimacy, food-relief access,
 fairness, and the status of its council reference. It does not turn a
 catchment into legal territory, civic membership, culture, or identity.
 
+The analytics workbench also explains the current local food-relief legitimacy
+calculation through its bounded service-access, contribution-fairness,
+social-trust, and conflict-absence inputs. Taxation, budgets, law,
+enforcement, and corruption are explicitly not modeled in this first public-
+capacity slice.
+
 Seasonal climate is a small static classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Daily environmental recovery is measured separately from household food production and consumption; no weather simulation, biome editor, or ecosystem model is implied.
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.

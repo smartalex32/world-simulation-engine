@@ -10,7 +10,15 @@ describe('governance projection', () => {
     ] as never, [])
     expect(result).toEqual([expect.objectContaining({
       catchmentName: 'West Valley', catchmentCellCount: 12, representativeIds: ['dead', 'living'], activeRepresentativeCount: 1,
-      councilOrganizationStatus: 'referenced-not-modeled', legitimacyPermille: 720, territoryStatus: 'not-modeled', civicMembershipStatus: 'not-modeled', cultureAndIdentityStatus: 'separate-not-inferred',
+      councilOrganizationStatus: 'referenced-not-modeled', legitimacyPermille: 720, evaluatedLegitimacyPermille: 363,
+      legitimacyFactors: [
+        { id: 'food-relief-access', label: 'Food-relief access', valuePermille: 800 },
+        { id: 'contribution-fairness', label: 'Contribution fairness', valuePermille: 650 },
+        { id: 'social-trust', label: 'Social trust', valuePermille: 0 },
+        { id: 'conflict-absence', label: 'Conflict absence', valuePermille: 0 },
+      ],
+      taxationStatus: 'not-modeled', budgetStatus: 'not-modeled', lawAndEnforcementStatus: 'not-modeled', corruptionStatus: 'not-modeled',
+      territoryStatus: 'not-modeled', civicMembershipStatus: 'not-modeled', cultureAndIdentityStatus: 'separate-not-inferred',
     })])
   })
 })

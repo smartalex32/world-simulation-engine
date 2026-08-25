@@ -1594,6 +1594,12 @@ legitimacy, corruption, and institutional effectiveness. Compliance emerges
 through incentives, exposure, beliefs, relationships, and enforcement rather
 than a direct polity-membership modifier.
 
+**Delivered first slice:** The existing local food-relief legitimacy calculation
+now exposes its four bounded inputs—service access, contribution fairness,
+social trust, and conflict absence—alongside its evaluated result. The
+workbench explicitly marks taxation, budgets, law/enforcement, and corruption
+as not modeled. This is explanation evidence, not a fiscal or legal system.
+
 ## Milestone 66 — Culture, Religion, Language, and Collective Identity ([Issue #70](https://github.com/smartalex32/world-simulation-engine/issues/70))
 
 Extend existing culture and language foundations into traditions, values,

@@ -60,6 +60,7 @@ test('opens the world setup surface with explicit scale and placement allocation
   await expect(page.getByRole('heading', { name: 'Daily samples' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Household materials' })).toBeVisible()
   await expect(page.getByLabel('Household material distribution')).toContainText('Food inequality')
+  await expect(page.getByLabel('Public capacity evidence')).toContainText('Taxation not-modeled')
   await expect(page.getByRole('region', { name: 'Entity categories' })).toBeHidden()
   await page.getByRole('button', { name: 'entities', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Entity categories' })).toBeVisible()

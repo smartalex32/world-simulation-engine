@@ -86,6 +86,9 @@ button.primary:hover { background: #e0bc58; }
 .map-annotation-toggles button.active { background: #1d302a; border-color: #3d6657; color: #dceee2; }
 .map-annotation-toggles button.active::after { content: 'On'; color: #8ed0a0; }
 .metric-list, .inspector-grid { padding: 7px 16px; }
+.public-capacity-list { padding: 7px 16px; display: grid; gap: 8px; }
+.public-capacity-list > span { display: grid; gap: 3px; padding-bottom: 8px; border-bottom: 1px solid #202c27; font-size: 12px; }
+.public-capacity-list small { color: var(--muted); font-size: 10px; line-height: 1.35; }
 .metric { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 35px; border-bottom: 1px solid #202c27; }
 .metric span { color: var(--muted); font-size: 11px; }.metric strong { font-size: 12px; text-transform: capitalize; }
 .map-panel { display: grid; grid-template-rows: 42px minmax(0, 1fr); min-height: 0; height: 100%; overflow: hidden; }
