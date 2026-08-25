@@ -7,6 +7,7 @@ import { worldChunkLayout } from '../simulation/spatial/worldChunks'
 import { buildProjectedSettlements } from './settlements'
 import { buildProjectedSettlementLinks } from './regionalNetwork'
 import { buildProjectedSettlementDiffusion } from './diffusion'
+import { buildProjectedSettlementServices } from './infrastructure'
 import { deriveDrainage, type DrainageCell } from '../simulation/environment/hydrology'
 import { cohortPopulationByCell } from '../simulation/cohorts/model'
 import { buildLocationChunkIndex, visibleIndexedLocations, type IndexedProjectionLocation } from './locationIndex'
@@ -119,6 +120,7 @@ export class WorkbenchProjectionBuilder {
       world: { id: source.world.id, name: source.world.name, width: this.grid.width, height: this.grid.height, cellCount: this.grid.cells.length, chunkLayout: worldChunkLayout(this.grid.width, this.grid.height), scale: source.world.scale },
       settlements: buildProjectedSettlements(source.world.settlements, source.world.grid.cells, source.people, source.households),
       settlementLinks: buildProjectedSettlementLinks(source.world.settlements, source.world.grid.cells, source.world.roads),
+      settlementServices: buildProjectedSettlementServices(source.world.settlements, source.world.grid.cells, source.markets, source.organizations, source.world.roads),
       settlementDiffusion: buildProjectedSettlementDiffusion(source.world.settlements, source.people),
       roads: (source.world.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })).sort((a, b) => a.id.localeCompare(b.id)),
       populationZones: source.populationZones.map((zone) => zone.settlementId === undefined

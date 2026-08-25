@@ -436,6 +436,7 @@ export class SimulationEngine {
       people: this.state.people,
       cohorts: this.state.cohorts,
       households: this.state.households,
+      markets: this.state.markets,
       organizations: this.state.organizations,
       governance: this.state.governance,
       disputes: this.state.disputes,

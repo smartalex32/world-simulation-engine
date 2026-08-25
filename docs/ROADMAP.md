@@ -1540,6 +1540,12 @@ Extend roads, rivers, ports, markets, schools, storage, and public services into
 regional networks with capacity, maintenance, accessibility, and disruption.
 Settlement service levels derive from real institutions and infrastructure.
 
+First delivered slice: the worker projection now exposes read-only settlement
+infrastructure evidence from real catchment-local markets, schools, school
+capacity, and authored road cells. The workbench displays those counts beside
+each settlement. These are not membership or direct person modifiers; existing
+road movement and school-access systems remain the behavioral authorities.
+
 ## Milestone 62 — Regional Economy, Labor, Wealth, and Inequality ([Issue #66](https://github.com/smartalex32/world-simulation-engine/issues/66))
 
 Add occupations, production chains, goods, prices, trade flows, household

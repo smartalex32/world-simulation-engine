@@ -106,6 +106,10 @@ The workbench now provides coherent world, simulation, analytics, entities, hist
 The minimap is also keyboard accessible: Enter or Space recenters the map and
 its focus/assistive text describes it as a presentation-only navigation control.
 
+Settlement inspection also exposes read-only infrastructure evidence from real
+catchment-local markets, schools and their seats, and authored road cells. It
+does not imply civic membership or directly modify people.
+
 Seasonal climate is a small static classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Daily environmental recovery is measured separately from household food production and consumption; no weather simulation, biome editor, or ecosystem model is implied.
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
