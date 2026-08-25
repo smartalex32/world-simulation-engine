@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { HostedRunRecord, HostedRunStore } from './types'
 
@@ -14,6 +14,7 @@ export class MemoryHostedRunStore implements HostedRunStore {
   async save(record: HostedRunRecord): Promise<void> {
     this.records.set(record.runId, structuredClone(record))
   }
+  async list(ownerId: string): Promise<HostedRunRecord[]> { return [...this.records.values()].filter((record) => record.ownerId === ownerId).map((record) => structuredClone(record)).sort((a, b) => a.runId.localeCompare(b.runId)) }
 }
 
 /** One JSON record per run, written through an atomic replacement. */
@@ -35,6 +36,14 @@ export class FileHostedRunStore implements HostedRunStore {
     const temporary = `${path}.tmp`
     await writeFile(temporary, JSON.stringify(record), 'utf8')
     await rename(temporary, path)
+  }
+
+  async list(ownerId: string): Promise<HostedRunRecord[]> {
+    try {
+      const names = (await readdir(this.directory)).filter((name) => name.endsWith('.json')).sort()
+      const records = await Promise.all(names.map(async (name) => JSON.parse(await readFile(join(this.directory, name), 'utf8')) as HostedRunRecord))
+      return records.filter((record) => record.ownerId === ownerId).sort((a, b) => a.runId.localeCompare(b.runId))
+    } catch (error) { if (isMissingFile(error)) return []; throw error }
   }
 
   private pathFor(runId: string): string {
