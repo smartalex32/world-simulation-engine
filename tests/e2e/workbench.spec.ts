@@ -497,8 +497,12 @@ test('inspects persisted experience and deterministic development at the 720-hou
     }
   }), snapshot)
   await page.reload()
+  // The persisted list can hydrate before the replacement worker finishes its
+  // initial run.  Loading a snapshot is intentionally unavailable until that
+  // worker has established its authoritative starting projection.
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const developmentSnapshot = page.getByRole('button', { name: /Development fixture Hour 720/ })
-  await expect(developmentSnapshot).toBeVisible()
+  await expect(developmentSnapshot).toBeEnabled()
   await developmentSnapshot.click()
   await expect(page.getByText('Day 30 · 00:00')).toBeVisible()
   const canvas = page.getByLabel('Hex world map')
