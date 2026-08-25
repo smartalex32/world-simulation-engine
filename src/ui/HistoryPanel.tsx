@@ -1,5 +1,5 @@
 import { HISTORY_METRICS, historicalHighlights, metricDelta, metricTimeline, personTimeline } from '../history/history'
-import { populationCheckpointTimeline, settlementChangeSummaries, type HistoricalCheckpoint } from '../history/checkpoints'
+import { populationCheckpointTimeline, regionalChangeSummary, settlementChangeSummaries, type HistoricalCheckpoint } from '../history/checkpoints'
 import { buildChronicle } from '../history/chronicle'
 import { useState } from 'react'
 import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
@@ -21,6 +21,7 @@ export function HistoryPanel({ events, statistics, checkpoints, selectedPersonId
   const chronicle = buildChronicle(events, 12)
   const checkpointTimeline = populationCheckpointTimeline(checkpoints)
   const settlementChanges = settlementChangeSummaries(checkpoints)
+  const regionalChange = regionalChangeSummary(checkpoints)
   return <section className="history-panel" aria-label="Historical inspection">
     <header className="history-heading">
       <div><span className="eyebrow">HISTORICAL INSPECTION</span><h2>Recorded evidence over time</h2><p>Events and sampled metrics are read from local run history; nothing is inferred.</p></div>
@@ -55,7 +56,12 @@ export function HistoryPanel({ events, statistics, checkpoints, selectedPersonId
         <h3>Settlement change</h3>
         <p className="chronicle-note">Home catchments are measured at retained checkpoints; these are not settlement memberships.</p>
         {settlementChanges.length === 0 && <p className="history-empty">No settlement checkpoint comparison is available yet.</p>}
-        <div className="history-event-list">{settlementChanges.map((settlement) => <article className="history-event" key={settlement.settlementId}><span>Ticks {settlement.firstTick}–{settlement.latestTick}</span><strong>{settlement.name} · {settlement.latestResidentCount} residents</strong><em>{signed(settlement.residentDelta)} residents · {signed(settlement.householdDelta)} households</em></article>)}</div>
+        <div className="history-event-list">{settlementChanges.map((settlement) => <article className="history-event" key={settlement.settlementId}><span>Ticks {settlement.firstTick}–{settlement.latestTick}</span><strong>{settlement.name} · {settlement.latestResidentCount} residents · {settlement.firstScale} → {settlement.latestScale}</strong><em>{signed(settlement.residentDelta)} residents · {signed(settlement.householdDelta)} households · {signed(settlement.foodStoreDelta)} food stores</em></article>)}</div>
+      </section>
+      <section className="history-section">
+        <h3>Regional change evidence</h3>
+        <p className="chronicle-note">Only retained checkpoint values are compared; no time-lapse replay is performed.</p>
+        {regionalChange ? <article className="history-event"><span>Ticks {regionalChange.firstTick}–{regionalChange.latestTick}</span><strong>{signed(regionalChange.detailedPopulationDelta)} detailed people · {signed(regionalChange.cohortPopulationDelta)} cohort people</strong><em>{signed(regionalChange.availableFoodDelta)} available food units</em></article> : <p className="history-empty">Two retained checkpoints are needed for a regional comparison.</p>}
       </section>
       <section className="history-section">
         <h3>{selectedPersonId ? `Timeline · ${selectedPersonId}` : 'Person timeline'}</h3>

@@ -95,6 +95,12 @@ Drafts can also be imported and exported as a versioned JSON bundle. Bundles inc
 
 Historical inspection reads bounded, indexed event and sampled-metric evidence from IndexedDB. The History workspace offers selected-person timelines, curated major recorded-event highlights, population/resource/social trends, and an optional deterministic chronicle. The chronicle uses fixed templates over recorded events; it never invents evidence, mutates authoritative simulation state, or affects canonical output. Household and settlement history views, time-lapse replay, and richer causal drill-down remain future slices.
 
+Retained weekly checkpoints also record bounded regional evidence: detailed and
+cohort population, cohort households, available food, and settlement scale,
+resident, household, and food-store values. The History workspace compares
+only these retained observations; it does not replay or mutate a run to fill
+historical gaps.
+
 The workbench now provides coherent world, simulation, analytics, entities, history, tools, and settings navigation. Tools connect to the worker-owned world authoring flow; settings expose presentation diagnostics only. The map remains the primary surface, with existing level-of-detail behavior, live inspectors, controls, sampled aggregates, and responsive layouts. This presentation layer does not alter simulation state or consume simulation RNG.
 
 Seasonal climate is a small static classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Daily environmental recovery is measured separately from household food production and consumption; no weather simulation, biome editor, or ecosystem model is implied.
