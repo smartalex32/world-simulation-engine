@@ -10,6 +10,7 @@ import {
   LANGUAGE_MODEL_VERSION,
   GOVERNANCE_MODEL_VERSION,
   CONFLICT_MODEL_VERSION,
+  CONTENT_PACK_MODEL_VERSION,
   KNOWLEDGE_MODEL_VERSION,
   HEALTH_MODEL_VERSION,
   INNOVATION_MODEL_VERSION,
@@ -29,6 +30,7 @@ import { validatePersonVariableValues } from '../variables/storage'
 import { validateCommunitySimulationState } from '../community/invariants'
 import { COHORT_MODEL_VERSION } from '../cohorts/model'
 import { migrateSnapshotSchema } from './migrations'
+import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
 
 export function canonicalStringify(value: unknown): string {
   return JSON.stringify(sortValue(value))
@@ -68,6 +70,11 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   if (!snapshot.state || typeof snapshot.digest !== 'string') throw new Error('Snapshot is missing state or digest')
   if (snapshot.state.config?.baseTickHours !== 1 || !Number.isSafeInteger(snapshot.state.tick) || snapshot.state.tick < 0) {
     throw new Error('Snapshot contains an invalid clock')
+  }
+  if (snapshot.state.config.contentPackModelVersion !== CONTENT_PACK_MODEL_VERSION
+    || snapshot.state.config.contentPackId !== DEFAULT_PREINDUSTRIAL_PACK.manifest.id
+    || snapshot.state.config.contentPackVersion !== DEFAULT_PREINDUSTRIAL_PACK.manifest.version) {
+    throw new Error('Unsupported content pack configuration')
   }
   if (snapshot.state.config.variableRegistryVersion !== VARIABLE_REGISTRY_VERSION) {
     throw new Error(`Unsupported variable registry version: ${String(snapshot.state.config.variableRegistryVersion)}`)

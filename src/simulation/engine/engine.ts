@@ -61,6 +61,7 @@ import { applyEncounter, createRelationship, decayInteractionFrequency, relation
 import { createSnapshot, validateSnapshot } from '../serialization/snapshot'
 import { generateValley } from '../spatial/worldGenerator'
 import { PERSON_VARIABLE_DEFINITIONS, PERSON_VARIABLE_ID } from '../variables/registry'
+import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
 import { adjustPersonVariable, createDefaultPersonVariableValues, getPersonVariable, setPersonVariable, validatePersonVariableValues } from '../variables/storage'
 import { validateHouseholdActivityState } from './invariants'
 import {
@@ -208,6 +209,9 @@ export class SimulationEngine {
         worldGeneratorVersion: WORLD_GENERATOR_VERSION,
         worldCreation: creation,
         baseTickHours: BASE_TICK_HOURS,
+        contentPackId: DEFAULT_PREINDUSTRIAL_PACK.manifest.id,
+        contentPackVersion: DEFAULT_PREINDUSTRIAL_PACK.manifest.version,
+        contentPackModelVersion: 1,
         variableRegistryVersion: VARIABLE_REGISTRY_VERSION,
         influenceRegistryVersion: INFLUENCE_REGISTRY_VERSION,
         householdModelVersion: HOUSEHOLD_MODEL_VERSION,

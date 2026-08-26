@@ -31,7 +31,7 @@ describe('canonical serialization', () => {
 
   it('upgrades each supported prior snapshot schema without changing canonical state', async () => {
     const current = await SimulationEngine.create('schema-rolling-migration').snapshot()
-    for (const schemaVersion of [30, 31, 32, 33]) {
+    for (const schemaVersion of [30, 31, 32, 33, 34]) {
       const legacy = { ...structuredClone(current), schemaVersion }
       await expect(validateSnapshot(legacy)).resolves.toEqual(current)
     }
