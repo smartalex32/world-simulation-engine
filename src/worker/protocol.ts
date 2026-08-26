@@ -17,7 +17,7 @@ export type SimulationCommand =
   | { type: 'RESET_DRAFT'; requestId: string; draftId: string; expectedRevision?: number }
   | { type: 'REQUEST_DRAFT_PREVIEW'; requestId: string; draftId: string }
   | { type: 'REQUEST_DRAFT_VIEWPORT'; requestId: string; draftId: string; viewport: DraftViewportRequest }
-  | { type: 'COMMIT_DRAFT'; requestId: string; draftId: string; expectedRevision?: number }
+  | { type: 'COMMIT_DRAFT'; requestId: string; draftId: string; expectedRevision?: number; contentPack?: ContentPack }
   | { type: 'DISCARD_DRAFT'; requestId: string; draftId: string }
   | { type: 'LOAD_RUN'; requestId: string; snapshot: WorkbenchSnapshotEnvelope; contentPack?: ContentPack }
   | { type: 'STEP'; requestId: string; count?: number }

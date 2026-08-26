@@ -36,18 +36,36 @@ export function validateContentPack(value: unknown): ValidatedContentPack {
 
 function validateExpression(expression: DeterministicExpression, path: string, diagnostics: ContentPackDiagnostic[]): void {
   if (!isRecord(expression) || typeof expression.kind !== 'string') { diagnostics.push({ path, message: 'Formula expression is invalid' }); return }
-  if (expression.kind === 'constant' && !Number.isFinite(expression.value)) diagnostics.push({ path, message: 'Constant must be finite' })
-  if (expression.kind === 'variable' && !stableId(expression.id)) diagnostics.push({ path, message: 'Variable reference must be stable' })
-  if (expression.kind === 'randomChance' && !stableId(expression.stream)) diagnostics.push({ path, message: 'Random choice needs a named RNG stream' })
-  for (const [key, child] of Object.entries(expression)) {
-    if (key === 'kind' || typeof child !== 'object' || child === null) continue
-    if (Array.isArray(child)) child.forEach((item, index) => validateExpression(item as DeterministicExpression, `${path}.${key}[${index}]`, diagnostics))
-    else if (key === 'condition') validateCondition(child as DeterministicCondition, `${path}.${key}`, diagnostics)
-    else if (key !== 'probabilityPermille' && key !== 'whenTrue' && key !== 'whenFalse' && key !== 'left' && key !== 'right' && key !== 'operand') continue
-    else validateExpression(child as DeterministicExpression, `${path}.${key}`, diagnostics)
+  switch (expression.kind) {
+    case 'constant': if (!Number.isFinite(expression.value)) diagnostics.push({ path, message: 'Constant must be finite' }); return
+    case 'variable': if (!stableId(expression.id)) diagnostics.push({ path, message: 'Variable reference must be stable' }); return
+    case 'negate': validateExpression(expression.operand, `${path}.operand`, diagnostics); return
+    case 'add': case 'multiply': case 'minimum': case 'maximum':
+      if (!Array.isArray(expression.operands) || expression.operands.length < 1) diagnostics.push({ path, message: `${expression.kind} needs one or more operands` })
+      else expression.operands.forEach((child, index) => validateExpression(child, `${path}.operands[${index}]`, diagnostics))
+      return
+    case 'subtract': case 'divide':
+      validateExpression(expression.left, `${path}.left`, diagnostics); validateExpression(expression.right, `${path}.right`, diagnostics); return
+    case 'if':
+      validateCondition(expression.condition, `${path}.condition`, diagnostics); validateExpression(expression.whenTrue, `${path}.whenTrue`, diagnostics); validateExpression(expression.whenFalse, `${path}.whenFalse`, diagnostics); return
+    case 'randomChance':
+      if (!stableId(expression.stream)) diagnostics.push({ path, message: 'Random choice needs a named RNG stream' })
+      validateExpression(expression.probabilityPermille, `${path}.probabilityPermille`, diagnostics); validateExpression(expression.whenTrue, `${path}.whenTrue`, diagnostics); validateExpression(expression.whenFalse, `${path}.whenFalse`, diagnostics); return
+    default: diagnostics.push({ path, message: 'Unknown formula expression kind' })
   }
 }
-function validateCondition(condition: DeterministicCondition, path: string, diagnostics: ContentPackDiagnostic[]): void { if (!isRecord(condition) || typeof condition.kind !== 'string') diagnostics.push({ path, message: 'Condition is invalid' }) }
+function validateCondition(condition: DeterministicCondition, path: string, diagnostics: ContentPackDiagnostic[]): void {
+  if (!isRecord(condition) || typeof condition.kind !== 'string') { diagnostics.push({ path, message: 'Condition is invalid' }); return }
+  switch (condition.kind) {
+    case 'greaterThan': case 'greaterThanOrEqual': case 'equals': validateExpression(condition.left, `${path}.left`, diagnostics); validateExpression(condition.right, `${path}.right`, diagnostics); return
+    case 'all': case 'any':
+      if (!Array.isArray(condition.conditions) || condition.conditions.length < 1) diagnostics.push({ path, message: `${condition.kind} needs one or more conditions` })
+      else condition.conditions.forEach((child, index) => validateCondition(child, `${path}.conditions[${index}]`, diagnostics))
+      return
+    case 'not': validateCondition(condition.condition, `${path}.condition`, diagnostics); return
+    default: diagnostics.push({ path, message: 'Unknown condition kind' })
+  }
+}
 function validateUnique<T>(items: readonly T[] | undefined, path: string, key: (item: T) => string, diagnostics: ContentPackDiagnostic[]): void { if (!Array.isArray(items)) { diagnostics.push({ path, message: 'Must be an array' }); return }; const seen = new Set<string>(); for (const [index, item] of items.entries()) { const id = key(item); if (seen.has(id)) diagnostics.push({ path: `${path}[${index}]`, message: `Duplicate ID: ${id}` }); seen.add(id) } }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function stableId(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*$/.test(value) }

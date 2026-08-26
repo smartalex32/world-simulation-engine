@@ -17,6 +17,9 @@ Development proceeds through small vertical slices. The long-term goal is a simu
 
 Generative AI is not part of authoritative simulation behavior.
 
+Content packs define versioned person variables, sparse influences, and safe
+declarative formulas. See [content-pack authoring](docs/CONTENT_PACKS.md).
+
 ---
 
 # Current Status

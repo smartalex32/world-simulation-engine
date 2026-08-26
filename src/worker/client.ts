@@ -58,7 +58,7 @@ export class SimulationWorkerClient {
   resetDraft(draftId: string, expectedRevision?: number): void { this.send({ type: 'RESET_DRAFT', requestId: requestId(), draftId, expectedRevision }) }
   previewDraft(draftId: string): void { this.send({ type: 'REQUEST_DRAFT_PREVIEW', requestId: requestId(), draftId }) }
   requestDraftViewport(draftId: string, viewport: DraftViewportRequest): void { this.send({ type: 'REQUEST_DRAFT_VIEWPORT', requestId: requestId(), draftId, viewport }) }
-  commitDraft(draftId: string, expectedRevision?: number): void { this.send({ type: 'COMMIT_DRAFT', requestId: requestId(), draftId, expectedRevision }) }
+  commitDraft(draftId: string, expectedRevision?: number, contentPack?: ContentPack): void { this.send({ type: 'COMMIT_DRAFT', requestId: requestId(), draftId, expectedRevision, contentPack }) }
   discardDraft(draftId: string): void { this.send({ type: 'DISCARD_DRAFT', requestId: requestId(), draftId }) }
   load(snapshot: WorkbenchSnapshotEnvelope, contentPack?: ContentPack): void { this.send({ type: 'LOAD_RUN', requestId: requestId(), snapshot, contentPack }) }
   step(count = 1): void { this.send({ type: 'STEP', requestId: requestId(), count }) }

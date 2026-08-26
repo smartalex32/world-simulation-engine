@@ -230,7 +230,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           // final committed state until authoritative creation succeeds.
           playing = false
           respond({ type: 'DRAFT', requestId: command.requestId, action: 'committing', draft })
-          await create(draft.draft, command.requestId)
+          await create(draft.draft, command.requestId, command.contentPack)
           activeDraft = undefined
           respond({ type: 'DRAFT', requestId: command.requestId, action: 'committed', draft })
           break
