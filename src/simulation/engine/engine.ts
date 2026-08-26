@@ -62,6 +62,7 @@ import { createSnapshot, validateSnapshot } from '../serialization/snapshot'
 import { generateValley } from '../spatial/worldGenerator'
 import { PERSON_VARIABLE_DEFINITIONS, PERSON_VARIABLE_ID } from '../variables/registry'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
+import { createContentPackRuntime, type ContentPack, type ContentPackRuntime } from '../../contentPacks'
 import { adjustPersonVariable, createDefaultPersonVariableValues, getPersonVariable, setPersonVariable, validatePersonVariableValues } from '../variables/storage'
 import { validateHouseholdActivityState } from './invariants'
 import {
@@ -150,7 +151,7 @@ export class SimulationEngine {
   private livingPersonCache: SimulationState['people'][number][] | undefined
   private livingPersonIndexBuilds = 0
 
-  private constructor(private state: SimulationState, random: RandomProvider) {
+  private constructor(private state: SimulationState, random: RandomProvider, private readonly contentPackRuntime: ContentPackRuntime = createContentPackRuntime(DEFAULT_PREINDUSTRIAL_PACK)) {
     this.random = random
     this.cellById = new Map(state.world.grid.cells.map((cell) => [cell.id, cell]))
     this.roadCellIds = new Set((state.world.roads ?? []).flatMap((road) => road.cellIds))
@@ -172,7 +173,7 @@ export class SimulationEngine {
     this.parentIdsByChildId = new Map([...parentIdsByChildId.entries()].sort(([first], [second]) => compareIds(first, second)))
   }
 
-  static create(seedOrDraft: string | WorldCreationDraft, width = 32, height = 24): SimulationEngine {
+  static create(seedOrDraft: string | WorldCreationDraft, width = 32, height = 24, contentPack: ContentPack = DEFAULT_PREINDUSTRIAL_PACK): SimulationEngine {
     const draft = typeof seedOrDraft === 'string' ? defaultWorldCreationRequest(seedOrDraft, width, height) : seedOrDraft
     validateWorldCreationDraftLimits(draft)
     // Terrain generation is pure for a seed, so resolve presets before starting the authoritative RNG provider.
@@ -198,6 +199,8 @@ export class SimulationEngine {
     // A school is an authored place service; an unmarked home cell is never silently promoted into one.
     const organizations = createInitialSchools(generatedPopulation.people, world.settlements.map((settlement) => settlement.anchorCellId))
     const governance = createLocalGovernance(communities, generatedPopulation.people)
+    const runtime = createContentPackRuntime(contentPack)
+    if (runtime.pack.manifest.id !== DEFAULT_PREINDUSTRIAL_PACK.manifest.id || runtime.pack.manifest.version !== DEFAULT_PREINDUSTRIAL_PACK.manifest.version) throw new Error('Custom content packs require registry migration before run creation')
     return new SimulationEngine({
       runId,
       tick: 0,
@@ -252,7 +255,7 @@ export class SimulationEngine {
       dailyEconomicCounters: { productiveHours: 0, foodProduced: 0, agriculturalFoodProduced: 0, foodConsumedFromHouseholds: 0, foodShared: 0, exchangeCount: 0 },
       dailyEnvironmentalCounters: { foodRegenerated: 0 },
       randomStreams: random.snapshot(),
-    }, random)
+    }, random, runtime)
   }
 
   static async restore(snapshotValue: unknown): Promise<SimulationEngine> {
@@ -310,7 +313,7 @@ export class SimulationEngine {
 
       const occupantsByCell = this.buildOccupancy(true)
       const occupantsByActivityLocation = this.buildActivityOccupancy()
-      const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: this.roadCellIds, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById }
+      const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: this.roadCellIds, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById, influenceRegistry: this.contentPackRuntime.influences }
       const actionRng = this.random.stream('actions')
       const decisions = this.livingPeople()
         .filter((person) => !person.journey && person.schoolAttendance === undefined)

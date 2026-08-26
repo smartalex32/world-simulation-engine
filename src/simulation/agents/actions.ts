@@ -7,6 +7,7 @@ import { hexNeighbors } from '../spatial/hex'
 import { evaluateInfluences } from '../influences/evaluate'
 import { DECISION_INFLUENCE_TARGET } from '../influences/registry'
 import type { DecisionInfluenceTarget } from '../influences/types'
+import type { InfluenceRegistry } from '../influences/types'
 import { PERSON_VARIABLE_ID, getPersonVariableDefinition } from '../variables/registry'
 import { adjustPersonVariable, getPersonVariable } from '../variables/storage'
 import {
@@ -50,6 +51,7 @@ export interface ActionContext {
   /** Current authoritative catchment state indexed by actual world cell. */
   communityByCellId: ReadonlyMap<string, CommunitySimulationState>
   householdById?: ReadonlyMap<string, HouseholdState>
+  influenceRegistry?: InfluenceRegistry
 }
 
 export interface ActionOutcome {
@@ -117,18 +119,18 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
   const householdFood = context.householdById?.get(person.householdId)?.inventory?.food ?? 0
   if ((householdFood > 0 || (!context.householdById && cell.foodAmount > 0)) && hunger > 0) candidates.push(candidate('eat', [
     baseContribution(ACTION_BASE_WEIGHT.eat),
-    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.eatUtility, person),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.eatUtility, person, context),
     contextContribution('household food', Math.min(LOCAL_FOOD_WEIGHT_CAP, householdFood || cell.foodAmount)),
   ]))
   if (moveTarget) candidates.push(candidate('move', [
     baseContribution(ACTION_BASE_WEIGHT.move),
-    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.moveUtility, person),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.moveUtility, person, context),
     contextContribution('destination food', Math.floor(moveTarget.foodAmount * DESTINATION_FOOD_WEIGHT_PERMILLE / 1000)),
     contextContribution('travel cost', -Math.floor(Math.max(0, effectiveMovementCost(moveTarget, context) - PLAIN_MOVEMENT_COST) / MOVE_TRAVEL_COST_DIVISOR)),
   ], moveTarget.id))
   if (exploreTarget) candidates.push(candidate('explore', [
     baseContribution(ACTION_BASE_WEIGHT.explore),
-    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.exploreUtility, person),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.exploreUtility, person, context),
     interactionContribution('terrain uncertainty', -Math.floor(
       Math.max(0, effectiveMovementCost(exploreTarget, context) - PLAIN_MOVEMENT_COST)
       * (1000 - getPersonVariable(person.variables, PERSON_VARIABLE_ID.riskTolerance))
@@ -140,18 +142,18 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
     baseContribution(ACTION_BASE_WEIGHT.rest),
     contextContribution('nighttime', hour >= 21 || hour < 6 ? NIGHTTIME_REST_WEIGHT : 0),
     contextContribution('at home', person.locationCellId === person.homeCellId ? HOME_REST_WEIGHT : 0),
-    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.restUtility, person),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.restUtility, person, context),
   ]))
   if (company > 0) candidates.push(candidate('socialize', [
     baseContribution(ACTION_BASE_WEIGHT.socialize),
-    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.socializeUtility, person),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.socializeUtility, person, context),
     contextContribution('people present', company * OTHER_OCCUPANT_SOCIAL_WEIGHT),
     ...communityInfluenceContributions('decision.socialize.utility', person.locationCellId, context),
   ]))
   if (person.occupation === 'forager' && person.currentActivity.kind === 'commons' && cell.foodAmount > 0 && hour >= 6 && hour < 18) {
     candidates.push(candidate('work', [
       baseContribution(ACTION_BASE_WEIGHT.work),
-      ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.workUtility, person),
+      ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.workUtility, person, context),
       contextContribution('accessible resource', Math.min(160, cell.foodAmount * 8)),
       contextContribution('fatigue cost', -Math.floor(getPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue) / 5)),
     ]))
@@ -247,8 +249,8 @@ export function effectiveMovementCost(cell: GeographicCell, context: Pick<Action
   return Math.floor(cell.movementCost * (context.movementCostMultiplierPermille ?? 1000) * roadMultiplier / 1_000_000)
 }
 
-function personInfluenceContributions(targetId: DecisionInfluenceTarget, person: PersonState): UtilityContribution[] {
-  return evaluateInfluences(targetId, person.variables).contributions.map((contribution) => ({
+function personInfluenceContributions(targetId: DecisionInfluenceTarget, person: PersonState, context: ActionContext): UtilityContribution[] {
+  return evaluateInfluences(targetId, person.variables, context.influenceRegistry).contributions.map((contribution) => ({
     kind: 'influence',
     factor: getPersonVariableDefinition(contribution.sourceId).label.toLowerCase(),
     value: contribution.effect,

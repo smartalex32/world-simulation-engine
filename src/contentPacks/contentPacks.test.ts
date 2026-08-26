@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackRegistry, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack } from '.'
+import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackRegistry, createContentPackRuntime, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack } from '.'
 
 describe('content packs', () => {
   it('round-trips the default setting through canonical export', () => {
@@ -18,5 +18,11 @@ describe('content packs', () => {
     const random = { nextPermille: (stream: string) => { expect(stream).toBe('content.test'); return 4 } }
     expect(evaluateExpression({ kind: 'randomChance', stream: 'content.test', probabilityPermille: { kind: 'constant', value: 5 }, whenTrue: { kind: 'constant', value: 2 }, whenFalse: { kind: 'constant', value: 1 } }, {}, random)).toBe(2)
     expect(() => evaluateExpression({ kind: 'randomChance', stream: '', probabilityPermille: { kind: 'constant', value: 5 }, whenTrue: { kind: 'constant', value: 2 }, whenFalse: { kind: 'constant', value: 1 } }, {}, random)).toThrow('named RNG')
+  })
+  it('builds stable immutable runtime registries from a validated pack', () => {
+    const runtime = createContentPackRuntime(DEFAULT_PREINDUSTRIAL_PACK)
+    expect(runtime.variableDefinitions).toHaveLength(10)
+    expect(runtime.influences.definitions).toHaveLength(12)
+    expect(runtime.variableById.get('person.trait.curiosity')?.label).toBe('Curiosity')
   })
 })
