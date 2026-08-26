@@ -21,7 +21,19 @@ Generative AI is not part of authoritative simulation behavior.
 
 # Current Status
 
-Implemented:
+The application has a substantial deterministic simulation foundation and a
+coherent map-first workbench. Milestones 0–50 below are a historical delivery
+index, not a claim that every broad theme named by those milestones is fully
+implemented. Milestones 51–70 have also each received a merged implementation
+slice, but their broader goals remain in progress where `docs/ROADMAP.md`
+records material remaining scope.
+
+`docs/ROADMAP.md` is the sole authority for the distinction between
+**Complete**, **Foundation complete**, **In progress**, and **Design complete**.
+A merged milestone PR records slice delivery; it does not automatically make
+the milestone goal complete.
+
+Historical delivery index through Milestone 50:
 
 * Milestone 0 — Deterministic Simulation Core
 * Milestone 1 — Spatial World and Movement
@@ -51,7 +63,7 @@ Implemented:
 * Milestone 15 — Language
 * Milestone 16 — Local Governance Foundation
 * Milestone 17 — Interpersonal Conflict Foundation
-* Milestone 18 — Politics and Government Foundations
+* Milestone 18 — Technology, Knowledge, and Innovation Foundation
 * Milestone 19 — Massive Simulation Scale (bounded inspection transport foundation)
 * Milestone 20 — Historical Inspection (evidence history foundation)
 * Milestone 21 — Optional Narrative Presentation (deterministic template presentation)
@@ -72,7 +84,7 @@ Implemented:
 * Milestone 36 — Historical Snapshots and Causal Replay
 * Milestone 37 — Scalable Authoritative Simulation
 * Milestone 38 — World Builder and Workbench Maturity
-* Milestone 39 — Collaboration and Shared Worlds
+* Milestone 39 — Collaboration and Shared Worlds (design only)
 * Milestone 40 — Designed Landmass and Water Authoring
 * Milestone 41 — Settlement Seeds and Authoring Profiles
 * Milestone 42 — Food Security, Settlement Growth, and Migration Signals
@@ -84,6 +96,14 @@ Implemented:
 * Milestone 48 — Server-Owned World Runs (foundation)
 * Milestone 49 — Background Simulation Jobs and Checkpoints (foundation)
 * Milestone 50 — Hosted Authority and Background-Job Correctness
+
+Milestones 51–70 delivered initial slices spanning persistence migration,
+projection maintainability, physical world scale, drainage evidence,
+settlement-seed previews, static cohorts, fidelity planning, retained settlement
+scale, regional evidence, accessibility, infrastructure/economic/group/civic/
+culture/conflict/knowledge/generational projections, and the first deterministic
+civilization recovery audit. The authoritative delivered-versus-remaining
+ledger is maintained in `docs/ROADMAP.md` rather than duplicated here.
 
 Settlement editing is also available in the same draft workspace. Authors can add, remove, rename, and place named settlement anchors on passable cells. A settlement remains a geographic marker: it does not imply governance, culture, economy, or automatic community membership. The workbench derives a read-only landmark/hamlet/village/town/city profile from living homes near an anchor, making its geographic basis explicit rather than assigning residents a settlement field. Linked population zones retain their existing anchor-containment validation.
 
@@ -325,6 +345,11 @@ src/
 └── App.tsx
 
 docs/
+├── archive/
+│   ├── POST_23_ROADMAP.md
+│   ├── POST_46_ROADMAP.md
+│   ├── PRE_CONSOLIDATION_ROADMAP.md
+│   └── README.md
 ├── ROADMAP.md
 └── TRAIT_AND_INFLUENCE_SYSTEM.md
 
