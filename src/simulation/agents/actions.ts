@@ -8,7 +8,7 @@ import { evaluateInfluences } from '../influences/evaluate'
 import { DECISION_INFLUENCE_TARGET } from '../influences/registry'
 import type { DecisionInfluenceTarget } from '../influences/types'
 import type { InfluenceRegistry } from '../influences/types'
-import { PERSON_VARIABLE_ID } from '../variables/registry'
+import { PERSON_VARIABLE_ID, getPersonVariableDefinition } from '../variables/registry'
 import { adjustPersonVariable, getPersonVariable, type PersonVariableRegistry } from '../variables/storage'
 import {
   ACTION_BASE_WEIGHT,
@@ -253,7 +253,9 @@ export function effectiveMovementCost(cell: GeographicCell, context: Pick<Action
 function personInfluenceContributions(targetId: DecisionInfluenceTarget, person: PersonState, context: ActionContext): UtilityContribution[] {
   return evaluateInfluences(targetId, person.variables, context.influenceRegistry).contributions.map((contribution) => ({
     kind: 'influence',
-    factor: context.variableRegistry?.byId.get(contribution.sourceId)?.label.toLowerCase() ?? contribution.sourceId,
+    factor: context.variableRegistry
+      ? (context.variableRegistry.byId.get(contribution.sourceId)?.label.toLowerCase() ?? contribution.sourceId)
+      : getPersonVariableDefinition(contribution.sourceId).label.toLowerCase(),
     value: contribution.effect,
     edgeId: contribution.edgeId,
     sourceId: contribution.sourceId,
