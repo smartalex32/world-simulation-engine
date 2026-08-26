@@ -248,6 +248,15 @@ digest. Hosts may opt into that same initial population using
 its 500-person authoring guardrail. The benchmark reports elapsed time as local
 evidence only—hardware timing does not affect simulation output.
 
+Milestone 70 begins civilization-scale integration validation with `pnpm
+audit:civilization`. The audit deliberately exercises the normal engine through
+a 30-day checkpoint, restores its complete versioned snapshot, advances both
+the uninterrupted and recovered runs for another week, and compares canonical
+digests. Its JSON evidence reports current geography, population, households,
+social relationships/disputes, material stores, civic records, learning, and
+development; it is a reproducibility/recovery contract, not a claim that all
+civilization systems are implemented.
+
 Milestone 45 makes far-map population aggregation explicit rather than an
 implicit rendering shortcut. Every map projection now reports a versioned
 population-fidelity contract: detailed cells or exact aggregate regions, the

@@ -14,7 +14,8 @@
     "test:e2e": "playwright test",
     "preview": "vite preview",
     "host": "tsx src/hosted/server.ts",
-    "benchmark:scale": "tsx scripts/benchmark-scale.ts"
+    "benchmark:scale": "tsx scripts/benchmark-scale.ts",
+    "audit:civilization": "tsx scripts/audit-civilization.ts"
   },
   "dependencies": {
     "react": "19.2.8",
