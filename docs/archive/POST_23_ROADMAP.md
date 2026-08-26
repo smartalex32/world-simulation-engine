@@ -1,5 +1,8 @@
 # Post-23 Product Roadmap
 
+> Archived implementation history. Current milestone status and remaining scope
+> are authoritative only in [`../ROADMAP.md`](../ROADMAP.md).
+
 ## Purpose
 
 This document preserves the detailed plans and implementation record for
@@ -376,7 +379,7 @@ moving engine logic into React.
 **Status:** Design complete; implementation deliberately deferred until the
 hosted-server foundation is selected. The authority, revision, lease, conflict,
 and reproducibility contract is recorded in
-[`COLLABORATION_AND_SHARED_WORLDS.md`](./COLLABORATION_AND_SHARED_WORLDS.md).
+[`COLLABORATION_AND_SHARED_WORLDS.md`](../COLLABORATION_AND_SHARED_WORLDS.md).
 
 **Objective:** Consider multi-user world authoring only after draft semantics,
 authorship, persistence, and conflict handling are deliberately designed.
