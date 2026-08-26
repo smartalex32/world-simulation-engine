@@ -252,4 +252,61 @@ Keep current milestone truth in this file. Keep current architecture in
 in `TRAIT_AND_INFLUENCE_SYSTEM.md`, and superseded roadmap wording under
 `docs/archive/`.
 
-This consolidation intentionally selects no next milestone or slice.
+## Complete World Simulation Engine 1.0 Plan
+
+The capability sequence below is the implementation plan from the present
+foundation to 1.0. It supersedes the former “next slice” convention: each row
+is a complete capability, not a claim that its first implementation route is
+sufficient. Complete a row only when its listed acceptance boundary is met.
+
+| Order | Capability | Prerequisites and complete acceptance boundary |
+| --- | --- | --- |
+| 1 | [Deterministic runtime and durable persistence](https://github.com/smartalex32/world-simulation-engine/issues/88) | Completes 43, 47–52 and scale maintainability. PostgreSQL becomes the hosted system of record with relational metadata and compressed/checksummed canonical payloads; IndexedDB remains atomic standalone storage. Deliver transactions, single executor ownership, backup-before-migration, restore/crash recovery, telemetry/job reconciliation, current-plus-prior-two migrations, and browser/server golden fixtures. |
+| 2 | [Declarative content-pack platform](https://github.com/smartalex32/world-simulation-engine/issues/89) | Versioned manifests/dependencies/stable IDs, validation/migration/import/export, a safe deterministic DSL (no time/I/O/arbitrary code/untracked randomness), named engine RNG ownership, migrated preindustrial pack, editors, REST, SDK types, diagnostics, and pack difference inspection. |
+| 3 | [Shared worlds and public integration platform](https://github.com/smartalex32/world-simulation-engine/issues/90) | Implement approved collaboration design: accounts, owner/editor/viewer roles, revisions, renewable leases, stale rejection, authorized controls, projections, and audit records; Argon2id/session/token security; complete `/api/v1`, resumable ordered SSE, OpenAPI, SDK, CLI, Docker Compose, migrations, backup/restore, health checks, and operator/TLS docs. |
+| 4 | [Sparse world authoring and living environment](https://github.com/smartalex32/world-simulation-engine/issues/91) | Completes 33, 40, 47, 53–54: billion-cell-safe sparse chunks; fine terrain/coast/elevation/water/resource/biome/settlement/route/placement authoring with undo/redo/streaming/validation/interchange; deterministic rivers/lakes/watersheds/climate/biomes/ecology/agriculture/hazards and human feedback. No global fluids, individual animals, or terraforming. |
+| 5 | [Population authoring, cohorts, and fidelity transitions](https://github.com/smartalex32/world-simulation-engine/issues/92) | Completes 19, 37, 41, 44–45, 55–57: authored distributions; active demographic/economic/cultural/developmental cohorts; deterministic materialization/dematerialization with conservation, protected IDs, retained history, reconciliation, and named RNG. Guarantee 10k detailed/100k mixed fidelity independent of viewport/timing. |
+| 6 | [Authoritative settlements and regional dynamics](https://github.com/smartalex32/world-simulation-engine/issues/93) | Completes 23–29, 42, 58: authoritative membership, extent, homes/services/institutions/markets/access/capacity/materials; formation, growth, contraction, abandonment, resettlement, urban/rural transitions, and detailed/cohort migration from actual employment, food, housing, safety, ties, infrastructure, services, geography, and shocks with causal traces. |
+| 7 | [Health, disease, and demographic stress](https://github.com/smartalex32/world-simulation-engine/issues/94) | Completes population epidemiology: pack-defined fictional pathogens, exposure transmission, incubation, infectiousness, recovery/immunity/recurrence, care capacity, mortality, equivalent detailed/cohort effects, and outbreak/intervention/displacement evidence. No clinical-medical or genetics claim. |
+| 8 | [Infrastructure, transport, and public services](https://github.com/smartalex32/world-simulation-engine/issues/95) | Completes 61 and route/service foundations: networks, capacity, construction/ownership/maintenance/degradation/disruption/repair/accessibility for roads, waterways, ports, storage, and services, exposed through shared interfaces to migration, markets, governance, health, logistics, and viability. |
+| 9 | [Preindustrial stock-flow economy](https://github.com/smartalex32/world-simulation-engine/issues/96) | Completes 12, 27, 62: pack-defined goods/recipes/tools/inventories/decay, production/consumption, ownership, labor/wages, regional markets, fixed-point prices/currency/transport/trade/tax inputs, wealth/inequality, conservation, and explanation traces. Excludes banking, credit, interest, securities, and industrial finance. |
+| 10 | [Organizations, social groups, and factions](https://github.com/smartalex32/world-simulation-engine/issues/97) | Completes 13, 32, 63: pack-defined purposes/roles/membership/assets/leadership/decisions/reputation/succession/schism/merger/dissolution plus informal groups/factions grounded in relationships, identity, interests, proximity, and exposure. Maintain semantic separation. |
+| 11 | [Culture, religion, language, and identity](https://github.com/smartalex32/world-simulation-engine/issues/98) | Completes 14, 15, 30, 66: pack-defined traditions, beliefs, rituals, religions, identities, practices, languages/dialects/fluency/boundaries and real-contact acquisition/retention/conversion/syncretism/change/intergenerational transmission/diffusion. Never use membership alone. |
+| 12 | [Polities, governance, law, and state capacity](https://github.com/smartalex32/world-simulation-engine/issues/99) | Completes 16, 31, 64–65: jurisdiction/civic membership/polity lifecycle/leadership/representation/legitimacy/succession plus pack laws, taxes, budgets, administration, works, enforcement, compliance, corruption, services, and political explanations; preserve all boundary distinctions. |
+| 13 | [Technology, knowledge, and innovation](https://github.com/smartalex32/world-simulation-engine/issues/100) | Completes 18, 35, 68: pack-defined capability dependency graph for skills/tools/techniques/inventions/prerequisites/materials/projects/teaching/preservation/adoption/compatibility/diffusion. Adoption depends on people/materials/incentives/institutions/communication/exposure, never a global era ladder. |
+| 14 | [Diplomacy and strategic warfare](https://github.com/smartalex32/world-simulation-engine/issues/101) | Completes 17, 67 after its prerequisites: claims/treaties/alliances/diplomacy/mobilization/military organizations/strategic movement/logistics/campaigns/aggregate battles/casualties/occupation/resistance/peace/displacement/trauma. Individual results only for materialized/protected people; no tactical control. |
+| 15 | [Generational feedback](https://github.com/smartalex32/world-simulation-engine/issues/102) | Completes 69 in detailed people and cohorts: adult health/resources/relationships/culture/institutions/conflict/education/environment feed fertility, parenting, childhood exposure, opportunity, development, and future adults. Preserve represented parentage/identity, no genetics; use controlled multi-generation/multi-seed evidence. |
+| 16 | [Historical analysis, branching, and exports](https://github.com/smartalex32/world-simulation-engine/issues/103) | Completes 20, 36, 46, 59: entity timelines, immutable branches, checkpoint/branch comparisons, geographic change maps, time-lapse, causal drill-down, evidence chronicles, annual checkpoints/monthly metrics/permanent events/one-year fine telemetry compaction, and bundle/JSON/NDJSON/CSV/GeoJSON/Parquet export. |
+| 17 | [Complete world-builder and analysis workbench](https://github.com/smartalex32/world-simulation-engine/issues/104) | Completes 22, 38, 60 after authoritative types: cohesive map-first authoring/packs/collaboration/control/navigation/history/comparison/analytics/export/admin; all inspectors/cross-links/recovery/responsive keyboard/WCAG 2.2 AA/cross-browser visual baselines; no direct UI authority mutation. |
+| 18 | [Stable 1.0 completion audit](https://github.com/smartalex32/world-simulation-engine/issues/105) | Completes 70 only after 1–17: clean install, two-schema PostgreSQL migrations with verified backups/restores, interrupted jobs/corrupt input/account+lease recovery/import+export/branch reproducibility; documented 8-core/32-GB/local-SSD 100k mixed-fidelity/200-year run under 24h, p95 bounded reads <2s, cancellation <5s; scenario investigation and complete technical/operator documentation before 1.0 tag. |
+
+### 1.0 public contracts
+
+Increment engine, snapshot, world-generator, and registry/model versions only
+when their own contracts change. Each authoritative change documents RNG stream
+ownership/draw ordering, fixed-point units, stable ordering, digest impact, and
+migration/rejection. Support the current and prior two persisted schema
+generations, verify a backup before migration, and explicitly reject newer or
+older unsupported formats. PostgreSQL is hosted authority; browser state is only
+standalone/cache. Wall-clock timestamps, users, leases, access, and audits are
+noncanonical. Commands use REST; server events use ordered, bounded, resumable,
+durably reconstructible SSE.
+
+### 1.0 mandatory gates and exclusions
+
+Every capability passes typecheck, unit, build, full browser E2E, fixed-seed and
+restore tests, causal/multi-seed/invariant/explanation tests, and a documentation/
+pack/version/fixture review. Hosted changes add PostgreSQL transaction,
+concurrency, crash, migration, backup/recovery, and browser/server-golden tests;
+public interfaces add OpenAPI/SDK/CLI tests; UI changes add accessibility/browser
+coverage and PR screenshots when upload is available.
+
+1.0 excludes real-time CRDT coediting, multi-node/multi-leader hosting, managed
+multi-tenant cloud, external identity, arbitrary trusted code plugins,
+generative-AI simulation behavior, direct/god-game control, tactical combat,
+clinical medicine, genetics, individual animals, global fluid dynamics, banking,
+credit, and securities.
+
+**Current priority:** Capability 1. It begins after this roadmap update is
+merged; later capabilities must not be started merely because a foundation row
+exists.
