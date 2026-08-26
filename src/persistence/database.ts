@@ -219,8 +219,29 @@ export class WorkbenchDatabase {
     const snapshot: WorkbenchSnapshotEnvelope = workerContinuation ? { ...validated, workerContinuation } : validated
     const events = Array.isArray(bundle.events) ? bundle.events : []
     const statistics = Array.isArray(bundle.statistics) ? bundle.statistics : []
-    await this.appendTelemetry(events, statistics)
-    const saved = await this.saveSnapshot(snapshot, 'named', `Imported at hour ${snapshot.state.tick}`)
+    // An imported snapshot without its retained evidence is misleading, and
+    // retained evidence without its snapshot is orphaned. Validate first,
+    // then commit the complete local bundle in one IndexedDB transaction.
+    const database = await this.open()
+    const now = new Date().toISOString()
+    const saved: SavedSnapshot = {
+      key: `${snapshot.state.runId}:named:${crypto.randomUUID()}`,
+      runId: snapshot.state.runId,
+      kind: 'named',
+      name: `Imported at hour ${snapshot.state.tick}`,
+      createdAt: now,
+      snapshot,
+    }
+    const transaction = database.transaction(['runs', 'snapshots', 'events', 'statistics'], 'readwrite')
+    const runs = transaction.objectStore('runs')
+    const previous = await request<RunRecord | undefined>(runs.get(snapshot.state.runId))
+    runs.put({ runId: snapshot.state.runId, seed: snapshot.state.config.seed, tick: snapshot.state.tick, engineVersion: snapshot.engineVersion, createdAt: previous?.createdAt ?? now, updatedAt: now } satisfies RunRecord)
+    transaction.objectStore('snapshots').put(saved)
+    const eventStore = transaction.objectStore('events')
+    for (const event of events) eventStore.put({ ...event, storageKey: event.id } satisfies StoredEvent)
+    const statisticStore = transaction.objectStore('statistics')
+    for (const sample of statistics) statisticStore.put({ ...sample, storageKey: statisticStorageKey(sample) } satisfies StoredStatistic)
+    await transactionDone(transaction)
     return saved
   }
 

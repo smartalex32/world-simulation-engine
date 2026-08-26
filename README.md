@@ -251,14 +251,25 @@ See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferre
 
 ## Optional hosted single-node runtime
 
-The browser-hosted workbench remains the default. Milestone 43 also provides a
-small Node-hosted boundary for one owner-controlled run. It reuses typed worker
+The browser-hosted workbench remains the default. The hosted runtime now uses
+PostgreSQL as its system of record for one owner-controlled run. It reuses typed worker
 command/response shapes, serializes authoritative commands on the host, writes
-versioned snapshots through an atomic file store, and returns bounded
-projections. Start it with `HOSTED_OWNER_TOKEN=<secret> pnpm host`; its local
-HTTP API is intentionally limited to `/health`, owner-authorized run projection,
-and owner-authorized typed run commands. It is not collaboration, a public API,
-or a multi-node scheduler.
+compressed, checksummed canonical snapshots and telemetry batches through
+PostgreSQL transactions, and returns bounded projections. Start PostgreSQL with
+`docker compose up -d postgres`, make and verify a database backup, run
+`HOSTED_MIGRATION_BACKUP_FILE=<absolute-path> DATABASE_URL=<url> pnpm host:migrate`,
+then start with `DATABASE_URL=<url> HOSTED_OWNER_TOKEN=<secret> pnpm host`.
+Use `HOSTED_BACKUP_FILE=<absolute-path> DATABASE_URL=<url> pnpm host:backup`
+to create and verify a PostgreSQL custom-format backup. Restoring is deliberately
+guarded: `HOSTED_RESTORE_CONFIRMED=yes HOSTED_BACKUP_FILE=<absolute-path>
+DATABASE_URL=<url> pnpm host:restore`. The application accepts and migrates the
+current hosted database schema plus the prior two schema generations; startup
+refuses an outdated database until the guarded migration command succeeds.
+These operator commands require PostgreSQL client tools (`pg_dump` and
+`pg_restore`) on the host running them.
+Its local HTTP API is intentionally limited to `/health`, owner-authorized run
+projection, and owner-authorized typed run commands. It is not collaboration, a
+public API, or a multi-node scheduler.
 
 Milestone 44 adds a reproducible detailed-agent scale benchmark: `pnpm
 benchmark:scale` creates a 128 × 128 blank-land world with 10,000 people,

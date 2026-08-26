@@ -14,16 +14,21 @@
     "test:e2e": "playwright test",
     "preview": "vite preview",
     "host": "tsx src/hosted/server.ts",
+    "host:migrate": "tsx scripts/migrate-hosted.ts",
+    "host:backup": "tsx scripts/backup-hosted.ts",
+    "host:restore": "tsx scripts/restore-hosted.ts",
     "benchmark:scale": "tsx scripts/benchmark-scale.ts",
     "audit:civilization": "tsx scripts/audit-civilization.ts"
   },
   "dependencies": {
+    "pg": "^8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
     "@types/node": "^26.2.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "6.0.5",

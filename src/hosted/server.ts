@@ -1,19 +1,19 @@
-import { resolve } from 'node:path'
 import { defaultWorldCreationRequest, WORLD_CREATION_LIMITS } from '../simulation/domain/worldCreation'
 import { createHostedHttpServer } from './http'
 import { HostedSimulationJobManager } from './jobs'
 import { HostedRunService } from './runService'
-import { FileHostedRunStore } from './store'
+import { PostgresHostedRunStore } from './postgres'
 
 const port = numberEnvironment('PORT', 8787)
 const bindHost = hostEnvironment('HOSTED_BIND_HOST', '127.0.0.1')
 const runId = process.env.HOSTED_RUN_ID ?? 'hosted-run'
 const ownerId = process.env.HOSTED_OWNER_ID ?? 'local-owner'
 const ownerToken = requiredEnvironment('HOSTED_OWNER_TOKEN')
-const dataDirectory = resolve(process.env.HOSTED_DATA_DIRECTORY ?? '.world-simulation-hosted')
+const databaseUrl = requiredEnvironment('DATABASE_URL')
 const hostedPopulation = boundedIntegerEnvironment('HOSTED_WORLD_POPULATION', 200, WORLD_CREATION_LIMITS.minimumPopulation, WORLD_CREATION_LIMITS.maximumPopulation)
 
-const store = new FileHostedRunStore(dataDirectory)
+const store = await PostgresHostedRunStore.connect(databaseUrl)
+await store.assertReady()
 const bootstrap = {
   runId,
   ownerId,
@@ -27,6 +27,9 @@ await jobs.resumePending()
 createHostedHttpServer({ runId, ownerToken, service, jobs }).listen(port, bindHost, () => {
   console.info(`Hosted single-node simulation listening on http://${bindHost}:${port} for run ${runId}`)
 })
+
+process.once('SIGINT', () => { void store.close().finally(() => process.exit(0)) })
+process.once('SIGTERM', () => { void store.close().finally(() => process.exit(0)) })
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]
