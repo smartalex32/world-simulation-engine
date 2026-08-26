@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackRegistry, createContentPackRuntime, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack } from '.'
+import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackRegistry, createContentPackRuntime, createPackVariableValues, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack, validatePackVariableValues } from '.'
 
 describe('content packs', () => {
   it('round-trips the default setting through canonical export', () => {
@@ -24,5 +24,8 @@ describe('content packs', () => {
     expect(runtime.variableDefinitions).toHaveLength(10)
     expect(runtime.influences.definitions).toHaveLength(12)
     expect(runtime.variableById.get('person.trait.curiosity')?.label).toBe('Curiosity')
+    const values = createPackVariableValues(runtime, { 'person.trait.curiosity': 750 })
+    expect(values['person.trait.curiosity']).toBe(750)
+    expect(() => validatePackVariableValues(runtime, { ...values, unexpected: 1 })).toThrow('missing or unexpected')
   })
 })
