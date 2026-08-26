@@ -4,17 +4,18 @@ import { Pool, type PoolClient } from 'pg'
 import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
 import { canonicalStringify } from '../simulation/serialization/snapshot'
 import { compareStableText } from '../shared/stableOrder'
+import { exportContentPack, importContentPack, type ContentPack, type ContentPackCatalog } from '../contentPacks'
 import { validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedRunRecord, type HostedRunStore, type HostedSimulationJob, type HostedTelemetryStore } from './types'
 
 /** Current hosted database generation; migrations retain the two prior generations. */
-export const DATABASE_MIGRATION_VERSION = 3
+export const DATABASE_MIGRATION_VERSION = 4
 
 /**
  * PostgreSQL durable store. Payload bytes are canonical JSON compressed with
  * gzip and integrity checked before validation. Timestamps are operational
  * metadata and are never part of a simulation digest.
  */
-export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, HostedTelemetryStore {
+export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, HostedTelemetryStore, ContentPackCatalog {
   constructor(readonly pool: Pool) {}
 
   static async connect(connectionString: string): Promise<PostgresHostedRunStore> {
@@ -73,6 +74,14 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
         await client.query("ALTER TABLE hosted_telemetry_batches ADD COLUMN IF NOT EXISTS payload_encoding text NOT NULL DEFAULT 'gzip-json-v1'")
         await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (3)')
       }
+      if (version < 4) {
+        await client.query(`CREATE TABLE IF NOT EXISTS hosted_content_packs (
+          pack_id text NOT NULL, pack_version text NOT NULL, payload bytea NOT NULL,
+          payload_sha256 text NOT NULL, payload_uncompressed_bytes integer NOT NULL CHECK (payload_uncompressed_bytes > 0),
+          payload_encoding text NOT NULL DEFAULT 'gzip-json-v1', saved_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (pack_id, pack_version)
+        )`)
+        await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (4)')
+      }
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
@@ -122,6 +131,21 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
   async listJobs(runId: string): Promise<HostedSimulationJob[]> {
     const result = await this.pool.query<StoredPayload>('SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_jobs WHERE run_id = $1 ORDER BY queue_order ASC, job_id ASC', [runId])
     return result.rows.map((row) => validateHostedJob(decodeStoredPayload(row))).sort((a, b) => a.queueOrder - b.queueOrder || compareStableText(a.jobId, b.jobId))
+  }
+
+  async listPacks(): Promise<readonly ContentPack[]> {
+    const result = await this.pool.query<StoredPayload>('SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_content_packs ORDER BY pack_id ASC, pack_version ASC')
+    return Object.freeze(result.rows.map((row) => importContentPack(JSON.stringify(decodeStoredPayload(row)))))
+  }
+  async getPack(id: string, version: string): Promise<ContentPack | undefined> {
+    const result = await this.pool.query<StoredPayload>('SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_content_packs WHERE pack_id = $1 AND pack_version = $2', [id, version])
+    return result.rows[0] ? importContentPack(JSON.stringify(decodeStoredPayload(result.rows[0]))) : undefined
+  }
+  async putPack(pack: ContentPack): Promise<ContentPack> {
+    const valid = importContentPack(exportContentPack(pack)); const payload = encodePayload(valid)
+    await this.pool.query(`INSERT INTO hosted_content_packs(pack_id, pack_version, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding)
+      VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (pack_id, pack_version) DO UPDATE SET payload = EXCLUDED.payload, payload_sha256 = EXCLUDED.payload_sha256, payload_uncompressed_bytes = EXCLUDED.payload_uncompressed_bytes, payload_encoding = EXCLUDED.payload_encoding, saved_at = now()`, [valid.manifest.id, valid.manifest.version, payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
+    return valid
   }
 
   private async verifyConnection(): Promise<void> { await this.pool.query('SELECT 1') }

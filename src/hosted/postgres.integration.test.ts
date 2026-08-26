@@ -4,6 +4,7 @@ import { PostgresHostedRunStore } from './postgres'
 import { HostedRunService } from './runService'
 import { DATABASE_MIGRATION_VERSION } from './postgres'
 import { HostedSimulationJobManager } from './jobs'
+import { DEFAULT_PREINDUSTRIAL_PACK } from '../contentPacks'
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const testIfDatabase = databaseUrl ? describe : describe.skip
@@ -14,7 +15,7 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
   beforeEach(async () => {
     const store = await storePromise
     await store.initialize()
-    await store.pool.query('TRUNCATE hosted_telemetry_batches, hosted_jobs, hosted_runs CASCADE')
+    await store.pool.query('TRUNCATE hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_runs CASCADE')
   })
 
   afterAll(async () => { await (await storePromise).close() })
@@ -81,6 +82,13 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
     await recoveredJobs.resumePending()
     await expect(recoveredJobs.get('advance-three-days')).resolves.toMatchObject({ status: 'completed', committedTick: 72 })
     await expect(recoveredService.observe('secret')).resolves.toMatchObject({ tick: 72 })
+  })
+
+  it('persists a validated content pack across hosted catalog reopening', async () => {
+    const store = await storePromise
+    await store.putPack(DEFAULT_PREINDUSTRIAL_PACK)
+    expect((await store.listPacks()).map((pack) => pack.manifest.id)).toEqual([DEFAULT_PREINDUSTRIAL_PACK.manifest.id])
+    expect(await store.getPack(DEFAULT_PREINDUSTRIAL_PACK.manifest.id, DEFAULT_PREINDUSTRIAL_PACK.manifest.version)).toEqual(DEFAULT_PREINDUSTRIAL_PACK)
   })
 })
 

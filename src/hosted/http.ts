@@ -22,11 +22,11 @@ export function createHostedHttpServer(options: HostedHttpServerOptions): Server
       const pathname = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`).pathname
       if (request.method === 'GET' && pathname === '/health') return sendJson(response, 200, { status: 'ok', runId: options.runId })
       const token = bearerToken(request)
-      if (request.method === 'GET' && pathname === '/content-packs') { authorizeToken(token, options.ownerToken); return sendJson(response, 200, await requiredContentPacks(options).list()) }
+      if (request.method === 'GET' && pathname === '/content-packs') { authorizeToken(token, options.ownerToken); return sendJson(response, 200, await requiredContentPacks(options).listPacks()) }
       if (request.method === 'PUT' && pathname === '/content-packs') {
         authorizeToken(token, options.ownerToken)
         const pack = importContentPack(JSON.stringify(await readJson(request, maximumRequestBytes)))
-        return sendJson(response, 201, await requiredContentPacks(options).put(pack))
+        return sendJson(response, 201, await requiredContentPacks(options).putPack(pack))
       }
       if (request.method === 'GET' && pathname === `/runs/${options.runId}/projection`) return sendJson(response, 200, await options.service.view(token))
       if (request.method === 'POST' && pathname === `/runs/${options.runId}/commands`) {
