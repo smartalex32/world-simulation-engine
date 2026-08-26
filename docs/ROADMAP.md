@@ -1662,6 +1662,16 @@ comparison, reproducibility audits, performance budgets, recovery, migrations,
 analytics, import/export, diagnostics, and production-readiness documentation.
 This is an integration milestone, not a place to introduce major new systems.
 
+**Delivered first slice:** `pnpm audit:civilization` now performs a fixed-seed
+cross-system continuity audit. It advances the normal engine through a 30-day
+checkpoint (thereby crossing daily, weekly, and monthly cadence), restores the
+complete versioned snapshot, advances both runs for a further week, and reports
+structured geography, population, household, social, material, civic, learning,
+and development evidence. The audit fails if the recovered canonical state
+diverges from uninterrupted execution. It neither creates a civilization model
+nor claims that remaining polity, technology, warfare, or multi-generation
+systems are complete.
+
 ---
 
 # Cross-Cutting Acceptance Policy
