@@ -217,8 +217,8 @@ export class WorkbenchDatabase {
     const validated = await validateSnapshot(bundle.snapshot)
     const workerContinuation = validateWorkerContinuation((bundle.snapshot as WorkbenchSnapshotEnvelope).workerContinuation)
     const snapshot: WorkbenchSnapshotEnvelope = workerContinuation ? { ...validated, workerContinuation } : validated
-    const events = Array.isArray(bundle.events) ? bundle.events : []
-    const statistics = Array.isArray(bundle.statistics) ? bundle.statistics : []
+    const events = validateImportedEvents(snapshot.state.runId, bundle.events)
+    const statistics = validateImportedStatistics(snapshot.state.runId, bundle.statistics)
     // An imported snapshot without its retained evidence is misleading, and
     // retained evidence without its snapshot is orphaned. Validate first,
     // then commit the complete local bundle in one IndexedDB transaction.
@@ -278,6 +278,44 @@ export class WorkbenchDatabase {
     }
     return this.databasePromise
   }
+}
+
+/** Imported evidence is non-authoritative, but it must still be bound to the
+ * imported run and structurally valid before the transaction begins. */
+export function validateImportedEvents(runId: string, value: unknown): SimulationEvent[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) throw new Error('Import events must be an array')
+  return value.map((event) => {
+    if (!isRecord(event) || typeof event.id !== 'string' || event.id.length === 0 || event.runId !== runId
+      || !nonNegativeSafeInteger(event.tick) || event.version !== 1 || typeof event.type !== 'string'
+      || !isPrimitiveRecord(event.payload) || (event.cellId !== undefined && typeof event.cellId !== 'string')) {
+      throw new Error('Import contains an invalid event')
+    }
+    return event as unknown as SimulationEvent
+  })
+}
+
+/** Statistic metric identifiers remain forward-compatible, while their scope,
+ * tick, numeric value, and run binding are checked before storage. */
+export function validateImportedStatistics(runId: string, value: unknown): StatisticSample[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) throw new Error('Import statistics must be an array')
+  return value.map((sample) => {
+    if (!isRecord(sample) || sample.runId !== runId || !nonNegativeSafeInteger(sample.tick) || sample.metricVersion !== 1
+      || typeof sample.metricId !== 'string' || sample.metricId.length === 0 || typeof sample.value !== 'number' || !Number.isFinite(sample.value)
+      || (sample.scope !== 'world' && sample.scope !== 'community')
+      || (sample.scope === 'world' && sample.scopeId !== undefined)
+      || (sample.scope === 'community' && (typeof sample.scopeId !== 'string' || sample.scopeId.length === 0))) {
+      throw new Error('Import contains an invalid statistic')
+    }
+    return sample as unknown as StatisticSample
+  })
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
+function nonNegativeSafeInteger(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 }
+function isPrimitiveRecord(value: unknown): value is Record<string, string | number | boolean | null> {
+  return isRecord(value) && Object.values(value).every((item) => item === null || typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean')
 }
 
 /** Community scope is part of identity so two catchments cannot overwrite one another. */

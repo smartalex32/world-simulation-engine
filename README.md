@@ -267,6 +267,9 @@ current hosted database schema plus the prior two schema generations; startup
 refuses an outdated database until the guarded migration command succeeds.
 These operator commands require PostgreSQL client tools (`pg_dump` and
 `pg_restore`) on the host running them.
+See [hosted persistence operations](docs/HOSTED_PERSISTENCE_OPERATIONS.md) for
+the schema contract, verified backup/migration/restore sequence, and restart
+recovery behavior.
 Its local HTTP API is intentionally limited to `/health`, owner-authorized run
 projection, and owner-authorized typed run commands. It is not collaboration, a
 public API, or a multi-node scheduler.

@@ -27,7 +27,12 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
   async close(): Promise<void> { await this.pool.end() }
 
   async assertReady(): Promise<void> {
-    const result = await this.pool.query<{ version: number }>('SELECT version FROM world_simulation_schema_migrations ORDER BY version DESC LIMIT 1')
+    let result: { rows: { version: number }[] }
+    try {
+      result = await this.pool.query<{ version: number }>('SELECT version FROM world_simulation_schema_migrations ORDER BY version DESC LIMIT 1')
+    } catch {
+      throw new Error('Hosted PostgreSQL schema is not initialized; create and verify a backup, then run pnpm host:migrate')
+    }
     if ((result.rows[0]?.version ?? 0) !== DATABASE_MIGRATION_VERSION) throw new Error('Hosted PostgreSQL schema is not current; run pnpm host:migrate after verifying a backup')
   }
 
@@ -73,8 +78,8 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
   }
 
   async load(runId: string): Promise<HostedRunRecord | undefined> {
-    const result = await this.pool.query<{ payload: Buffer; sha: string }>('SELECT snapshot_payload AS payload, snapshot_sha256 AS sha FROM hosted_runs WHERE run_id = $1', [runId])
-    return result.rows[0] ? validateHostedRunRecord(decodePayload(result.rows[0].payload, result.rows[0].sha)) : undefined
+    const result = await this.pool.query<StoredPayload>('SELECT snapshot_payload AS payload, snapshot_sha256 AS sha, snapshot_encoding AS encoding FROM hosted_runs WHERE run_id = $1', [runId])
+    return result.rows[0] ? validateHostedRunRecord(decodeStoredPayload(result.rows[0])) : undefined
   }
 
   async save(record: HostedRunRecord): Promise<void> { await this.saveWithTelemetry(record, [], []) }
@@ -89,46 +94,48 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
       if (events.length || statistics.length) {
         const telemetry = encodePayload({ events: [...events], statistics: [...statistics] })
         const ticks = [...events.map((event) => event.tick), ...statistics.map((sample) => sample.tick)]
-        await client.query(`INSERT INTO hosted_telemetry_batches(run_id, first_tick, last_tick, event_count, statistic_count, payload, payload_sha256, payload_uncompressed_bytes)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [valid.runId, Math.min(...ticks), Math.max(...ticks), events.length, statistics.length, telemetry.compressed, telemetry.sha256, telemetry.uncompressedBytes])
+        await client.query(`INSERT INTO hosted_telemetry_batches(run_id, first_tick, last_tick, event_count, statistic_count, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [valid.runId, Math.min(...ticks), Math.max(...ticks), events.length, statistics.length, telemetry.compressed, telemetry.sha256, telemetry.uncompressedBytes, PAYLOAD_ENCODING])
       }
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
 
   async list(ownerId: string): Promise<HostedRunRecord[]> {
-    const result = await this.pool.query<{ payload: Buffer; sha: string }>('SELECT snapshot_payload AS payload, snapshot_sha256 AS sha FROM hosted_runs WHERE owner_id = $1 ORDER BY run_id ASC', [ownerId])
-    return result.rows.map((row) => validateHostedRunRecord(decodePayload(row.payload, row.sha))).sort((a, b) => compareStableText(a.runId, b.runId))
+    const result = await this.pool.query<StoredPayload>('SELECT snapshot_payload AS payload, snapshot_sha256 AS sha, snapshot_encoding AS encoding FROM hosted_runs WHERE owner_id = $1 ORDER BY run_id ASC', [ownerId])
+    return result.rows.map((row) => validateHostedRunRecord(decodeStoredPayload(row))).sort((a, b) => compareStableText(a.runId, b.runId))
   }
 
   async loadJob(runId: string, jobId: string): Promise<HostedSimulationJob | undefined> {
-    const result = await this.pool.query<{ payload: Buffer; sha: string }>('SELECT payload, payload_sha256 AS sha FROM hosted_jobs WHERE run_id = $1 AND job_id = $2', [runId, jobId])
-    return result.rows[0] ? validateHostedJob(decodePayload(result.rows[0].payload, result.rows[0].sha)) : undefined
+    const result = await this.pool.query<StoredPayload>('SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_jobs WHERE run_id = $1 AND job_id = $2', [runId, jobId])
+    return result.rows[0] ? validateHostedJob(decodeStoredPayload(result.rows[0])) : undefined
   }
 
   async saveJob(job: HostedSimulationJob): Promise<void> {
     const valid = validateHostedJob(job); const payload = encodePayload(valid)
-    await this.pool.query(`INSERT INTO hosted_jobs(run_id, job_id, owner_id, status, queue_order, updated_at, payload, payload_sha256, payload_uncompressed_bytes)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-      ON CONFLICT (run_id, job_id) DO UPDATE SET owner_id = EXCLUDED.owner_id, status = EXCLUDED.status, queue_order = EXCLUDED.queue_order, updated_at = EXCLUDED.updated_at, payload = EXCLUDED.payload, payload_sha256 = EXCLUDED.payload_sha256, payload_uncompressed_bytes = EXCLUDED.payload_uncompressed_bytes`,
-    [valid.runId, valid.jobId, valid.ownerId, valid.status, valid.queueOrder, valid.updatedAt, payload.compressed, payload.sha256, payload.uncompressedBytes])
+    await this.pool.query(`INSERT INTO hosted_jobs(run_id, job_id, owner_id, status, queue_order, updated_at, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT (run_id, job_id) DO UPDATE SET owner_id = EXCLUDED.owner_id, status = EXCLUDED.status, queue_order = EXCLUDED.queue_order, updated_at = EXCLUDED.updated_at, payload = EXCLUDED.payload, payload_sha256 = EXCLUDED.payload_sha256, payload_uncompressed_bytes = EXCLUDED.payload_uncompressed_bytes, payload_encoding = EXCLUDED.payload_encoding`,
+    [valid.runId, valid.jobId, valid.ownerId, valid.status, valid.queueOrder, valid.updatedAt, payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
   }
 
   async listJobs(runId: string): Promise<HostedSimulationJob[]> {
-    const result = await this.pool.query<{ payload: Buffer; sha: string }>('SELECT payload, payload_sha256 AS sha FROM hosted_jobs WHERE run_id = $1 ORDER BY queue_order ASC, job_id ASC', [runId])
-    return result.rows.map((row) => validateHostedJob(decodePayload(row.payload, row.sha))).sort((a, b) => a.queueOrder - b.queueOrder || compareStableText(a.jobId, b.jobId))
+    const result = await this.pool.query<StoredPayload>('SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_jobs WHERE run_id = $1 ORDER BY queue_order ASC, job_id ASC', [runId])
+    return result.rows.map((row) => validateHostedJob(decodeStoredPayload(row))).sort((a, b) => a.queueOrder - b.queueOrder || compareStableText(a.jobId, b.jobId))
   }
 
   private async verifyConnection(): Promise<void> { await this.pool.query('SELECT 1') }
   private async saveRun(client: PoolClient, record: HostedRunRecord, payload: EncodedPayload): Promise<void> {
-    await client.query(`INSERT INTO hosted_runs(run_id, owner_id, saved_at, snapshot_payload, snapshot_sha256, snapshot_uncompressed_bytes)
-      VALUES ($1,$2,$3,$4,$5,$6)
-      ON CONFLICT (run_id) DO UPDATE SET owner_id = EXCLUDED.owner_id, saved_at = EXCLUDED.saved_at, snapshot_payload = EXCLUDED.snapshot_payload, snapshot_sha256 = EXCLUDED.snapshot_sha256, snapshot_uncompressed_bytes = EXCLUDED.snapshot_uncompressed_bytes`,
-    [record.runId, record.ownerId, record.savedAt, payload.compressed, payload.sha256, payload.uncompressedBytes])
+    await client.query(`INSERT INTO hosted_runs(run_id, owner_id, saved_at, snapshot_payload, snapshot_sha256, snapshot_uncompressed_bytes, snapshot_encoding)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT (run_id) DO UPDATE SET owner_id = EXCLUDED.owner_id, saved_at = EXCLUDED.saved_at, snapshot_payload = EXCLUDED.snapshot_payload, snapshot_sha256 = EXCLUDED.snapshot_sha256, snapshot_uncompressed_bytes = EXCLUDED.snapshot_uncompressed_bytes, snapshot_encoding = EXCLUDED.snapshot_encoding`,
+    [record.runId, record.ownerId, record.savedAt, payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
   }
 }
 
 interface EncodedPayload { compressed: Buffer; sha256: string; uncompressedBytes: number }
+interface StoredPayload { payload: Buffer; sha: string; encoding: string }
+const PAYLOAD_ENCODING = 'gzip-json-v1'
 export function encodePayload(value: unknown): EncodedPayload {
   const raw = Buffer.from(canonicalStringify(value), 'utf8')
   return { compressed: gzipSync(raw), sha256: createHash('sha256').update(raw).digest('hex'), uncompressedBytes: raw.byteLength }
@@ -138,4 +145,8 @@ export function decodePayload(payload: Buffer, expectedSha256: string): unknown 
   const actual = createHash('sha256').update(raw).digest('hex')
   if (actual !== expectedSha256) throw new Error('Hosted persisted payload checksum does not match')
   return JSON.parse(raw.toString('utf8')) as unknown
+}
+function decodeStoredPayload(payload: StoredPayload): unknown {
+  if (payload.encoding !== PAYLOAD_ENCODING) throw new Error(`Hosted persisted payload encoding is unsupported: ${payload.encoding}`)
+  return decodePayload(payload.payload, payload.sha)
 }
