@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { statisticStorageKey } from './database'
+import { statisticStorageKey, validateImportedEvents, validateImportedStatistics } from './database'
 import { createWorldDraftRecord } from '../simulation/domain/worldDraft'
 import type { StatisticSample } from '../simulation/domain/types'
 
@@ -24,5 +24,17 @@ describe('world draft persistence contract', () => {
     })
     expect(draft).toMatchObject({ version: 2, draftId: 'draft-storage', revision: 0 })
     expect('runId' in draft).toBe(false)
+  })
+})
+
+describe('imported telemetry validation', () => {
+  it('rejects evidence that belongs to another run before an import transaction starts', () => {
+    expect(() => validateImportedEvents('run-a', [{ id: 'event-a', runId: 'run-b', tick: 1, type: 'CLOCK_ADVANCED', version: 1, payload: {} }])).toThrow('invalid event')
+    expect(() => validateImportedStatistics('run-a', [{ runId: 'run-b', tick: 1, metricVersion: 1, metricId: 'population.count', scope: 'world', value: 10 }])).toThrow('invalid statistic')
+  })
+
+  it('accepts structurally valid evidence bound to the imported run', () => {
+    expect(validateImportedEvents('run-a', [{ id: 'event-a', runId: 'run-a', tick: 1, type: 'CLOCK_ADVANCED', version: 1, payload: { hours: 1 } }])).toHaveLength(1)
+    expect(validateImportedStatistics('run-a', [{ runId: 'run-a', tick: 1, metricVersion: 1, metricId: 'population.count', scope: 'world', value: 10 }])).toHaveLength(1)
   })
 })

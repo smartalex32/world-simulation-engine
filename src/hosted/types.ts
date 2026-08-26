@@ -1,4 +1,4 @@
-import type { WorldCreationDraft } from '../simulation/domain/types'
+import type { SimulationEvent, StatisticSample, WorldCreationDraft } from '../simulation/domain/types'
 import type { WorkbenchProjection } from '../projection'
 import type { SimulationCommand, SimulationResponse, WorkbenchSnapshotEnvelope } from '../worker/protocol'
 
@@ -18,6 +18,11 @@ export interface HostedRunStore {
   load(runId: string): Promise<HostedRunRecord | undefined>
   save(record: HostedRunRecord): Promise<void>
   list(ownerId: string): Promise<HostedRunRecord[]>
+}
+
+/** Optional durable telemetry boundary. PostgreSQL implements this atomically with a run snapshot. */
+export interface HostedTelemetryStore {
+  saveWithTelemetry(record: HostedRunRecord, events: readonly SimulationEvent[], statistics: readonly StatisticSample[]): Promise<void>
 }
 
 export interface HostedRunBootstrap {

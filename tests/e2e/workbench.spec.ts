@@ -565,6 +565,10 @@ test('inspects persisted experience and deterministic development at the 720-hou
   await expect.poll(() => developmentSnapshot.count(), { timeout: 30_000 }).toBe(1)
   await expect(developmentSnapshot).toBeEnabled({ timeout: 30_000 })
   await developmentSnapshot.click({ force: true })
+  // Loading is worker-owned. Synchronize on the restored authoritative tick
+  // before asserting the human-formatted calendar text, which renders in a
+  // subsequent React paint on slower Firefox CI workers.
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '720', { timeout: 30_000 })
   await expect(page.getByText('Day 30 · 00:00')).toBeVisible()
   const canvas = page.getByLabel('Hex world map')
   await expect.poll(async () => canvas.evaluate((element) => {

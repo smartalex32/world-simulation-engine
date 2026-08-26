@@ -14,6 +14,18 @@ jobs:
       # The image supplies Chromium, Firefox, WebKit, and their Linux dependencies.
       image: mcr.microsoft.com/playwright:v1.62.1-noble
       options: --user 1001
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: world_simulation_test
+          POSTGRES_USER: world_simulation
+          POSTGRES_PASSWORD: world_simulation
+        options: >-
+          --health-cmd "pg_isready -U world_simulation -d world_simulation_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://world_simulation:world_simulation@postgres:5432/world_simulation_test
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

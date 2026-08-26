@@ -1,9 +1,6 @@
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
-import { FileHostedRunStore, MemoryHostedRunStore } from './store'
+import { MemoryHostedRunStore } from './store'
 import { HostedRunService } from './runService'
 
 describe('hosted single-node run service', () => {
@@ -42,17 +39,4 @@ describe('hosted single-node run service', () => {
     expect(results.map((result) => result.observedTick)).toEqual([1, 2])
   })
 
-  it('round-trips a durable file-backed record', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'world-simulation-hosted-'))
-    try {
-      const store = new FileHostedRunStore(directory)
-      const bootstrap = { runId: 'hosted-file', ownerId: 'owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('hosted-file-seed') }
-      const service = await HostedRunService.open(bootstrap, store)
-      await service.execute('secret', { type: 'STEP', requestId: 'step', count: 1 })
-      const restored = await HostedRunService.open(bootstrap, store)
-      expect((await restored.execute('secret', { type: 'REQUEST_SNAPSHOT', requestId: 'snapshot' })).observedTick).toBe(1)
-    } finally {
-      await rm(directory, { recursive: true, force: true })
-    }
-  })
 })

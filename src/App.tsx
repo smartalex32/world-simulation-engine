@@ -289,6 +289,11 @@ export default function App() {
     if (!current || namedSavePendingRef.current || current.tick === lastAutosavedTick.current) return
     try {
       const snapshot = await requestSnapshot()
+      // A user may start a named save while this queued worker snapshot is
+      // resolving. Do not make a lower-priority autosave write contend with
+      // that explicit save in IndexedDB; the named snapshot is the durable
+      // record the user asked for.
+      if (namedSavePendingRef.current) return
       await database.saveSnapshot(snapshot, 'autosave')
       if (snapshot.state.tick > 0 && snapshot.state.tick % 168 === 0 && snapshot.state.tick !== lastCheckpointTick.current) {
         await database.saveSnapshot(snapshot, 'checkpoint')

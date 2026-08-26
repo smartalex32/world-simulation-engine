@@ -2,7 +2,7 @@ import { WorkbenchProjectionBuilder, type MapProjectionRequest } from '../projec
 import { SimulationEngine } from '../simulation/engine/engine'
 import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
 import type { SimulationResponse, WorkbenchSnapshotEnvelope } from '../worker/protocol'
-import { HOSTED_PROTOCOL_VERSION, validateHostedRunRecord, type HostedCommandResult, type HostedRunBootstrap, type HostedRunCommand, type HostedRunRecord, type HostedRunStore, type HostedRunView } from './types'
+import { HOSTED_PROTOCOL_VERSION, validateHostedRunRecord, type HostedCommandResult, type HostedRunBootstrap, type HostedRunCommand, type HostedRunRecord, type HostedRunStore, type HostedRunView, type HostedTelemetryStore } from './types'
 
 export interface HostedRunObservation { tick: number; digest: string }
 
@@ -69,9 +69,9 @@ export class HostedRunService {
     const operation = this.commandQueue.then(async () => {
       const before = await this.snapshot()
       if (before.state.tick !== expected.tick || before.digest !== expected.digest) throw new Error('Hosted job run state conflict')
-      this.engine.advance(count)
+      const result = this.engine.advance(count)
       const after = await this.snapshot()
-      await this.persist(after)
+      await this.persist(after, result.events, result.statistics)
       observation = { tick: after.state.tick, digest: after.digest }
     })
     this.commandQueue = operation.then(() => undefined, () => undefined)
@@ -88,7 +88,7 @@ export class HostedRunService {
         const result = this.engine.advance(count)
         responses.push(this.frame(command.requestId, result.events, result.statistics))
         responses.push({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch: 1 })
-        await this.persist()
+        await this.persist(undefined, result.events, result.statistics)
         break
       }
       case 'SET_VIEWPORT':
@@ -135,15 +135,20 @@ export class HostedRunService {
     return { ...await this.engine.snapshot(), workerContinuation: { version: 1, ticksPerBatch: 1, batch: { remaining: 0, advanced: 0 } } }
   }
 
-  private async persist(snapshot?: WorkbenchSnapshotEnvelope): Promise<void> {
+  private async persist(snapshot?: WorkbenchSnapshotEnvelope, events: readonly SimulationEvent[] = [], statistics: readonly StatisticSample[] = []): Promise<void> {
     const persistedSnapshot = snapshot ?? await this.snapshot()
     const record: HostedRunRecord = { protocolVersion: HOSTED_PROTOCOL_VERSION, runId: this.bootstrap.runId, ownerId: this.bootstrap.ownerId, savedAt: new Date().toISOString(), snapshot: persistedSnapshot }
-    await this.store.save(record)
+    if (isTelemetryStore(this.store)) await this.store.saveWithTelemetry(record, events, statistics)
+    else await this.store.save(record)
   }
 
   private authorize(ownerToken: string): void {
     if (ownerToken !== this.bootstrap.ownerToken) throw new Error('Hosted run authorization failed')
   }
+}
+
+function isTelemetryStore(store: HostedRunStore): store is HostedRunStore & HostedTelemetryStore {
+  return 'saveWithTelemetry' in store && typeof store.saveWithTelemetry === 'function'
 }
 
 function defaultViewport(width: number, height: number): MapProjectionRequest {
