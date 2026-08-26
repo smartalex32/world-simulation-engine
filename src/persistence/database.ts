@@ -4,9 +4,10 @@ import { validateWorldDraftRecord } from '../simulation/domain/worldDraft'
 import { validateSnapshot } from '../simulation/serialization/snapshot'
 import { validateWorkerContinuation } from '../worker/frameScheduler'
 import type { WorkbenchSnapshotEnvelope } from '../worker/protocol'
+import { validateContentPack, type ContentPack } from '../contentPacks'
 
 const DATABASE_NAME = 'world-simulation-workbench'
-const DATABASE_VERSION = 2
+const DATABASE_VERSION = 3
 const MAX_TICK = Number.MAX_SAFE_INTEGER
 
 export const DEFAULT_HISTORY_EVENT_LIMIT = 200
@@ -30,6 +31,7 @@ export interface SavedSnapshot {
   createdAt: string
   snapshot: WorkbenchSnapshotEnvelope
 }
+export interface StoredContentPack { id: string; version: string; savedAt: string; pack: ContentPack }
 
 interface StoredEvent extends SimulationEvent { storageKey: string }
 type StoredStatistic = StatisticSample & { storageKey: string }
@@ -137,6 +139,26 @@ export class WorkbenchDatabase {
     const transaction = database.transaction('worldDrafts', 'readwrite')
     transaction.objectStore('worldDrafts').delete(draftId)
     await transactionDone(transaction)
+  }
+
+  /** Packs are authored data, separate from a run's immutable selected pack reference. */
+  async saveContentPack(pack: ContentPack): Promise<StoredContentPack> {
+    const validated = validateContentPack(pack).pack
+    const saved: StoredContentPack = { id: validated.manifest.id, version: validated.manifest.version, savedAt: new Date().toISOString(), pack: validated }
+    const database = await this.open()
+    const transaction = database.transaction('contentPacks', 'readwrite')
+    transaction.objectStore('contentPacks').put(saved)
+    await transactionDone(transaction)
+    return saved
+  }
+  async listContentPacks(): Promise<StoredContentPack[]> {
+    const database = await this.open()
+    const records = await request<StoredContentPack[]>(database.transaction('contentPacks').objectStore('contentPacks').getAll())
+    return records.map((record) => ({ ...record, pack: validateContentPack(record.pack).pack })).sort((left, right) => left.id.localeCompare(right.id) || left.version.localeCompare(right.version))
+  }
+  async deleteContentPack(id: string, version: string): Promise<void> {
+    const database = await this.open(); const transaction = database.transaction('contentPacks', 'readwrite')
+    transaction.objectStore('contentPacks').delete([id, version]); await transactionDone(transaction)
   }
 
   async listRuns(): Promise<RunRecord[]> {
@@ -270,6 +292,7 @@ export class WorkbenchDatabase {
             statistics.createIndex('runMetricTick', ['runId', 'metricId', 'tick'])
           }
           if (!database.objectStoreNames.contains('worldDrafts')) database.createObjectStore('worldDrafts', { keyPath: 'draftId' })
+          if (!database.objectStoreNames.contains('contentPacks')) database.createObjectStore('contentPacks', { keyPath: ['id', 'version'] })
         }
         opening.onsuccess = () => resolve(opening.result)
         opening.onerror = () => reject(opening.error ?? new Error('Unable to open IndexedDB'))
