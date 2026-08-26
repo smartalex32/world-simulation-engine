@@ -42,7 +42,7 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
 
   it('migrates each retained prior database generation to the current schema', async () => {
     const store = await storePromise
-    for (const version of [1, 2] as const) {
+    for (const version of [2, 3] as const) {
       await installLegacySchema(store, version)
       await store.initialize()
       const current = await store.pool.query<{ version: number }>('SELECT version FROM world_simulation_schema_migrations ORDER BY version DESC LIMIT 1')
@@ -92,8 +92,8 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
   })
 })
 
-async function installLegacySchema(store: PostgresHostedRunStore, version: 1 | 2): Promise<void> {
-  await store.pool.query('DROP TABLE IF EXISTS hosted_telemetry_batches, hosted_jobs, hosted_runs, world_simulation_schema_migrations CASCADE')
+async function installLegacySchema(store: PostgresHostedRunStore, version: 2 | 3): Promise<void> {
+  await store.pool.query('DROP TABLE IF EXISTS hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_runs, world_simulation_schema_migrations CASCADE')
   await store.pool.query('CREATE TABLE world_simulation_schema_migrations (version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())')
   await store.pool.query(`CREATE TABLE hosted_runs (
     run_id text PRIMARY KEY, owner_id text NOT NULL, saved_at timestamptz NOT NULL,
@@ -105,12 +105,17 @@ async function installLegacySchema(store: PostgresHostedRunStore, version: 1 | 2
     updated_at timestamptz NOT NULL, payload bytea NOT NULL, payload_sha256 text NOT NULL,
     payload_uncompressed_bytes integer NOT NULL CHECK (payload_uncompressed_bytes > 0), PRIMARY KEY (run_id, job_id)
   )`)
-  if (version === 2) {
+  if (version >= 2) {
     await store.pool.query(`CREATE TABLE hosted_telemetry_batches (
       batch_id bigserial PRIMARY KEY, run_id text NOT NULL REFERENCES hosted_runs(run_id) ON DELETE CASCADE,
       first_tick bigint NOT NULL, last_tick bigint NOT NULL, event_count integer NOT NULL, statistic_count integer NOT NULL,
       payload bytea NOT NULL, payload_sha256 text NOT NULL, payload_uncompressed_bytes integer NOT NULL CHECK (payload_uncompressed_bytes > 0), created_at timestamptz NOT NULL DEFAULT now()
     )`)
+  }
+  if (version >= 3) {
+    await store.pool.query("ALTER TABLE hosted_runs ADD COLUMN snapshot_encoding text NOT NULL DEFAULT 'gzip-json-v1'")
+    await store.pool.query("ALTER TABLE hosted_jobs ADD COLUMN payload_encoding text NOT NULL DEFAULT 'gzip-json-v1'")
+    await store.pool.query("ALTER TABLE hosted_telemetry_batches ADD COLUMN payload_encoding text NOT NULL DEFAULT 'gzip-json-v1'")
   }
   await store.pool.query('INSERT INTO world_simulation_schema_migrations(version) VALUES ($1)', [version])
 }

@@ -12,7 +12,9 @@ describe('content packs', () => {
     const foundation = { ...DEFAULT_PREINDUSTRIAL_PACK, manifest: { ...DEFAULT_PREINDUSTRIAL_PACK.manifest, id: 'setting.foundation', version: '1.0.0' } }
     const extension = { ...DEFAULT_PREINDUSTRIAL_PACK, manifest: { ...DEFAULT_PREINDUSTRIAL_PACK.manifest, id: 'setting.extension', version: '1.0.0', dependencies: [{ id: 'setting.foundation', version: '1.0.0' }] } }
     expect(createContentPackRegistry([extension, foundation]).resolve('setting.extension').map((pack) => pack.manifest.id)).toEqual(['setting.foundation', 'setting.extension'])
-    expect(diffContentPacks(foundation, extension).map((item) => item.path)).toContain('manifest')
+    expect(diffContentPacks(foundation, extension).map((item) => item.path)).toContain('manifest.id')
+    const changed = { ...foundation, personVariables: foundation.personVariables.map((definition) => definition.id === 'person.trait.curiosity' ? { ...definition, defaultValue: 600 } : definition) }
+    expect(diffContentPacks(foundation, changed)).toContainEqual(expect.objectContaining({ path: 'personVariables[person.trait.curiosity].defaultValue', before: 500, after: 600 }))
   })
   it('rejects unsafe pack structure and evaluates named deterministic chance', () => {
     expect(() => validateContentPack({ ...DEFAULT_PREINDUSTRIAL_PACK, manifest: { ...DEFAULT_PREINDUSTRIAL_PACK.manifest, id: 'Bad ID' } })).toThrow('Invalid content pack')
