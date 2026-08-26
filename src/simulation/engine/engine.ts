@@ -182,7 +182,8 @@ export class SimulationEngine {
     const creationKey = JSON.stringify(creation)
     const { world, random } = generateValley(creation.seed, creation.width, creation.height, { name: creation.name, hexRadiusMeters: creation.hexRadiusMeters, settlements: creation.settlements, roads: creation.roads, terrainBase: creation.terrainBase, terrainOverrides: creation.terrainOverrides, elevationOverrides: creation.elevationOverrides, resourceCapacityOverrides: creation.resourceCapacityOverrides, idSuffix: creationKey })
     const preserveLegacyHomePlacement = typeof seedOrDraft === 'string' || (draft.populationZones.length === 0 && draft.initialPopulationCount === 200)
-    const generatedPopulation = generatePopulation(world.grid.cells, creation.populationZones, random, preserveLegacyHomePlacement)
+    const runtime = createContentPackRuntime(contentPack)
+    const generatedPopulation = generatePopulation(world.grid.cells, creation.populationZones, random, preserveLegacyHomePlacement, runtime.variables)
     const catchments = createTwoCatchmentGeography({ cells: world.grid.cells, width: creation.width, height: creation.height })
     const worldCellById = new Map(world.grid.cells.map((cell) => [cell.id, cell]))
     const communities: CommunitySimulationState[] = catchments.map((catchment) => {
@@ -199,8 +200,6 @@ export class SimulationEngine {
     // A school is an authored place service; an unmarked home cell is never silently promoted into one.
     const organizations = createInitialSchools(generatedPopulation.people, world.settlements.map((settlement) => settlement.anchorCellId))
     const governance = createLocalGovernance(communities, generatedPopulation.people)
-    const runtime = createContentPackRuntime(contentPack)
-    if (runtime.pack.manifest.id !== DEFAULT_PREINDUSTRIAL_PACK.manifest.id || runtime.pack.manifest.version !== DEFAULT_PREINDUSTRIAL_PACK.manifest.version) throw new Error('Custom content packs require registry migration before run creation')
     return new SimulationEngine({
       runId,
       tick: 0,
@@ -212,8 +211,8 @@ export class SimulationEngine {
         worldGeneratorVersion: WORLD_GENERATOR_VERSION,
         worldCreation: creation,
         baseTickHours: BASE_TICK_HOURS,
-        contentPackId: DEFAULT_PREINDUSTRIAL_PACK.manifest.id,
-        contentPackVersion: DEFAULT_PREINDUSTRIAL_PACK.manifest.version,
+        contentPackId: runtime.pack.manifest.id,
+        contentPackVersion: runtime.pack.manifest.version,
         contentPackModelVersion: 1,
         variableRegistryVersion: VARIABLE_REGISTRY_VERSION,
         influenceRegistryVersion: INFLUENCE_REGISTRY_VERSION,
@@ -258,10 +257,10 @@ export class SimulationEngine {
     }, random, runtime)
   }
 
-  static async restore(snapshotValue: unknown): Promise<SimulationEngine> {
-    const snapshot = await validateSnapshot(snapshotValue)
+  static async restore(snapshotValue: unknown, contentPack: ContentPack = DEFAULT_PREINDUSTRIAL_PACK): Promise<SimulationEngine> {
+    const snapshot = await validateSnapshot(snapshotValue, contentPack)
     const state = structuredClone(snapshot.state)
-    return new SimulationEngine(state, new RandomProvider(state.config.seed, state.randomStreams))
+    return new SimulationEngine(state, new RandomProvider(state.config.seed, state.randomStreams), createContentPackRuntime(contentPack))
   }
 
   step(count = 1): StepResult {
@@ -290,9 +289,9 @@ export class SimulationEngine {
       this.livingPersonCache = undefined
       if (this.advanceAges(pushEvent)) this.livingPersonCache = undefined
       for (const person of this.livingPeople()) {
-        adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, HOURLY_HUNGER_INCREASE)
-        adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, HOURLY_FATIGUE_INCREASE)
-        adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.socialConnection, HOURLY_SOCIAL_NEED_INCREASE)
+        adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, HOURLY_HUNGER_INCREASE, this.contentPackRuntime.variables)
+        adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, HOURLY_FATIGUE_INCREASE, this.contentPackRuntime.variables)
+        adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.socialConnection, HOURLY_SOCIAL_NEED_INCREASE, this.contentPackRuntime.variables)
       }
 
       for (const person of this.livingPeople()) {
@@ -313,7 +312,7 @@ export class SimulationEngine {
 
       const occupantsByCell = this.buildOccupancy(true)
       const occupantsByActivityLocation = this.buildActivityOccupancy()
-      const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: this.roadCellIds, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById, influenceRegistry: this.contentPackRuntime.influences }
+      const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: this.roadCellIds, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById, influenceRegistry: this.contentPackRuntime.influences, variableRegistry: this.contentPackRuntime.variables }
       const actionRng = this.random.stream('actions')
       const decisions = this.livingPeople()
         .filter((person) => !person.journey && person.schoolAttendance === undefined)
@@ -451,7 +450,7 @@ export class SimulationEngine {
       activityLocations: this.state.activityLocations,
       communities: this.state.communities,
       relationships: this.state.relationships,
-      variableDefinitions: PERSON_VARIABLE_DEFINITIONS,
+      variableDefinitions: this.contentPackRuntime.variableDefinitions,
       communityVariableDefinitions: COMMUNITY_VARIABLE_DEFINITIONS,
       communityFeedbackDefinitions: COMMUNITY_FEEDBACK_DEFINITIONS,
       digest,
@@ -910,7 +909,7 @@ export class SimulationEngine {
         ageYears: person.ageYears,
         experience: completed.experience,
       })
-      setPersonVariable(person.variables, PERSON_VARIABLE_ID.curiosity, developed.currentValuePermille)
+      setPersonVariable(person.variables, PERSON_VARIABLE_ID.curiosity, developed.currentValuePermille, this.contentPackRuntime.variables)
       if (developed.trace.appliedDeltaPermille === 0) continue
       const trace = {
         edgeId: developed.trace.edgeId,
@@ -1062,7 +1061,7 @@ export class SimulationEngine {
           edgeId: definition.edgeId,
           basePlasticityPermille: definition.plasticityPermille,
         })
-        setPersonVariable(person.variables, definition.targetId, developed.currentValuePermille)
+        setPersonVariable(person.variables, definition.targetId, developed.currentValuePermille, this.contentPackRuntime.variables)
         if (developed.appliedDeltaPermille === 0) continue
         const trace = {
           edgeId: definition.edgeId,
@@ -1240,18 +1239,18 @@ export class SimulationEngine {
     if (!household || household.id !== secondParent.householdId) return
     const ordinal = this.state.people.reduce((maximum, person) => Math.max(maximum, Number(/^person-(\d+)$/.exec(person.id)?.[1] ?? 0)), 0) + 1
     const id = `person-${ordinal.toString().padStart(4, '0')}`
-    const variables = createDefaultPersonVariableValues()
-    for (const definition of PERSON_VARIABLE_DEFINITIONS) {
+    const variables = createDefaultPersonVariableValues({}, this.contentPackRuntime.variables)
+    for (const definition of this.contentPackRuntime.variableDefinitions) {
       const firstValue = getPersonVariable(firstParent.variables, definition.id)
       const secondValue = getPersonVariable(secondParent.variables, definition.id)
-      setPersonVariable(variables, definition.id, Math.round((firstValue + secondValue) / 2))
+      setPersonVariable(variables, definition.id, Math.round((firstValue + secondValue) / 2), this.contentPackRuntime.variables)
     }
     const inheritance = calculateCuriosityInheritance({
       parentIds: [firstParent.id, secondParent.id].sort(compareIds) as [string, string],
       parentValuesPermille: [getPersonVariable(firstParent.variables, PERSON_VARIABLE_ID.curiosity), getPersonVariable(secondParent.variables, PERSON_VARIABLE_ID.curiosity)],
       randomVariationPermille: this.random.stream(LIFE_CYCLE_STREAM.inheritance).nextInt(1001),
     })
-    setPersonVariable(variables, PERSON_VARIABLE_ID.curiosity, inheritance.valuePermille)
+    setPersonVariable(variables, PERSON_VARIABLE_ID.curiosity, inheritance.valuePermille, this.contentPackRuntime.variables)
     const child: SimulationState['people'][number] = {
       id, ageYears: 0, ageHoursIntoYear: 0, lifeStage: 'infant', lifeStatus: 'alive', birthTick: this.state.tick,
       locationCellId: household.homeCellId, homeCellId: household.homeCellId, householdId: household.id,
@@ -1293,8 +1292,8 @@ export class SimulationEngine {
     const initiator = this.personById.get(encounter.initiatorId)
     const participant = this.personById.get(encounter.participantId)
     if (!initiator || !participant) throw new Error('Resolved encounter contains a missing person')
-    adjustPersonVariable(initiator.variables, PERSON_VARIABLE_ID.socialConnection, -ENCOUNTER_SOCIAL_NEED_RECOVERY)
-    adjustPersonVariable(participant.variables, PERSON_VARIABLE_ID.socialConnection, -ENCOUNTER_SOCIAL_NEED_RECOVERY)
+    adjustPersonVariable(initiator.variables, PERSON_VARIABLE_ID.socialConnection, -ENCOUNTER_SOCIAL_NEED_RECOVERY, this.contentPackRuntime.variables)
+    adjustPersonVariable(participant.variables, PERSON_VARIABLE_ID.socialConnection, -ENCOUNTER_SOCIAL_NEED_RECOVERY, this.contentPackRuntime.variables)
     const shared = {
       tick: this.state.tick,
       cellId: encounter.cellId,
@@ -1438,7 +1437,7 @@ export class SimulationEngine {
     }
     for (const person of this.state.people) {
       if (!this.cellById.has(person.locationCellId)) throw new Error(`Person ${person.id} occupies a missing cell`)
-      validatePersonVariableValues(person.variables)
+      validatePersonVariableValues(person.variables, this.contentPackRuntime.variables)
       if (!person.knowledge || Object.values(person.knowledge).some((value) => !Number.isSafeInteger(value) || value < 0 || value > 1000)) throw new Error(`Person ${person.id} has invalid knowledge values`)
       if (typeof person.schoolLearningHours !== 'number' || !Number.isSafeInteger(person.schoolLearningHours) || person.schoolLearningHours < 0) throw new Error(`Person ${person.id} has invalid school learning hours`)
       if (person.schoolAttendance && (!this.state.organizations.some((organization) => organization.id === person.schoolAttendance?.schoolId) || !Number.isSafeInteger(person.schoolAttendance.returnTick) || person.schoolAttendance.returnTick <= this.state.tick)) throw new Error(`Person ${person.id} has invalid school attendance state`)

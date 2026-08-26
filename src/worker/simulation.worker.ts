@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import { SimulationEngine } from '../simulation/engine/engine'
+import { DEFAULT_PREINDUSTRIAL_PACK, type ContentPack } from '../contentPacks'
 import { WorkbenchProjectionBuilder, type MapProjectionRequest } from '../projection'
 import type { SimulationEvent, StatisticSample, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
@@ -30,9 +31,9 @@ function respond(response: SimulationResponse): void {
   worker.postMessage(response)
 }
 
-async function create(creation: WorldCreationDraft, requestId?: string): Promise<void> {
+async function create(creation: WorldCreationDraft, requestId?: string, contentPack: ContentPack = DEFAULT_PREINDUSTRIAL_PACK): Promise<void> {
   initialCreation = creation
-  engine = SimulationEngine.create(initialCreation)
+  engine = SimulationEngine.create(initialCreation, 32, 24, contentPack)
   installProjectionBuilder()
   const snapshot = await engine.snapshot()
   clearPendingTelemetry()
@@ -143,7 +144,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
       switch (command.type) {
         case 'CREATE_RUN':
           playing = false
-          await create(command.creation, command.requestId)
+          await create(command.creation, command.requestId, command.contentPack)
           break
         case 'CREATE_DRAFT': {
           if (activeDraft) throw new Error(`A world draft is already active: ${activeDraft.draftId}`)
@@ -242,7 +243,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
         }
         case 'LOAD_RUN': {
           playing = false
-          engine = await SimulationEngine.restore(command.snapshot)
+          engine = await SimulationEngine.restore(command.snapshot, command.contentPack)
           initialCreation = command.snapshot.state.config.worldCreation
           installProjectionBuilder()
           restoreWorkerContinuation(command.snapshot.workerContinuation)

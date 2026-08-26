@@ -1,11 +1,12 @@
 import type { MapProjectionRequest, WorkbenchProjection } from '../projection'
 import type { DraftViewportProjection, DraftViewportRequest, SimulationEvent, SnapshotEnvelope, StatisticSample, Terrain, WorldCreationDraft, WorldDraftPreview, WorldDraftRecord } from '../simulation/domain/types'
 import type { WorkerContinuationState } from './frameScheduler'
+import type { ContentPack } from '../contentPacks'
 
 export type WorkbenchSnapshotEnvelope = SnapshotEnvelope & { workerContinuation?: WorkerContinuationState }
 
 export type SimulationCommand =
-  | { type: 'CREATE_RUN'; requestId: string; creation: WorldCreationDraft }
+  | { type: 'CREATE_RUN'; requestId: string; creation: WorldCreationDraft; contentPack?: ContentPack }
   | { type: 'CREATE_DRAFT'; requestId: string; draftId: string; draft: WorldCreationDraft }
   | { type: 'HYDRATE_DRAFT'; requestId: string; draft: WorldDraftRecord }
   | { type: 'UPDATE_DRAFT'; requestId: string; draftId: string; draft: WorldCreationDraft; expectedRevision?: number }
@@ -18,7 +19,7 @@ export type SimulationCommand =
   | { type: 'REQUEST_DRAFT_VIEWPORT'; requestId: string; draftId: string; viewport: DraftViewportRequest }
   | { type: 'COMMIT_DRAFT'; requestId: string; draftId: string; expectedRevision?: number }
   | { type: 'DISCARD_DRAFT'; requestId: string; draftId: string }
-  | { type: 'LOAD_RUN'; requestId: string; snapshot: WorkbenchSnapshotEnvelope }
+  | { type: 'LOAD_RUN'; requestId: string; snapshot: WorkbenchSnapshotEnvelope; contentPack?: ContentPack }
   | { type: 'STEP'; requestId: string; count?: number }
   | { type: 'PLAY'; requestId: string; ticksPerBatch: number }
   | { type: 'PAUSE'; requestId: string }

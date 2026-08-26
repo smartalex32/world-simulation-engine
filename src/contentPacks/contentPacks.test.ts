@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackRegistry, createContentPackRuntime, createPackVariableValues, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack, validatePackVariableValues } from '.'
+import { SimulationEngine } from '../simulation/engine/engine'
 
 describe('content packs', () => {
   it('round-trips the default setting through canonical export', () => {
@@ -27,5 +28,19 @@ describe('content packs', () => {
     const values = createPackVariableValues(runtime, { 'person.trait.curiosity': 750 })
     expect(values['person.trait.curiosity']).toBe(750)
     expect(() => validatePackVariableValues(runtime, { ...values, unexpected: 1 })).toThrow('missing or unexpected')
+  })
+  it('selects an immutable custom pack for a run and restores it only with that pack', async () => {
+    const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    pack.manifest = { ...pack.manifest, id: 'setting.preindustrial.custom', version: '1.0.0', name: 'Custom preindustrial setting' }
+    pack.personVariables = [...pack.personVariables, {
+      id: 'person.trait.diligence', label: 'Diligence', layer: 'trait', category: 'temperament', unit: 'permille', order: 95,
+      minimum: 0, maximum: 1000, defaultValue: 500, initializationMinimum: 0, initializationMaximum: 1000, enabled: true,
+    }]
+    const engine = SimulationEngine.create('content-pack-custom-run', 8, 8, pack)
+    expect(engine.project().variableDefinitions.map(({ id }) => id)).toContain('person.trait.diligence')
+    const snapshot = await engine.snapshot()
+    await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('Unsupported content pack configuration')
+    const restored = await SimulationEngine.restore(snapshot, pack)
+    expect(restored.project().variableDefinitions.map(({ id }) => id)).toContain('person.trait.diligence')
   })
 })

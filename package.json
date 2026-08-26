@@ -17,6 +17,7 @@
     "host:migrate": "tsx scripts/migrate-hosted.ts",
     "host:backup": "tsx scripts/backup-hosted.ts",
     "host:restore": "tsx scripts/restore-hosted.ts",
+    "content-pack": "tsx scripts/content-pack.ts",
     "benchmark:scale": "tsx scripts/benchmark-scale.ts",
     "audit:civilization": "tsx scripts/audit-civilization.ts"
   },

@@ -31,6 +31,7 @@ import { validateCommunitySimulationState } from '../community/invariants'
 import { COHORT_MODEL_VERSION } from '../cohorts/model'
 import { migrateSnapshotSchema } from './migrations'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
+import { createContentPackRuntime, type ContentPack } from '../../contentPacks'
 
 export function canonicalStringify(value: unknown): string {
   return JSON.stringify(sortValue(value))
@@ -64,16 +65,20 @@ export async function createSnapshot(state: SimulationState): Promise<SnapshotEn
   }
 }
 
-export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope> {
+/** A caller supplies the exact immutable pack selected for a non-default run.
+ * Snapshot payloads carry only its stable reference so content is never silently
+ * embedded, reinterpreted, or changed by a later pack edit. */
+export async function validateSnapshot(value: unknown, contentPack: ContentPack = DEFAULT_PREINDUSTRIAL_PACK): Promise<SnapshotEnvelope> {
   const snapshot = migrateSnapshotSchema(value, SNAPSHOT_SCHEMA_VERSION) as Partial<SnapshotEnvelope>
   if (snapshot.engineVersion !== ENGINE_VERSION) throw new Error(`Unsupported engine version: ${String(snapshot.engineVersion)}`)
   if (!snapshot.state || typeof snapshot.digest !== 'string') throw new Error('Snapshot is missing state or digest')
   if (snapshot.state.config?.baseTickHours !== 1 || !Number.isSafeInteger(snapshot.state.tick) || snapshot.state.tick < 0) {
     throw new Error('Snapshot contains an invalid clock')
   }
+  const runtime = createContentPackRuntime(contentPack)
   if (snapshot.state.config.contentPackModelVersion !== CONTENT_PACK_MODEL_VERSION
-    || snapshot.state.config.contentPackId !== DEFAULT_PREINDUSTRIAL_PACK.manifest.id
-    || snapshot.state.config.contentPackVersion !== DEFAULT_PREINDUSTRIAL_PACK.manifest.version) {
+    || snapshot.state.config.contentPackId !== runtime.pack.manifest.id
+    || snapshot.state.config.contentPackVersion !== runtime.pack.manifest.version) {
     throw new Error('Unsupported content pack configuration')
   }
   if (snapshot.state.config.variableRegistryVersion !== VARIABLE_REGISTRY_VERSION) {
@@ -129,7 +134,7 @@ export async function validateSnapshot(value: unknown): Promise<SnapshotEnvelope
   }
   if (!Array.isArray(snapshot.state.people)) throw new Error('Snapshot contains an invalid population')
   for (const person of snapshot.state.people) {
-    validatePersonVariableValues(person.variables)
+    validatePersonVariableValues(person.variables, runtime.variables)
     if (!person.knowledge || Object.keys(person.knowledge).sort().join('|') !== 'knowledge.foraging|knowledge.localTerrain') throw new Error(`Person ${person.id} contains invalid knowledge records`)
     if (Object.values(person.knowledge).some((value) => !Number.isSafeInteger(value) || value < 0 || value > 1000)) throw new Error(`Person ${person.id} contains invalid knowledge values`)
     if (typeof person.schoolLearningHours !== 'number' || !Number.isSafeInteger(person.schoolLearningHours) || person.schoolLearningHours < 0) throw new Error(`Person ${person.id} contains invalid school learning hours`)

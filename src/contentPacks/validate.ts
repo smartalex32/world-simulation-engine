@@ -1,4 +1,5 @@
 import { canonicalStringify } from '../simulation/serialization/snapshot'
+import { PERSON_VARIABLE_IDS } from '../simulation/variables/types'
 import type { ContentPack, ContentPackDiagnostic, DeterministicCondition, DeterministicExpression, ValidatedContentPack } from './types'
 
 /** Parse, validate, and canonicalize imported pack data before it becomes selectable. */
@@ -19,6 +20,9 @@ export function validateContentPack(value: unknown): ValidatedContentPack {
     if (!stableId(definition.id) || !Number.isSafeInteger(definition.minimum) || !Number.isSafeInteger(definition.maximum) || definition.minimum > definition.maximum || !Number.isSafeInteger(definition.defaultValue) || definition.defaultValue < definition.minimum || definition.defaultValue > definition.maximum) diagnostics.push({ path: `personVariables[${index}]`, message: 'Variable bounds/default are invalid' })
   }
   const variableIds = new Set((pack.personVariables ?? []).map((item) => item.id))
+  for (const requiredId of PERSON_VARIABLE_IDS) {
+    if (!variableIds.has(requiredId)) diagnostics.push({ path: 'personVariables', message: `Pack is missing required engine variable: ${requiredId}` })
+  }
   for (const [index, influence] of (pack.influences ?? []).entries()) {
     if (!stableId(influence.id) || !variableIds.has(influence.sourceId) || !Number.isSafeInteger(influence.weightPermille)) diagnostics.push({ path: `influences[${index}]`, message: 'Influence must reference a pack variable and use integer permille weight' })
   }
