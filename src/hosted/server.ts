@@ -3,6 +3,7 @@ import { createHostedHttpServer } from './http'
 import { HostedSimulationJobManager } from './jobs'
 import { HostedRunService } from './runService'
 import { PostgresHostedRunStore } from './postgres'
+import { DEFAULT_PREINDUSTRIAL_PACK, MemoryContentPackCatalog } from '../contentPacks'
 
 const port = numberEnvironment('PORT', 8787)
 const bindHost = hostEnvironment('HOSTED_BIND_HOST', '127.0.0.1')
@@ -24,7 +25,7 @@ const service = await HostedRunService.open(bootstrap, store)
 const jobs = new HostedSimulationJobManager(service, store, ownerId, ownerToken)
 await jobs.resumePending()
 
-createHostedHttpServer({ runId, ownerToken, service, jobs }).listen(port, bindHost, () => {
+createHostedHttpServer({ runId, ownerToken, service, jobs, contentPacks: new MemoryContentPackCatalog([DEFAULT_PREINDUSTRIAL_PACK]) }).listen(port, bindHost, () => {
   console.info(`Hosted single-node simulation listening on http://${bindHost}:${port} for run ${runId}`)
 })
 

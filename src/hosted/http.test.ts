@@ -5,6 +5,7 @@ import { createHostedHttpServer } from './http'
 import { HostedSimulationJobManager } from './jobs'
 import { HostedRunService } from './runService'
 import { MemoryHostedRunStore } from './store'
+import { DEFAULT_PREINDUSTRIAL_PACK, MemoryContentPackCatalog } from '../contentPacks'
 
 describe('hosted HTTP boundary', () => {
   it('uses bounded bodies and accurate authorization/not-found status codes', async () => {
@@ -30,5 +31,18 @@ describe('hosted HTTP boundary', () => {
       server.close()
       await once(server, 'close')
     }
+  })
+})
+
+describe('hosted content-pack boundary', () => {
+  it('lists and accepts only validated owner-authorized packs', async () => {
+    const store = new MemoryHostedRunStore(); const service = await HostedRunService.open({ runId: 'pack-run', ownerId: 'owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('pack-seed') }, store)
+    const server = createHostedHttpServer({ runId: 'pack-run', ownerToken: 'secret', service, jobs: new HostedSimulationJobManager(service, store, 'owner', 'secret'), contentPacks: new MemoryContentPackCatalog([DEFAULT_PREINDUSTRIAL_PACK]) })
+    server.listen(0, '127.0.0.1'); await once(server, 'listening'); const address = server.address(); if (!address || typeof address === 'string') throw new Error('Expected TCP')
+    try {
+      const base = `http://127.0.0.1:${address.port}`; const headers = { authorization: 'Bearer secret', 'content-type': 'application/json' }
+      expect(await (await fetch(`${base}/content-packs`, { headers })).json()).toHaveLength(1)
+      expect((await fetch(`${base}/content-packs`, { method: 'PUT', headers, body: JSON.stringify({ nope: true }) })).status).toBe(400)
+    } finally { server.close(); await once(server, 'close') }
   })
 })
