@@ -29,7 +29,7 @@ export function validatePackVariableValues(runtime: ContentPackRuntime, values: 
   if (keys.length !== runtime.variableDefinitions.length) throw new Error('Pack variable values have missing or unexpected entries')
   for (const definition of runtime.variableDefinitions) {
     const value = values[definition.id]
-    if (!Number.isSafeInteger(value) || value < definition.minimum || value > definition.maximum) throw new Error(`Pack variable value is invalid: ${definition.id}`)
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < definition.minimum || value > definition.maximum) throw new Error(`Pack variable value is invalid: ${definition.id}`)
   }
 }
 
