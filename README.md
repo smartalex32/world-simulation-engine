@@ -210,13 +210,19 @@ population reconciliation and snapshot validation reject conservation or
 identity violations. The validation suite exercises 10,000 detailed people plus
 a 100,000-person cohort through advance and snapshot restore.
 
-Milestone 58 begins retained settlement scale. Each geographic settlement
-evaluates nearby living homes, catchment resource capacity, and water access on
-a monthly cadence. A 20% lower-population buffer prevents a retained
-homestead/hamlet/village/town/city scale from oscillating at a boundary.
-Transitions are explicit events with population, density, resource, and access
-evidence. The system does not assign people settlement membership or invent
-unimplemented regional migration behavior.
+Settlements retain an authoritative regional ledger separate from their authored
+geography: explicit extent, resident households, linked markets and services,
+access, housing/food/service/material capacity, household stores, lifecycle
+status, and transition evidence. Monthly reconciliation derives this only from
+authoritative homes, organizations, markets, roads, terrain, and inventories.
+Detailed household relocation uses its existing named RNG stream and now retains
+settlement-level employment, food, housing, safety, ties, infrastructure,
+services, geography, and shock factors. Cohorts migrate as bounded, exact
+allocation transfers from contracting or abandoned settlements to active
+settlements with housing capacity; their in/out totals and trace remain
+serialized. Settlement status supports formation, growth, contraction,
+abandonment, resettlement, and urban/rural transition evidence without assigning
+governance, culture, or beliefs by membership.
 
 Milestone 53 begins large-landmass authoring with an explicit physical hex
 radius. Authors may choose a 100 m–10 km axial-cell radius; it is normalized,
