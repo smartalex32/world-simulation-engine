@@ -8,8 +8,8 @@ import type {
 } from '../community/types'
 import type { SettlementTemplateId } from '../spatial/settlementTemplates'
 
-export const ENGINE_VERSION = '0.39.0'
-export const SNAPSHOT_SCHEMA_VERSION = 38
+export const ENGINE_VERSION = '0.40.0'
+export const SNAPSHOT_SCHEMA_VERSION = 39
 /** Versioned content-pack selection is authoritative configuration, not UI state. */
 export const CONTENT_PACK_MODEL_VERSION = 2
 export const BASE_TICK_HOURS = 1
@@ -98,9 +98,29 @@ export interface SettlementState {
   catchmentCellIds?: string[]
   /** Retained geographic scale; it is updated only by the settlement system. */
   scale?: SettlementScale
+  /** Settlement-owned regional state; it is distinct from authored geography. */
+  regional?: SettlementRegionalState
 }
 
 export type SettlementScale = 'landmark' | 'hamlet' | 'village' | 'town' | 'city'
+
+export interface SettlementRegionalState {
+  version: 1
+  status: 'active' | 'contracting' | 'abandoned'
+  extentCellIds: string[]
+  residentHouseholdIds: string[]
+  /** Detailed residents are identified by household; distant residents remain aggregate. */
+  detailedResidentPopulationCount: number
+  cohortResidentPopulationCount: number
+  marketIds: string[]
+  organizationIds: string[]
+  accessPermille: number
+  capacity: { housing: number; food: number; services: number; materials: number }
+  materials: { food: number; tools: number }
+  /** Retained so urban/rural classification changes are explicit lifecycle transitions. */
+  scale?: SettlementScale
+  lastTransition?: { tick: number; kind: 'formed' | 'growth' | 'contraction' | 'abandoned' | 'resettled' | 'urbanized' | 'ruralized'; reason: string }
+}
 
 /** Exact initial resident allocation for a disjoint set of passable cells. */
 export interface PopulationPlacementZone {
@@ -331,6 +351,22 @@ export interface HouseholdRelocationTrace {
   utilityPermille: number
   probabilityPermille: number
   randomRollPermille: number
+  settlementMigration?: SettlementMigrationTrace
+}
+
+/** Structured regional rationale retained with an accepted household move. */
+export interface SettlementMigrationTrace {
+  sourceSettlementId?: string
+  destinationSettlementId?: string
+  employmentPermille: number
+  foodPermille: number
+  housingPermille: number
+  safetyPermille: number
+  tiesPermille: number
+  infrastructurePermille: number
+  servicesPermille: number
+  geographyPermille: number
+  shockPermille: number
 }
 export type ParentChildLinkId = string
 export type ActivityLocationId = string
@@ -758,7 +794,7 @@ export interface RunConfiguration {
 
 /** Exact, authoritative aggregate for ordinary distant people. It is static until later cohort systems own advancement. */
 export interface PopulationCohortState {
-  version: 2
+  version: 3
   id: string
   sourceZoneId: string
   populationCount: number
@@ -769,7 +805,18 @@ export interface PopulationCohortState {
   economicProductivityPermille: number
   culturalCohesionPermille: number
   developmentIndexPermille: number
+  lastMigration?: CohortMigrationTrace
   eventTotals: { births: number; deaths: number; migrationIn: number; migrationOut: number }
+}
+
+export interface CohortMigrationTrace {
+  tick: number
+  sourceSettlementId: string
+  destinationSettlementId: string
+  sourceCellId: string
+  destinationCellId: string
+  populationCount: number
+  reason: string
 }
 
 /** Bounded aggregate inputs for an authored distant population. */
@@ -841,7 +888,7 @@ export interface SimulationEvent {
   id: string
   runId: string
   tick: number
-  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'COHORT_MATERIALIZED' | 'PEOPLE_DEMATERIALIZED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_WORKED' | 'HOUSEHOLDS_SHARED_FOOD' | 'HOUSEHOLDS_EXCHANGED_TOOLS' | 'HOUSEHOLD_RELOCATED' | 'SETTLEMENT_SCALE_CHANGED' | 'COMMUNITY_CONTENTION_RESOLVED' | 'PERSON_ATTENDED_SCHOOL' | 'PERSON_MISSED_SCHOOL' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_KNOWLEDGE_DISCOVERED' | 'PERSON_KNOWLEDGE_SHARED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
+  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'COHORT_MATERIALIZED' | 'PEOPLE_DEMATERIALIZED' | 'SETTLEMENT_REGIONAL_TRANSITION' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_WORKED' | 'HOUSEHOLDS_SHARED_FOOD' | 'HOUSEHOLDS_EXCHANGED_TOOLS' | 'HOUSEHOLD_RELOCATED' | 'SETTLEMENT_SCALE_CHANGED' | 'COMMUNITY_CONTENTION_RESOLVED' | 'PERSON_ATTENDED_SCHOOL' | 'PERSON_MISSED_SCHOOL' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_KNOWLEDGE_DISCOVERED' | 'PERSON_KNOWLEDGE_SHARED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
   version: 1
   cellId?: string
   payload: Record<string, string | number | boolean | null>

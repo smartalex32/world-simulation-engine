@@ -128,7 +128,7 @@ export async function validateSnapshot(value: unknown, contentPack: ContentPack 
   }
   const normalizedCreation = normalizeWorldCreationRequest(snapshot.state.config.worldCreation, snapshot.state.world.grid.cells, { enforceCreatorLimits: false })
   if (canonicalStringify(normalizedCreation) !== canonicalStringify(snapshot.state.config.worldCreation)) throw new Error('Snapshot contains a non-canonical world creation request')
-  const authoredSettlements = snapshot.state.world.settlements.map(({ scale: _scale, ...settlement }) => settlement)
+  const authoredSettlements = snapshot.state.world.settlements.map(({ scale: _scale, regional: _regional, ...settlement }) => settlement)
   if (snapshot.state.world.name !== normalizedCreation.name || canonicalStringify(authoredSettlements) !== canonicalStringify(normalizedCreation.settlements) || canonicalStringify(snapshot.state.world.roads ?? []) !== canonicalStringify(normalizedCreation.roads ?? [])) {
     throw new Error('Snapshot world does not match creation request')
   }

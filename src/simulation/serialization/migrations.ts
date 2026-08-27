@@ -20,7 +20,8 @@ const migrations = new Map<number, SnapshotMigration>([
   [34, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 35, state: { ...snapshot.state, config: { ...snapshot.state.config, contentPackId: 'setting.preindustrial.default', contentPackVersion: '1.0.0', contentPackModelVersion: 1 } } })],
   [35, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 36, state: { ...snapshot.state, config: { ...snapshot.state.config, contentPackModelVersion: 2 } } })],
   [36, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 37, state: { ...snapshot.state, populationFidelity: { version: 1, nextTransitionSequence: 1, protectedPersonIds: [], transitions: [] } } })],
-  [37, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 38, state: { ...snapshot.state, config: { ...snapshot.state.config, cohortModelVersion: 2 }, cohorts: snapshot.state.cohorts.map((cohort) => ({ ...cohort, version: 2, economicProductivityPermille: 1000, culturalCohesionPermille: 500, developmentIndexPermille: 500 })) } })],
+  [37, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 38, state: { ...snapshot.state, config: { ...snapshot.state.config, cohortModelVersion: 3 }, cohorts: snapshot.state.cohorts.map((cohort) => ({ ...cohort, version: 3, economicProductivityPermille: 1000, culturalCohesionPermille: 500, developmentIndexPermille: 500 })) } })],
+  [38, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 39, state: { ...snapshot.state, config: { ...snapshot.state.config, cohortModelVersion: 3 }, cohorts: snapshot.state.cohorts.map((cohort) => ({ ...cohort, version: 3 })) } })],
 ])
 
 export function migrateSnapshotSchema(value: unknown, targetSchema: number): SnapshotLike {

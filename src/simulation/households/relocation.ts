@@ -1,9 +1,10 @@
-import type { GeographicCell, HouseholdRelocationTrace, HouseholdState, PersonState, RelationshipState } from '../domain/types'
+import type { GeographicCell, HouseholdRelocationTrace, HouseholdState, PersonState, RelationshipState, SettlementState } from '../domain/types'
 import { getPersonVariable } from '../variables/storage'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { findPathDetailed } from '../spatial/pathfinding'
 import { hexDistance } from '../spatial/hex'
 import { ROAD_MOVEMENT_COST_MULTIPLIER_PERMILLE } from '../agents/actionConfig'
+import { settlementMigrationTrace } from '../settlements/regional'
 
 /** Monthly, bounded home-choice pass. All values are integer permille or whole movement-cost units. */
 export const HOUSEHOLD_RELOCATION = {
@@ -30,6 +31,8 @@ export interface HouseholdRelocationCandidate {
   readonly householdTiePermille: number
   readonly crowdingDelta: number
   readonly riskCostPermille: number
+  /** Bounded regional pull derived from actual employment, housing, safety, access, and services. */
+  readonly settlementUtilityPermille: number
   readonly utilityPermille: number
 }
 
@@ -46,6 +49,7 @@ export interface HouseholdRelocationInput {
   readonly relationships: readonly RelationshipState[]
   readonly cells: readonly GeographicCell[]
   readonly roadCellIds: ReadonlySet<string>
+  readonly settlements?: readonly SettlementState[]
 }
 
 /**
@@ -91,12 +95,15 @@ export function evaluateHouseholdRelocation(input: HouseholdRelocationInput): Ho
     const householdTiePermille = localHouseholdTies(destination, input.household, input.peopleById, input.households, input.relationships, cellsById)
     const travelCostPermille = Math.min(300, Math.floor(travelCost / 25))
     const riskCostPermille = Math.floor(travelCostPermille * (1000 - averageRiskTolerance) / 1000)
+    const settlementFactors = settlementMigrationTrace(input.settlements ?? [], source.id, destination.id, householdTiePermille, foodAccessDeltaPermille, travelCost)
+    const settlementUtilityPermille = Math.floor((settlementFactors.employmentPermille + settlementFactors.housingPermille + settlementFactors.safetyPermille + settlementFactors.infrastructurePermille + settlementFactors.servicesPermille) / 50) - 50 + Math.floor(settlementFactors.shockPermille / 20) + Math.floor(settlementFactors.geographyPermille / 50)
     const utilityPermille = Math.floor(foodAccessDeltaPermille * scarcityPressure / 1000)
       + Math.floor(householdTiePermille / 4)
       + crowdingDelta * 75
+      + settlementUtilityPermille
       - travelCostPermille
       - riskCostPermille
-    candidates.push({ destinationCellId: destination.id, foodAccessPermille, foodAccessDeltaPermille, foodReservePressurePermille, travelCost, householdTiePermille, crowdingDelta, riskCostPermille, utilityPermille })
+    candidates.push({ destinationCellId: destination.id, foodAccessPermille, foodAccessDeltaPermille, foodReservePressurePermille, travelCost, householdTiePermille, crowdingDelta, riskCostPermille, settlementUtilityPermille, utilityPermille })
   }
   const candidate = candidates.sort((first, second) => second.utilityPermille - first.utilityPermille || first.destinationCellId.localeCompare(second.destinationCellId))[0]
   if (!candidate || candidate.utilityPermille < HOUSEHOLD_RELOCATION.minimumUtility) return { sourceCellId: source.id, probabilityPermille: 0 }

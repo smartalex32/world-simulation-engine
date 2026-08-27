@@ -96,6 +96,7 @@ import { COHORT_MODEL_VERSION, advanceCohortsAnnual, advanceCohortsDaily, create
 import { materializeCohortPeople, materializationStreamName } from '../cohorts/materialization'
 import { applyCohortMaterialization, planCohortMaterialization } from '../cohorts/transitions'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
+import { migrateCohortsBetweenSettlements, reconcileSettlementRegions, settlementMigrationTrace } from '../settlements/regional'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -205,6 +206,9 @@ export class SimulationEngine {
     initializeSettlementScales({ settlements: world.settlements, cells: world.grid.cells, people: generatedPopulation.people })
     // A school is an authored place service; an unmarked home cell is never silently promoted into one.
     const organizations = createInitialSchools(generatedPopulation.people, world.settlements.map((settlement) => settlement.anchorCellId))
+    const markets = createInitialMarkets(world.grid.cells, world.settlements)
+    const cohorts = createInitialCohorts(world.grid.cells, creation.populationZones)
+    reconcileSettlementRegions({ settlements: world.settlements, cells: world.grid.cells, households: generatedPopulation.households, cohorts, markets, organizations, roads: world.roads ?? [], tick: 0 })
     const governance = createLocalGovernance(communities, generatedPopulation.people)
     return new SimulationEngine({
       runId,
@@ -241,10 +245,10 @@ export class SimulationEngine {
       },
       world,
       people: generatedPopulation.people,
-      cohorts: createInitialCohorts(world.grid.cells, creation.populationZones),
+      cohorts,
       populationFidelity: { version: 1, nextTransitionSequence: 1, protectedPersonIds: [], transitions: [] },
       households: generatedPopulation.households,
-      markets: createInitialMarkets(world.grid.cells, world.settlements),
+      markets,
       organizations,
       governance,
       disputes: [],
@@ -394,6 +398,17 @@ export class SimulationEngine {
             resourceUnitsPerResident: Math.round(transition.evidence.resourceUnitsPerResident * 1000),
             accessPermille: transition.evidence.accessPermille,
           }))
+        }
+        for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, cohorts: this.state.cohorts, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], tick: this.state.tick })) {
+          pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
+        }
+        for (const trace of migrateCohortsBetweenSettlements(this.state.cohorts, this.state.world.settlements, this.state.world.grid.cells, this.state.tick)) {
+          pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { kind: 'cohort-migration', sourceSettlementId: trace.sourceSettlementId, destinationSettlementId: trace.destinationSettlementId, populationCount: trace.populationCount, reason: trace.reason }))
+        }
+        // Cohort allocations changed after the first reconciliation, so the
+        // serialized regional ledger must describe the same authoritative tick.
+        for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, cohorts: this.state.cohorts, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], tick: this.state.tick })) {
+          pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
         }
       }
       if (this.state.tick % 8760 === 0) { this.resolveAnnualLifeCycle(pushEvent); advanceCohortsAnnual(this.state.cohorts) }
@@ -1281,10 +1296,12 @@ export class SimulationEngine {
         relationships: this.state.relationships,
         cells: this.state.world.grid.cells,
         roadCellIds,
+        settlements: this.state.world.settlements,
       })
       if (!evaluation.candidate || evaluation.probabilityPermille === 0) continue
       const trace = relocationTrace(evaluation, this.state.tick, relocationRng.nextInt(1000))
       if (!trace) continue
+      trace.settlementMigration = settlementMigrationTrace(this.state.world.settlements, trace.sourceCellId, trace.destinationCellId, trace.householdTiePermille, trace.foodAccessDeltaPermille, trace.travelCost)
       const homeActivity = this.activityLocationById.get(household.homeActivityLocationId)
       if (!homeActivity || homeActivity.kind !== 'home') throw new Error(`Household ${household.id} has no valid home activity`)
       household.homeCellId = trace.destinationCellId
@@ -1312,6 +1329,10 @@ export class SimulationEngine {
         travelCost: trace.travelCost,
         householdTiePermille: trace.householdTiePermille,
         crowdingDelta: trace.crowdingDelta,
+        destinationSettlementId: trace.settlementMigration.destinationSettlementId ?? null,
+        sourceSettlementId: trace.settlementMigration.sourceSettlementId ?? null,
+        servicesPermille: trace.settlementMigration.servicesPermille,
+        infrastructurePermille: trace.settlementMigration.infrastructurePermille,
         riskCostPermille: trace.riskCostPermille,
         utilityPermille: trace.utilityPermille,
         probabilityPermille: trace.probabilityPermille,

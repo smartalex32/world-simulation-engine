@@ -1,6 +1,7 @@
 import type { GeographicCell, PopulationCohortState, PopulationPlacementZone } from '../domain/types'
 
-export const COHORT_MODEL_VERSION = 2 as const
+/** Version 3 permits a conserved allocation to move outside its source zone. */
+export const COHORT_MODEL_VERSION = 3 as const
 
 /**
  * Builds static authoritative cohorts from explicit zone allocations without
@@ -99,8 +100,7 @@ export function validatePopulationCohorts(value: unknown, zones: readonly Popula
     if (!cohort.eventTotals || Object.values(cohort.eventTotals).some((entry) => !nonNegativeInteger(entry))) throw new Error(`Cohort ${cohort.id} has invalid event totals`)
     if (![cohort.economicProductivityPermille, cohort.culturalCohesionPermille, cohort.developmentIndexPermille].every((entry) => Number.isSafeInteger(entry) && entry >= 0 && entry <= 1000)) throw new Error(`Cohort ${cohort.id} has invalid active profile`)
     if (!Array.isArray(cohort.cellAllocations) || (cohort.populationCount > 0 && cohort.cellAllocations.length === 0) || !canonicalAllocations(cohort.cellAllocations)) throw new Error(`Cohort ${cohort.id} has invalid cell allocations`)
-    const allowed = new Set(zone.homeCellIds ?? zone.cellIds)
-    if (cohort.cellAllocations.some((allocation) => !allowed.has(allocation.cellId) || !cellsById.get(allocation.cellId)?.movementCost || !positiveInteger(allocation.populationCount)) || cohort.cellAllocations.reduce((sum, allocation) => sum + allocation.populationCount, 0) !== cohort.populationCount) throw new Error(`Cohort ${cohort.id} allocations do not match its zone`)
+    if (cohort.cellAllocations.some((allocation) => !cellsById.get(allocation.cellId)?.movementCost || !positiveInteger(allocation.populationCount)) || cohort.cellAllocations.reduce((sum, allocation) => sum + allocation.populationCount, 0) !== cohort.populationCount) throw new Error(`Cohort ${cohort.id} allocations do not match valid world cells`)
   }
   const expectedIds = zones.filter((zone) => (zone.cohortPopulationCount ?? 0) > 0).map((zone) => `cohort:${zone.id}`).sort(compareText)
   if (expectedIds.length !== ids.size || expectedIds.some((id) => !ids.has(id))) throw new Error('Simulation cohorts do not match world creation')
