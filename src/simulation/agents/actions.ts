@@ -39,6 +39,12 @@ export interface Candidate {
   weight: number
 }
 
+export interface ActionBaseWeight {
+  value: number
+  /** Retained in the decision contribution so pack-authored behavior is inspectable. */
+  factor: string
+}
+
 export interface ActionContext {
   tick: number
   /** Deterministic calendar modifier; rendering and wall-clock timing do not affect it. */
@@ -53,6 +59,9 @@ export interface ActionContext {
   householdById?: ReadonlyMap<string, HouseholdState>
   influenceRegistry?: InfluenceRegistry
   variableRegistry?: PersonVariableRegistry
+  /** Pack formulas can replace a base utility only through this engine-owned
+   * adapter.  The action module never gains direct RNG or pack access. */
+  baseWeightFor?: (action: ActionName, person: PersonState) => ActionBaseWeight
 }
 
 export interface ActionOutcome {
@@ -116,21 +125,22 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
   const hunger = getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger)
   const hour = context.tick % 24
   const candidates: Candidate[] = []
+  const baseWeight = (action: ActionName): ActionBaseWeight => context.baseWeightFor?.(action, person) ?? { value: ACTION_BASE_WEIGHT[action], factor: 'base' }
 
   const householdFood = context.householdById?.get(person.householdId)?.inventory?.food ?? 0
   if ((householdFood > 0 || (!context.householdById && cell.foodAmount > 0)) && hunger > 0) candidates.push(candidate('eat', [
-    baseContribution(ACTION_BASE_WEIGHT.eat),
+    baseContribution(baseWeight('eat')),
     ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.eatUtility, person, context),
     contextContribution('household food', Math.min(LOCAL_FOOD_WEIGHT_CAP, householdFood || cell.foodAmount)),
   ]))
   if (moveTarget) candidates.push(candidate('move', [
-    baseContribution(ACTION_BASE_WEIGHT.move),
+    baseContribution(baseWeight('move')),
     ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.moveUtility, person, context),
     contextContribution('destination food', Math.floor(moveTarget.foodAmount * DESTINATION_FOOD_WEIGHT_PERMILLE / 1000)),
     contextContribution('travel cost', -Math.floor(Math.max(0, effectiveMovementCost(moveTarget, context) - PLAIN_MOVEMENT_COST) / MOVE_TRAVEL_COST_DIVISOR)),
   ], moveTarget.id))
   if (exploreTarget) candidates.push(candidate('explore', [
-    baseContribution(ACTION_BASE_WEIGHT.explore),
+    baseContribution(baseWeight('explore')),
     ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.exploreUtility, person, context),
     interactionContribution('terrain uncertainty', -Math.floor(
       Math.max(0, effectiveMovementCost(exploreTarget, context) - PLAIN_MOVEMENT_COST)
@@ -140,20 +150,20 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
     ...communityInfluenceContributions('decision.explore.utility', person.locationCellId, context),
   ], exploreTarget.id))
   candidates.push(candidate('rest', [
-    baseContribution(ACTION_BASE_WEIGHT.rest),
+    baseContribution(baseWeight('rest')),
     contextContribution('nighttime', hour >= 21 || hour < 6 ? NIGHTTIME_REST_WEIGHT : 0),
     contextContribution('at home', person.locationCellId === person.homeCellId ? HOME_REST_WEIGHT : 0),
     ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.restUtility, person, context),
   ]))
   if (company > 0) candidates.push(candidate('socialize', [
-    baseContribution(ACTION_BASE_WEIGHT.socialize),
+    baseContribution(baseWeight('socialize')),
     ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.socializeUtility, person, context),
     contextContribution('people present', company * OTHER_OCCUPANT_SOCIAL_WEIGHT),
     ...communityInfluenceContributions('decision.socialize.utility', person.locationCellId, context),
   ]))
   if (person.occupation === 'forager' && person.currentActivity.kind === 'commons' && cell.foodAmount > 0 && hour >= 6 && hour < 18) {
     candidates.push(candidate('work', [
-      baseContribution(ACTION_BASE_WEIGHT.work),
+      baseContribution(baseWeight('work')),
       ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.workUtility, person, context),
       contextContribution('accessible resource', Math.min(160, cell.foodAmount * 8)),
       contextContribution('fatigue cost', -Math.floor(getPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue) / 5)),
@@ -286,8 +296,8 @@ function communityInfluenceContributions(
   }))
 }
 
-function baseContribution(value: number): UtilityContribution {
-  return { kind: 'base', factor: 'base', value }
+function baseContribution(weight: ActionBaseWeight): UtilityContribution {
+  return { kind: 'base', factor: weight.factor, value: weight.value }
 }
 
 function contextContribution(factor: string, value: number): UtilityContribution {

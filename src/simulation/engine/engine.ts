@@ -2,6 +2,7 @@ import {
   BASE_TICK_HOURS,
   ACTIVITY_REGISTRY_VERSION,
   COMMUNITY_REGISTRY_VERSION,
+  CONTENT_PACK_MODEL_VERSION,
   DEVELOPMENT_REGISTRY_VERSION,
   ENGINE_VERSION,
   ENVIRONMENT_MODEL_VERSION,
@@ -46,9 +47,12 @@ import {
 } from '../community'
 import { resolveCurrentActivity } from '../activities/model'
 import { scheduleForAge } from '../activities/config'
-import { advanceJourney, chooseAction, resolveAction, type ActionContext, type ActionOutcome, type JourneyOutcome } from '../agents/actions'
+import { advanceJourney, chooseAction, resolveAction, type ActionBaseWeight, type ActionContext, type ActionOutcome, type JourneyOutcome } from '../agents/actions'
 import { generatePopulation } from '../agents/population'
 import {
+  ACTION_BASE_WEIGHT,
+  ACTION_WEIGHT_MAXIMUM,
+  ACTION_WEIGHT_MINIMUM,
   ENCOUNTER_SOCIAL_NEED_RECOVERY,
   HOURLY_FATIGUE_INCREASE,
   HOURLY_HUNGER_INCREASE,
@@ -62,7 +66,7 @@ import { createSnapshot, validateSnapshot } from '../serialization/snapshot'
 import { generateValley } from '../spatial/worldGenerator'
 import { PERSON_VARIABLE_DEFINITIONS, PERSON_VARIABLE_ID } from '../variables/registry'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
-import { createContentPackRuntime, type ContentPack, type ContentPackRuntime } from '../../contentPacks'
+import { createContentPackRuntime, evaluateExpression, type ContentPack, type ContentPackRuntime } from '../../contentPacks'
 import { adjustPersonVariable, createDefaultPersonVariableValues, getPersonVariable, setPersonVariable, validatePersonVariableValues } from '../variables/storage'
 import { validateHouseholdActivityState } from './invariants'
 import {
@@ -213,7 +217,7 @@ export class SimulationEngine {
         baseTickHours: BASE_TICK_HOURS,
         contentPackId: runtime.pack.manifest.id,
         contentPackVersion: runtime.pack.manifest.version,
-        contentPackModelVersion: 1,
+        contentPackModelVersion: CONTENT_PACK_MODEL_VERSION,
         variableRegistryVersion: VARIABLE_REGISTRY_VERSION,
         influenceRegistryVersion: INFLUENCE_REGISTRY_VERSION,
         householdModelVersion: HOUSEHOLD_MODEL_VERSION,
@@ -312,7 +316,7 @@ export class SimulationEngine {
 
       const occupantsByCell = this.buildOccupancy(true)
       const occupantsByActivityLocation = this.buildActivityOccupancy()
-      const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: this.roadCellIds, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById, influenceRegistry: this.contentPackRuntime.influences, variableRegistry: this.contentPackRuntime.variables }
+      const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: this.roadCellIds, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById, influenceRegistry: this.contentPackRuntime.influences, variableRegistry: this.contentPackRuntime.variables, baseWeightFor: (action, person) => this.packActionBaseWeight(action, person.variables) }
       const actionRng = this.random.stream('actions')
       const decisions = this.livingPeople()
         .filter((person) => !person.journey && person.schoolAttendance === undefined)
@@ -424,6 +428,21 @@ export class SimulationEngine {
     }
     this.assertInvariants()
     return { events, statistics }
+  }
+
+  /** Formula evaluation is deliberately owned by the engine: declared streams
+   * are restored with the run and cannot observe ambient process state. */
+  private packActionBaseWeight(action: ActionName, variables: Readonly<Record<string, number>>): ActionBaseWeight {
+    const fallback = ACTION_BASE_WEIGHT[action]
+    const formula = this.contentPackRuntime.pack.formulas?.[`decision.${action}.base`]
+    if (!formula) return { value: fallback, factor: 'base' }
+    const value = evaluateExpression(formula, variables, {
+      nextPermille: (stream) => this.random.stream(`content-pack.${this.contentPackRuntime.pack.manifest.id}.${stream}`).nextInt(1000),
+    })
+    if (!Number.isSafeInteger(value) || value < ACTION_WEIGHT_MINIMUM || value > ACTION_WEIGHT_MAXIMUM) {
+      throw new Error(`Content formula decision.${action}.base must resolve to an integer action weight`)
+    }
+    return { value, factor: `content formula decision.${action}.base` }
   }
 
   completeAdvanceBatch(hours: number): SimulationEvent {

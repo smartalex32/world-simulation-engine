@@ -2,13 +2,14 @@ import { canonicalStringify } from '../simulation/serialization/snapshot'
 import { PERSON_VARIABLE_IDS } from '../simulation/variables/types'
 import type { ContentPack, ContentPackDiagnostic, DeterministicCondition, DeterministicExpression, ValidatedContentPack } from './types'
 
+export const CONTENT_PACK_SCHEMA_VERSION = 1
+
 /** Parse, validate, and canonicalize imported pack data before it becomes selectable. */
 export function validateContentPack(value: unknown): ValidatedContentPack {
   const diagnostics: ContentPackDiagnostic[] = []
-  if (!isRecord(value) || !isRecord(value.manifest)) throw invalid('pack', 'Content pack and manifest must be objects')
-  const pack = value as unknown as ContentPack
+  const pack = migrateContentPack(value)
   const manifest = pack.manifest
-  if (manifest.format !== 'world-simulation-content-pack' || manifest.schemaVersion !== 1) diagnostics.push({ path: 'manifest', message: 'Unsupported content-pack format or schema version' })
+  if (manifest.format !== 'world-simulation-content-pack' || manifest.schemaVersion !== CONTENT_PACK_SCHEMA_VERSION) diagnostics.push({ path: 'manifest', message: 'Unsupported content-pack format or schema version' })
   if (!stableId(manifest.id)) diagnostics.push({ path: 'manifest.id', message: 'ID must be a stable dotted identifier' })
   if (!version(manifest.version)) diagnostics.push({ path: 'manifest.version', message: 'Version must be semver-like' })
   if (typeof manifest.name !== 'string' || manifest.name.trim().length === 0) diagnostics.push({ path: 'manifest.name', message: 'Name is required' })
@@ -32,6 +33,20 @@ export function validateContentPack(value: unknown): ValidatedContentPack {
   }
   if (diagnostics.length) throw Object.assign(new Error(`Invalid content pack: ${diagnostics[0]!.message}`), { diagnostics: Object.freeze(diagnostics) })
   return Object.freeze({ pack: structuredClone(pack), diagnostics: Object.freeze([]), canonicalJson: canonicalStringify(pack) })
+}
+
+/** The first published format had optional dependencies.  Imports are upgraded
+ * once, before validation/canonicalization, instead of relying on callers to
+ * reinterpret old data. */
+export function migrateContentPack(value: unknown): ContentPack {
+  if (!isRecord(value) || !isRecord(value.manifest)) throw invalid('pack', 'Content pack and manifest must be objects')
+  const migrated = structuredClone(value) as Record<string, unknown>
+  const manifest = migrated.manifest as Record<string, unknown>
+  if (manifest.schemaVersion === 0) {
+    manifest.schemaVersion = CONTENT_PACK_SCHEMA_VERSION
+    manifest.dependencies ??= []
+  }
+  return migrated as unknown as ContentPack
 }
 
 function validateExpression(expression: DeterministicExpression, path: string, diagnostics: ContentPackDiagnostic[]): void {

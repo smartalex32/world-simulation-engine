@@ -9,6 +9,11 @@ export class MemoryContentPackCatalog implements ContentPackCatalog {
   constructor(initial: readonly ContentPack[] = []) { for (const pack of initial) void this.putPack(pack) }
   async listPacks(): Promise<readonly ContentPack[]> { return Object.freeze([...this.packs.values()].map((pack) => importContentPack(exportContentPack(pack))).sort((a, b) => compareStableText(a.manifest.id, b.manifest.id) || compareStableText(a.manifest.version, b.manifest.version))) }
   async getPack(id: string, version: string): Promise<ContentPack | undefined> { const pack = this.packs.get(key(id, version)); return pack && importContentPack(exportContentPack(pack)) }
-  async putPack(pack: ContentPack): Promise<ContentPack> { const valid = importContentPack(exportContentPack(pack)); this.packs.set(key(valid.manifest.id, valid.manifest.version), valid); return valid }
+  async putPack(pack: ContentPack): Promise<ContentPack> {
+    const valid = importContentPack(exportContentPack(pack)); const packKey = key(valid.manifest.id, valid.manifest.version)
+    const existing = this.packs.get(packKey)
+    if (existing && exportContentPack(existing) !== exportContentPack(valid)) throw new Error(`Content pack version is immutable: ${packKey}`)
+    this.packs.set(packKey, valid); return valid
+  }
 }
 function key(id: string, version: string): string { return `${id}@${version}` }

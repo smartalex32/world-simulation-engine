@@ -9,6 +9,8 @@ export const DEFAULT_PREINDUSTRIAL_PACK: ContentPack = Object.freeze({
   personVariables: Object.freeze(PERSON_VARIABLE_DEFINITIONS.map((definition) => Object.freeze({ ...definition }))),
   influences: Object.freeze(INFLUENCE_DEFINITIONS.map((definition) => Object.freeze({ ...definition }))),
   formulas: Object.freeze({
-    'decision.explore.base': Object.freeze({ kind: 'constant', value: 100 }),
+    // Retains the historical authored base weight while exercising the
+    // engine-owned declarative formula path.
+    'decision.explore.base': Object.freeze({ kind: 'constant', value: 40 }),
   }),
 })

@@ -144,7 +144,9 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
   async putPack(pack: ContentPack): Promise<ContentPack> {
     const valid = importContentPack(exportContentPack(pack)); const payload = encodePayload(valid)
     await this.pool.query(`INSERT INTO hosted_content_packs(pack_id, pack_version, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding)
-      VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (pack_id, pack_version) DO UPDATE SET payload = EXCLUDED.payload, payload_sha256 = EXCLUDED.payload_sha256, payload_uncompressed_bytes = EXCLUDED.payload_uncompressed_bytes, payload_encoding = EXCLUDED.payload_encoding, saved_at = now()`, [valid.manifest.id, valid.manifest.version, payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
+      VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (pack_id, pack_version) DO NOTHING`, [valid.manifest.id, valid.manifest.version, payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
+    const stored = await this.getPack(valid.manifest.id, valid.manifest.version)
+    if (!stored || exportContentPack(stored) !== exportContentPack(valid)) throw new Error(`Content pack version is immutable: ${valid.manifest.id}@${valid.manifest.version}`)
     return valid
   }
 

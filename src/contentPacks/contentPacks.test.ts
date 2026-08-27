@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ContentPackClient, DEFAULT_PREINDUSTRIAL_PACK, createContentPackRegistry, createContentPackRuntime, createPackVariableValues, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack, validatePackVariableValues } from '.'
+import { ContentPackClient, DEFAULT_PREINDUSTRIAL_PACK, MemoryContentPackCatalog, createContentPackRegistry, createContentPackRuntime, createPackVariableValues, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack, validatePackVariableValues } from '.'
 import { SimulationEngine } from '../simulation/engine/engine'
 
 describe('content packs', () => {
@@ -7,6 +7,12 @@ describe('content packs', () => {
     const restored = importContentPack(exportContentPack(DEFAULT_PREINDUSTRIAL_PACK))
     expect(restored).toEqual(DEFAULT_PREINDUSTRIAL_PACK)
     expect(validateContentPack(restored).canonicalJson).toBe(exportContentPack(DEFAULT_PREINDUSTRIAL_PACK))
+  })
+  it('migrates the prior manifest shape before canonical validation', () => {
+    const legacy = structuredClone(DEFAULT_PREINDUSTRIAL_PACK) as unknown as { manifest: Record<string, unknown> }
+    legacy.manifest.schemaVersion = 0
+    delete legacy.manifest.dependencies
+    expect(importContentPack(JSON.stringify(legacy))).toEqual(DEFAULT_PREINDUSTRIAL_PACK)
   })
   it('resolves declared dependencies in deterministic order and reports changes', () => {
     const foundation = { ...DEFAULT_PREINDUSTRIAL_PACK, manifest: { ...DEFAULT_PREINDUSTRIAL_PACK.manifest, id: 'setting.foundation', version: '1.0.0' } }
@@ -46,6 +52,23 @@ describe('content packs', () => {
     await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('Unsupported content pack configuration')
     const restored = await SimulationEngine.restore(snapshot, pack)
     expect(restored.project().variableDefinitions.map(({ id }) => id)).toContain('person.trait.diligence')
+  })
+  it('evaluates declared formula RNG through named, restored engine streams', async () => {
+    const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    pack.manifest = { ...pack.manifest, id: 'setting.preindustrial.formula', version: '1.0.0', name: 'Formula setting' }
+    pack.formulas = { ...pack.formulas, 'decision.rest.base': { kind: 'randomChance', stream: 'rest-weight', probabilityPermille: { kind: 'constant', value: 500 }, whenTrue: { kind: 'constant', value: 10_000 }, whenFalse: { kind: 'constant', value: 9_999 } } }
+    const first = SimulationEngine.create('content-pack-formula-run', 8, 8, pack)
+    const second = SimulationEngine.create('content-pack-formula-run', 8, 8, pack)
+    first.advance(1); second.advance(1)
+    const firstSnapshot = await first.snapshot(); const secondSnapshot = await second.snapshot()
+    expect(firstSnapshot.digest).toBe(secondSnapshot.digest)
+    expect(firstSnapshot.state.randomStreams.map((stream) => stream.name)).toContain('content-pack.setting.preindustrial.formula.rest-weight')
+  })
+  it('does not overwrite an existing content pack version', async () => {
+    const catalog = new MemoryContentPackCatalog([DEFAULT_PREINDUSTRIAL_PACK])
+    const changed = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    changed.manifest = { ...changed.manifest, name: 'Changed without a version bump' }
+    await expect(catalog.putPack(changed)).rejects.toThrow('immutable')
   })
   it('uses validated typed SDK payloads for catalog workflows', async () => {
     const requests: Request[] = []

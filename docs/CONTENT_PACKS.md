@@ -24,8 +24,15 @@ database schema change.
 The formula format is a data-only AST: constants, variable references,
 arithmetic, min/max, conditional expressions, and `randomChance`. It has no
 source-code evaluation, I/O, time, or ambient randomness. Each chance declares
-a stable stream name, and callers must supply the controlled RNG adapter.
-Formula validation rejects malformed structures before a pack can be stored.
+a stable stream name. The engine prefixes and owns that stream under the
+selected pack ID, so it is snapshot-restorable and cannot collide with an
+engine subsystem stream. Formula validation rejects malformed structures
+before a pack can be stored.
+
+The current engine binding is `decision.<action>.base` for the six action names
+(`eat`, `move`, `explore`, `rest`, `socialize`, and `work`). Its result must be
+an integer utility weight from 1 to 10,000. The selected decision retains the
+formula ID as a structured utility contribution.
 
 ## Authoring and use
 
@@ -51,5 +58,8 @@ SDK calls for the same endpoints. Capability 3 will publish the versioned
 
 Content pack model version, snapshot schema, engine version, and canonical
 digest are part of the reproducibility contract. Pack changes require a new
-semantic version. A snapshot with a missing or mismatched pack is rejected,
-never migrated by guesswork.
+semantic version: catalog implementations reject a different payload at an
+existing `id@version`. A snapshot with a missing or mismatched pack is rejected,
+never migrated by guesswork. The original manifest shape (`schemaVersion: 0`)
+is explicitly migrated to version 1 during import; unknown future schemas are
+rejected.

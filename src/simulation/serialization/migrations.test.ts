@@ -9,7 +9,7 @@ describe('snapshot migration registry', () => {
 
   it('preserves a legacy settlement marker while moving to the retained-scale schema', () => {
     const legacy = { schemaVersion: 33, engineVersion: '0.34.0', state: { world: { settlements: [{ id: 's', name: 'S', anchorCellId: '0,0' }] } }, digest: 'digest' }
-    expect(migrateSnapshotSchema(legacy, 35)).toMatchObject({ schemaVersion: 35, engineVersion: '0.36.0', state: { world: { settlements: [{ id: 's' }] }, config: { contentPackId: 'setting.preindustrial.default', contentPackVersion: '1.0.0', contentPackModelVersion: 1 } } })
+    expect(migrateSnapshotSchema(legacy, 36)).toMatchObject({ schemaVersion: 36, engineVersion: '0.37.0', state: { world: { settlements: [{ id: 's' }] }, config: { contentPackId: 'setting.preindustrial.default', contentPackVersion: '1.0.0', contentPackModelVersion: 2 } } })
   })
 
   it('rejects schemas outside the explicit rolling window', () => {

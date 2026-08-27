@@ -4,7 +4,7 @@ import { validateWorldDraftRecord } from '../simulation/domain/worldDraft'
 import { validateSnapshot } from '../simulation/serialization/snapshot'
 import { validateWorkerContinuation } from '../worker/frameScheduler'
 import type { WorkbenchSnapshotEnvelope } from '../worker/protocol'
-import { validateContentPack, type ContentPack } from '../contentPacks'
+import { exportContentPack, validateContentPack, type ContentPack } from '../contentPacks'
 
 const DATABASE_NAME = 'world-simulation-workbench'
 const DATABASE_VERSION = 3
@@ -147,7 +147,13 @@ export class WorkbenchDatabase {
     const saved: StoredContentPack = { id: validated.manifest.id, version: validated.manifest.version, savedAt: new Date().toISOString(), pack: validated }
     const database = await this.open()
     const transaction = database.transaction('contentPacks', 'readwrite')
-    transaction.objectStore('contentPacks').put(saved)
+    const store = transaction.objectStore('contentPacks')
+    const existing = await request<StoredContentPack | undefined>(store.get([saved.id, saved.version]))
+    if (existing && exportContentPack(existing.pack) !== exportContentPack(validated)) {
+      transaction.abort()
+      throw new Error(`Content pack version is immutable: ${saved.id}@${saved.version}`)
+    }
+    store.put(saved)
     await transactionDone(transaction)
     return saved
   }
