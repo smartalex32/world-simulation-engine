@@ -6,6 +6,19 @@ import { DEVELOPMENT_PARENT_CURIOSITY_EDGE_ID, DEVELOPMENT_PLASTICITY_REGISTRY }
 import { BROADER_DEVELOPMENT_DEFINITIONS, BROADER_DEVELOPMENT_WINDOW_TICKS } from '../development/broader'
 import { validatePopulationCohorts } from '../cohorts/model'
 
+/** Snapshot and engine boundary for canonical runtime infrastructure state. */
+export function validateInfrastructureState(state: SimulationState): void {
+  if (!Array.isArray(state.infrastructure)) throw new Error('Simulation contains invalid infrastructure')
+  const cellIds = new Set(state.world.grid.cells.map((cell) => cell.id))
+  const settlementIds = new Set(state.world.settlements.map((settlement) => settlement.id))
+  const ids = state.infrastructure.map((asset) => asset.id)
+  if (new Set(ids).size !== ids.length || ids.some((id, index) => index > 0 && (ids[index - 1] as string) >= id)) throw new Error('Infrastructure assets are not canonically ordered')
+  for (const asset of state.infrastructure) {
+    if (asset.version !== 1 || !['road', 'waterway', 'port', 'storage', 'service'].includes(asset.kind) || !asset.id || asset.cellIds.length === 0 || asset.cellIds.some((cellId) => !cellIds.has(cellId)) || (asset.ownerSettlementId !== undefined && !settlementIds.has(asset.ownerSettlementId))) throw new Error(`Infrastructure asset ${asset.id} is invalid`)
+    if (!Number.isSafeInteger(asset.capacity) || asset.capacity < 0 || !Number.isSafeInteger(asset.maintenanceUnits) || asset.maintenanceUnits < 0 || [asset.conditionPermille, asset.disruptionPermille].some((value) => !Number.isSafeInteger(value) || value < 0 || value > 1000)) throw new Error(`Infrastructure asset ${asset.id} has invalid capacity state`)
+  }
+}
+
 export function validateHouseholdActivityState(state: SimulationState): void {
   validatePopulationCohorts(state.cohorts, state.config.worldCreation.populationZones, state.world.grid.cells)
   validatePopulationFidelity(state)

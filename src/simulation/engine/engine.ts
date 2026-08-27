@@ -69,7 +69,7 @@ import { PERSON_VARIABLE_DEFINITIONS, PERSON_VARIABLE_ID } from '../variables/re
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
 import { createContentPackRuntime, evaluateExpression, type ContentPack, type ContentPackRuntime } from '../../contentPacks'
 import { adjustPersonVariable, createDefaultPersonVariableValues, getPersonVariable, setPersonVariable, validatePersonVariableValues } from '../variables/storage'
-import { validateHouseholdActivityState } from './invariants'
+import { validateHouseholdActivityState, validateInfrastructureState } from './invariants'
 import {
   accumulateParentCuriosityExposure,
   completeParentCuriosityExposureWindow,
@@ -1592,6 +1592,7 @@ export class SimulationEngine {
   }
 
   private assertInvariants(): void {
+    validateInfrastructureState(this.state)
     validateHouseholdActivityState(this.state)
     validateCommunitySimulationState(this.state)
     const { width, height, cells } = this.state.world.grid

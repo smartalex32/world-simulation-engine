@@ -26,7 +26,7 @@ import {
 } from '../domain/types'
 import { normalizeWorldCreationRequest } from '../domain/worldCreation'
 import { HOUSEHOLD_GENERATION_STREAM } from '../households/config'
-import { validateHouseholdActivityState } from '../engine/invariants'
+import { validateHouseholdActivityState, validateInfrastructureState } from '../engine/invariants'
 import { validatePersonVariableValues } from '../variables/storage'
 import { validateCommunitySimulationState } from '../community/invariants'
 import { COHORT_MODEL_VERSION } from '../cohorts/model'
@@ -144,6 +144,7 @@ export async function validateSnapshot(value: unknown, contentPack: ContentPack 
     if (typeof person.schoolLearningHours !== 'number' || !Number.isSafeInteger(person.schoolLearningHours) || person.schoolLearningHours < 0) throw new Error(`Person ${person.id} contains invalid school learning hours`)
   }
   validateHouseholdActivityState(snapshot.state)
+  validateInfrastructureState(snapshot.state)
   validateCommunitySimulationState(snapshot.state)
   validateRandomStreams(snapshot.state.randomStreams)
   const actual = await stateDigest(snapshot.state)
