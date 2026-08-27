@@ -15,15 +15,26 @@ describe('authoritative settlement regions', () => {
     expect(first).toMatchObject([{ settlementId: 'settlement', nextStatus: 'active', kind: 'formed' }])
     expect(settlements[0]?.regional).toMatchObject({ status: 'active', residentHouseholdIds: ['household-a'], marketIds: ['market'], organizationIds: ['school'], capacity: { housing: 6, food: 50, services: 10, materials: 50 }, materials: { food: 12, tools: 3 }, accessPermille: 1000 })
     const second = reconcileSettlementRegions({ settlements, cells, households: [], markets: [], organizations: [], roads: [], tick: 2 })
-    expect(second).toMatchObject([{ nextStatus: 'abandoned', kind: 'abandoned', reason: 'no resident households' }])
+    expect(second).toMatchObject([{ nextStatus: 'abandoned', kind: 'abandoned', reason: 'no detailed or cohort residents' }])
+  })
+
+  it('retains urbanization, abandonment, and resettlement as distinct lifecycle transitions', () => {
+    const settlements: SettlementState[] = [{ id: 'settlement', name: 'Settlement', anchorCellId: '0,0', catchmentCellIds: ['0,0', '1,0'], scale: 'village' }]
+    const households = [{ id: 'household-a', homeCellId: '0,0', homeActivityLocationId: 'activity.home.household-a', memberIds: ['person-a'], inventory: { food: 12, tools: 3 } }]
+    const context = { settlements, cells, households, markets: [], organizations: [], roads: [] }
+    reconcileSettlementRegions({ ...context, tick: 1 })
+    settlements[0]!.scale = 'town'
+    expect(reconcileSettlementRegions({ ...context, tick: 2 })).toMatchObject([{ kind: 'urbanized', nextStatus: 'active' }])
+    expect(reconcileSettlementRegions({ ...context, households: [], tick: 3 })).toMatchObject([{ kind: 'abandoned', nextStatus: 'abandoned' }])
+    expect(reconcileSettlementRegions({ ...context, tick: 4 })).toMatchObject([{ kind: 'resettled', nextStatus: 'active' }])
   })
 
   it('moves a bounded cohort allocation from an abandoned settlement to viable housing without changing its total', () => {
     const settlements: SettlementState[] = [
-      { id: 'source', name: 'Source', anchorCellId: '0,0', regional: { version: 1, status: 'abandoned', extentCellIds: ['0,0'], residentHouseholdIds: [], marketIds: [], organizationIds: [], accessPermille: 0, capacity: { housing: 0, food: 0, services: 0, materials: 0 }, materials: { food: 0, tools: 0 } } },
-      { id: 'destination', name: 'Destination', anchorCellId: '1,0', regional: { version: 1, status: 'active', extentCellIds: ['1,0'], residentHouseholdIds: [], marketIds: [], organizationIds: [], accessPermille: 1000, capacity: { housing: 100, food: 100, services: 10, materials: 100 }, materials: { food: 0, tools: 0 } } },
+      { id: 'source', name: 'Source', anchorCellId: '0,0', regional: { version: 1, status: 'abandoned', extentCellIds: ['0,0'], residentHouseholdIds: [], detailedResidentPopulationCount: 0, cohortResidentPopulationCount: 0, marketIds: [], organizationIds: [], accessPermille: 0, capacity: { housing: 0, food: 0, services: 0, materials: 0 }, materials: { food: 0, tools: 0 } } },
+      { id: 'destination', name: 'Destination', anchorCellId: '1,0', regional: { version: 1, status: 'active', extentCellIds: ['1,0'], residentHouseholdIds: [], detailedResidentPopulationCount: 0, cohortResidentPopulationCount: 0, marketIds: [], organizationIds: [], accessPermille: 1000, capacity: { housing: 100, food: 100, services: 10, materials: 100 }, materials: { food: 0, tools: 0 } } },
     ]
-    const cohorts = [{ version: 2 as const, id: 'cohort:source', sourceZoneId: 'source', populationCount: 100, householdCount: 34, foodUnits: 1, cellAllocations: [{ cellId: '0,0', populationCount: 100 }], ageBands: { children: 20, adults: 70, elders: 10 }, economicProductivityPermille: 500, culturalCohesionPermille: 500, developmentIndexPermille: 500, eventTotals: { births: 0, deaths: 0, migrationIn: 0, migrationOut: 0 } }]
+    const cohorts = [{ version: 3 as const, id: 'cohort:source', sourceZoneId: 'source', populationCount: 100, householdCount: 34, foodUnits: 1, cellAllocations: [{ cellId: '0,0', populationCount: 100 }], ageBands: { children: 20, adults: 70, elders: 10 }, economicProductivityPermille: 500, culturalCohesionPermille: 500, developmentIndexPermille: 500, eventTotals: { births: 0, deaths: 0, migrationIn: 0, migrationOut: 0 } }]
     const traces = migrateCohortsBetweenSettlements(cohorts, settlements, cells, 720)
     expect(traces).toMatchObject([{ sourceSettlementId: 'source', destinationSettlementId: 'destination', populationCount: 5 }])
     expect(cohorts[0]?.cellAllocations).toEqual([{ cellId: '0,0', populationCount: 95 }, { cellId: '1,0', populationCount: 5 }])

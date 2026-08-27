@@ -1,6 +1,7 @@
 import type { GeographicCell, PopulationCohortState, PopulationPlacementZone } from '../domain/types'
 
-export const COHORT_MODEL_VERSION = 2 as const
+/** Version 3 permits a conserved allocation to move outside its source zone. */
+export const COHORT_MODEL_VERSION = 3 as const
 
 /**
  * Builds static authoritative cohorts from explicit zone allocations without

@@ -13,6 +13,7 @@ describe('household relocation', () => {
     expect(evaluation.candidate).toMatchObject({ foodAccessDeltaPermille: 1000 })
     expect(evaluation.probabilityPermille).toBeGreaterThan(0)
     expect(relocationTrace(evaluation, 720, 0)).toMatchObject({ sourceCellId: fixture.source.id, destinationCellId: evaluation.candidate?.destinationCellId, foodReservePressurePermille: HOUSEHOLD_RELOCATION.maximumFoodReservePressurePermille, tick: 720 })
+    expect(evaluation.candidate?.settlementUtilityPermille).toEqual(expect.any(Number))
     expect(relocationTrace(evaluation, 720, 999)).toBeUndefined()
   })
 

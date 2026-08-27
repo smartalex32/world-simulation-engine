@@ -8,8 +8,8 @@ import type {
 } from '../community/types'
 import type { SettlementTemplateId } from '../spatial/settlementTemplates'
 
-export const ENGINE_VERSION = '0.39.0'
-export const SNAPSHOT_SCHEMA_VERSION = 38
+export const ENGINE_VERSION = '0.40.0'
+export const SNAPSHOT_SCHEMA_VERSION = 39
 /** Versioned content-pack selection is authoritative configuration, not UI state. */
 export const CONTENT_PACK_MODEL_VERSION = 2
 export const BASE_TICK_HOURS = 1
@@ -109,11 +109,16 @@ export interface SettlementRegionalState {
   status: 'active' | 'contracting' | 'abandoned'
   extentCellIds: string[]
   residentHouseholdIds: string[]
+  /** Detailed residents are identified by household; distant residents remain aggregate. */
+  detailedResidentPopulationCount: number
+  cohortResidentPopulationCount: number
   marketIds: string[]
   organizationIds: string[]
   accessPermille: number
   capacity: { housing: number; food: number; services: number; materials: number }
   materials: { food: number; tools: number }
+  /** Retained so urban/rural classification changes are explicit lifecycle transitions. */
+  scale?: SettlementScale
   lastTransition?: { tick: number; kind: 'formed' | 'growth' | 'contraction' | 'abandoned' | 'resettled' | 'urbanized' | 'ruralized'; reason: string }
 }
 
@@ -789,7 +794,7 @@ export interface RunConfiguration {
 
 /** Exact, authoritative aggregate for ordinary distant people. It is static until later cohort systems own advancement. */
 export interface PopulationCohortState {
-  version: 2
+  version: 3
   id: string
   sourceZoneId: string
   populationCount: number

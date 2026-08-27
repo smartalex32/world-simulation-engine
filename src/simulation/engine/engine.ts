@@ -207,7 +207,8 @@ export class SimulationEngine {
     // A school is an authored place service; an unmarked home cell is never silently promoted into one.
     const organizations = createInitialSchools(generatedPopulation.people, world.settlements.map((settlement) => settlement.anchorCellId))
     const markets = createInitialMarkets(world.grid.cells, world.settlements)
-    reconcileSettlementRegions({ settlements: world.settlements, cells: world.grid.cells, households: generatedPopulation.households, markets, organizations, roads: world.roads ?? [], tick: 0 })
+    const cohorts = createInitialCohorts(world.grid.cells, creation.populationZones)
+    reconcileSettlementRegions({ settlements: world.settlements, cells: world.grid.cells, households: generatedPopulation.households, cohorts, markets, organizations, roads: world.roads ?? [], tick: 0 })
     const governance = createLocalGovernance(communities, generatedPopulation.people)
     return new SimulationEngine({
       runId,
@@ -244,7 +245,7 @@ export class SimulationEngine {
       },
       world,
       people: generatedPopulation.people,
-      cohorts: createInitialCohorts(world.grid.cells, creation.populationZones),
+      cohorts,
       populationFidelity: { version: 1, nextTransitionSequence: 1, protectedPersonIds: [], transitions: [] },
       households: generatedPopulation.households,
       markets,
@@ -398,11 +399,16 @@ export class SimulationEngine {
             accessPermille: transition.evidence.accessPermille,
           }))
         }
-        for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], tick: this.state.tick })) {
+        for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, cohorts: this.state.cohorts, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], tick: this.state.tick })) {
           pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
         }
         for (const trace of migrateCohortsBetweenSettlements(this.state.cohorts, this.state.world.settlements, this.state.world.grid.cells, this.state.tick)) {
           pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { kind: 'cohort-migration', sourceSettlementId: trace.sourceSettlementId, destinationSettlementId: trace.destinationSettlementId, populationCount: trace.populationCount, reason: trace.reason }))
+        }
+        // Cohort allocations changed after the first reconciliation, so the
+        // serialized regional ledger must describe the same authoritative tick.
+        for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, cohorts: this.state.cohorts, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], tick: this.state.tick })) {
+          pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
         }
       }
       if (this.state.tick % 8760 === 0) { this.resolveAnnualLifeCycle(pushEvent); advanceCohortsAnnual(this.state.cohorts) }
@@ -1290,6 +1296,7 @@ export class SimulationEngine {
         relationships: this.state.relationships,
         cells: this.state.world.grid.cells,
         roadCellIds,
+        settlements: this.state.world.settlements,
       })
       if (!evaluation.candidate || evaluation.probabilityPermille === 0) continue
       const trace = relocationTrace(evaluation, this.state.tick, relocationRng.nextInt(1000))
