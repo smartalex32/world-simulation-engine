@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SimulationEngine } from '../engine/engine'
 import { defaultWorldCreationRequest } from './worldCreation'
-import { createWorldDraftRecord, paintWorldDraftElevation, paintWorldDraftTerrain, previewWorldDraft, projectWorldDraftViewport, resetWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from './worldDraft'
+import { createWorldDraftRecord, paintWorldDraftElevation, paintWorldDraftTerrain, previewWorldDraft, projectWorldDraftViewport, redoWorldDraftRecord, resetWorldDraftRecord, undoWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from './worldDraft'
 
 describe('world draft lifecycle domain contract', () => {
   it('produces a stable bounded preview without changing the draft', () => {
@@ -96,6 +96,15 @@ describe('world draft lifecycle domain contract', () => {
     expect(reset.revision).toBe(2)
     expect(reset.draft).toEqual(created.initialDraft)
     expect(() => resetWorldDraftRecord(updated, 0)).toThrow(/revision conflict/)
+  })
+
+  it('keeps bounded worker-owned undo and redo history', () => {
+    const initial = createWorldDraftRecord('draft-history', defaultWorldCreationRequest('history-seed'))
+    const changed = updateWorldDraftRecord(initial, { ...initial.draft, name: 'Changed' }, initial.revision)
+    const undone = undoWorldDraftRecord(changed, changed.revision)
+    expect(undone.draft.name).toBe(initial.draft.name)
+    expect(undone.redoStack).toHaveLength(1)
+    expect(redoWorldDraftRecord(undone, undone.revision).draft.name).toBe('Changed')
   })
 
   it('committable draft input creates exactly the normal engine state', async () => {
@@ -233,6 +242,7 @@ describe('world draft lifecycle domain contract', () => {
     expect(first.draftId).toBe(record.draftId)
     expect(first.draftRevision).toBe(record.revision)
     expect(first.cells).toHaveLength(32 * 24)
+    expect(first.chunkKeys).toEqual(['world-chunk:0:0'])
     expect(first.cells.some((cell) => cell.selected)).toBe(true)
     expect(() => projectWorldDraftViewport(record, { ...request, bounds: { minQ: 0, maxQ: 127, minR: 0, maxR: 127 } })).toThrow(/at most 4096/)
   })

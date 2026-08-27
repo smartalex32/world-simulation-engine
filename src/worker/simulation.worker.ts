@@ -5,7 +5,7 @@ import { DEFAULT_PREINDUSTRIAL_PACK, type ContentPack } from '../contentPacks'
 import { WorkbenchProjectionBuilder, type MapProjectionRequest } from '../projection'
 import type { SimulationEvent, StatisticSample, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
-import { createWorldDraftRecord, paintWorldDraftElevation, paintWorldDraftResources, paintWorldDraftTerrain, previewWorldDraft, projectWorldDraftViewport, resetWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from '../simulation/domain/worldDraft'
+import { createWorldDraftRecord, paintWorldDraftElevation, paintWorldDraftResources, paintWorldDraftTerrain, previewWorldDraft, projectWorldDraftViewport, redoWorldDraftRecord, resetWorldDraftRecord, undoWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from '../simulation/domain/worldDraft'
 import type { SimulationCommand, SimulationResponse, WorkbenchSnapshotEnvelope } from './protocol'
 import { MAX_TICKS_PER_WORKER_TURN, SimulationBatchScheduler, TelemetryBuffer, validateWorkerContinuation, type WorkerContinuationState } from './frameScheduler'
 
@@ -200,6 +200,18 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           const candidate = paintWorldDraftResources(draft, command.cellIds, command.resourceCapacity, command.expectedRevision)
           activeDraft = candidate
           respond({ type: 'DRAFT', requestId: command.requestId, action: 'resourcesPainted', draft: candidate, preview: previewWorldDraft(candidate) })
+          break
+        }
+        case 'UNDO_DRAFT': {
+          const candidate = undoWorldDraftRecord(requiredDraft(command.draftId), command.expectedRevision)
+          activeDraft = candidate
+          respond({ type: 'DRAFT', requestId: command.requestId, action: 'undone', draft: candidate, preview: previewWorldDraft(candidate) })
+          break
+        }
+        case 'REDO_DRAFT': {
+          const candidate = redoWorldDraftRecord(requiredDraft(command.draftId), command.expectedRevision)
+          activeDraft = candidate
+          respond({ type: 'DRAFT', requestId: command.requestId, action: 'redone', draft: candidate, preview: previewWorldDraft(candidate) })
           break
         }
         case 'RESET_DRAFT': {

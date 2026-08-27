@@ -16,6 +16,7 @@ import { buildProjectedContentionProfiles } from './conflict'
 import { buildProjectedCollectiveKnowledge } from './collectiveKnowledge'
 import { buildProjectedGenerationalEvidence } from './generations'
 import { deriveDrainage, type DrainageCell } from '../simulation/environment/hydrology'
+import { deriveLivingEnvironment, type LivingEnvironmentCell } from '../simulation/environment/livingEnvironment'
 import { cohortPopulationByCell } from '../simulation/cohorts/model'
 import { buildLocationChunkIndex, visibleIndexedLocations, type IndexedProjectionLocation } from './locationIndex'
 import { alignRegionOrigin, clampViewportBounds, projectionChunkKey, regionCount, regionKey } from './chunks'
@@ -86,6 +87,7 @@ export class WorkbenchProjectionBuilder {
   private readonly staticRegions = new Map<string, StaticRegionAggregate>()
   private readonly cellById: Map<string, GeographicCell>
   private readonly drainageByCellId: ReadonlyMap<string, DrainageCell>
+  private environmentByCellId: ReadonlyMap<string, LivingEnvironmentCell> = new Map()
   private readonly communityIdByCellId = new Map<string, string>()
   private readonly activityEntriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]>
   private readonly householdEntriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]>
@@ -176,6 +178,7 @@ export class WorkbenchProjectionBuilder {
     const livingPeople = source.people.filter((person) => person.lifeStatus !== 'dead')
     const populationByCellId = countPeopleByCell(livingPeople)
     for (const [cellId, count] of cohortPopulationByCell(source.cohorts)) populationByCellId.set(cellId, (populationByCellId.get(cellId) ?? 0) + count)
+    this.environmentByCellId = deriveLivingEnvironment(this.grid, source.tick, populationByCellId)
     const communitiesById = new Map(source.communities.map((community) => [community.catchment.id, community]))
     const exactCells = exact ? cellsInBounds(this.grid, bounds).map((cell) => this.projectCell(cell, populationByCellId, communitiesById, request.communityMeasureId)) : []
     const regions = exact ? [] : this.aggregateRegions(source, bounds, size, request.overlay === 'food', request.communityMeasureId)
@@ -211,7 +214,8 @@ export class WorkbenchProjectionBuilder {
     const communityId = this.communityIdByCellId.get(cell.id)
     const community = communityId ? communitiesById.get(communityId) : undefined
     const drainage = this.drainageByCellId.get(cell.id)
-    return { ...cell, populationCount: populationByCellId.get(cell.id) ?? 0, ...(drainage ? { drainage: { ...(drainage.downstreamCellId === undefined ? {} : { downstreamCellId: drainage.downstreamCellId }), basinId: drainage.basinId } } : {}), communityId, communityValuePermille: community && measureId ? communityValue(community, measureId) : undefined }
+    const environment = this.environmentByCellId.get(cell.id)
+    return { ...cell, populationCount: populationByCellId.get(cell.id) ?? 0, ...(drainage ? { drainage: { ...(drainage.downstreamCellId === undefined ? {} : { downstreamCellId: drainage.downstreamCellId }), basinId: drainage.basinId } } : {}), ...(environment ? { environment: { biomeId: environment.biomeId, river: environment.hydrology.river, lake: environment.hydrology.lake, watershedCellCount: environment.hydrology.watershedCellCount, ecologicalProductivityPermille: environment.ecologicalProductivityPermille, agriculturalSuitabilityPermille: environment.agriculturalSuitabilityPermille, hazardRiskPermille: environment.hazardRiskPermille, humanPressurePermille: environment.humanPressurePermille } } : {}), communityId, communityValuePermille: community && measureId ? communityValue(community, measureId) : undefined }
   }
 
   private focusCellException(id: string | undefined, exact: boolean, bounds: AxialViewportBounds, populationByCellId: ReadonlyMap<string, number>, communitiesById: ReadonlyMap<string, CommunitySimulationState>, measureId?: CommunityVariableId): ProjectedMapCell | undefined {

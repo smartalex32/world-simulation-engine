@@ -572,9 +572,17 @@ export class SimulationEngine {
   }
 
   private regenerateFood(): void {
+    const populationByCellId = new Map<string, number>()
+    for (const person of this.livingPeople()) populationByCellId.set(person.locationCellId, (populationByCellId.get(person.locationCellId) ?? 0) + 1)
+    for (const cohort of this.state.cohorts) for (const allocation of cohort.cellAllocations) populationByCellId.set(allocation.cellId, (populationByCellId.get(allocation.cellId) ?? 0) + allocation.populationCount)
     for (const cell of this.state.world.grid.cells) {
       const prior = cell.foodAmount
-      cell.foodAmount = Math.min(cell.resourceCapacity, cell.foodAmount + regeneratedFoodAmount(cell, this.state.tick))
+      const localPeople = populationByCellId.get(cell.id) ?? 0
+      const humanPressurePermille = cell.resourceCapacity === 0 ? (localPeople === 0 ? 0 : 1000) : Math.min(1000, Math.floor(localPeople * 1000 / cell.resourceCapacity))
+      const ecologicalProductivityPermille = cell.terrain === 'water' ? 0 : cell.terrain === 'hill' ? 780 : 1000
+      const humanFeedbackPermille = Math.max(500, 1000 - Math.floor(humanPressurePermille / 2))
+      const regeneration = Math.floor(regeneratedFoodAmount(cell, this.state.tick) * ecologicalProductivityPermille * humanFeedbackPermille / 1_000_000)
+      cell.foodAmount = Math.min(cell.resourceCapacity, cell.foodAmount + regeneration)
       this.environmentalCounters().foodRegenerated += cell.foodAmount - prior
     }
   }
