@@ -99,6 +99,7 @@ import { applyCohortMaterialization, planCohortMaterialization } from '../cohort
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
 import { migrateCohortsBetweenSettlements, reconcileSettlementRegions, settlementMigrationTrace } from '../settlements/regional'
 import { allocateInfrastructureMaintenance, createInfrastructureAssets, maintainInfrastructure } from '../infrastructure/model'
+import { infrastructureAccessAcrossCells, infrastructureAccessAtCell } from '../infrastructure/access'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -438,7 +439,7 @@ export class SimulationEngine {
         for (const trace of advanceCohortFictionalInfections(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, susceptibleCount: trace.susceptibleCount, newIncubatingCount: trace.newIncubatingCount, becameInfectiousCount: trace.becameInfectiousCount, recoveredCount: trace.recoveredCount }))
         this.resolveDailyFoodSharing(pushEvent)
         this.aggregateCommunities(pushEvent)
-        for (const governance of this.state.governance) { const community = this.state.communities.find((value) => value.catchment.id === governance.communityId); if (community) updateLegitimacy(governance, community, this.state.tick) }
+        for (const governance of this.state.governance) { const community = this.state.communities.find((value) => value.catchment.id === governance.communityId); if (community) updateLegitimacy(governance, community, this.state.tick, infrastructureAccessAcrossCells(this.state.infrastructure, community.catchment.cellIds).servicePermille) }
         for (const contention of resolveCommunityContentions(this.disputeById.values(), new Map(this.state.governance.map((governance) => [governance.communityId, governance.legitimacy])))) pushEvent(this.event('COMMUNITY_CONTENTION_RESOLVED', { ...contention }))
         this.regenerateFood()
         advanceCohortsDaily(this.state.cohorts, this.state.world.grid.cells)
@@ -745,7 +746,8 @@ export class SimulationEngine {
     for (const person of this.livingPeople()) {
       const infection = person.fictionalInfection
       const household = this.householdById.get(person.householdId)
-      const careCapacityCount = household?.memberIds.filter((id) => id !== person.id && this.personById.get(id)?.lifeStatus !== 'dead' && !this.personById.get(id)?.fictionalInfection).length ?? 0
+      const householdCareCapacity = household?.memberIds.filter((id) => id !== person.id && this.personById.get(id)?.lifeStatus !== 'dead' && !this.personById.get(id)?.fictionalInfection).length ?? 0
+      const careCapacityCount = householdCareCapacity + (infrastructureAccessAtCell(this.state.infrastructure, person.locationCellId).servicePermille >= 500 ? 1 : 0)
       const selfIsolating = infection?.phase === 'infectious' && careCapacityCount === 0
       const stressReductionPermille = infection?.phase === 'immune' || !infection ? 0 : Math.min(30, careCapacityCount * 15)
       const displacementPressurePermille = infection?.phase === 'infectious' ? 250 : infection?.phase === 'incubating' ? 100 : 0
@@ -1177,7 +1179,8 @@ export class SimulationEngine {
   }
 
   private resolveMarketExchanges(occupantsByActivity: ReadonlyMap<string, readonly string[]>, pushEvent: (event: SimulationEvent) => void): void {
-    for (const exchange of resolveToolExchanges(this.state.households, this.state.markets, occupantsByActivity, this.personById)) {
+    const storageAccessPermilleByMarketId = new Map(this.state.markets.map((market) => [market.id, infrastructureAccessAtCell(this.state.infrastructure, market.cellId).storagePermille]))
+    for (const exchange of resolveToolExchanges(this.state.households, this.state.markets, occupantsByActivity, this.personById, storageAccessPermilleByMarketId)) {
       this.economicCounters().exchangeCount += 1
       pushEvent(this.event('HOUSEHOLDS_EXCHANGED_TOOLS', { marketId: exchange.marketId, donorHouseholdId: exchange.donorHouseholdId, recipientHouseholdId: exchange.recipientHouseholdId, toolAmount: exchange.amount }))
     }

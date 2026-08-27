@@ -35,6 +35,8 @@ describe('economy model', () => {
     const people = new Map([['p1', { householdId: 'household-1' }], ['p2', { householdId: 'household-2' }]])
     const before = households.reduce((sum, household) => sum + household.inventory.tools, 0)
     expect(resolveToolExchanges(households, [market], new Map([[market.activityLocationId, ['p1', 'p2']]]), people)).toEqual([{ marketId: 'market-1', donorHouseholdId: 'household-1', recipientHouseholdId: 'household-2', amount: 1 }])
+    const unavailableStorage = new Map<string, number>([[market.id, 0]])
+    expect(resolveToolExchanges(households, [market], new Map([[market.activityLocationId, ['p1', 'p2']]]), people, unavailableStorage)).toEqual([])
     expect(households.reduce((sum, household) => sum + household.inventory.tools, 0)).toBe(before)
   })
 })

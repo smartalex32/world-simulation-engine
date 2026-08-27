@@ -12,8 +12,8 @@ export function createLocalGovernance(communities: readonly CommunitySimulationS
 }
 
 /** Legitimacy is an inspectable local aggregate, not a belief assignment to residents. */
-export function updateLegitimacy(governance: LocalGovernanceState, community: CommunitySimulationState, tick: number): void {
-  governance.serviceAccessPermille = community.structural['community.structural.foodSecurity']
+export function updateLegitimacy(governance: LocalGovernanceState, community: CommunitySimulationState, tick: number, infrastructureServicePermille = 1000): void {
+  governance.serviceAccessPermille = Math.min(community.structural['community.structural.foodSecurity'], clampPermille(infrastructureServicePermille))
   governance.contributionFairnessPermille = community.emergent['community.emergent.cooperation']
   governance.legitimacy = evaluateLegitimacy({ serviceAccessPermille: governance.serviceAccessPermille, contributionFairnessPermille: governance.contributionFairnessPermille, socialTrustPermille: community.emergent['community.emergent.socialTrust'], conflictPermille: community.emergent['community.emergent.conflict'] }).legitimacyPermille
   governance.lastUpdatedTick = tick

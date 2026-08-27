@@ -129,9 +129,14 @@ The workbench now provides coherent world, simulation, analytics, entities, hist
 The minimap is also keyboard accessible: Enter or Space recenters the map and
 its focus/assistive text describes it as a presentation-only navigation control.
 
-Settlement inspection also exposes read-only infrastructure evidence from real
-catchment-local markets, schools and their seats, and authored road cells. It
-does not imply civic membership or directly modify people.
+Infrastructure assets are authoritative runtime records derived from authored
+roads, water access, markets, and organizations. Roads, waterways, ports,
+storage, and services retain capacity, owner where physically grounded,
+condition, disruption, maintenance units, and structured lifecycle traces.
+Monthly repair consumes an actual resident household tool unit; no currency or
+ambient randomness is introduced. A shared physical-cell access view feeds
+settlement viability, market storage availability, public-service health
+support, and governance service evidence. The workbench remains read-only.
 
 The analytics surface also reports read-only household material distribution:
 food and tools remain separate, alongside zero-food households, separate Gini

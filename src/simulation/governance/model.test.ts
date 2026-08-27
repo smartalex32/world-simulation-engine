@@ -7,6 +7,8 @@ describe('civic legitimacy', () => {
     const community = { structural: { 'community.structural.foodSecurity': 800 }, emergent: { 'community.emergent.socialTrust': 700, 'community.emergent.cooperation': 600, 'community.emergent.conflict': 200 } }
     updateLegitimacy(governance, community as never, 24)
     expect(governance).toMatchObject({ publicGood: 'food-relief', serviceAccessPermille: 800, contributionFairnessPermille: 600, legitimacy: 725, lastUpdatedTick: 24 })
+    updateLegitimacy(governance, community as never, 48, 250)
+    expect(governance.serviceAccessPermille).toBe(250)
   })
 })
 
