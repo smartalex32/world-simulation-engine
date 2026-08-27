@@ -1,4 +1,5 @@
-import type { HealthExposureState, HealthStressTrace, PersonState } from '../domain/types'
+import type { CohortInfectionTrace, FictionalInfectionTrace, HealthExposureState, HealthStressTrace, PersonState, PopulationCohortState } from '../domain/types'
+import type { FictionalPathogenDefinition } from '../../contentPacks/types'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { adjustPersonVariable, getPersonVariable } from '../variables/storage'
 
@@ -14,6 +15,73 @@ export const HEALTH_STRESS = Object.freeze({
   highStressThreshold: 600,
   mortalityRiskDivisor: 80,
 } as const)
+export const FICTIONAL_PATHOGEN_STREAM = 'health.fictional-pathogen' as const
+
+export function progressFictionalInfections(people: readonly PersonState[], pathogens: readonly FictionalPathogenDefinition[], tick: number): FictionalInfectionTrace[] {
+  const byId = new Map(pathogens.map((pathogen) => [pathogen.id, pathogen]))
+  const traces: FictionalInfectionTrace[] = []
+  for (const person of [...people].sort((a, b) => a.id.localeCompare(b.id))) {
+    const infection = person.fictionalInfection
+    if (!infection || tick < infection.phaseEndsTick) continue
+    const pathogen = byId.get(infection.pathogenId)
+    if (!pathogen) { person.fictionalInfection = undefined; continue }
+    const previousPhase = infection.phase
+    if (infection.phase === 'incubating') {
+      person.fictionalInfection = { ...infection, phase: 'infectious', startedTick: tick, phaseEndsTick: tick + pathogen.infectiousHours }
+      person.lastInfectionTrace = { tick, pathogenId: pathogen.id, kind: 'became-infectious', previousPhase, nextPhase: 'infectious' }
+    } else if (infection.phase === 'infectious') {
+      person.fictionalInfection = { ...infection, phase: 'immune', startedTick: tick, phaseEndsTick: tick + pathogen.immunityHours }
+      person.lastInfectionTrace = { tick, pathogenId: pathogen.id, kind: 'recovered', previousPhase, nextPhase: 'immune' }
+    } else {
+      person.fictionalInfection = undefined
+      person.lastInfectionTrace = { tick, pathogenId: pathogen.id, kind: 'immunity-expired', previousPhase }
+    }
+    traces.push(person.lastInfectionTrace)
+  }
+  return traces
+}
+
+/** Evaluates stable co-location pairs using only the named health RNG stream. */
+export function transmitFictionalPathogens(input: { peopleById: ReadonlyMap<string, PersonState>; occupantsByActivity: ReadonlyMap<string, readonly string[]>; pathogens: readonly FictionalPathogenDefinition[]; tick: number; nextPermille: () => number }): FictionalInfectionTrace[] {
+  const pathogens = new Map(input.pathogens.map((pathogen) => [pathogen.id, pathogen]))
+  const traces: FictionalInfectionTrace[] = []
+  for (const [, ids] of [...input.occupantsByActivity].sort(([a], [b]) => a.localeCompare(b))) {
+    const sources = [...ids].map((id) => input.peopleById.get(id)).filter((person): person is PersonState => person?.fictionalInfection?.phase === 'infectious').sort((a, b) => a.id.localeCompare(b.id))
+    for (const candidateId of [...ids].sort()) {
+      const candidate = input.peopleById.get(candidateId)
+      if (!candidate || candidate.fictionalInfection) continue
+      const source = sources.find((person) => person.id !== candidate.id)
+      const pathogen = source?.fictionalInfection ? pathogens.get(source.fictionalInfection.pathogenId) : undefined
+      if (!source || !pathogen) continue
+      const probabilityPermille = Math.min(1000, pathogen.transmissionPermille * Math.max(1, sources.length))
+      const randomRollPermille = input.nextPermille()
+      if (randomRollPermille >= probabilityPermille) continue
+      candidate.fictionalInfection = { version: 1, pathogenId: pathogen.id, phase: 'incubating', startedTick: input.tick, phaseEndsTick: input.tick + pathogen.incubationHours, sourcePersonId: source.id }
+      candidate.lastInfectionTrace = { tick: input.tick, pathogenId: pathogen.id, kind: 'acquired', nextPhase: 'incubating', sourcePersonId: source.id, probabilityPermille, randomRollPermille }
+      traces.push(candidate.lastInfectionTrace)
+    }
+  }
+  return traces
+}
+
+/** Exact aggregate analogue of daily phase progression and exposure pressure. */
+export function advanceCohortFictionalInfections(cohorts: readonly PopulationCohortState[], pathogens: readonly FictionalPathogenDefinition[], tick: number): CohortInfectionTrace[] {
+  const pathogen = [...pathogens].sort((a, b) => a.id.localeCompare(b.id))[0]
+  if (!pathogen) return []
+  const traces: CohortInfectionTrace[] = []
+  for (const cohort of [...cohorts].sort((a, b) => a.id.localeCompare(b.id))) {
+    const state = cohort.fictionalInfection ?? { version: 1 as const, pathogenId: pathogen.id, incubatingCount: cohort.populationCount > 0 ? 1 : 0, infectiousCount: 0, immuneCount: 0, lastUpdatedTick: tick }
+    const susceptibleCount = Math.max(0, cohort.populationCount - state.incubatingCount - state.infectiousCount - state.immuneCount)
+    const newIncubatingCount = state.infectiousCount === 0 ? 0 : Math.min(susceptibleCount, Math.floor(susceptibleCount * state.infectiousCount * pathogen.transmissionPermille / Math.max(1, cohort.populationCount * 1000)))
+    const becameInfectiousCount = Math.min(state.incubatingCount, Math.max(1, Math.floor(state.incubatingCount * 24 / pathogen.incubationHours)))
+    const recoveredCount = Math.min(state.infectiousCount, Math.max(1, Math.floor(state.infectiousCount * 24 / pathogen.infectiousHours)))
+    const immunityExpiredCount = Math.min(state.immuneCount, Math.max(1, Math.floor(state.immuneCount * 24 / pathogen.immunityHours)))
+    const trace: CohortInfectionTrace = { tick, pathogenId: pathogen.id, susceptibleCount, newIncubatingCount, becameInfectiousCount, recoveredCount, immunityExpiredCount, careCapacityCount: 0, mortalityCount: 0 }
+    cohort.fictionalInfection = { version: 1, pathogenId: pathogen.id, incubatingCount: state.incubatingCount + newIncubatingCount - becameInfectiousCount, infectiousCount: state.infectiousCount + becameInfectiousCount - recoveredCount, immuneCount: state.immuneCount + recoveredCount - immunityExpiredCount, lastUpdatedTick: tick, lastTrace: trace }
+    traces.push(trace)
+  }
+  return traces
+}
 
 export function emptyHealthExposure(): HealthExposureState {
   return { observedHours: 0, crowdingPersonHours: 0, coPresenceHours: 0, waterAvailabilityPermilleHours: 0 }

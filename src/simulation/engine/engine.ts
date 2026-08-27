@@ -90,7 +90,7 @@ import { createLocalGovernance, updateLegitimacy } from '../governance/model'
 import { applyDispute, disputeId, resolveCommunityContentions } from '../conflict/model'
 import { discoverLocalTerrain, initialKnowledge, transmitKnowledge } from '../knowledge/model'
 import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION_STREAM, relocationTrace } from '../households/relocation'
-import { emptyHealthExposure, healthStressMortalityRiskPermille, resolveDailyHealthStress } from '../health/model'
+import { advanceCohortFictionalInfections, emptyHealthExposure, FICTIONAL_PATHOGEN_STREAM, healthStressMortalityRiskPermille, progressFictionalInfections, resolveDailyHealthStress, transmitFictionalPathogens } from '../health/model'
 import { attemptPracticalExperiment, INNOVATION_STREAM } from '../innovation/model'
 import { COHORT_MODEL_VERSION, advanceCohortsAnnual, advanceCohortsDaily, createInitialCohorts } from '../cohorts/model'
 import { materializeCohortPeople, materializationStreamName } from '../cohorts/materialization'
@@ -381,6 +381,9 @@ export class SimulationEngine {
       this.recordActivityPersonHours()
       this.recordEnvironmentalExposure()
       this.recordHealthExposure(postActionActivityOccupancy)
+      for (const trace of transmitFictionalPathogens({ peopleById: this.personById, occupantsByActivity: postActionActivityOccupancy, pathogens: this.contentPackRuntime.pack.pathogens, tick: this.state.tick, nextPermille: () => this.random.stream(FICTIONAL_PATHOGEN_STREAM).nextInt(1000) })) {
+        pushEvent(this.event('FICTIONAL_INFECTION_ACQUIRED', { personId: this.state.people.find((person) => person.lastInfectionTrace === trace)?.id ?? null, pathogenId: trace.pathogenId, sourcePersonId: trace.sourcePersonId ?? null, probabilityPermille: trace.probabilityPermille ?? 0, randomRollPermille: trace.randomRollPermille ?? 0 }))
+      }
       this.recordCommunityPersonHours()
       this.recordCommunityDevelopmentExposure()
       this.accumulateDevelopmentExposure()
@@ -413,7 +416,8 @@ export class SimulationEngine {
       }
       if (this.state.tick % 8760 === 0) { this.resolveAnnualLifeCycle(pushEvent); advanceCohortsAnnual(this.state.cohorts) }
       if (this.state.tick % 24 === 0) {
-        this.resolveDailyHealthStress()
+        this.resolveDailyHealthStress(pushEvent)
+        for (const trace of advanceCohortFictionalInfections(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, susceptibleCount: trace.susceptibleCount, newIncubatingCount: trace.newIncubatingCount, becameInfectiousCount: trace.becameInfectiousCount, recoveredCount: trace.recoveredCount }))
         this.resolveDailyFoodSharing(pushEvent)
         this.aggregateCommunities(pushEvent)
         for (const governance of this.state.governance) { const community = this.state.communities.find((value) => value.catchment.id === governance.communityId); if (community) updateLegitimacy(governance, community, this.state.tick) }
@@ -716,7 +720,8 @@ export class SimulationEngine {
     }
   }
 
-  private resolveDailyHealthStress(): void {
+  private resolveDailyHealthStress(pushEvent: (event: SimulationEvent) => void): void {
+    for (const trace of progressFictionalInfections(this.livingPeople(), this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('FICTIONAL_INFECTION_PROGRESS', { pathogenId: trace.pathogenId, kind: trace.kind, sourcePersonId: trace.sourcePersonId ?? null }))
     for (const person of this.livingPeople()) resolveDailyHealthStress(person, this.state.tick)
   }
 
