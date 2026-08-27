@@ -28,10 +28,17 @@ export function cohortPopulationByCell(cohorts: readonly PopulationCohortState[]
  * age bands, and allocations exactly.  A later transition may materialize this
  * same retained aggregate without inventing population.
  */
-export function advanceCohortsDaily(cohorts: PopulationCohortState[], cells: readonly GeographicCell[]): void {
+export function advanceCohortsDaily(cohorts: PopulationCohortState[], cells: GeographicCell[]): void {
   const cellsById = new Map(cells.map((cell) => [cell.id, cell]))
-  for (const cohort of cohorts) {
-    const harvest = cohort.cellAllocations.reduce((total, allocation) => total + Math.min(cellsById.get(allocation.cellId)?.foodAmount ?? 0, Math.max(0, Math.floor(allocation.populationCount / 12))), 0)
+  for (const cohort of [...cohorts].sort((first, second) => compareText(first.id, second.id))) {
+    let harvest = 0
+    for (const allocation of cohort.cellAllocations) {
+      const cell = cellsById.get(allocation.cellId)
+      if (!cell) continue
+      const collected = Math.min(cell.foodAmount, Math.max(0, Math.floor(allocation.populationCount / 12)))
+      cell.foodAmount -= collected
+      harvest += collected
+    }
     const required = Math.ceil(cohort.populationCount / 3)
     cohort.foodUnits = Math.max(0, cohort.foodUnits + harvest - required)
   }

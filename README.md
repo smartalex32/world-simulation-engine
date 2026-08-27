@@ -191,18 +191,21 @@ home-to-marker travel evidence. Profile capacities are authoring guidance, not
 population caps or social membership; detailed browser authoring remains
 bounded to 500 people until cohort allocation is introduced.
 
-Milestone 56 begins cohort simulation with a versioned authoritative ledger for
-explicit distant-population allocations. A zone may retain its bounded detailed
-people while assigning a much larger static cohort; exact population,
-household, food, age-band, event-total, and cell-allocation evidence is stored
-in snapshots and included in population/map summaries. Cohorts do not yet
-advance, form relationships, or materialize into detailed people.
+Population cohorts are authoritative aggregate ledgers for explicit
+distant-population allocations. Daily cohort harvesting consumes the same
+environmental food stock as detailed people and records retained food, age-band,
+household, event-total, and cell-allocation evidence in snapshots. Cohorts do
+not imply relationships or membership.
 
-Milestone 57 begins fidelity transitions with a deterministic, non-mutating
-materialization plan. It exposes exact requested and residual totals plus
-canonical cell allocations, and refuses automatic conversion whenever protected
-detailed identities (including a hook) are present. Actual materialization and
-dematerialization remain separate authoritative state transitions.
+Fidelity conversion is an explicit worker/host command, never a viewport side
+effect. Materialization proportionally debits a cohort's cell allocation and
+creates collision-free ordinary people, households, parent links, and home
+activities. Dematerialization accepts only whole, unprotected materialized
+households without retained relationship or split-family history. Every command
+appends a canonical retained transition record with its named RNG provenance;
+population reconciliation and snapshot validation reject conservation or
+identity violations. The validation suite exercises 10,000 detailed people plus
+a 100,000-person cohort through advance and snapshot restore.
 
 Milestone 58 begins retained settlement scale. Each geographic settlement
 evaluates nearby living homes, catchment resource capacity, and water access on
