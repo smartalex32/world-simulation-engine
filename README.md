@@ -87,7 +87,7 @@ Historical delivery index through Milestone 50:
 * Milestone 36 — Historical Snapshots and Causal Replay
 * Milestone 37 — Scalable Authoritative Simulation
 * Milestone 38 — World Builder and Workbench Maturity
-* Milestone 39 — Collaboration and Shared Worlds (design only)
+* Capability 3 — Shared worlds and public integration platform (in progress)
 * Milestone 40 — Designed Landmass and Water Authoring
 * Milestone 41 — Settlement Seeds and Authoring Profiles
 * Milestone 42 — Food Security, Settlement Growth, and Migration Signals
@@ -262,6 +262,34 @@ PostgreSQL transactions, and returns bounded projections. Start PostgreSQL with
 `docker compose up -d postgres`, make and verify a database backup, run
 `HOSTED_MIGRATION_BACKUP_FILE=<absolute-path> DATABASE_URL=<url> pnpm host:migrate`,
 then start with `DATABASE_URL=<url> HOSTED_OWNER_TOKEN=<secret> pnpm host`.
+
+The hosted HTTP service also exposes the evolving versioned shared-world API at
+`/api/v1`: accounts, bearer sessions, owner/editor/viewer roles, single-writer
+draft leases, immutable draft revisions with parent links and canonical payload
+digests, operational audit records, and ordered
+resumable SSE events. This metadata is noncanonical and never changes a world
+or simulation digest. Shared-world records are stored separately from canonical
+run data in PostgreSQL and are reloaded on hosted-server restart.
+
+`SharedWorldClient` in `src/hosted/sdk.ts` is the typed browser/Node client for
+these versioned resources. It authenticates once with a bearer session, then
+uses only server-authorized world, membership, lease, revision, and audit calls.
+
+An owner can commit a specific immutable shared draft revision into a separate
+server-owned run through `/api/v1/worlds/{worldId}/runs`. Viewers may request
+that run's projection; authoritative commands remain owner-only and execute
+inside the server's serial run coordinator.
+
+For automation, `pnpm shared-world` issues a bounded versioned HTTP request.
+Set `SHARED_WORLD_API_URL` and, for authenticated operations,
+`SHARED_WORLD_TOKEN`; its arguments are `GET|POST|PUT|DELETE`, an `/api/v1`
+path, and an optional JSON body. For example:
+
+```powershell
+$env:SHARED_WORLD_API_URL = 'http://127.0.0.1:8787'
+$env:SHARED_WORLD_TOKEN = '<scoped bearer token>'
+pnpm shared-world GET /api/v1/tokens
+```
 Use `HOSTED_BACKUP_FILE=<absolute-path> DATABASE_URL=<url> pnpm host:backup`
 to create and verify a PostgreSQL custom-format backup. Restoring is deliberately
 guarded: `HOSTED_RESTORE_CONFIRMED=yes HOSTED_BACKUP_FILE=<absolute-path>

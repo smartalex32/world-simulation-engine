@@ -18,6 +18,7 @@ const migrations = new Map<number, SnapshotMigration>([
   // on creation and accepts the missing value as the legacy derived scale.
   [33, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 34 })],
   [34, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 35, state: { ...snapshot.state, config: { ...snapshot.state.config, contentPackId: 'setting.preindustrial.default', contentPackVersion: '1.0.0', contentPackModelVersion: 1 } } })],
+  [35, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 36, state: { ...snapshot.state, config: { ...snapshot.state.config, contentPackModelVersion: 2 } } })],
 ])
 
 export function migrateSnapshotSchema(value: unknown, targetSchema: number): SnapshotLike {

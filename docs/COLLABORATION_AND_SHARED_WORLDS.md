@@ -59,8 +59,9 @@ authoring command.
 
 The server serializes accepted commands in one order. It applies the same
 worker-owned validation and canonical ordering used by local draft mutation,
-persists a new immutable revision, then publishes the new revision number to
-viewers. A client never merges or applies an authoritative draft edit locally.
+persists a new immutable revision with its parent revision and SHA-256 canonical
+payload digest, then publishes the new revision number to viewers. A client
+never merges or applies an authoritative draft edit locally.
 
 Lease expiry must be recoverable: a disconnected editor loses the lease after a
 bounded interval, and another permitted editor may acquire it. A reconnecting

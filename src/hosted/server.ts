@@ -4,6 +4,8 @@ import { HostedSimulationJobManager } from './jobs'
 import { HostedRunService } from './runService'
 import { PostgresHostedRunStore } from './postgres'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../contentPacks'
+import { HostedEventStream } from './eventStream'
+import { SharedRunCoordinator } from './sharedRuns'
 
 const port = numberEnvironment('PORT', 8787)
 const bindHost = hostEnvironment('HOSTED_BIND_HOST', '127.0.0.1')
@@ -25,8 +27,11 @@ const bootstrap = {
 const service = await HostedRunService.open(bootstrap, store)
 const jobs = new HostedSimulationJobManager(service, store, ownerId, ownerToken)
 await jobs.resumePending()
+const sharedWorlds = await store.loadSharedWorldService()
+const eventStream = await store.loadEventStream()
+const sharedRuns = new SharedRunCoordinator(store)
 
-createHostedHttpServer({ runId, ownerToken, service, jobs, contentPacks: store }).listen(port, bindHost, () => {
+createHostedHttpServer({ runId, ownerToken, service, jobs, contentPacks: store, sharedWorlds, eventStream, sharedRuns, saveSharedWorlds: () => store.saveSharedWorldService(sharedWorlds), saveEventStream: () => store.saveEventStream(eventStream) }).listen(port, bindHost, () => {
   console.info(`Hosted single-node simulation listening on http://${bindHost}:${port} for run ${runId}`)
 })
 

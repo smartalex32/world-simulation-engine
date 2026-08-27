@@ -27,7 +27,7 @@ do not change a canonical engine digest.
 
 `DATABASE_MIGRATION_VERSION` is the hosted storage contract. This release
 accepts the current generation and the two immediately preceding generations
-(1, 2, and 3). A database newer than this application is rejected. Server
+(4, 5, and 6). A database newer than this application is rejected. Server
 startup refuses an older or uninitialized database; only the guarded migration
 command can bring it forward.
 
@@ -74,10 +74,28 @@ same run.
 
 The backup, migration, and restore commands require PostgreSQL client tools
 (`pg_dump` and `pg_restore`) on the operator machine. `docker compose up -d
-postgres` starts a local PostgreSQL 17 service for development; change the
-compose password before any non-local use. The current hosted HTTP boundary is
-owner-authorized and intentionally not a public or multi-user API. Account
-security, public APIs, and multi-user collaboration belong to Capability 3.
+postgres` starts a local PostgreSQL 17 service for development. After a guarded
+migration, `docker compose up --build host` starts the application container.
+Change both compose secrets before any non-local use. The hosted HTTP boundary includes an
+initial `/api/v1` shared-world transport for Argon2id accounts, bearer
+sessions, explicit roles, renewable single-writer leases, immutable revisions,
+audits, and resumable SSE notifications. Collaboration metadata is stored in a
+separate checksummed PostgreSQL payload and is operational rather than
+canonical simulation state. Legacy run endpoints remain owner-token authorized.
+
+## Network and TLS boundary
+
+Run the Node host on a private network address and terminate TLS at a managed
+reverse proxy or load balancer. Forward only HTTPS traffic to the host, preserve
+the `Authorization` header and `Last-Event-ID`, and disable response buffering
+for `/api/v1/events` so SSE stays resumable. Do not expose PostgreSQL's port to
+the public internet. The Compose `host` health check calls `GET /health`; it
+only indicates that the process started after database readiness checks, not
+that a browser client owns simulation authority.
+
+Use a unique high-entropy `HOSTED_OWNER_TOKEN`, keep it in a deployment secret
+store rather than Compose source, and issue scoped API tokens to integrations.
+Bearer session and API tokens must be sent only over TLS in production.
 
 ## Verification
 

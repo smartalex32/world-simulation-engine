@@ -145,7 +145,7 @@ export default function App() {
     })
     async function handleResponse(response: SimulationResponse) {
       if (response.type === 'READY') {
-        client.create(seed)
+        client.create(seed, selectedContentPack())
       } else if (response.type === 'FRAME') {
         const previousProjection = projectionRef.current
         const startedNewProjection = previousProjection !== undefined && previousProjection.projectionEpoch !== response.projection.projectionEpoch

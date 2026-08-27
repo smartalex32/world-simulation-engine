@@ -6,9 +6,11 @@ import { canonicalStringify } from '../simulation/serialization/snapshot'
 import { compareStableText } from '../shared/stableOrder'
 import { exportContentPack, importContentPack, type ContentPack, type ContentPackCatalog } from '../contentPacks'
 import { validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedRunRecord, type HostedRunStore, type HostedSimulationJob, type HostedTelemetryStore } from './types'
+import { SharedWorldService, type SharedWorldServiceState } from './sharedWorlds'
+import { HostedEventStream, type HostedEventStreamState } from './eventStream'
 
 /** Current hosted database generation; migrations retain the two prior generations. */
-export const DATABASE_MIGRATION_VERSION = 4
+export const DATABASE_MIGRATION_VERSION = 6
 
 /**
  * PostgreSQL durable store. Payload bytes are canonical JSON compressed with
@@ -82,6 +84,22 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
         )`)
         await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (4)')
       }
+      if (version < 5) {
+        await client.query(`CREATE TABLE IF NOT EXISTS hosted_shared_world_state (
+          state_key text PRIMARY KEY CHECK (state_key = 'default'), payload bytea NOT NULL,
+          payload_sha256 text NOT NULL, payload_uncompressed_bytes integer NOT NULL CHECK (payload_uncompressed_bytes > 0),
+          payload_encoding text NOT NULL DEFAULT 'gzip-json-v1', saved_at timestamptz NOT NULL DEFAULT now()
+        )`)
+        await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (5)')
+      }
+      if (version < 6) {
+        await client.query(`CREATE TABLE IF NOT EXISTS hosted_event_stream_state (
+          state_key text PRIMARY KEY CHECK (state_key = 'default'), payload bytea NOT NULL,
+          payload_sha256 text NOT NULL, payload_uncompressed_bytes integer NOT NULL CHECK (payload_uncompressed_bytes > 0),
+          payload_encoding text NOT NULL DEFAULT 'gzip-json-v1', saved_at timestamptz NOT NULL DEFAULT now()
+        )`)
+        await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (6)')
+      }
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
@@ -144,8 +162,28 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
   async putPack(pack: ContentPack): Promise<ContentPack> {
     const valid = importContentPack(exportContentPack(pack)); const payload = encodePayload(valid)
     await this.pool.query(`INSERT INTO hosted_content_packs(pack_id, pack_version, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding)
-      VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (pack_id, pack_version) DO UPDATE SET payload = EXCLUDED.payload, payload_sha256 = EXCLUDED.payload_sha256, payload_uncompressed_bytes = EXCLUDED.payload_uncompressed_bytes, payload_encoding = EXCLUDED.payload_encoding, saved_at = now()`, [valid.manifest.id, valid.manifest.version, payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
+      VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (pack_id, pack_version) DO NOTHING`, [valid.manifest.id, valid.manifest.version, payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
+    const stored = await this.getPack(valid.manifest.id, valid.manifest.version)
+    if (!stored || exportContentPack(stored) !== exportContentPack(valid)) throw new Error(`Content pack version is immutable: ${valid.manifest.id}@${valid.manifest.version}`)
     return valid
+  }
+  async loadSharedWorldService(): Promise<SharedWorldService> {
+    const result = await this.pool.query<StoredPayload>('SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_shared_world_state WHERE state_key = $1', ['default'])
+    return result.rows[0] ? SharedWorldService.restore(decodeStoredPayload(result.rows[0]) as SharedWorldServiceState) : new SharedWorldService()
+  }
+  async saveSharedWorldService(service: SharedWorldService): Promise<void> {
+    const payload = encodePayload(service.snapshotState())
+    await this.pool.query(`INSERT INTO hosted_shared_world_state(state_key, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding)
+      VALUES ('default',$1,$2,$3,$4) ON CONFLICT (state_key) DO UPDATE SET payload = EXCLUDED.payload, payload_sha256 = EXCLUDED.payload_sha256, payload_uncompressed_bytes = EXCLUDED.payload_uncompressed_bytes, payload_encoding = EXCLUDED.payload_encoding, saved_at = now()`, [payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
+  }
+  async loadEventStream(capacity = 1_000): Promise<HostedEventStream> {
+    const result = await this.pool.query<StoredPayload>('SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_event_stream_state WHERE state_key = $1', ['default'])
+    return result.rows[0] ? HostedEventStream.restore(decodeStoredPayload(result.rows[0]) as HostedEventStreamState, capacity) : new HostedEventStream(capacity)
+  }
+  async saveEventStream(stream: HostedEventStream): Promise<void> {
+    const payload = encodePayload(stream.snapshotState())
+    await this.pool.query(`INSERT INTO hosted_event_stream_state(state_key, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding)
+      VALUES ('default',$1,$2,$3,$4) ON CONFLICT (state_key) DO UPDATE SET payload = EXCLUDED.payload, payload_sha256 = EXCLUDED.payload_sha256, payload_uncompressed_bytes = EXCLUDED.payload_uncompressed_bytes, payload_encoding = EXCLUDED.payload_encoding, saved_at = now()`, [payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
   }
 
   private async verifyConnection(): Promise<void> { await this.pool.query('SELECT 1') }

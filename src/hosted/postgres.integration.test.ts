@@ -15,7 +15,7 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
   beforeEach(async () => {
     const store = await storePromise
     await store.initialize()
-    await store.pool.query('TRUNCATE hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_runs CASCADE')
+    await store.pool.query('TRUNCATE hosted_event_stream_state, hosted_shared_world_state, hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_runs CASCADE')
   })
 
   afterAll(async () => { await (await storePromise).close() })
@@ -42,7 +42,7 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
 
   it('migrates each retained prior database generation to the current schema', async () => {
     const store = await storePromise
-    for (const version of [2, 3] as const) {
+    for (const version of [2, 3, 4, 5] as const) {
       await installLegacySchema(store, version)
       await store.initialize()
       const current = await store.pool.query<{ version: number }>('SELECT version FROM world_simulation_schema_migrations ORDER BY version DESC LIMIT 1')
@@ -90,10 +90,20 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
     expect((await store.listPacks()).map((pack) => pack.manifest.id)).toEqual([DEFAULT_PREINDUSTRIAL_PACK.manifest.id])
     expect(await store.getPack(DEFAULT_PREINDUSTRIAL_PACK.manifest.id, DEFAULT_PREINDUSTRIAL_PACK.manifest.version)).toEqual(DEFAULT_PREINDUSTRIAL_PACK)
   })
+  it('restores noncanonical shared-world collaboration authority after reopening', async () => {
+    const store = await storePromise; const now = '2026-01-01T00:00:00.000Z'; const shared = await store.loadSharedWorldService()
+    await shared.createAccount('owner', 'owner@example.test', 'correct-horse-battery', now); shared.createWorld('world-1', 'Shared world', 'owner', { terrain: 'plain' }, now)
+    await store.saveSharedWorldService(shared)
+    expect((await store.loadSharedWorldService()).getWorld('world-1', 'owner')).toMatchObject({ currentRevision: 1, name: 'Shared world' })
+  })
+  it('restores ordered event replay after reopening', async () => {
+    const store = await storePromise; const stream = await store.loadEventStream(2); stream.publish('draft.revised', { revision: 1 }, '2026-01-01T00:00:00.000Z'); await store.saveEventStream(stream)
+    expect((await store.loadEventStream(2)).after().map((event) => event.id)).toEqual([1])
+  })
 })
 
-async function installLegacySchema(store: PostgresHostedRunStore, version: 2 | 3): Promise<void> {
-  await store.pool.query('DROP TABLE IF EXISTS hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_runs, world_simulation_schema_migrations CASCADE')
+async function installLegacySchema(store: PostgresHostedRunStore, version: 2 | 3 | 4 | 5): Promise<void> {
+  await store.pool.query('DROP TABLE IF EXISTS hosted_event_stream_state, hosted_shared_world_state, hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_runs, world_simulation_schema_migrations CASCADE')
   await store.pool.query('CREATE TABLE world_simulation_schema_migrations (version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())')
   await store.pool.query(`CREATE TABLE hosted_runs (
     run_id text PRIMARY KEY, owner_id text NOT NULL, saved_at timestamptz NOT NULL,
@@ -116,6 +126,20 @@ async function installLegacySchema(store: PostgresHostedRunStore, version: 2 | 3
     await store.pool.query("ALTER TABLE hosted_runs ADD COLUMN snapshot_encoding text NOT NULL DEFAULT 'gzip-json-v1'")
     await store.pool.query("ALTER TABLE hosted_jobs ADD COLUMN payload_encoding text NOT NULL DEFAULT 'gzip-json-v1'")
     await store.pool.query("ALTER TABLE hosted_telemetry_batches ADD COLUMN payload_encoding text NOT NULL DEFAULT 'gzip-json-v1'")
+  }
+  if (version >= 4) {
+    await store.pool.query(`CREATE TABLE hosted_content_packs (
+      pack_id text NOT NULL, pack_version text NOT NULL, payload bytea NOT NULL,
+      payload_sha256 text NOT NULL, payload_uncompressed_bytes integer NOT NULL CHECK (payload_uncompressed_bytes > 0),
+      payload_encoding text NOT NULL DEFAULT 'gzip-json-v1', saved_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (pack_id, pack_version)
+    )`)
+  }
+  if (version >= 5) {
+    await store.pool.query(`CREATE TABLE hosted_shared_world_state (
+      state_key text PRIMARY KEY CHECK (state_key = 'default'), payload bytea NOT NULL,
+      payload_sha256 text NOT NULL, payload_uncompressed_bytes integer NOT NULL CHECK (payload_uncompressed_bytes > 0),
+      payload_encoding text NOT NULL DEFAULT 'gzip-json-v1', saved_at timestamptz NOT NULL DEFAULT now()
+    )`)
   }
   await store.pool.query('INSERT INTO world_simulation_schema_migrations(version) VALUES ($1)', [version])
 }

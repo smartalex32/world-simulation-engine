@@ -5,5 +5,8 @@ test-results/
 playwright-report/
 coverage/
 .world-simulation-hosted/
+.env
+.env.*
+!.env.example
 *.tsbuildinfo
 .DS_Store

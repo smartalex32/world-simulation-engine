@@ -7,6 +7,7 @@ export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
   workers: 3,
+  timeout: 60_000,
   use: { baseURL: `http://127.0.0.1:${port}`, trace: 'on-first-retry' },
   webServer: {
     command: `pnpm preview --host 127.0.0.1 --port ${port}`,

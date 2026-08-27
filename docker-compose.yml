@@ -14,6 +14,23 @@ services:
       retries: 20
     ports:
       - "5432:5432"
+  host:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://world_simulation:change-me-before-deployment@postgres:5432/world_simulation
+      HOSTED_OWNER_TOKEN: change-me-before-deployment-owner-token
+      HOSTED_BIND_HOST: 0.0.0.0
+    ports:
+      - "8787:8787"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8787/health >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
 
 volumes:
   world-simulation-postgres:
