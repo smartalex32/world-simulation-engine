@@ -219,7 +219,7 @@ export default function App() {
           // IndexedDB writes are asynchronous; ignore an older worker reply
           // that resumes after a newer accepted draft has already arrived.
           if (worldDraftRef.current && response.draft.revision < worldDraftRef.current.revision) return
-          if (response.action === 'updated' || response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted' || response.action === 'elevationPainted' || response.action === 'resourcesPainted') setError(undefined)
+          if (response.action === 'updated' || response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted' || response.action === 'elevationPainted' || response.action === 'resourcesPainted' || response.action === 'undone' || response.action === 'redone') setError(undefined)
           worldDraftRef.current = response.draft
           setWorldDraft(response.draft)
           if (response.preview) setDraftPreview(response.preview)
@@ -232,7 +232,7 @@ export default function App() {
             setWorldSetup(acceptedSetup)
             setDraftViewport(undefined)
           }
-          if (response.action === 'reset' || response.action === 'hydrated') {
+          if (response.action === 'reset' || response.action === 'hydrated' || response.action === 'undone' || response.action === 'redone') {
             worldSetupRef.current = acceptedSetup
             setWorldSetup(acceptedSetup)
           }
@@ -505,6 +505,18 @@ export default function App() {
     client.resetDraft(WORLD_SETUP_DRAFT_ID)
   }
 
+  function undoWorldSetup() {
+    if (draftBusyRef.current || !worldDraftRef.current?.undoStack.length) return
+    setDraftOperationBusy(true)
+    client.undoDraft(WORLD_SETUP_DRAFT_ID)
+  }
+
+  function redoWorldSetup() {
+    if (draftBusyRef.current || !worldDraftRef.current?.redoStack.length) return
+    setDraftOperationBusy(true)
+    client.redoDraft(WORLD_SETUP_DRAFT_ID)
+  }
+
   function exportWorldSetupDraft() {
     const draft = worldDraftRef.current
     if (!draft) return
@@ -721,7 +733,7 @@ export default function App() {
           {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
       </section>}
-      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={!draftBusy && acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} onElevationPaintCommit={paintDraftElevation} onResourcePaintCommit={paintDraftResources} onExportDraft={exportWorldSetupDraft} onImportDraft={importWorldSetupDraft} error={error} />}
+      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onUndo={undoWorldSetup} onRedo={redoWorldSetup} canUndo={(worldDraft?.undoStack.length ?? 0) > 0} canRedo={(worldDraft?.redoStack.length ?? 0) > 0} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={!draftBusy && acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} onElevationPaintCommit={paintDraftElevation} onResourcePaintCommit={paintDraftResources} onExportDraft={exportWorldSetupDraft} onImportDraft={importWorldSetupDraft} error={error} />}
     </main>
   )
 }
@@ -829,7 +841,7 @@ function worldSetupSignature(setup: WorldSetupValues): string {
   return JSON.stringify(creationDraftFromSetup(setup))
 }
 
-function CellInspector({ cell, people, onSelectPerson, detailsTruncated }: { cell: GeographicCell & { populationCount?: number; drainage?: { downstreamCellId?: string; basinId: string } }; people: PersonState[]; onSelectPerson: (id: string) => void; detailsTruncated: boolean }) {
+function CellInspector({ cell, people, onSelectPerson, detailsTruncated }: { cell: GeographicCell & { populationCount?: number; drainage?: { downstreamCellId?: string; basinId: string }; environment?: { biomeId: string; river: boolean; lake: boolean; watershedCellCount: number; ecologicalProductivityPermille: number; agriculturalSuitabilityPermille: number; hazardRiskPermille: number; humanPressurePermille: number } }; people: PersonState[]; onSelectPerson: (id: string) => void; detailsTruncated: boolean }) {
   return <div className="inspector-grid">
     <Metric label="Coordinates" value={`q ${cell.q} · r ${cell.r}`} />
     <Metric label="Terrain" value={cell.terrain} />
@@ -839,6 +851,7 @@ function CellInspector({ cell, people, onSelectPerson, detailsTruncated }: { cel
     <Metric label="Food stock" value={`${cell.foodAmount} / ${cell.resourceCapacity}`} />
     <Metric label="Daily regrowth" value={cell.foodRegenerationPerDay} />
     {cell.drainage && <Metric label="Drainage" value={cell.drainage.downstreamCellId ? `→ ${cell.drainage.downstreamCellId}` : `Basin sink ${cell.drainage.basinId}`} />}
+    {cell.environment && <><Metric label="Biome" value={cell.environment.biomeId} /><Metric label="Hydrology" value={cell.environment.lake ? 'Lake basin' : cell.environment.river ? `River · ${cell.environment.watershedCellCount} cells` : `${cell.environment.watershedCellCount}-cell watershed`} /><Metric label="Ecology" value={`${cell.environment.ecologicalProductivityPermille}‰`} /><Metric label="Agriculture" value={`${cell.environment.agriculturalSuitabilityPermille}‰`} /><Metric label="Hazard risk" value={`${cell.environment.hazardRiskPermille}‰`} /><Metric label="Harvest pressure" value={`${cell.environment.humanPressurePermille}‰`} /></>}
     <div className="occupant-list"><span>People here ({cell.populationCount ?? people.length})</span>{people.slice(0, 12).map((person) => <button key={person.id} onClick={() => onSelectPerson(person.id)}>{person.id}<small>authoritative person state</small></button>)}{people.length === 0 && <em>{cell.populationCount ? 'Details are paged at this scale.' : 'None'}</em>}{detailsTruncated && people.length < (cell.populationCount ?? 0) && <small>Showing bounded local details; hook a person to inspect them.</small>}</div>
     <div className="neighbor-list"><span>Six neighbors</span><code>{hexNeighbors(cell).map((coord) => `${coord.q},${coord.r}`).join('  ')}</code></div>
   </div>

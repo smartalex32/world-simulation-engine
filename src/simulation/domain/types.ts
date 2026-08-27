@@ -8,7 +8,7 @@ import type {
 } from '../community/types'
 import type { SettlementTemplateId } from '../spatial/settlementTemplates'
 
-export const ENGINE_VERSION = '0.37.0'
+export const ENGINE_VERSION = '0.38.0'
 export const SNAPSHOT_SCHEMA_VERSION = 36
 /** Versioned content-pack selection is authoritative configuration, not UI state. */
 export const CONTENT_PACK_MODEL_VERSION = 2
@@ -21,7 +21,7 @@ export const DEVELOPMENT_REGISTRY_VERSION = 2
 export const COMMUNITY_REGISTRY_VERSION = 1
 export const WORLD_GENERATOR_VERSION = 1
 /** Versioned deterministic calendar/exposure rules used by Milestone 9. */
-export const ENVIRONMENT_MODEL_VERSION = 2
+export const ENVIRONMENT_MODEL_VERSION = 3
 export const LIFE_CYCLE_MODEL_VERSION = 1
 /** Versioned, non-monetary household food production and sharing rules. */
 export const ECONOMY_MODEL_VERSION = 2
@@ -197,12 +197,15 @@ export interface WorldCreationRequest {
  * commit.
  */
 export interface WorldDraftRecord {
-  version: 2
+  version: 3
   draftId: string
   revision: number
   /** Immutable authored input retained so reset never depends on UI state. */
   initialDraft: WorldCreationDraft
   draft: WorldCreationDraft
+  /** Bounded worker-owned authoring history; never live simulation state. */
+  undoStack: WorldCreationDraft[]
+  redoStack: WorldCreationDraft[]
 }
 
 /** A bounded, deterministic result used by authoring UI before commit. */
@@ -253,6 +256,8 @@ export interface DraftViewportProjection {
   draftRevision: number
   revision: number
   selectedZoneId?: string
+  /** Canonically ordered sparse-world chunks contributing cells to this slice. */
+  chunkKeys: string[]
   cells: DraftViewportCell[]
 }
 

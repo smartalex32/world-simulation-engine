@@ -2,8 +2,10 @@ import { generateValley } from '../spatial/worldGenerator'
 import type { DraftViewportProjection, DraftViewportRequest, ElevationOverride, ResourceCapacityOverride, Terrain, TerrainTypeOverride, WorldCreationDraft, WorldDraftPreview, WorldDraftRecord } from './types'
 import { normalizeWorldCreationRequest, validateWorldCreationDraftLimits } from './worldCreation'
 import { settlementTemplate } from '../spatial/settlementTemplates'
+import { worldChunkKey } from '../spatial/worldChunks'
 
-export const WORLD_DRAFT_RECORD_VERSION = 2 as const
+export const WORLD_DRAFT_RECORD_VERSION = 3 as const
+export const MAX_WORLD_DRAFT_HISTORY = 100
 export const MAX_TERRAIN_PAINT_CELLS = 512
 export const MAX_ELEVATION_PAINT_CELLS = 512
 export const MAX_RESOURCE_PAINT_CELLS = 512
@@ -13,7 +15,7 @@ export function createWorldDraftRecord(draftId: string, draft: WorldCreationDraf
   validateDraftId(draftId)
   validateWorldCreationDraftLimits(draft)
   const initialDraft = cloneDraft(draft)
-  return { version: WORLD_DRAFT_RECORD_VERSION, draftId, revision: 0, initialDraft, draft: cloneDraft(initialDraft) }
+  return { version: WORLD_DRAFT_RECORD_VERSION, draftId, revision: 0, initialDraft, draft: cloneDraft(initialDraft), undoStack: [], redoStack: [] }
 }
 
 /** Replaces the authored draft after optimistic-revision validation. */
@@ -23,7 +25,7 @@ export function updateWorldDraftRecord(record: WorldDraftRecord, draft: WorldCre
     throw new Error(`World draft revision conflict: expected ${expectedRevision}, current ${current.revision}`)
   }
   validateWorldCreationDraftLimits(draft)
-  return { ...current, revision: current.revision + 1, draft: cloneDraft(draft) }
+  return advanceDraft(current, draft)
 }
 
 /** Restores the original authored input while advancing the draft revision. */
@@ -32,7 +34,7 @@ export function resetWorldDraftRecord(record: WorldDraftRecord, expectedRevision
   if (expectedRevision !== undefined && expectedRevision !== current.revision) {
     throw new Error(`World draft revision conflict: expected ${expectedRevision}, current ${current.revision}`)
   }
-  return { ...current, revision: current.revision + 1, draft: cloneDraft(current.initialDraft) }
+  return advanceDraft(current, current.initialDraft)
 }
 
 /**
@@ -62,16 +64,12 @@ export function updateWorldDraftZoneCells(record: WorldDraftRecord, zoneId: stri
   const normalized = normalizeWorldCreationRequest(patchedDraft, generated.world.grid.cells)
   const normalizedZone = normalized.populationZones.find((candidate) => candidate.id === zoneId)
   if (!normalizedZone) throw new Error(`Population zone is unknown: ${zoneId}`)
-  return {
-    ...current,
-    revision: current.revision + 1,
-    draft: {
+  return advanceDraft(current, {
       ...patchedDraft,
       populationZones: patchedDraft.populationZones.map((candidate) => candidate.id === zoneId
         ? { id: candidate.id, name: candidate.name, populationCount: candidate.populationCount, cellIds: [...normalizedZone.cellIds] }
         : candidate),
-    },
-  }
+  })
 }
 
 /** Atomically paints one bounded batch of cells with a selected terrain type. */
@@ -97,7 +95,7 @@ export function paintWorldDraftTerrain(record: WorldDraftRecord, cellIds: readon
   validateWorldCreationDraftLimits(draft)
   // Preview validates terrain-driven placement effects before exposing a revision.
   previewWorldDraft({ ...current, revision: current.revision + 1, draft })
-  return { ...current, revision: current.revision + 1, draft }
+  return advanceDraft(current, draft)
 }
 
 /** Atomically paints one bounded batch of cells with an absolute elevation. */
@@ -119,7 +117,7 @@ export function paintWorldDraftElevation(record: WorldDraftRecord, cellIds: read
   const draft = cloneDraft({ ...current.draft, elevationOverrides })
   validateWorldCreationDraftLimits(draft)
   previewWorldDraft({ ...current, revision: current.revision + 1, draft })
-  return { ...current, revision: current.revision + 1, draft }
+  return advanceDraft(current, draft)
 }
 
 export function paintWorldDraftResources(record: WorldDraftRecord, cellIds: readonly string[], resourceCapacity: number, expectedRevision?: number): WorldDraftRecord {
@@ -143,7 +141,25 @@ export function paintWorldDraftResources(record: WorldDraftRecord, cellIds: read
   const resourceCapacityOverrides: ResourceCapacityOverride[] = [...next.entries()].map(([cellId, capacity]) => ({ cellId, resourceCapacity: capacity })).sort((first, second) => compareText(first.cellId, second.cellId))
   const draft = cloneDraft({ ...current.draft, resourceCapacityOverrides })
   previewWorldDraft({ ...current, revision: current.revision + 1, draft })
-  return { ...current, revision: current.revision + 1, draft }
+  return advanceDraft(current, draft)
+}
+
+/** Reverses one accepted authoring operation without changing the immutable reset point. */
+export function undoWorldDraftRecord(record: WorldDraftRecord, expectedRevision?: number): WorldDraftRecord {
+  const current = validateWorldDraftRecord(record)
+  if (expectedRevision !== undefined && expectedRevision !== current.revision) throw new Error(`World draft revision conflict: expected ${expectedRevision}, current ${current.revision}`)
+  const previous = current.undoStack[current.undoStack.length - 1]
+  if (!previous) throw new Error('World draft has no operation to undo')
+  return { ...current, revision: current.revision + 1, draft: cloneDraft(previous), undoStack: current.undoStack.slice(0, -1).map(cloneDraft), redoStack: [...current.redoStack, cloneDraft(current.draft)].slice(-MAX_WORLD_DRAFT_HISTORY).map(cloneDraft) }
+}
+
+/** Reapplies one previously undone authoring operation. */
+export function redoWorldDraftRecord(record: WorldDraftRecord, expectedRevision?: number): WorldDraftRecord {
+  const current = validateWorldDraftRecord(record)
+  if (expectedRevision !== undefined && expectedRevision !== current.revision) throw new Error(`World draft revision conflict: expected ${expectedRevision}, current ${current.revision}`)
+  const next = current.redoStack[current.redoStack.length - 1]
+  if (!next) throw new Error('World draft has no operation to redo')
+  return { ...current, revision: current.revision + 1, draft: cloneDraft(next), undoStack: [...current.undoStack, cloneDraft(current.draft)].slice(-MAX_WORLD_DRAFT_HISTORY).map(cloneDraft), redoStack: current.redoStack.slice(0, -1).map(cloneDraft) }
 }
 
 /** Builds a deterministic bounded terrain-only projection for draft editing. */
@@ -163,14 +179,16 @@ export function projectWorldDraftViewport(record: WorldDraftRecord, request: Dra
     .filter((cell) => cell.q >= bounds.minQ && cell.q <= bounds.maxQ && cell.r >= bounds.minR && cell.r <= bounds.maxR)
     .sort((first, second) => compareText(first.id, second.id))
     .map((cell) => ({ ...cell, selected: selectedCellIds.has(cell.id) }))
-  return { version: 1, draftId: current.draftId, draftRevision: current.revision, revision: request.revision, ...(request.selectedZoneId === undefined ? {} : { selectedZoneId: request.selectedZoneId }), cells }
+  const chunkKeys = [...new Set(cells.map((cell) => worldChunkKey(cell.q, cell.r)))].sort(compareText)
+  return { version: 1, draftId: current.draftId, draftRevision: current.revision, revision: request.revision, ...(request.selectedZoneId === undefined ? {} : { selectedZoneId: request.selectedZoneId }), chunkKeys, cells }
 }
 
 /** Validates untrusted persisted data and returns a detached normalized copy. */
 export function validateWorldDraftRecord(value: unknown): WorldDraftRecord {
   if (!value || typeof value !== 'object') throw new Error('World draft record is invalid')
-  const record = value as Partial<WorldDraftRecord>
-  if (record.version !== WORLD_DRAFT_RECORD_VERSION) throw new Error(`Unsupported world draft record version: ${String(record.version)}`)
+  const record = value as Partial<WorldDraftRecord> & { undoStack?: WorldCreationDraft[]; redoStack?: WorldCreationDraft[] }
+  const sourceVersion = (value as { version?: unknown }).version
+  if (sourceVersion !== 2 && sourceVersion !== WORLD_DRAFT_RECORD_VERSION) throw new Error(`Unsupported world draft record version: ${String(sourceVersion)}`)
   validateDraftId(record.draftId)
   const revision = record.revision
   if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) throw new Error('World draft revision is invalid')
@@ -182,7 +200,21 @@ export function validateWorldDraftRecord(value: unknown): WorldDraftRecord {
     revision,
     initialDraft: cloneDraft(record.initialDraft as WorldCreationDraft),
     draft: cloneDraft(record.draft as WorldCreationDraft),
+    undoStack: normalizeHistory(record.undoStack),
+    redoStack: normalizeHistory(record.redoStack),
   }
+}
+
+function advanceDraft(current: WorldDraftRecord, draft: WorldCreationDraft): WorldDraftRecord {
+  const next = cloneDraft(draft)
+  if (JSON.stringify(next) === JSON.stringify(current.draft)) return current
+  return { ...current, revision: current.revision + 1, draft: next, undoStack: [...current.undoStack, cloneDraft(current.draft)].slice(-MAX_WORLD_DRAFT_HISTORY).map(cloneDraft), redoStack: [] }
+}
+
+function normalizeHistory(value: unknown): WorldCreationDraft[] {
+  if (value === undefined) return [] // explicit v2 -> v3 migration: v2 had no history.
+  if (!Array.isArray(value) || value.length > MAX_WORLD_DRAFT_HISTORY) throw new Error('World draft history is invalid')
+  return value.map((draft) => { validateWorldCreationDraftLimits(draft); return cloneDraft(draft) })
 }
 
 /**

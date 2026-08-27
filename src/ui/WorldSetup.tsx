@@ -60,6 +60,10 @@ interface WorldSetupProps {
   onChange: (value: WorldSetupValues | ((current: WorldSetupValues) => WorldSetupValues)) => void
   onCancel: () => void
   onReset: () => void
+  onUndo?: () => void
+  onRedo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
   onCommit: () => void
   draftRevision?: number
   preview?: WorldDraftPreview
@@ -111,7 +115,7 @@ export function isWorldSetupGeometryValid(value: Pick<WorldSetupValues, 'placeme
     && presetZonesDoNotOverlap(value.placements, value.width)
 }
 
-export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draftRevision, preview, previewCurrent = false, busy = false, draftViewport, onDraftViewportRequest, onZoneCellsCommit, onTerrainPaintCommit, onElevationPaintCommit, onResourcePaintCommit, onExportDraft, onImportDraft, error }: WorldSetupProps) {
+export function WorldSetup({ value, onChange, onCancel, onReset, onUndo, onRedo, canUndo = false, canRedo = false, onCommit, draftRevision, preview, previewCurrent = false, busy = false, draftViewport, onDraftViewportRequest, onZoneCellsCommit, onTerrainPaintCommit, onElevationPaintCommit, onResourcePaintCommit, onExportDraft, onImportDraft, error }: WorldSetupProps) {
   const importRef = useRef<HTMLInputElement>(null)
   const editablePlacements = value.placements.filter((placement) => placement.settlementId === undefined)
   const [selectedZoneId, setSelectedZoneId] = useState<string>()
@@ -242,7 +246,7 @@ export function WorldSetup({ value, onChange, onCancel, onReset, onCommit, draft
           <div className={canCommit ? 'allocation valid' : 'allocation'}><span>Allocated</span><strong>{allocated} / {value.population}</strong>{allocated !== value.population && <small>Adjust zone allocations to match the starting population exactly.</small>}{value.placements.length === 0 && <small>Add at least one placement zone.</small>}{!namesValid && <small>Name the world, each zone, and every enabled settlement marker.</small>}{!zonesValid && <small>Zone radii must be whole values from 0 through 32.</small>}{zonesValid && !geometryValid && <small>Preset zones overlap. Choose different regions or smaller radii.</small>}</div>
         </section>
       </fieldset>
-      <footer><span>Terrain baseline: <strong>{value.terrainBase === 'blank-land' ? 'Blank land canvas' : 'Seeded Valley'}</strong><small>{value.hexRadiusMeters >= 1000 ? `${value.hexRadiusMeters / 1000} km` : `${value.hexRadiusMeters} m`} hex radius · max 128 × 128</small>{previewSummary}</span><div>{onImportDraft && <><input ref={importRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={(event) => { onImportDraft(event.target.files?.[0]); event.target.value = '' }} /><button className="secondary" disabled={busy} onClick={() => importRef.current?.click()}>Import draft</button></>}{onExportDraft && <button className="secondary" disabled={busy || draftRevision === undefined} onClick={onExportDraft}>Export draft</button>}<button className="secondary" disabled={busy} onClick={onCancel}>Discard draft</button><button className="secondary" disabled={busy || draftRevision === undefined} onClick={onReset}>Reset draft</button><button className="primary" disabled={busy || !canCommit || !previewReady} onClick={onCommit}>Commit &amp; create world</button></div></footer>
+      <footer><span>Terrain baseline: <strong>{value.terrainBase === 'blank-land' ? 'Blank land canvas' : 'Seeded Valley'}</strong><small>{value.hexRadiusMeters >= 1000 ? `${value.hexRadiusMeters / 1000} km` : `${value.hexRadiusMeters} m`} hex radius · max 128 × 128</small>{previewSummary}</span><div>{onImportDraft && <><input ref={importRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={(event) => { onImportDraft(event.target.files?.[0]); event.target.value = '' }} /><button className="secondary" disabled={busy} onClick={() => importRef.current?.click()}>Import draft</button></>}{onExportDraft && <button className="secondary" disabled={busy || draftRevision === undefined} onClick={onExportDraft}>Export draft</button>}<button className="secondary" disabled={busy || !canUndo} onClick={onUndo}>Undo</button><button className="secondary" disabled={busy || !canRedo} onClick={onRedo}>Redo</button><button className="secondary" disabled={busy} onClick={onCancel}>Discard draft</button><button className="secondary" disabled={busy || draftRevision === undefined} onClick={onReset}>Reset draft</button><button className="primary" disabled={busy || !canCommit || !previewReady} onClick={onCommit}>Commit &amp; create world</button></div></footer>
     </section>
   </div>
 }

@@ -66,6 +66,16 @@ export interface AggregateMapRegion {
 export interface ProjectedMapCell extends GeographicCell {
   populationCount: number
   drainage?: { downstreamCellId?: string; basinId: string }
+  environment?: {
+    biomeId: import('../simulation/environment/livingEnvironment').BiomeId
+    river: boolean
+    lake: boolean
+    watershedCellCount: number
+    ecologicalProductivityPermille: number
+    agriculturalSuitabilityPermille: number
+    hazardRiskPermille: number
+    humanPressurePermille: number
+  }
   communityId?: string
   communityValuePermille?: number
 }

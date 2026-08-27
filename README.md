@@ -175,15 +175,14 @@ home catchment: parent links, inheritance traces, completed experiences, and
 recorded changes. They do not yet model adult feedback into the next generation
 or infer a society-level developmental loop.
 
-Seasonal climate is a small static classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Daily environmental recovery is measured separately from household food production and consumption; no weather simulation, biome editor, or ecosystem model is implied.
+Seasonal climate is a deterministic regional classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Derived living-environment evidence also exposes biome, ecological and agricultural potential, local hazard risk, and local harvest pressure. Daily recovery applies a bounded local pressure feedback from people actually present in a cell; there is no global weather simulation or mutable fluid model.
 
 Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
 
-Milestone 54 begins environmental hydrology with a deterministic derived
-drainage graph. Each exact map cell exposes its strictly downhill flow target
-or terminal basin sink in the cell inspector. This is derived evidence from
-authored elevation, not mutable water simulation; lakes, river rendering,
-watershed fill, climate expansion, and ecology remain later slices.
+Capability 4 derives hydrology as a deterministic graph from authored
+elevation. Each exact map cell exposes its downhill target, basin, watershed
+size, and derived river/lake evidence alongside its living-environment
+conditions. This is derived evidence, not mutable water simulation.
 
 Milestone 55 begins settlement-seed authoring with homestead, hamlet, village,
 town, city, and dispersed-homestead profiles. Before a draft is committed, the
@@ -1010,6 +1009,7 @@ Implemented capabilities include:
 * Create draft
 * Preview draft
 * Update draft
+* Undo and redo accepted draft operations
 * Reset draft
 * Persist and rehydrate draft
 * Validate draft
@@ -1056,7 +1056,9 @@ paint bounded water around an intended landmass before placement; changing the
 baseline clears prior sparse terrain, elevation, and resource edits rather than
 silently reinterpreting them.
 
-Terrain and elevation painting store sparse, canonically ordered cell overrides in the worker-owned draft. Bounded paint commands update terrain-derived passability and preview validation deterministically. Elevation uses the generator's explicit 0–1000 cell scale; an explicit terrain-type edit remains authoritative when both edit the same cell. The same overrides are applied by the authoritative creation path only when the draft is explicitly committed.
+Terrain and elevation painting store sparse, canonically ordered cell overrides in the worker-owned draft. Sparse values are chunk-addressed so a large canvas allocates only authored edits; the live detailed-agent runtime retains its separate bounded materialization limit. Bounded paint commands update terrain-derived passability and preview validation deterministically. Elevation uses the generator's explicit 0–1000 cell scale; an explicit terrain-type edit remains authoritative when both edit the same cell. The same overrides are applied by the authoritative creation path only when the draft is explicitly committed.
+
+The sparse authoring generator can stream a bounded viewport from a canvas of up to one billion cells without allocating the full grid. It is deterministic from the seed, coordinates, and canonical sparse edits. A detailed live simulation is deliberately not created from an oversized canvas: the authoritative creation boundary rejects that materialization until the later mixed-fidelity population capability supplies its explicit representation contract.
 
 See `docs/ROADMAP.md` for the current milestone, acceptance criteria, and later
 authoring work.

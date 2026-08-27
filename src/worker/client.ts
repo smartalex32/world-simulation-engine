@@ -55,6 +55,8 @@ export class SimulationWorkerClient {
   paintDraftTerrain(draftId: string, cellIds: string[], terrain: Terrain, expectedRevision?: number): void { this.send({ type: 'PAINT_DRAFT_TERRAIN', requestId: requestId(), draftId, cellIds, terrain, expectedRevision }) }
   paintDraftElevation(draftId: string, cellIds: string[], elevation: number, expectedRevision?: number): void { this.send({ type: 'PAINT_DRAFT_ELEVATION', requestId: requestId(), draftId, cellIds, elevation, expectedRevision }) }
   paintDraftResources(draftId: string, cellIds: string[], resourceCapacity: number, expectedRevision?: number): void { this.send({ type: 'PAINT_DRAFT_RESOURCES', requestId: requestId(), draftId, cellIds, resourceCapacity, expectedRevision }) }
+  undoDraft(draftId: string, expectedRevision?: number): void { this.send({ type: 'UNDO_DRAFT', requestId: requestId(), draftId, expectedRevision }) }
+  redoDraft(draftId: string, expectedRevision?: number): void { this.send({ type: 'REDO_DRAFT', requestId: requestId(), draftId, expectedRevision }) }
   resetDraft(draftId: string, expectedRevision?: number): void { this.send({ type: 'RESET_DRAFT', requestId: requestId(), draftId, expectedRevision }) }
   previewDraft(draftId: string): void { this.send({ type: 'REQUEST_DRAFT_PREVIEW', requestId: requestId(), draftId }) }
   requestDraftViewport(draftId: string, viewport: DraftViewportRequest): void { this.send({ type: 'REQUEST_DRAFT_VIEWPORT', requestId: requestId(), draftId, viewport }) }

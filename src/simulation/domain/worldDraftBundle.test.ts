@@ -12,7 +12,7 @@ describe('world draft bundle contract', () => {
 
   it('rejects incompatible format and generator contracts', () => {
     const bundle = exportWorldDraftBundle(createWorldDraftRecord('portable-draft', defaultWorldCreationRequest('portable-seed')))
-    expect(() => importWorldDraftBundle({ ...bundle, bundleVersion: 2 })).toThrow(/bundle version/)
+    expect(() => importWorldDraftBundle({ ...bundle, bundleVersion: 3 })).toThrow(/bundle version/)
     expect(() => importWorldDraftBundle({ ...bundle, worldGeneratorVersion: 2 })).toThrow(/generator version/)
     expect(() => importWorldDraftBundle({ ...bundle, format: 'other' })).toThrow(/format/)
   })

@@ -22,7 +22,7 @@ describe('world draft persistence contract', () => {
       seed: 'draft-storage-seed', name: 'Draft storage', width: 32, height: 24, initialPopulationCount: 10,
       populationZones: [{ id: 'population-zone-0001', name: 'Initial', preset: 'center', populationCount: 10 }], settlements: [],
     })
-    expect(draft).toMatchObject({ version: 2, draftId: 'draft-storage', revision: 0 })
+    expect(draft).toMatchObject({ version: 3, draftId: 'draft-storage', revision: 0, undoStack: [], redoStack: [] })
     expect('runId' in draft).toBe(false)
   })
 })
