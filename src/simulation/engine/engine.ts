@@ -96,6 +96,7 @@ import { COHORT_MODEL_VERSION, advanceCohortsAnnual, advanceCohortsDaily, create
 import { materializeCohortPeople, materializationStreamName } from '../cohorts/materialization'
 import { applyCohortMaterialization, planCohortMaterialization } from '../cohorts/transitions'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
+import { reconcileSettlementRegions } from '../settlements/regional'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -205,6 +206,8 @@ export class SimulationEngine {
     initializeSettlementScales({ settlements: world.settlements, cells: world.grid.cells, people: generatedPopulation.people })
     // A school is an authored place service; an unmarked home cell is never silently promoted into one.
     const organizations = createInitialSchools(generatedPopulation.people, world.settlements.map((settlement) => settlement.anchorCellId))
+    const markets = createInitialMarkets(world.grid.cells, world.settlements)
+    reconcileSettlementRegions({ settlements: world.settlements, cells: world.grid.cells, households: generatedPopulation.households, markets, organizations, roads: world.roads ?? [], tick: 0 })
     const governance = createLocalGovernance(communities, generatedPopulation.people)
     return new SimulationEngine({
       runId,
@@ -244,7 +247,7 @@ export class SimulationEngine {
       cohorts: createInitialCohorts(world.grid.cells, creation.populationZones),
       populationFidelity: { version: 1, nextTransitionSequence: 1, protectedPersonIds: [], transitions: [] },
       households: generatedPopulation.households,
-      markets: createInitialMarkets(world.grid.cells, world.settlements),
+      markets,
       organizations,
       governance,
       disputes: [],
@@ -394,6 +397,9 @@ export class SimulationEngine {
             resourceUnitsPerResident: Math.round(transition.evidence.resourceUnitsPerResident * 1000),
             accessPermille: transition.evidence.accessPermille,
           }))
+        }
+        for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], tick: this.state.tick })) {
+          pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
         }
       }
       if (this.state.tick % 8760 === 0) { this.resolveAnnualLifeCycle(pushEvent); advanceCohortsAnnual(this.state.cohorts) }
