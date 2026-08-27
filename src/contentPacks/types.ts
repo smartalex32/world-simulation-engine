@@ -13,6 +13,18 @@ export interface ContentPackManifest {
   dependencies: readonly { id: ContentPackId; version: string }[]
 }
 
+/** A fictional simulation pathogen. These values are simulation coefficients,
+ * not clinical claims or a model of a real disease. */
+export interface FictionalPathogenDefinition {
+  id: string
+  incubationHours: number
+  infectiousHours: number
+  immunityHours: number
+  transmissionPermille: number
+  dailyHealthStressPermille: number
+  annualMortalityPermille: number
+}
+
 /** Declarative formulas are intentionally data, not source code. */
 export type DeterministicExpression =
   | { kind: 'constant'; value: number }
@@ -33,6 +45,7 @@ export interface ContentPack {
   manifest: ContentPackManifest
   personVariables: readonly PersonVariableDefinition[]
   influences: readonly InfluenceEdgeDefinition[]
+  pathogens: readonly FictionalPathogenDefinition[]
   formulas?: Readonly<Record<string, DeterministicExpression>>
 }
 
