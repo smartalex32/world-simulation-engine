@@ -35,6 +35,9 @@ export interface HostedRunBootstrap {
 /** Browser/server clients never send raw state—only this constrained command set. */
 export type HostedRunCommand = Extract<SimulationCommand,
   | { type: 'STEP' }
+  | { type: 'MATERIALIZE_COHORT' }
+  | { type: 'DEMATERIALIZE_PEOPLE' }
+  | { type: 'SET_PROTECTED_PEOPLE' }
   | { type: 'PAUSE' }
   | { type: 'SET_SPEED' }
   | { type: 'SET_VIEWPORT' }

@@ -93,6 +93,8 @@ import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION
 import { emptyHealthExposure, healthStressMortalityRiskPermille, resolveDailyHealthStress } from '../health/model'
 import { attemptPracticalExperiment, INNOVATION_STREAM } from '../innovation/model'
 import { COHORT_MODEL_VERSION, advanceCohortsDaily, createInitialCohorts } from '../cohorts/model'
+import { materializeCohortPeople, materializationStreamName } from '../cohorts/materialization'
+import { applyCohortMaterialization, planCohortMaterialization } from '../cohorts/transitions'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
 
 interface RuntimeCommunityCounters {
@@ -240,6 +242,7 @@ export class SimulationEngine {
       world,
       people: generatedPopulation.people,
       cohorts: createInitialCohorts(world.grid.cells, creation.populationZones),
+      populationFidelity: { version: 1, nextTransitionSequence: 1, protectedPersonIds: [], transitions: [] },
       households: generatedPopulation.households,
       markets: createInitialMarkets(world.grid.cells, world.settlements),
       organizations,
@@ -451,6 +454,85 @@ export class SimulationEngine {
     return this.event('CLOCK_ADVANCED', { hours, currentTick: this.state.tick })
   }
 
+  /** Explicit fidelity command. It is independent of the viewport and consumes
+   * no ambient timing; retained evidence makes the resulting people auditable. */
+  materializeCohort(cohortId: string, requestedPopulationCount: number): SimulationEvent {
+    const cohort = this.state.cohorts.find((candidate) => candidate.id === cohortId)
+    if (!cohort) throw new Error(`Unknown cohort: ${cohortId}`)
+    const plan = planCohortMaterialization(cohort, requestedPopulationCount)
+    if (plan.status !== 'ready') throw new Error(`Cohort ${cohortId} cannot materialize: ${plan.status}`)
+    const sourceZone = this.state.config.worldCreation.populationZones.find((zone) => zone.id === cohort.sourceZoneId)
+    if (!sourceZone) throw new Error(`Cohort ${cohortId} has no source zone`)
+    const sequence = this.state.populationFidelity.nextTransitionSequence
+    const generated = materializeCohortPeople({ cohortId, transitionSequence: sequence, seed: this.state.config.seed, cells: this.state.world.grid.cells, sourceZone, populationCount: plan.materializablePopulationCount })
+    const allIds = new Set(this.state.people.map((person) => person.id))
+    if (generated.people.some((person) => allIds.has(person.id))) throw new Error(`Cohort ${cohortId} generated a duplicate person ID`)
+    this.state.cohorts = this.state.cohorts.map((candidate) => candidate.id === cohortId ? applyCohortMaterialization(candidate, plan) : candidate)
+    this.state.people = [...this.state.people, ...generated.people].sort((first, second) => compareIds(first.id, second.id))
+    this.state.households = [...this.state.households, ...generated.households].sort((first, second) => compareIds(first.id, second.id))
+    this.state.parentChildLinks = [...this.state.parentChildLinks, ...generated.parentChildLinks].sort((first, second) => compareIds(first.id, second.id))
+    this.state.activityLocations = [...this.state.activityLocations, ...generated.activityLocations].sort((first, second) => compareIds(first.id, second.id))
+    for (const person of generated.people) this.personById.set(person.id, person)
+    for (const household of generated.households) this.householdById.set(household.id, household)
+    for (const location of generated.activityLocations) this.activityLocationById.set(location.id, location)
+    for (const link of generated.parentChildLinks) this.parentIdsByChildId.set(link.childId, [link.parentId, ...(this.parentIdsByChildId.get(link.childId) ?? [])].sort(compareIds))
+    const transitionId = `fidelity:${String(sequence).padStart(8, '0')}`
+    const stream = materializationStreamName(cohortId, sequence)
+    this.state.populationFidelity.transitions.push({ version: 1, id: transitionId, tick: this.state.tick, kind: 'materialized', cohortId, personIds: generated.people.map((person) => person.id), protectedPersonIds: [], populationCount: generated.people.length, rngStream: stream })
+    this.state.populationFidelity.nextTransitionSequence += 1
+    this.livingPersonCache = undefined
+    this.assertInvariants()
+    return this.event('COHORT_MATERIALIZED', { cohortId, transitionId, populationCount: generated.people.length, residualPopulationCount: plan.residualPopulationCount })
+  }
+
+  /** Protection is authoritative conversion policy, never a UI-only hook. */
+  protectDetailedPeople(personIds: readonly string[]): void {
+    const valid = new Set(this.state.people.map((person) => person.id))
+    const normalized = [...new Set(personIds)].sort(compareIds)
+    if (normalized.some((id) => !valid.has(id))) throw new Error('Protected person does not exist')
+    this.state.populationFidelity.protectedPersonIds = normalized
+    this.assertInvariants()
+  }
+
+  dematerializePeople(personIds: readonly string[]): SimulationEvent {
+    const selected = [...new Set(personIds)].sort(compareIds)
+    if (selected.length === 0) throw new RangeError('Dematerialization requires at least one person')
+    const protectedIds = new Set(this.state.populationFidelity.protectedPersonIds)
+    if (selected.some((id) => protectedIds.has(id))) throw new Error('Protected people cannot be dematerialized')
+    const latestMaterialization = new Map<string, string>()
+    for (const transition of this.state.populationFidelity.transitions) if (transition.kind === 'materialized') for (const id of transition.personIds) latestMaterialization.set(id, transition.cohortId)
+    const selectedPeople = selected.map((id) => this.personById.get(id))
+    if (selectedPeople.some((person) => !person || !latestMaterialization.has(person.id))) throw new Error('Only materialized people can be dematerialized')
+    const cohortIds = new Set(selected.map((id) => latestMaterialization.get(id)))
+    if (cohortIds.size !== 1) throw new Error('Dematerialization must select one cohort at a time')
+    const cohortId = [...cohortIds][0] as string
+    const selectedSet = new Set(selected)
+    if (this.state.relationships.some((relationship) => selectedSet.has(relationship.personAId) || selectedSet.has(relationship.personBId)) || this.state.parentChildLinks.some((link) => selectedSet.has(link.parentId) !== selectedSet.has(link.childId))) throw new Error('People with retained relationship or split family history cannot be dematerialized')
+    const selectedHouseholds = new Set(selectedPeople.map((person) => person!.householdId))
+    if (this.state.households.some((household) => selectedHouseholds.has(household.id) && household.memberIds.some((id) => !selectedSet.has(id)))) throw new Error('Dematerialization must retain whole households')
+    const cohort = this.state.cohorts.find((candidate) => candidate.id === cohortId)
+    if (!cohort) throw new Error(`Unknown cohort: ${cohortId}`)
+    const byCell = new Map(cohort.cellAllocations.map((allocation) => [allocation.cellId, allocation.populationCount]))
+    for (const person of selectedPeople) byCell.set(person!.homeCellId, (byCell.get(person!.homeCellId) ?? 0) + 1)
+    const populationCount = cohort.populationCount + selected.length
+    const children = cohort.ageBands.children + selectedPeople.filter((person) => person!.ageYears < 16).length
+    const elders = cohort.ageBands.elders + selectedPeople.filter((person) => person!.ageYears >= 65).length
+    this.state.cohorts = this.state.cohorts.map((candidate) => candidate.id !== cohortId ? candidate : { ...candidate, populationCount, householdCount: Math.ceil(populationCount / 3), cellAllocations: [...byCell.entries()].map(([cellId, populationCount]) => ({ cellId, populationCount })).sort((first, second) => compareIds(first.cellId, second.cellId)), ageBands: { children, elders, adults: populationCount - children - elders } })
+    this.state.people = this.state.people.filter((person) => !selectedSet.has(person.id))
+    this.state.households = this.state.households.filter((household) => !selectedHouseholds.has(household.id))
+    this.state.parentChildLinks = this.state.parentChildLinks.filter((link) => !selectedSet.has(link.parentId))
+    this.state.activityLocations = this.state.activityLocations.filter((location) => !selectedHouseholds.has(location.householdId ?? ''))
+    for (const id of selected) this.personById.delete(id)
+    for (const id of selectedHouseholds) { const household = this.householdById.get(id); if (household) this.activityLocationById.delete(household.homeActivityLocationId); this.householdById.delete(id) }
+    for (const id of selected) this.parentIdsByChildId.delete(id)
+    const sequence = this.state.populationFidelity.nextTransitionSequence++
+    const transitionId = `fidelity:${String(sequence).padStart(8, '0')}`
+    this.state.populationFidelity.transitions.push({ version: 1, id: transitionId, tick: this.state.tick, kind: 'dematerialized', cohortId, personIds: selected, protectedPersonIds: [...protectedIds].sort(compareIds), populationCount: selected.length, rngStream: 'cohort.dematerialization.none' })
+    this.livingPersonCache = undefined
+    this.assertInvariants()
+    return this.event('PEOPLE_DEMATERIALIZED', { cohortId, transitionId, populationCount: selected.length, residualPopulationCount: populationCount })
+  }
+
   project(digest?: string): WorldProjection {
     return {
       runId: this.state.runId,
@@ -461,6 +543,7 @@ export class SimulationEngine {
       populationZones: this.state.config.worldCreation.populationZones,
       people: this.state.people,
       cohorts: this.state.cohorts,
+      populationFidelity: this.state.populationFidelity,
       households: this.state.households,
       markets: this.state.markets,
       organizations: this.state.organizations,

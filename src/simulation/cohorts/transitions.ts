@@ -21,7 +21,8 @@ export function applyCohortMaterialization(cohort: PopulationCohortState, plan: 
   if (plan.status !== 'ready' && plan.materializablePopulationCount !== 0) throw new Error('Blocked cohort materialization plan has population')
   const removed = new Map(plan.cellAllocations.map((allocation) => [allocation.cellId, allocation.populationCount]))
   const allocations = cohort.cellAllocations.map((allocation) => ({ cellId: allocation.cellId, populationCount: allocation.populationCount - (removed.get(allocation.cellId) ?? 0) })).filter((allocation) => allocation.populationCount > 0)
-  if (allocations.some((allocation) => allocation.populationCount < 0) || allocations.reduce((sum, allocation) => sum + allocation.populationCount, 0) !== plan.residualPopulationCount) throw new Error('Cohort materialization allocations do not conserve population')
+  const residualAllocationCount = allocations.reduce((sum, allocation) => sum + allocation.populationCount, 0)
+  if (allocations.some((allocation) => allocation.populationCount < 0) || residualAllocationCount !== plan.residualPopulationCount) throw new Error(`Cohort materialization allocations do not conserve population: ${residualAllocationCount}/${plan.residualPopulationCount}`)
   const ratio = cohort.populationCount === 0 ? 0 : plan.residualPopulationCount / cohort.populationCount
   const children = Math.floor(cohort.ageBands.children * ratio)
   const elders = Math.floor(cohort.ageBands.elders * ratio)

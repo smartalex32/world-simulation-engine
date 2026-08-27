@@ -278,6 +278,33 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           respond({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch })
           break
         }
+        case 'MATERIALIZE_COHORT': {
+          if (!engine) throw new Error('No simulation run is loaded')
+          playing = false
+          const event = engine.materializeCohort(command.cohortId, command.populationCount)
+          const snapshot = await engine.snapshot()
+          telemetry.append([event], [])
+          flushFrame(command.requestId, snapshot.digest)
+          respond({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch })
+          break
+        }
+        case 'DEMATERIALIZE_PEOPLE': {
+          if (!engine) throw new Error('No simulation run is loaded')
+          playing = false
+          const event = engine.dematerializePeople(command.personIds)
+          const snapshot = await engine.snapshot()
+          telemetry.append([event], [])
+          flushFrame(command.requestId, snapshot.digest)
+          respond({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch })
+          break
+        }
+        case 'SET_PROTECTED_PEOPLE': {
+          if (!engine) throw new Error('No simulation run is loaded')
+          engine.protectDetailedPeople(command.personIds)
+          const snapshot = await engine.snapshot()
+          flushFrame(command.requestId, snapshot.digest)
+          break
+        }
         case 'PLAY':
           if (!engine) throw new Error('No simulation run is loaded')
           ticksPerBatch = Math.max(1, Math.min(8760, Math.floor(command.ticksPerBatch)))

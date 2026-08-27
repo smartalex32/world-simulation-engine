@@ -8,6 +8,7 @@ import { validatePopulationCohorts } from '../cohorts/model'
 
 export function validateHouseholdActivityState(state: SimulationState): void {
   validatePopulationCohorts(state.cohorts, state.config.worldCreation.populationZones, state.world.grid.cells)
+  validatePopulationFidelity(state)
   if (!Array.isArray(state.households)) throw new Error('Simulation contains invalid households')
   if (!Array.isArray(state.parentChildLinks)) throw new Error('Simulation contains invalid parent-child links')
   if (!Array.isArray(state.activityLocations)) throw new Error('Simulation contains invalid activity locations')
@@ -153,7 +154,7 @@ function validateInitialPopulationPlacement(state: SimulationState): void {
   const zoneByCellId = new Map<string, string>()
   const expected = new Map<string, number>()
   for (const zone of creation.populationZones) {
-    expected.set(zone.id, zone.populationCount)
+    expected.set(zone.id, zone.populationCount + (zone.cohortPopulationCount ?? 0))
     for (const cellId of zone.cellIds) {
       if (zoneByCellId.has(cellId)) throw new Error(`Population creation zones overlap at ${cellId}`)
       zoneByCellId.set(cellId, zone.id)
@@ -165,7 +166,18 @@ function validateInitialPopulationPlacement(state: SimulationState): void {
     if (!zoneId) throw new Error(`Person ${person.id} home is outside all population creation zones`)
     actual.set(zoneId, (actual.get(zoneId) ?? 0) + 1)
   }
+  for (const cohort of state.cohorts) actual.set(cohort.sourceZoneId, (actual.get(cohort.sourceZoneId) ?? 0) + cohort.populationCount)
   for (const [zoneId, populationCount] of expected) if ((actual.get(zoneId) ?? 0) !== populationCount) throw new Error(`Population zone ${zoneId} does not match its requested allocation`)
+}
+
+function validatePopulationFidelity(state: SimulationState): void {
+  const fidelity = state.populationFidelity
+  if (!fidelity || fidelity.version !== 1 || !Number.isSafeInteger(fidelity.nextTransitionSequence) || fidelity.nextTransitionSequence < 1 || !isSortedUnique(fidelity.protectedPersonIds) || fidelity.protectedPersonIds.some((id) => !state.people.some((person) => person.id === id))) throw new Error('Simulation contains invalid fidelity state')
+  const ids = new Set<string>()
+  for (const transition of fidelity.transitions) {
+    if (transition.version !== 1 || !/^fidelity:\d{8}$/.test(transition.id) || ids.has(transition.id) || !Number.isSafeInteger(transition.tick) || transition.tick < 0 || transition.tick > state.tick || !Number.isSafeInteger(transition.populationCount) || transition.populationCount !== transition.personIds.length || !isSortedUnique(transition.personIds) || !isSortedUnique(transition.protectedPersonIds) || typeof transition.rngStream !== 'string') throw new Error('Simulation contains invalid fidelity transition')
+    ids.add(transition.id)
+  }
 }
 
 function validateDevelopmentState(

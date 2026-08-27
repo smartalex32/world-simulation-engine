@@ -46,12 +46,12 @@ export function validatePopulationCohorts(value: unknown, zones: readonly Popula
     if (!cohort || cohort.version !== COHORT_MODEL_VERSION || typeof cohort.id !== 'string' || cohort.id !== `cohort:${cohort.sourceZoneId}` || ids.has(cohort.id)) throw new Error('Simulation contains an invalid cohort identity')
     ids.add(cohort.id)
     const zone = zonesById.get(cohort.sourceZoneId)
-    if (!zone || cohort.populationCount !== (zone.cohortPopulationCount ?? 0) || !positiveInteger(cohort.populationCount)) throw new Error(`Cohort ${cohort.id} has an invalid population`)
-    if (!positiveInteger(cohort.householdCount) || cohort.householdCount !== Math.ceil(cohort.populationCount / 3) || !nonNegativeInteger(cohort.foodUnits)) throw new Error(`Cohort ${cohort.id} has invalid household or food totals`)
+    if (!zone || !nonNegativeInteger(cohort.populationCount) || cohort.populationCount > (zone.cohortPopulationCount ?? 0)) throw new Error(`Cohort ${cohort.id} has an invalid population`)
+    if (!nonNegativeInteger(cohort.householdCount) || cohort.householdCount !== Math.ceil(cohort.populationCount / 3) || !nonNegativeInteger(cohort.foodUnits)) throw new Error(`Cohort ${cohort.id} has invalid household or food totals`)
     const bands = cohort.ageBands
     if (!bands || !nonNegativeInteger(bands.children) || !nonNegativeInteger(bands.adults) || !nonNegativeInteger(bands.elders) || bands.children + bands.adults + bands.elders !== cohort.populationCount) throw new Error(`Cohort ${cohort.id} has invalid age totals`)
     if (!cohort.eventTotals || Object.values(cohort.eventTotals).some((entry) => !nonNegativeInteger(entry))) throw new Error(`Cohort ${cohort.id} has invalid event totals`)
-    if (!Array.isArray(cohort.cellAllocations) || cohort.cellAllocations.length === 0 || !canonicalAllocations(cohort.cellAllocations)) throw new Error(`Cohort ${cohort.id} has invalid cell allocations`)
+    if (!Array.isArray(cohort.cellAllocations) || (cohort.populationCount > 0 && cohort.cellAllocations.length === 0) || !canonicalAllocations(cohort.cellAllocations)) throw new Error(`Cohort ${cohort.id} has invalid cell allocations`)
     const allowed = new Set(zone.homeCellIds ?? zone.cellIds)
     if (cohort.cellAllocations.some((allocation) => !allowed.has(allocation.cellId) || !cellsById.get(allocation.cellId)?.movementCost || !positiveInteger(allocation.populationCount)) || cohort.cellAllocations.reduce((sum, allocation) => sum + allocation.populationCount, 0) !== cohort.populationCount) throw new Error(`Cohort ${cohort.id} allocations do not match its zone`)
   }
