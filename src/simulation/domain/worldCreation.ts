@@ -95,6 +95,7 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
     const zoneName = requiredText(zone.name, `Population zone ${zone.id} name`, 80)
     const populationCount = boundedInteger(zone.populationCount, 0, initialPopulationCount, `Population zone ${zone.id} count`)
     const cohortPopulationCount = boundedInteger(zone.cohortPopulationCount ?? 0, 0, WORLD_CREATION_LIMITS.maximumCohortPopulation, `Population zone ${zone.id} cohort count`)
+    const cohortProfile = cohortPopulationCount === 0 ? undefined : normalizeCohortProfile(zone.cohortProfile)
     const cellIds = resolveZoneCellIds(zone, editedCells, width, height)
     if ((cellIds.length === 0 && populationCount > 0) || new Set(cellIds).size !== cellIds.length) throw new Error(`Population zone ${zone.id} has invalid cells`)
     for (const cellId of cellIds) {
@@ -111,10 +112,26 @@ export function normalizeWorldCreationRequest(value: WorldCreationDraft | WorldC
     }
     const anchorCellId = zone.settlementId === undefined ? undefined : settlements.find((settlement) => settlement.id === zone.settlementId)?.anchorCellId
     const homeCellIds = template === undefined ? undefined : resolveTemplateHomeCells(template, cellIds, anchorCellId, cellsById)
-    return { id: zone.id, name: zoneName, cellIds, populationCount, ...(cohortPopulationCount === 0 ? {} : { cohortPopulationCount }), ...(zone.settlementId === undefined ? {} : { settlementId: zone.settlementId }), ...(template === undefined ? {} : { template, homeCellIds }) }
+    return { id: zone.id, name: zoneName, cellIds, populationCount, ...(cohortPopulationCount === 0 ? {} : { cohortPopulationCount, ...(cohortProfile === undefined ? {} : { cohortProfile }) }), ...(zone.settlementId === undefined ? {} : { settlementId: zone.settlementId }), ...(template === undefined ? {} : { template, homeCellIds }) }
   }).sort((a, b) => compareText(a.id, b.id))
   if (zones.reduce((sum, zone) => sum + zone.populationCount, 0) !== initialPopulationCount) throw new Error('Population zone allocations must equal the initial population')
   return { seed, name, width, height, initialPopulationCount, ...(hexRadiusMeters === WORLD_CELL_RADIUS_METERS ? {} : { hexRadiusMeters }), ...(terrainBase === 'seeded-valley' ? {} : { terrainBase }), populationZones: zones, settlements, ...(roads.length ? { roads } : {}), terrainOverrides, elevationOverrides, resourceCapacityOverrides }
+}
+
+function normalizeCohortProfile(value: unknown) {
+  if (value === undefined) return undefined
+  if (!value || typeof value !== 'object') throw new Error('Cohort profile is invalid')
+  const profile = value as Record<string, unknown>
+  const childrenPermille = boundedInteger(profile.childrenPermille as number, 0, 1000, 'Cohort children distribution')
+  const eldersPermille = boundedInteger(profile.eldersPermille as number, 0, 1000, 'Cohort elders distribution')
+  if (childrenPermille + eldersPermille > 1000) throw new Error('Cohort age distributions exceed 1000 permille')
+  return {
+    childrenPermille,
+    eldersPermille,
+    economicProductivityPermille: boundedInteger(profile.economicProductivityPermille as number, 0, 1000, 'Cohort economic productivity'),
+    culturalCohesionPermille: boundedInteger(profile.culturalCohesionPermille as number, 0, 1000, 'Cohort cultural cohesion'),
+    developmentIndexPermille: boundedInteger(profile.developmentIndexPermille as number, 0, 1000, 'Cohort development index'),
+  }
 }
 
 /** Applies sparse terrain edits without randomness; derived cell values remain coherent. */

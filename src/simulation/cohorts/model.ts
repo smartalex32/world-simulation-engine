@@ -1,6 +1,6 @@
 import type { GeographicCell, PopulationCohortState, PopulationPlacementZone } from '../domain/types'
 
-export const COHORT_MODEL_VERSION = 1 as const
+export const COHORT_MODEL_VERSION = 2 as const
 
 /**
  * Builds static authoritative cohorts from explicit zone allocations without
@@ -35,12 +35,15 @@ export function advanceCohortsDaily(cohorts: PopulationCohortState[], cells: Geo
     for (const allocation of cohort.cellAllocations) {
       const cell = cellsById.get(allocation.cellId)
       if (!cell) continue
-      const collected = Math.min(cell.foodAmount, Math.max(0, Math.floor(allocation.populationCount / 12)))
+      const collected = Math.min(cell.foodAmount, Math.max(0, Math.floor(allocation.populationCount * cohort.economicProductivityPermille / 12_000)))
       cell.foodAmount -= collected
       harvest += collected
     }
     const required = Math.ceil(cohort.populationCount / 3)
     cohort.foodUnits = Math.max(0, cohort.foodUnits + harvest - required)
+    const foodSecure = cohort.foodUnits >= required
+    cohort.culturalCohesionPermille = boundedPermille(cohort.culturalCohesionPermille + (foodSecure ? 1 : -2))
+    cohort.developmentIndexPermille = boundedPermille(cohort.developmentIndexPermille + (foodSecure ? 1 : -1))
   }
 }
 
@@ -58,6 +61,7 @@ export function validatePopulationCohorts(value: unknown, zones: readonly Popula
     const bands = cohort.ageBands
     if (!bands || !nonNegativeInteger(bands.children) || !nonNegativeInteger(bands.adults) || !nonNegativeInteger(bands.elders) || bands.children + bands.adults + bands.elders !== cohort.populationCount) throw new Error(`Cohort ${cohort.id} has invalid age totals`)
     if (!cohort.eventTotals || Object.values(cohort.eventTotals).some((entry) => !nonNegativeInteger(entry))) throw new Error(`Cohort ${cohort.id} has invalid event totals`)
+    if (![cohort.economicProductivityPermille, cohort.culturalCohesionPermille, cohort.developmentIndexPermille].every((entry) => Number.isSafeInteger(entry) && entry >= 0 && entry <= 1000)) throw new Error(`Cohort ${cohort.id} has invalid active profile`)
     if (!Array.isArray(cohort.cellAllocations) || (cohort.populationCount > 0 && cohort.cellAllocations.length === 0) || !canonicalAllocations(cohort.cellAllocations)) throw new Error(`Cohort ${cohort.id} has invalid cell allocations`)
     const allowed = new Set(zone.homeCellIds ?? zone.cellIds)
     if (cohort.cellAllocations.some((allocation) => !allowed.has(allocation.cellId) || !cellsById.get(allocation.cellId)?.movementCost || !positiveInteger(allocation.populationCount)) || cohort.cellAllocations.reduce((sum, allocation) => sum + allocation.populationCount, 0) !== cohort.populationCount) throw new Error(`Cohort ${cohort.id} allocations do not match its zone`)
@@ -74,9 +78,10 @@ function createCohort(zone: PopulationPlacementZone, cellsById: ReadonlyMap<stri
   const remainder = populationCount % homeCellIds.length
   const cellAllocations = homeCellIds.map((cellId, index) => ({ cellId, populationCount: base + (index < remainder ? 1 : 0) })).filter((allocation) => allocation.populationCount > 0)
   const foodUnits = zone.cellIds.reduce((total, cellId) => total + (cellsById.get(cellId)?.foodAmount ?? 0), 0)
-  const children = Math.floor(populationCount / 5)
-  const elders = Math.floor(populationCount / 10)
-  return { version: COHORT_MODEL_VERSION, id: `cohort:${zone.id}`, sourceZoneId: zone.id, populationCount, householdCount: Math.ceil(populationCount / 3), foodUnits, cellAllocations, ageBands: { children, adults: populationCount - children - elders, elders }, eventTotals: { births: 0, deaths: 0, migrationIn: 0, migrationOut: 0 } }
+  const profile = zone.cohortProfile ?? { childrenPermille: 200, eldersPermille: 100, economicProductivityPermille: 1000, culturalCohesionPermille: 500, developmentIndexPermille: 500 }
+  const children = Math.floor(populationCount * profile.childrenPermille / 1000)
+  const elders = Math.floor(populationCount * profile.eldersPermille / 1000)
+  return { version: COHORT_MODEL_VERSION, id: `cohort:${zone.id}`, sourceZoneId: zone.id, populationCount, householdCount: Math.ceil(populationCount / 3), foodUnits, cellAllocations, ageBands: { children, adults: populationCount - children - elders, elders }, economicProductivityPermille: profile.economicProductivityPermille, culturalCohesionPermille: profile.culturalCohesionPermille, developmentIndexPermille: profile.developmentIndexPermille, eventTotals: { births: 0, deaths: 0, migrationIn: 0, migrationOut: 0 } }
 }
 
 function canonicalAllocations(value: readonly { cellId: string; populationCount: number }[]): boolean {
@@ -84,4 +89,5 @@ function canonicalAllocations(value: readonly { cellId: string; populationCount:
 }
 function positiveInteger(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) > 0 }
 function nonNegativeInteger(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) >= 0 }
+function boundedPermille(value: number): number { return Math.max(0, Math.min(1000, value)) }
 function compareText(first: string, second: string): number { return first < second ? -1 : first > second ? 1 : 0 }

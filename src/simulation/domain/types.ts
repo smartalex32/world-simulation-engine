@@ -9,7 +9,7 @@ import type {
 import type { SettlementTemplateId } from '../spatial/settlementTemplates'
 
 export const ENGINE_VERSION = '0.38.0'
-export const SNAPSHOT_SCHEMA_VERSION = 37
+export const SNAPSHOT_SCHEMA_VERSION = 38
 /** Versioned content-pack selection is authoritative configuration, not UI state. */
 export const CONTENT_PACK_MODEL_VERSION = 2
 export const BASE_TICK_HOURS = 1
@@ -110,6 +110,8 @@ export interface PopulationPlacementZone {
   populationCount: number
   /** Ordinary people represented by a deterministic distant cohort, not detailed agents. */
   cohortPopulationCount?: number
+  /** Explicit aggregate starting profile; never transferred to detailed people. */
+  cohortProfile?: CohortAuthoringProfile
   settlementId?: string
   /** Explicit authoring profile controlling initial home dispersion only. */
   template?: SettlementTemplateId
@@ -125,6 +127,7 @@ export interface PopulationPlacementZoneDraft {
   name: string
   populationCount: number
   cohortPopulationCount?: number
+  cohortProfile?: CohortAuthoringProfile
   settlementId?: string
   cellIds?: string[]
   preset?: WorldPlacementPreset
@@ -755,7 +758,7 @@ export interface RunConfiguration {
 
 /** Exact, authoritative aggregate for ordinary distant people. It is static until later cohort systems own advancement. */
 export interface PopulationCohortState {
-  version: 1
+  version: 2
   id: string
   sourceZoneId: string
   populationCount: number
@@ -763,7 +766,19 @@ export interface PopulationCohortState {
   foodUnits: number
   cellAllocations: { cellId: string; populationCount: number }[]
   ageBands: { children: number; adults: number; elders: number }
+  economicProductivityPermille: number
+  culturalCohesionPermille: number
+  developmentIndexPermille: number
   eventTotals: { births: number; deaths: number; migrationIn: number; migrationOut: number }
+}
+
+/** Bounded aggregate inputs for an authored distant population. */
+export interface CohortAuthoringProfile {
+  childrenPermille: number
+  eldersPermille: number
+  economicProductivityPermille: number
+  culturalCohesionPermille: number
+  developmentIndexPermille: number
 }
 
 /** Immutable evidence for a deliberate aggregate/detail conversion. */

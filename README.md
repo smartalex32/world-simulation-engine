@@ -192,10 +192,12 @@ population caps or social membership; detailed browser authoring remains
 bounded to 500 people until cohort allocation is introduced.
 
 Population cohorts are authoritative aggregate ledgers for explicit
-distant-population allocations. Daily cohort harvesting consumes the same
-environmental food stock as detailed people and records retained food, age-band,
-household, event-total, and cell-allocation evidence in snapshots. Cohorts do
-not imply relationships or membership.
+distant-population allocations. Authors can specify bounded age, productivity,
+cultural-cohesion, and development distributions for each distant cohort.
+Daily cohort harvesting consumes the same environmental food stock as detailed
+people and advances retained food, cultural, and development evidence alongside
+age-band, household, event-total, and cell-allocation state in snapshots.
+Cohorts do not imply relationships or membership.
 
 Fidelity conversion is an explicit worker/host command, never a viewport side
 effect. Materialization proportionally debits a cohort's cell allocation and
