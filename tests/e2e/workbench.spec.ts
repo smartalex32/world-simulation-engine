@@ -10,7 +10,6 @@ import { axialToPixel } from '../../src/simulation/spatial/hex'
 import { PERSON_VARIABLE_ID } from '../../src/simulation/variables/registry'
 import { setPersonVariable } from '../../src/simulation/variables/storage'
 
-test.describe.configure({ timeout: 60_000 })
 
 async function advanceOneHour(page: import('@playwright/test').Page, tick: number): Promise<void> {
   await page.getByTitle('Advance one hour').click()
