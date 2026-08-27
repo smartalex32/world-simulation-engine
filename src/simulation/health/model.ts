@@ -83,6 +83,26 @@ export function advanceCohortFictionalInfections(cohorts: readonly PopulationCoh
   return traces
 }
 
+/** Applies exact aggregate mortality without sampling represented people. */
+export function applyAnnualCohortInfectionMortality(cohorts: readonly PopulationCohortState[], pathogens: readonly FictionalPathogenDefinition[], tick: number): CohortInfectionTrace[] {
+  const byId = new Map(pathogens.map((pathogen) => [pathogen.id, pathogen]))
+  const traces: CohortInfectionTrace[] = []
+  for (const cohort of [...cohorts].sort((a, b) => a.id.localeCompare(b.id))) {
+    const state = cohort.fictionalInfection; const pathogen = state && byId.get(state.pathogenId)
+    if (!state || !pathogen || state.infectiousCount === 0) continue
+    const mortalityCount = Math.min(cohort.populationCount, Math.floor(state.infectiousCount * pathogen.annualMortalityPermille / 1000))
+    if (mortalityCount === 0) continue
+    let remaining = mortalityCount
+    const allocations = cohort.cellAllocations.map((allocation) => { const removed = Math.min(allocation.populationCount, remaining); remaining -= removed; return { ...allocation, populationCount: allocation.populationCount - removed } }).filter((allocation) => allocation.populationCount > 0)
+    let bands = { ...cohort.ageBands }; for (const key of ['elders', 'adults', 'children'] as const) { const removed = Math.min(bands[key], mortalityCount - (cohort.ageBands.children + cohort.ageBands.adults + cohort.ageBands.elders - bands.children - bands.adults - bands.elders)); bands[key] -= removed }
+    cohort.populationCount -= mortalityCount; cohort.householdCount = Math.ceil(cohort.populationCount / 3); cohort.cellAllocations = allocations; cohort.ageBands = bands; cohort.eventTotals.deaths += mortalityCount
+    state.infectiousCount -= Math.min(state.infectiousCount, mortalityCount)
+    const trace: CohortInfectionTrace = { tick, pathogenId: pathogen.id, susceptibleCount: cohort.populationCount - state.incubatingCount - state.infectiousCount - state.immuneCount, newIncubatingCount: 0, becameInfectiousCount: 0, recoveredCount: 0, immunityExpiredCount: 0, careCapacityCount: 0, mortalityCount }
+    state.lastTrace = trace; traces.push(trace)
+  }
+  return traces
+}
+
 export function emptyHealthExposure(): HealthExposureState {
   return { observedHours: 0, crowdingPersonHours: 0, coPresenceHours: 0, waterAvailabilityPermilleHours: 0 }
 }

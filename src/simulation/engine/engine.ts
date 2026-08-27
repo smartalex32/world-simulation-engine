@@ -90,7 +90,7 @@ import { createLocalGovernance, updateLegitimacy } from '../governance/model'
 import { applyDispute, disputeId, resolveCommunityContentions } from '../conflict/model'
 import { discoverLocalTerrain, initialKnowledge, transmitKnowledge } from '../knowledge/model'
 import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION_STREAM, relocationTrace } from '../households/relocation'
-import { advanceCohortFictionalInfections, emptyHealthExposure, FICTIONAL_PATHOGEN_STREAM, healthStressMortalityRiskPermille, progressFictionalInfections, resolveDailyHealthStress, transmitFictionalPathogens } from '../health/model'
+import { advanceCohortFictionalInfections, applyAnnualCohortInfectionMortality, emptyHealthExposure, FICTIONAL_PATHOGEN_STREAM, healthStressMortalityRiskPermille, progressFictionalInfections, resolveDailyHealthStress, transmitFictionalPathogens } from '../health/model'
 import { attemptPracticalExperiment, INNOVATION_STREAM } from '../innovation/model'
 import { COHORT_MODEL_VERSION, advanceCohortsAnnual, advanceCohortsDaily, createInitialCohorts } from '../cohorts/model'
 import { materializeCohortPeople, materializationStreamName } from '../cohorts/materialization'
@@ -417,7 +417,10 @@ export class SimulationEngine {
           pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
         }
       }
-      if (this.state.tick % 8760 === 0) { this.resolveAnnualLifeCycle(pushEvent); advanceCohortsAnnual(this.state.cohorts) }
+      if (this.state.tick % 8760 === 0) {
+        this.resolveAnnualLifeCycle(pushEvent); advanceCohortsAnnual(this.state.cohorts)
+        for (const trace of applyAnnualCohortInfectionMortality(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, mortalityCount: trace.mortalityCount }))
+      }
       if (this.state.tick % 24 === 0) {
         this.resolveDailyHealthStress(pushEvent)
         for (const trace of advanceCohortFictionalInfections(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, susceptibleCount: trace.susceptibleCount, newIncubatingCount: trace.newIncubatingCount, becameInfectiousCount: trace.becameInfectiousCount, recoveredCount: trace.recoveredCount }))
@@ -1114,7 +1117,10 @@ export class SimulationEngine {
       const healthMortalityRiskPermille = baseMortalityPermille > 0
         ? healthStressMortalityRiskPermille(getPersonVariable(person.variables, PERSON_VARIABLE_ID.healthStress))
         : 0
-      const mortalityPermille = Math.min(1000, baseMortalityPermille + healthMortalityRiskPermille)
+      const diseaseMortalityPermille = person.fictionalInfection?.phase === 'infectious'
+        ? this.contentPackRuntime.pack.pathogens.find((pathogen) => pathogen.id === person.fictionalInfection?.pathogenId)?.annualMortalityPermille ?? 0
+        : 0
+      const mortalityPermille = Math.min(1000, baseMortalityPermille + healthMortalityRiskPermille + diseaseMortalityPermille)
       if (mortalityPermille > 0 && this.random.stream(LIFE_CYCLE_STREAM.mortality).nextInt(1000) < mortalityPermille) {
         person.lifeStatus = 'dead'
         personDied = true
@@ -1131,7 +1137,7 @@ export class SimulationEngine {
           person.partnerId = undefined
         }
         this.state.dailyLifeCycleCounters.deaths += 1
-        pushEvent(this.event('PERSON_DIED', { personId: person.id, ageYears: person.ageYears, mortalityPermille, baseMortalityPermille, healthMortalityRiskPermille }))
+        pushEvent(this.event('PERSON_DIED', { personId: person.id, ageYears: person.ageYears, mortalityPermille, baseMortalityPermille, healthMortalityRiskPermille, diseaseMortalityPermille }))
       }
     }
     return personDied
