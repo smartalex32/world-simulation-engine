@@ -4,6 +4,8 @@ import type { HostedRunCommand } from './types'
 import { HostedSimulationJobManager, type HostedJobRequest } from './jobs'
 import { HostedRunService } from './runService'
 import { importContentPack, type ContentPackCatalog } from '../contentPacks'
+import { HostedEventStream } from './eventStream'
+import { SharedWorldService } from './sharedWorlds'
 
 export interface HostedHttpServerOptions {
   runId: string
@@ -12,6 +14,8 @@ export interface HostedHttpServerOptions {
   jobs: HostedSimulationJobManager
   maximumRequestBytes?: number
   contentPacks?: ContentPackCatalog
+  sharedWorlds?: SharedWorldService
+  eventStream?: HostedEventStream
 }
 
 /** The HTTP layer only validates/authorizes transport; services retain state ownership. */
@@ -20,6 +24,20 @@ export function createHostedHttpServer(options: HostedHttpServerOptions): Server
   return createServer(async (request, response) => {
     try {
       const pathname = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`).pathname
+      if (request.method === 'GET' && pathname === '/api/v1/openapi.json') return sendJson(response, 200, openApiDocument())
+      if (request.method === 'GET' && pathname === '/api/v1/events') {
+        const accountId = requiredShared(options).authenticateToken(bearerToken(request), 'worlds:read')
+        void accountId
+        const last = request.headers['last-event-id']; const lastEventId = typeof last === 'string' && last.length ? Number(last) : undefined
+        return requiredEvents(options).writeSse(response, lastEventId)
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/accounts') {
+        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const account = await requiredShared(options).createAccount(requiredText(body.id), requiredText(body.email), requiredText(body.password), new Date().toISOString())
+        return sendJson(response, 201, { id: account.id, email: account.email, createdAt: account.createdAt })
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/worlds') {
+        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); const world = service.createWorld(requiredText(body.id), requiredText(body.name), accountId, body.draft ?? {}, new Date().toISOString()); requiredEvents(options).publish('world', { id: world.id, revision: world.currentRevision }, world.updatedAt); return sendJson(response, 201, world)
+      }
       if (request.method === 'GET' && pathname === '/health') return sendJson(response, 200, { status: 'ok', runId: options.runId })
       const token = bearerToken(request)
       if (request.method === 'GET' && pathname === '/content-packs') { authorizeToken(token, options.ownerToken); return sendJson(response, 200, await requiredContentPacks(options).listPacks()) }
@@ -53,6 +71,8 @@ export function createHostedHttpServer(options: HostedHttpServerOptions): Server
   })
 }
 function requiredContentPacks(options: HostedHttpServerOptions): ContentPackCatalog { if (!options.contentPacks) throw new HostedHttpError(404, 'Content packs are not configured'); return options.contentPacks }
+function requiredShared(options: HostedHttpServerOptions): SharedWorldService { if (!options.sharedWorlds) throw new HostedHttpError(404, 'Shared worlds are not configured'); return options.sharedWorlds }
+function requiredEvents(options: HostedHttpServerOptions): HostedEventStream { if (!options.eventStream) throw new HostedHttpError(404, 'Event stream is not configured'); return options.eventStream }
 
 function bearerToken(request: IncomingMessage): string {
   const authorization = request.headers.authorization
@@ -126,12 +146,15 @@ function isProjectionOverlay(value: unknown): value is MapProjectionRequest['ove
   return value === 'terrain' || value === 'elevation' || value === 'habitability' || value === 'movement' || value === 'food' || value === 'population' || value === 'community'
 }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
+function requiredRecord(value: unknown): Record<string, unknown> { if (!isRecord(value)) throw new Error('Hosted request is invalid'); return value }
+function requiredText(value: unknown): string { if (typeof value !== 'string' || !value.trim()) throw new Error('Hosted request is invalid'); return value }
 function isSafeInteger(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) }
 function sendJson(response: ServerResponse, status: number, payload: unknown): void {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   response.end(JSON.stringify(payload))
 }
 class HostedHttpError extends Error { constructor(readonly status: number, message: string) { super(message) } }
+function openApiDocument(): object { return { openapi: '3.1.0', info: { title: 'World Simulation Engine API', version: 'v1' }, paths: { '/api/v1/accounts': { post: { summary: 'Create a local account' } }, '/api/v1/worlds': { post: { summary: 'Create a shared world with an immutable first draft revision' } }, '/api/v1/events': { get: { summary: 'Resume ordered server-sent operational events using Last-Event-ID' } } } } }
 function httpFailure(error: unknown): HostedHttpError {
   if (error instanceof HostedHttpError) return error
   const message = error instanceof Error ? error.message : ''
