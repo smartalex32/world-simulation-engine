@@ -1,4 +1,5 @@
 import { ENGINE_VERSION, type SnapshotEnvelope } from '../domain/types'
+import { createInfrastructureAssets } from '../infrastructure/model'
 
 export const OLDEST_SUPPORTED_SNAPSHOT_SCHEMA = 30
 
@@ -23,6 +24,7 @@ const migrations = new Map<number, SnapshotMigration>([
   [37, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 38, state: { ...snapshot.state, config: { ...snapshot.state.config, cohortModelVersion: 3 }, cohorts: snapshot.state.cohorts.map((cohort) => ({ ...cohort, version: 3, economicProductivityPermille: 1000, culturalCohesionPermille: 500, developmentIndexPermille: 500 })) } })],
   [38, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 39, state: { ...snapshot.state, config: { ...snapshot.state.config, cohortModelVersion: 3 }, cohorts: snapshot.state.cohorts.map((cohort) => ({ ...cohort, version: 3 })) } })],
   [39, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 40, state: { ...snapshot.state, config: { ...snapshot.state.config, healthModelVersion: 2 } } })],
+  [40, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 41, state: { ...snapshot.state, config: { ...snapshot.state.config, infrastructureModelVersion: 1 }, infrastructure: createInfrastructureAssets({ roads: snapshot.state.world.roads ?? [], cells: snapshot.state.world.grid.cells, settlements: snapshot.state.world.settlements, markets: snapshot.state.markets, organizations: snapshot.state.organizations, tick: snapshot.state.tick }) } })],
 ])
 
 export function migrateSnapshotSchema(value: unknown, targetSchema: number): SnapshotLike {

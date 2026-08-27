@@ -200,7 +200,7 @@ export interface ProjectedSettlement {
 }
 export interface ProjectedSettlementLink { id: string; fromSettlementId: string; toSettlementId: string; fromCellId: string; toCellId: string; steps: number; travelCost: number; roadCellCount: number }
 /** Read-only service evidence from physical markets, schools, and roads. */
-export interface ProjectedSettlementService { settlementId: string; marketCount: number; schoolCount: number; schoolCapacity: number; roadCellCount: number }
+export interface ProjectedSettlementService { settlementId: string; marketCount: number; schoolCount: number; schoolCapacity: number; roadCellCount: number; infrastructureCapacity: number; infrastructureConditionPermille: number; disruptedAssetCount: number }
 /** Existing explicit group evidence; unavailable social/economic attributes are not inferred. */
 export interface ProjectedOrganizationProfile { id: string; name: string; kind: OrganizationState['kind']; locationCellId: string; goal: 'education' | 'unspecified'; memberCount: number; roleCounts: Record<string, number>; serviceCapacity: number; sharedRuleIds: string[]; internalRelationshipCount: number; internalAverageFamiliarity: number; reputationStatus: 'not-measured'; ownedResourcesStatus: 'not-modeled' }
 /** Read-only local-governance evidence; a catchment is not legal territory or civic membership. */

@@ -8,8 +8,8 @@ import type {
 } from '../community/types'
 import type { SettlementTemplateId } from '../spatial/settlementTemplates'
 
-export const ENGINE_VERSION = '0.41.0'
-export const SNAPSHOT_SCHEMA_VERSION = 40
+export const ENGINE_VERSION = '0.42.0'
+export const SNAPSHOT_SCHEMA_VERSION = 41
 /** Versioned content-pack selection is authoritative configuration, not UI state. */
 export const CONTENT_PACK_MODEL_VERSION = 2
 export const BASE_TICK_HOURS = 1
@@ -35,6 +35,8 @@ export const HEALTH_MODEL_VERSION = 2
 /** Versioned, person-owned knowledge acquisition and application rules. */
 export const KNOWLEDGE_MODEL_VERSION = 1
 export const INNOVATION_MODEL_VERSION = 1
+/** Authoritative network condition, capacity, and repair rules. */
+export const INFRASTRUCTURE_MODEL_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
@@ -352,6 +354,29 @@ export interface HouseholdRelocationTrace {
   probabilityPermille: number
   randomRollPermille: number
   settlementMigration?: SettlementMigrationTrace
+}
+
+/** Runtime network asset; distinct from authored geometry and from institutions. */
+export interface InfrastructureAssetState {
+  version: 1
+  id: string
+  kind: 'road' | 'waterway' | 'port' | 'storage' | 'service'
+  cellIds: string[]
+  ownerSettlementId?: string
+  capacity: number
+  conditionPermille: number
+  disruptionPermille: number
+  maintenanceUnits: number
+  lastTrace?: InfrastructureLifecycleTrace
+}
+
+export interface InfrastructureLifecycleTrace {
+  tick: number
+  kind: 'constructed' | 'maintained' | 'degraded' | 'disrupted' | 'repaired'
+  previousConditionPermille: number
+  conditionDeltaPermille: number
+  capacity: number
+  reason: string
 }
 
 /** Structured regional rationale retained with an accepted household move. */
@@ -823,6 +848,7 @@ export interface RunConfiguration {
   knowledgeModelVersion?: number
   healthModelVersion?: number
   innovationModelVersion?: number
+  infrastructureModelVersion?: number
   cohortModelVersion: number
 }
 
@@ -925,6 +951,7 @@ export interface SimulationState {
   households: HouseholdState[]
   markets: MarketState[]
   organizations: OrganizationState[]
+  infrastructure: InfrastructureAssetState[]
   governance: LocalGovernanceState[]
   disputes: DisputeState[]
   parentChildLinks: ParentChildLink[]
@@ -946,7 +973,7 @@ export interface SimulationEvent {
   id: string
   runId: string
   tick: number
-  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'COHORT_MATERIALIZED' | 'PEOPLE_DEMATERIALIZED' | 'SETTLEMENT_REGIONAL_TRANSITION' | 'FICTIONAL_INFECTION_ACQUIRED' | 'FICTIONAL_INFECTION_PROGRESS' | 'COHORT_OUTBREAK_UPDATED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_WORKED' | 'HOUSEHOLDS_SHARED_FOOD' | 'HOUSEHOLDS_EXCHANGED_TOOLS' | 'HOUSEHOLD_RELOCATED' | 'SETTLEMENT_SCALE_CHANGED' | 'COMMUNITY_CONTENTION_RESOLVED' | 'PERSON_ATTENDED_SCHOOL' | 'PERSON_MISSED_SCHOOL' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_KNOWLEDGE_DISCOVERED' | 'PERSON_KNOWLEDGE_SHARED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
+  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'COHORT_MATERIALIZED' | 'PEOPLE_DEMATERIALIZED' | 'INFRASTRUCTURE_UPDATED' | 'SETTLEMENT_REGIONAL_TRANSITION' | 'FICTIONAL_INFECTION_ACQUIRED' | 'FICTIONAL_INFECTION_PROGRESS' | 'COHORT_OUTBREAK_UPDATED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_WORKED' | 'HOUSEHOLDS_SHARED_FOOD' | 'HOUSEHOLDS_EXCHANGED_TOOLS' | 'HOUSEHOLD_RELOCATED' | 'SETTLEMENT_SCALE_CHANGED' | 'COMMUNITY_CONTENTION_RESOLVED' | 'PERSON_ATTENDED_SCHOOL' | 'PERSON_MISSED_SCHOOL' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_KNOWLEDGE_DISCOVERED' | 'PERSON_KNOWLEDGE_SHARED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
   version: 1
   cellId?: string
   payload: Record<string, string | number | boolean | null>
@@ -988,6 +1015,7 @@ export interface WorldProjection {
   households: HouseholdState[]
   markets: MarketState[]
   organizations: OrganizationState[]
+  infrastructure: InfrastructureAssetState[]
   governance: LocalGovernanceState[]
   disputes: DisputeState[]
   parentChildLinks: ParentChildLink[]

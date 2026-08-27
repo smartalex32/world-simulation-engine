@@ -129,7 +129,7 @@ export class WorkbenchProjectionBuilder {
       world: { id: source.world.id, name: source.world.name, width: this.grid.width, height: this.grid.height, cellCount: this.grid.cells.length, chunkLayout: worldChunkLayout(this.grid.width, this.grid.height), scale: source.world.scale },
       settlements: buildProjectedSettlements(source.world.settlements, source.world.grid.cells, source.people, source.households),
       settlementLinks: buildProjectedSettlementLinks(source.world.settlements, source.world.grid.cells, source.world.roads),
-      settlementServices: buildProjectedSettlementServices(source.world.settlements, source.world.grid.cells, source.markets, source.organizations, source.world.roads),
+      settlementServices: buildProjectedSettlementServices(source.world.settlements, source.world.grid.cells, source.markets, source.organizations, source.world.roads, source.infrastructure),
       organizationProfiles: buildProjectedOrganizationProfiles(source.organizations, source.relationships),
       governanceProfiles: buildProjectedGovernanceProfiles(source.governance, projectedCommunities, source.people, source.organizations),
       economy: buildProjectedEconomicSummary(source.households, source.people),

@@ -38,10 +38,11 @@ export function createInitialMarkets(cells: readonly GeographicCell[], settlemen
 
 export interface ToolExchange { marketId: string; donorHouseholdId: string; recipientHouseholdId: string; amount: number }
 /** Exact shared market presence is the only access condition in this first exchange slice. */
-export function resolveToolExchanges(households: readonly HouseholdState[], markets: readonly MarketState[], occupantsByActivity: ReadonlyMap<string, readonly string[]>, peopleById: ReadonlyMap<string, { householdId: string }>): ToolExchange[] {
+export function resolveToolExchanges(households: readonly HouseholdState[], markets: readonly MarketState[], occupantsByActivity: ReadonlyMap<string, readonly string[]>, peopleById: ReadonlyMap<string, { householdId: string }>, storageAccessPermilleByMarketId: ReadonlyMap<string, number> = new Map()): ToolExchange[] {
   const byId = new Map(households.map((household) => [household.id, household]))
   const exchanges: ToolExchange[] = []
   for (const market of [...markets].sort((a, b) => a.id.localeCompare(b.id))) {
+    if ((storageAccessPermilleByMarketId.get(market.id) ?? 1000) === 0) continue
     const present = [...new Set((occupantsByActivity.get(market.activityLocationId) ?? []).map((personId) => peopleById.get(personId)?.householdId).filter((id): id is string => id !== undefined))]
       .map((id) => byId.get(id)).filter((household): household is HouseholdState => household !== undefined).sort((a, b) => a.id.localeCompare(b.id))
     const committed = new Set<string>()
