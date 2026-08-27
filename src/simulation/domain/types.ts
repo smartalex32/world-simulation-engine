@@ -689,6 +689,15 @@ export interface FictionalInfectionTrace {
   randomRollPermille?: number
 }
 
+/** Household care is a bounded co-resident support action, not a clinical service. */
+export interface HealthInterventionTrace {
+  tick: number
+  kind: 'household-care' | 'self-isolation'
+  careCapacityCount: number
+  stressReductionPermille: number
+  displacementPressurePermille: number
+}
+
 export type PersonLifeStage = 'infant' | 'child' | 'adolescent' | 'adult' | 'olderAdult'
 export type PersonLifeStatus = 'alive' | 'dead'
 
@@ -726,6 +735,7 @@ export interface PersonState {
   lastHealthStressTrace?: HealthStressTrace
   fictionalInfection?: FictionalInfectionState
   lastInfectionTrace?: FictionalInfectionTrace
+  lastHealthIntervention?: HealthInterventionTrace
   variables: PersonVariableValues
   knownCellIds: string[]
   journey?: JourneyState

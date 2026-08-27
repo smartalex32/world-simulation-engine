@@ -731,7 +731,13 @@ export class SimulationEngine {
     const pathogens = new Map(this.contentPackRuntime.pack.pathogens.map((pathogen) => [pathogen.id, pathogen]))
     for (const person of this.livingPeople()) {
       const infection = person.fictionalInfection
-      const infectionDelta = infection?.phase === 'immune' ? 0 : pathogens.get(infection?.pathogenId ?? '')?.dailyHealthStressPermille ?? 0
+      const household = this.householdById.get(person.householdId)
+      const careCapacityCount = household?.memberIds.filter((id) => id !== person.id && this.personById.get(id)?.lifeStatus !== 'dead' && !this.personById.get(id)?.fictionalInfection).length ?? 0
+      const selfIsolating = infection?.phase === 'infectious' && careCapacityCount === 0
+      const stressReductionPermille = infection?.phase === 'immune' || !infection ? 0 : Math.min(30, careCapacityCount * 15)
+      const displacementPressurePermille = infection?.phase === 'infectious' ? 250 : infection?.phase === 'incubating' ? 100 : 0
+      if (infection) person.lastHealthIntervention = { tick: this.state.tick, kind: selfIsolating ? 'self-isolation' : 'household-care', careCapacityCount, stressReductionPermille, displacementPressurePermille }
+      const infectionDelta = infection?.phase === 'immune' ? 0 : Math.max(0, (pathogens.get(infection?.pathogenId ?? '')?.dailyHealthStressPermille ?? 0) - stressReductionPermille)
       resolveDailyHealthStress(person, this.state.tick, infectionDelta)
     }
   }
@@ -1316,6 +1322,7 @@ export class SimulationEngine {
         cells: this.state.world.grid.cells,
         roadCellIds,
         settlements: this.state.world.settlements,
+        healthDisplacementPermille: Math.floor(household.memberIds.filter((id) => this.personById.get(id)?.fictionalInfection?.phase === 'infectious').length * 250 / Math.max(1, household.memberIds.length)),
       })
       if (!evaluation.candidate || evaluation.probabilityPermille === 0) continue
       const trace = relocationTrace(evaluation, this.state.tick, relocationRng.nextInt(1000))

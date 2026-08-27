@@ -53,7 +53,7 @@ export function transmitFictionalPathogens(input: { peopleById: ReadonlyMap<stri
       const source = sources.find((person) => person.id !== candidate.id)
       const pathogen = source?.fictionalInfection ? pathogens.get(source.fictionalInfection.pathogenId) : undefined
       if (!source || !pathogen) continue
-      const probabilityPermille = Math.min(1000, pathogen.transmissionPermille * Math.max(1, sources.length))
+      const probabilityPermille = Math.min(1000, Math.floor(pathogen.transmissionPermille * Math.max(1, sources.length) * (source.lastHealthIntervention?.kind === 'self-isolation' ? 500 : 1000) / 1000))
       const randomRollPermille = input.nextPermille()
       if (randomRollPermille >= probabilityPermille) continue
       candidate.fictionalInfection = { version: 1, pathogenId: pathogen.id, phase: 'incubating', startedTick: input.tick, phaseEndsTick: input.tick + pathogen.incubationHours, sourcePersonId: source.id }
@@ -76,7 +76,8 @@ export function advanceCohortFictionalInfections(cohorts: readonly PopulationCoh
     const becameInfectiousCount = Math.min(state.incubatingCount, Math.max(1, Math.floor(state.incubatingCount * 24 / pathogen.incubationHours)))
     const recoveredCount = Math.min(state.infectiousCount, Math.max(1, Math.floor(state.infectiousCount * 24 / pathogen.infectiousHours)))
     const immunityExpiredCount = Math.min(state.immuneCount, Math.max(1, Math.floor(state.immuneCount * 24 / pathogen.immunityHours)))
-    const trace: CohortInfectionTrace = { tick, pathogenId: pathogen.id, susceptibleCount, newIncubatingCount, becameInfectiousCount, recoveredCount, immunityExpiredCount, careCapacityCount: 0, mortalityCount: 0 }
+    const careCapacityCount = Math.max(0, cohort.householdCount - Math.ceil(state.infectiousCount / 3))
+    const trace: CohortInfectionTrace = { tick, pathogenId: pathogen.id, susceptibleCount, newIncubatingCount, becameInfectiousCount, recoveredCount, immunityExpiredCount, careCapacityCount, mortalityCount: 0 }
     cohort.fictionalInfection = { version: 1, pathogenId: pathogen.id, incubatingCount: state.incubatingCount + newIncubatingCount - becameInfectiousCount, infectiousCount: state.infectiousCount + becameInfectiousCount - recoveredCount, immuneCount: state.immuneCount + recoveredCount - immunityExpiredCount, lastUpdatedTick: tick, lastTrace: trace }
     traces.push(trace)
   }
