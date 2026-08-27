@@ -16,6 +16,7 @@ import {
   INNOVATION_MODEL_VERSION,
   ENGINE_VERSION,
   HOUSEHOLD_MODEL_VERSION,
+  INFRASTRUCTURE_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   SNAPSHOT_SCHEMA_VERSION,
   VARIABLE_REGISTRY_VERSION,
@@ -89,6 +90,9 @@ export async function validateSnapshot(value: unknown, contentPack: ContentPack 
   }
   if (snapshot.state.config.householdModelVersion !== HOUSEHOLD_MODEL_VERSION) {
     throw new Error(`Unsupported household model version: ${String(snapshot.state.config.householdModelVersion)}`)
+  }
+  if (snapshot.state.config.infrastructureModelVersion !== INFRASTRUCTURE_MODEL_VERSION || !Array.isArray(snapshot.state.infrastructure)) {
+    throw new Error('Unsupported infrastructure configuration')
   }
   if (snapshot.state.config.activityRegistryVersion !== ACTIVITY_REGISTRY_VERSION) {
     throw new Error(`Unsupported activity registry version: ${String(snapshot.state.config.activityRegistryVersion)}`)

@@ -1,11 +1,12 @@
-import type { GeographicCell, HouseholdState, MarketState, OrganizationState, PopulationCohortState, SettlementMigrationTrace, SettlementRegionalState, SettlementState } from '../domain/types'
+import type { GeographicCell, HouseholdState, InfrastructureAssetState, MarketState, OrganizationState, PopulationCohortState, SettlementMigrationTrace, SettlementRegionalState, SettlementState } from '../domain/types'
 import { hexDistance } from '../spatial/hex'
+import { effectiveCapacity } from '../infrastructure/model'
 
 export interface SettlementRegionalTransition { settlementId: string; previousStatus: SettlementRegionalState['status']; nextStatus: SettlementRegionalState['status']; kind: NonNullable<SettlementRegionalState['lastTransition']>['kind']; reason: string }
 
 /** Reconciles explicit settlement membership and capacity from authoritative
  * homes, services, inventories, roads, and terrain—not UI selection. */
-export function reconcileSettlementRegions(input: { settlements: SettlementState[]; cells: readonly GeographicCell[]; households: readonly HouseholdState[]; cohorts?: readonly PopulationCohortState[]; markets: readonly MarketState[]; organizations: readonly OrganizationState[]; roads: readonly { cellIds: readonly string[] }[]; tick: number }): SettlementRegionalTransition[] {
+export function reconcileSettlementRegions(input: { settlements: SettlementState[]; cells: readonly GeographicCell[]; households: readonly HouseholdState[]; cohorts?: readonly PopulationCohortState[]; markets: readonly MarketState[]; organizations: readonly OrganizationState[]; roads: readonly { cellIds: readonly string[] }[]; infrastructure?: readonly InfrastructureAssetState[]; tick: number }): SettlementRegionalTransition[] {
   const cells = new Map(input.cells.map((cell) => [cell.id, cell]))
   const roadCells = new Set(input.roads.flatMap((road) => road.cellIds))
   const transitions: SettlementRegionalTransition[] = []
@@ -36,8 +37,12 @@ export function reconcileSettlementRegions(input: { settlements: SettlementState
     const food = residents.reduce((total, household) => total + (household.inventory?.food ?? 0), 0)
     const tools = residents.reduce((total, household) => total + (household.inventory?.tools ?? 0), 0)
     const foodCapacity = extentCellIds.reduce((total, id) => total + (cells.get(id)?.resourceCapacity ?? 0), 0)
-    const serviceCapacity = input.organizations.filter((organization) => organizationIds.includes(organization.id)).reduce((total, organization) => total + organization.serviceCapacity, 0)
-    const accessPermille = extentCellIds.length === 0 ? 0 : Math.round(extentCellIds.filter((id) => id === anchor.id || roadCells.has(id) || hexDistance(cells.get(id)!, anchor) <= 1).length * 1000 / extentCellIds.length)
+    const infrastructure = (input.infrastructure ?? []).filter((asset) => asset.ownerSettlementId === settlement.id || asset.cellIds.some((id) => extent.has(id)))
+    const serviceCapacity = input.infrastructure === undefined
+      ? input.organizations.filter((organization) => organizationIds.includes(organization.id)).reduce((total, organization) => total + organization.serviceCapacity, 0)
+      : infrastructure.filter((asset) => asset.kind === 'service').reduce((total, asset) => total + effectiveCapacity(asset), 0)
+    const transportCells = new Set(infrastructure.filter((asset) => asset.kind === 'road' || asset.kind === 'waterway' || asset.kind === 'port').flatMap((asset) => asset.cellIds))
+    const accessPermille = extentCellIds.length === 0 ? 0 : Math.round(extentCellIds.filter((id) => id === anchor.id || roadCells.has(id) || transportCells.has(id) || hexDistance(cells.get(id)!, anchor) <= 1).length * 1000 / extentCellIds.length)
     const previous = settlement.regional
     const housingCapacity = extentCellIds.length * 3
     const status: SettlementRegionalState['status'] = residentPopulationCount === 0 ? 'abandoned' : residentPopulationCount > housingCapacity || foodCapacity < residentPopulationCount ? 'contracting' : 'active'
@@ -46,7 +51,8 @@ export function reconcileSettlementRegions(input: { settlements: SettlementState
     const kind = !previous ? 'formed' : previous.status === 'abandoned' && status === 'active' ? 'resettled' : status === 'abandoned' ? 'abandoned' : status === 'contracting' ? 'contraction' : residentPopulationCount > (previous.detailedResidentPopulationCount + previous.cohortResidentPopulationCount) ? 'growth' : scaleChanged && (settlement.scale === 'city' || settlement.scale === 'town') ? 'urbanized' : scaleChanged ? 'ruralized' : 'growth'
     const reason = status === 'abandoned' ? 'no detailed or cohort residents' : residentPopulationCount > housingCapacity ? 'resident population exceeds housing capacity' : foodCapacity < residentPopulationCount ? 'resource capacity below resident population' : scaleChanged ? 'retained settlement scale changed from regional evidence' : 'homes, services, and access support the settlement'
     const changed = !previous || previous.status !== status || membershipChanged || scaleChanged
-    settlement.regional = { version: 1, status, extentCellIds, residentHouseholdIds: residents.map((household) => household.id), detailedResidentPopulationCount, cohortResidentPopulationCount, marketIds, organizationIds, accessPermille, capacity: { housing: housingCapacity, food: foodCapacity, services: serviceCapacity, materials: foodCapacity }, materials: { food, tools }, scale: settlement.scale, ...(changed ? { lastTransition: { tick: input.tick, kind, reason } } : {}) }
+    const storageCapacity = infrastructure.filter((asset) => asset.kind === 'storage').reduce((total, asset) => total + effectiveCapacity(asset), 0)
+    settlement.regional = { version: 1, status, extentCellIds, residentHouseholdIds: residents.map((household) => household.id), detailedResidentPopulationCount, cohortResidentPopulationCount, marketIds, organizationIds, accessPermille, capacity: { housing: housingCapacity, food: foodCapacity, services: serviceCapacity, materials: foodCapacity + storageCapacity }, materials: { food, tools }, scale: settlement.scale, ...(changed ? { lastTransition: { tick: input.tick, kind, reason } } : {}) }
     if (changed) transitions.push({ settlementId: settlement.id, previousStatus: previous?.status ?? 'abandoned', nextStatus: status, kind, reason })
   }
   return transitions

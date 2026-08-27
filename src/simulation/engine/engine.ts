@@ -98,7 +98,7 @@ import { materializeCohortPeople, materializationStreamName } from '../cohorts/m
 import { applyCohortMaterialization, planCohortMaterialization } from '../cohorts/transitions'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
 import { migrateCohortsBetweenSettlements, reconcileSettlementRegions, settlementMigrationTrace } from '../settlements/regional'
-import { createInfrastructureAssets, maintainInfrastructure } from '../infrastructure/model'
+import { allocateInfrastructureMaintenance, createInfrastructureAssets, maintainInfrastructure } from '../infrastructure/model'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -396,6 +396,13 @@ export class SimulationEngine {
       this.recordCommunityDevelopmentExposure()
       this.accumulateDevelopmentExposure()
       if (this.state.tick % 720 === 0) {
+        for (const allocation of allocateInfrastructureMaintenance(this.state.infrastructure, this.state.households, this.state.world.settlements)) {
+          pushEvent(this.event('INFRASTRUCTURE_UPDATED', { assetId: allocation.assetId, householdId: allocation.householdId, kind: 'maintenance-funded', units: allocation.units }))
+        }
+        for (const asset of maintainInfrastructure(this.state.infrastructure, this.state.tick)) {
+          const trace = asset.lastTrace
+          if (trace) pushEvent(this.event('INFRASTRUCTURE_UPDATED', { assetId: asset.id, kind: trace.kind, capacity: trace.capacity, conditionPermille: asset.conditionPermille, disruptionPermille: asset.disruptionPermille, reason: trace.reason }))
+        }
         this.processDevelopment(pushEvent)
         this.processBroaderDevelopment(pushEvent)
         this.resolveMonthlyHouseholdRelocations(pushEvent)
@@ -410,7 +417,7 @@ export class SimulationEngine {
             accessPermille: transition.evidence.accessPermille,
           }))
         }
-        for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, cohorts: this.state.cohorts, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], tick: this.state.tick })) {
+        for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, cohorts: this.state.cohorts, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], infrastructure: this.state.infrastructure, tick: this.state.tick })) {
           pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
         }
         for (const trace of migrateCohortsBetweenSettlements(this.state.cohorts, this.state.world.settlements, this.state.world.grid.cells, this.state.tick)) {
@@ -418,7 +425,7 @@ export class SimulationEngine {
         }
         // Cohort allocations changed after the first reconciliation, so the
         // serialized regional ledger must describe the same authoritative tick.
-        for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, cohorts: this.state.cohorts, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], tick: this.state.tick })) {
+        for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, cohorts: this.state.cohorts, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], infrastructure: this.state.infrastructure, tick: this.state.tick })) {
           pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
         }
       }
@@ -577,6 +584,7 @@ export class SimulationEngine {
       households: this.state.households,
       markets: this.state.markets,
       organizations: this.state.organizations,
+      infrastructure: this.state.infrastructure,
       governance: this.state.governance,
       disputes: this.state.disputes,
       parentChildLinks: this.state.parentChildLinks,
