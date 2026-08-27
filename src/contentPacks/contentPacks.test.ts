@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackRegistry, createContentPackRuntime, createPackVariableValues, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack, validatePackVariableValues } from '.'
+import { ContentPackClient, DEFAULT_PREINDUSTRIAL_PACK, createContentPackRegistry, createContentPackRuntime, createPackVariableValues, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack, validatePackVariableValues } from '.'
 import { SimulationEngine } from '../simulation/engine/engine'
 
 describe('content packs', () => {
@@ -46,5 +46,18 @@ describe('content packs', () => {
     await expect(SimulationEngine.restore(snapshot)).rejects.toThrow('Unsupported content pack configuration')
     const restored = await SimulationEngine.restore(snapshot, pack)
     expect(restored.project().variableDefinitions.map(({ id }) => id)).toContain('person.trait.diligence')
+  })
+  it('uses validated typed SDK payloads for catalog workflows', async () => {
+    const requests: Request[] = []
+    const fetcher: typeof fetch = async (input, init) => {
+      requests.push(new Request(input, init))
+      return new Response(JSON.stringify(init?.method === 'PUT' ? DEFAULT_PREINDUSTRIAL_PACK : [DEFAULT_PREINDUSTRIAL_PACK]), { status: init?.method === 'PUT' ? 201 : 200 })
+    }
+    const client = new ContentPackClient('https://example.test', 'token', fetcher)
+    expect(await client.list()).toEqual([DEFAULT_PREINDUSTRIAL_PACK])
+    expect(await client.put(DEFAULT_PREINDUSTRIAL_PACK)).toEqual(DEFAULT_PREINDUSTRIAL_PACK)
+    expect(requests.map((request) => [request.url, request.method, request.headers.get('authorization')])).toEqual([
+      ['https://example.test/content-packs', 'GET', 'Bearer token'], ['https://example.test/content-packs', 'PUT', 'Bearer token'],
+    ])
   })
 })
