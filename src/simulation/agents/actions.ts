@@ -7,8 +7,9 @@ import { hexNeighbors } from '../spatial/hex'
 import { evaluateInfluences } from '../influences/evaluate'
 import { DECISION_INFLUENCE_TARGET } from '../influences/registry'
 import type { DecisionInfluenceTarget } from '../influences/types'
+import type { InfluenceRegistry } from '../influences/types'
 import { PERSON_VARIABLE_ID, getPersonVariableDefinition } from '../variables/registry'
-import { adjustPersonVariable, getPersonVariable } from '../variables/storage'
+import { adjustPersonVariable, getPersonVariable, type PersonVariableRegistry } from '../variables/storage'
 import {
   ACTION_BASE_WEIGHT,
   ACTION_WEIGHT_MAXIMUM,
@@ -50,6 +51,8 @@ export interface ActionContext {
   /** Current authoritative catchment state indexed by actual world cell. */
   communityByCellId: ReadonlyMap<string, CommunitySimulationState>
   householdById?: ReadonlyMap<string, HouseholdState>
+  influenceRegistry?: InfluenceRegistry
+  variableRegistry?: PersonVariableRegistry
 }
 
 export interface ActionOutcome {
@@ -117,18 +120,18 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
   const householdFood = context.householdById?.get(person.householdId)?.inventory?.food ?? 0
   if ((householdFood > 0 || (!context.householdById && cell.foodAmount > 0)) && hunger > 0) candidates.push(candidate('eat', [
     baseContribution(ACTION_BASE_WEIGHT.eat),
-    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.eatUtility, person),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.eatUtility, person, context),
     contextContribution('household food', Math.min(LOCAL_FOOD_WEIGHT_CAP, householdFood || cell.foodAmount)),
   ]))
   if (moveTarget) candidates.push(candidate('move', [
     baseContribution(ACTION_BASE_WEIGHT.move),
-    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.moveUtility, person),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.moveUtility, person, context),
     contextContribution('destination food', Math.floor(moveTarget.foodAmount * DESTINATION_FOOD_WEIGHT_PERMILLE / 1000)),
     contextContribution('travel cost', -Math.floor(Math.max(0, effectiveMovementCost(moveTarget, context) - PLAIN_MOVEMENT_COST) / MOVE_TRAVEL_COST_DIVISOR)),
   ], moveTarget.id))
   if (exploreTarget) candidates.push(candidate('explore', [
     baseContribution(ACTION_BASE_WEIGHT.explore),
-    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.exploreUtility, person),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.exploreUtility, person, context),
     interactionContribution('terrain uncertainty', -Math.floor(
       Math.max(0, effectiveMovementCost(exploreTarget, context) - PLAIN_MOVEMENT_COST)
       * (1000 - getPersonVariable(person.variables, PERSON_VARIABLE_ID.riskTolerance))
@@ -140,18 +143,18 @@ export function evaluateActions(person: PersonState, context: ActionContext): Ca
     baseContribution(ACTION_BASE_WEIGHT.rest),
     contextContribution('nighttime', hour >= 21 || hour < 6 ? NIGHTTIME_REST_WEIGHT : 0),
     contextContribution('at home', person.locationCellId === person.homeCellId ? HOME_REST_WEIGHT : 0),
-    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.restUtility, person),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.restUtility, person, context),
   ]))
   if (company > 0) candidates.push(candidate('socialize', [
     baseContribution(ACTION_BASE_WEIGHT.socialize),
-    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.socializeUtility, person),
+    ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.socializeUtility, person, context),
     contextContribution('people present', company * OTHER_OCCUPANT_SOCIAL_WEIGHT),
     ...communityInfluenceContributions('decision.socialize.utility', person.locationCellId, context),
   ]))
   if (person.occupation === 'forager' && person.currentActivity.kind === 'commons' && cell.foodAmount > 0 && hour >= 6 && hour < 18) {
     candidates.push(candidate('work', [
       baseContribution(ACTION_BASE_WEIGHT.work),
-      ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.workUtility, person),
+      ...personInfluenceContributions(DECISION_INFLUENCE_TARGET.workUtility, person, context),
       contextContribution('accessible resource', Math.min(160, cell.foodAmount * 8)),
       contextContribution('fatigue cost', -Math.floor(getPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue) / 5)),
     ]))
@@ -170,14 +173,14 @@ export function resolveAction(person: PersonState, decision: ActionDecision, con
       const hunger = getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger)
       const desiredFood = Math.max(1, Math.min(160, Math.ceil(hunger / FOOD_TO_HUNGER_RECOVERY)))
       outcome.foodConsumed = consumeHouseholdFood(inventory, desiredFood)
-      const remainingHunger = adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, -outcome.foodConsumed * FOOD_TO_HUNGER_RECOVERY)
+      const remainingHunger = adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, -outcome.foodConsumed * FOOD_TO_HUNGER_RECOVERY, context.variableRegistry)
       outcome.hungerReduced = hunger - remainingHunger
     } else if (!context.householdById && cell && cell.foodAmount > 0) {
       const hunger = getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger)
       const desiredFood = Math.max(1, Math.min(160, Math.ceil(hunger / FOOD_TO_HUNGER_RECOVERY)))
       outcome.foodConsumed = Math.min(cell.foodAmount, desiredFood)
       cell.foodAmount -= outcome.foodConsumed
-      const remainingHunger = adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, -outcome.foodConsumed * FOOD_TO_HUNGER_RECOVERY)
+      const remainingHunger = adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, -outcome.foodConsumed * FOOD_TO_HUNGER_RECOVERY, context.variableRegistry)
       outcome.hungerReduced = hunger - remainingHunger
     } else outcome.failedMeal = true
   } else if ((decision.action === 'move' || decision.action === 'explore') && decision.targetCellId) {
@@ -191,7 +194,7 @@ export function resolveAction(person: PersonState, decision: ActionDecision, con
     }
   } else if (decision.action === 'rest') {
     const fatigue = getPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue)
-    const remainingFatigue = adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, -REST_FATIGUE_RECOVERY)
+    const remainingFatigue = adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, -REST_FATIGUE_RECOVERY, context.variableRegistry)
     outcome.fatigueReduced = fatigue - remainingFatigue
   } else if (decision.action === 'work') {
     const household = context.householdById?.get(person.householdId)
@@ -202,7 +205,7 @@ export function resolveAction(person: PersonState, decision: ActionDecision, con
       const efficiency = Math.floor(harvestEfficiencyPermille(person.knowledge ?? { 'knowledge.foraging': 0, 'knowledge.localTerrain': 0 }) * (1000 + techniqueHarvestBonusPermille(person)) * productivity / 1_000_000)
       outcome.foodProduced = harvestFood(cell, household.inventory, efficiency)
       outcome.agriculturalFoodProduced = agricultural ? outcome.foodProduced : 0
-      adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, WORK_FATIGUE_COST)
+      adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, WORK_FATIGUE_COST, context.variableRegistry)
     }
   }
   person.lastDecision = decision
@@ -247,10 +250,12 @@ export function effectiveMovementCost(cell: GeographicCell, context: Pick<Action
   return Math.floor(cell.movementCost * (context.movementCostMultiplierPermille ?? 1000) * roadMultiplier / 1_000_000)
 }
 
-function personInfluenceContributions(targetId: DecisionInfluenceTarget, person: PersonState): UtilityContribution[] {
-  return evaluateInfluences(targetId, person.variables).contributions.map((contribution) => ({
+function personInfluenceContributions(targetId: DecisionInfluenceTarget, person: PersonState, context: ActionContext): UtilityContribution[] {
+  return evaluateInfluences(targetId, person.variables, context.influenceRegistry).contributions.map((contribution) => ({
     kind: 'influence',
-    factor: getPersonVariableDefinition(contribution.sourceId).label.toLowerCase(),
+    factor: context.variableRegistry
+      ? (context.variableRegistry.byId.get(contribution.sourceId)?.label.toLowerCase() ?? contribution.sourceId)
+      : getPersonVariableDefinition(contribution.sourceId).label.toLowerCase(),
     value: contribution.effect,
     edgeId: contribution.edgeId,
     sourceId: contribution.sourceId,

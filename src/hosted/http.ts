@@ -3,6 +3,7 @@ import type { MapProjectionRequest } from '../projection'
 import type { HostedRunCommand } from './types'
 import { HostedSimulationJobManager, type HostedJobRequest } from './jobs'
 import { HostedRunService } from './runService'
+import { importContentPack, type ContentPackCatalog } from '../contentPacks'
 
 export interface HostedHttpServerOptions {
   runId: string
@@ -10,6 +11,7 @@ export interface HostedHttpServerOptions {
   service: HostedRunService
   jobs: HostedSimulationJobManager
   maximumRequestBytes?: number
+  contentPacks?: ContentPackCatalog
 }
 
 /** The HTTP layer only validates/authorizes transport; services retain state ownership. */
@@ -20,6 +22,12 @@ export function createHostedHttpServer(options: HostedHttpServerOptions): Server
       const pathname = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`).pathname
       if (request.method === 'GET' && pathname === '/health') return sendJson(response, 200, { status: 'ok', runId: options.runId })
       const token = bearerToken(request)
+      if (request.method === 'GET' && pathname === '/content-packs') { authorizeToken(token, options.ownerToken); return sendJson(response, 200, await requiredContentPacks(options).listPacks()) }
+      if (request.method === 'PUT' && pathname === '/content-packs') {
+        authorizeToken(token, options.ownerToken)
+        const pack = importContentPack(JSON.stringify(await readJson(request, maximumRequestBytes)))
+        return sendJson(response, 201, await requiredContentPacks(options).putPack(pack))
+      }
       if (request.method === 'GET' && pathname === `/runs/${options.runId}/projection`) return sendJson(response, 200, await options.service.view(token))
       if (request.method === 'POST' && pathname === `/runs/${options.runId}/commands`) {
         const command = validateHostedCommand(await readJson(request, maximumRequestBytes))
@@ -44,6 +52,7 @@ export function createHostedHttpServer(options: HostedHttpServerOptions): Server
     }
   })
 }
+function requiredContentPacks(options: HostedHttpServerOptions): ContentPackCatalog { if (!options.contentPacks) throw new HostedHttpError(404, 'Content packs are not configured'); return options.contentPacks }
 
 function bearerToken(request: IncomingMessage): string {
   const authorization = request.headers.authorization

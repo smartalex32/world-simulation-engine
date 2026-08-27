@@ -144,11 +144,12 @@ const knownTargetIds = new Set<string>(DECISION_INFLUENCE_TARGETS)
 
 export function createInfluenceRegistry(
   definitions: readonly InfluenceEdgeDefinition[],
+  sourceIds: ReadonlySet<string> = knownSourceIds,
 ): InfluenceRegistry {
   const edgeIds = new Set<string>()
   const frozenDefinitions = definitions.map((definition) => {
     if (edgeIds.has(definition.id)) throw new Error(`Duplicate influence edge ID: ${definition.id}`)
-    if (!knownSourceIds.has(definition.sourceId)) {
+    if (!sourceIds.has(definition.sourceId)) {
       throw new Error(`Unknown influence source variable: ${definition.sourceId}`)
     }
     if (!knownTargetIds.has(definition.targetId)) {

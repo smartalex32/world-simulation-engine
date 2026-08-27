@@ -3,6 +3,7 @@ import { createHostedHttpServer } from './http'
 import { HostedSimulationJobManager } from './jobs'
 import { HostedRunService } from './runService'
 import { PostgresHostedRunStore } from './postgres'
+import { DEFAULT_PREINDUSTRIAL_PACK } from '../contentPacks'
 
 const port = numberEnvironment('PORT', 8787)
 const bindHost = hostEnvironment('HOSTED_BIND_HOST', '127.0.0.1')
@@ -14,6 +15,7 @@ const hostedPopulation = boundedIntegerEnvironment('HOSTED_WORLD_POPULATION', 20
 
 const store = await PostgresHostedRunStore.connect(databaseUrl)
 await store.assertReady()
+if (!(await store.getPack(DEFAULT_PREINDUSTRIAL_PACK.manifest.id, DEFAULT_PREINDUSTRIAL_PACK.manifest.version))) await store.putPack(DEFAULT_PREINDUSTRIAL_PACK)
 const bootstrap = {
   runId,
   ownerId,
@@ -24,7 +26,7 @@ const service = await HostedRunService.open(bootstrap, store)
 const jobs = new HostedSimulationJobManager(service, store, ownerId, ownerToken)
 await jobs.resumePending()
 
-createHostedHttpServer({ runId, ownerToken, service, jobs }).listen(port, bindHost, () => {
+createHostedHttpServer({ runId, ownerToken, service, jobs, contentPacks: store }).listen(port, bindHost, () => {
   console.info(`Hosted single-node simulation listening on http://${bindHost}:${port} for run ${runId}`)
 })
 

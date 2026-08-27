@@ -8,7 +8,7 @@ import { createBroaderDevelopmentState } from '../development/broader'
 import { RandomProvider } from '../rng/pcg32'
 import { hexNeighbors } from '../spatial/hex'
 import { PERSON_VARIABLE_ID, getPersonVariableDefinition } from '../variables/registry'
-import { createDefaultPersonVariableValues, getPersonVariable, setPersonVariable } from '../variables/storage'
+import { createDefaultPersonVariableValues, getPersonVariable, setPersonVariable, type PersonVariableRegistry } from '../variables/storage'
 import type { PersonVariableId } from '../variables/types'
 import { lifeStageForAge } from '../lifecycle/model'
 import { occupationFor } from '../economy/model'
@@ -27,15 +27,15 @@ export interface GeneratedPopulation {
 }
 
 export function generatePopulation(cells: GeographicCell[], random: RandomProvider): GeneratedPopulation
-export function generatePopulation(cells: GeographicCell[], zones: readonly PopulationPlacementZone[], random: RandomProvider, preserveLegacyHomePlacement?: boolean): GeneratedPopulation
-export function generatePopulation(cells: GeographicCell[], zonesOrRandom: readonly PopulationPlacementZone[] | RandomProvider, suppliedRandom?: RandomProvider, preserveLegacyHomePlacement = false): GeneratedPopulation {
+export function generatePopulation(cells: GeographicCell[], zones: readonly PopulationPlacementZone[], random: RandomProvider, preserveLegacyHomePlacement?: boolean, variableRegistry?: PersonVariableRegistry): GeneratedPopulation
+export function generatePopulation(cells: GeographicCell[], zonesOrRandom: readonly PopulationPlacementZone[] | RandomProvider, suppliedRandom?: RandomProvider, preserveLegacyHomePlacement = false, variableRegistry?: PersonVariableRegistry): GeneratedPopulation {
   const random = zonesOrRandom instanceof RandomProvider ? zonesOrRandom : suppliedRandom
   if (!random) throw new Error('Population generation requires a random provider')
   const zones = zonesOrRandom instanceof RandomProvider
     ? [{ id: 'population-zone-0001', name: 'Initial population', cellIds: cells.filter((cell) => cell.habitability >= 500 && cell.movementCost > 0).map((cell) => cell.id).sort(), populationCount: 200 }]
     : zonesOrRandom
   const count = zones.reduce((sum, zone) => sum + zone.populationCount, 0)
-  const basePeople = generateBasePeople(cells, random, count)
+  const basePeople = generateBasePeople(cells, random, count, variableRegistry)
   const topology = generateInitialHouseholds(basePeople, cells, zones, random, preserveLegacyHomePlacement || zonesOrRandom instanceof RandomProvider)
   const basePeopleById = new Map(basePeople.map((person) => [person.id, person]))
   const householdsById = new Map(topology.households.map((household) => [household.id, household]))
@@ -74,7 +74,7 @@ export function generatePopulation(cells: GeographicCell[], zonesOrRandom: reado
         ],
         randomVariationPermille: inheritanceRng.nextInt(1001),
       })
-      setPersonVariable(variables, PERSON_VARIABLE_ID.curiosity, inherited.valuePermille)
+      setPersonVariable(variables, PERSON_VARIABLE_ID.curiosity, inherited.valuePermille, variableRegistry)
       originTraces.push(inherited.trace)
     }
     const activity = resolveCurrentActivity({
@@ -127,7 +127,7 @@ export function generatePopulation(cells: GeographicCell[], zonesOrRandom: reado
   }
 }
 
-function generateBasePeople(cells: readonly GeographicCell[], random: RandomProvider, count: number): BasePersonState[] {
+function generateBasePeople(cells: readonly GeographicCell[], random: RandomProvider, count: number, variableRegistry?: PersonVariableRegistry): BasePersonState[] {
   const rng = random.stream('population')
   const trustRng = random.stream(`population.variable.${PERSON_VARIABLE_ID.trustPropensity}`)
   const conformityRng = random.stream(`population.variable.${PERSON_VARIABLE_ID.conformity}`)
@@ -147,16 +147,16 @@ function generateBasePeople(cells: readonly GeographicCell[], random: RandomProv
       initialHomeCellId,
       ageYears: 18 + rng.nextInt(48),
       variables: createDefaultPersonVariableValues({
-        [PERSON_VARIABLE_ID.curiosity]: drawInitialValue(PERSON_VARIABLE_ID.curiosity, rng),
-        [PERSON_VARIABLE_ID.riskTolerance]: drawInitialValue(PERSON_VARIABLE_ID.riskTolerance, rng),
-        [PERSON_VARIABLE_ID.sociability]: drawInitialValue(PERSON_VARIABLE_ID.sociability, rng),
-        [PERSON_VARIABLE_ID.hunger]: drawInitialValue(PERSON_VARIABLE_ID.hunger, rng),
-        [PERSON_VARIABLE_ID.trustPropensity]: drawInitialValue(PERSON_VARIABLE_ID.trustPropensity, trustRng),
-        [PERSON_VARIABLE_ID.conformity]: drawInitialValue(PERSON_VARIABLE_ID.conformity, conformityRng),
-        [PERSON_VARIABLE_ID.persistence]: drawInitialValue(PERSON_VARIABLE_ID.persistence, persistenceRng),
-        [PERSON_VARIABLE_ID.fatigue]: drawInitialValue(PERSON_VARIABLE_ID.fatigue, fatigueRng),
-        [PERSON_VARIABLE_ID.socialConnection]: drawInitialValue(PERSON_VARIABLE_ID.socialConnection, socialConnectionRng),
-      }),
+        [PERSON_VARIABLE_ID.curiosity]: drawInitialValue(PERSON_VARIABLE_ID.curiosity, rng, variableRegistry),
+        [PERSON_VARIABLE_ID.riskTolerance]: drawInitialValue(PERSON_VARIABLE_ID.riskTolerance, rng, variableRegistry),
+        [PERSON_VARIABLE_ID.sociability]: drawInitialValue(PERSON_VARIABLE_ID.sociability, rng, variableRegistry),
+        [PERSON_VARIABLE_ID.hunger]: drawInitialValue(PERSON_VARIABLE_ID.hunger, rng, variableRegistry),
+        [PERSON_VARIABLE_ID.trustPropensity]: drawInitialValue(PERSON_VARIABLE_ID.trustPropensity, trustRng, variableRegistry),
+        [PERSON_VARIABLE_ID.conformity]: drawInitialValue(PERSON_VARIABLE_ID.conformity, conformityRng, variableRegistry),
+        [PERSON_VARIABLE_ID.persistence]: drawInitialValue(PERSON_VARIABLE_ID.persistence, persistenceRng, variableRegistry),
+        [PERSON_VARIABLE_ID.fatigue]: drawInitialValue(PERSON_VARIABLE_ID.fatigue, fatigueRng, variableRegistry),
+        [PERSON_VARIABLE_ID.socialConnection]: drawInitialValue(PERSON_VARIABLE_ID.socialConnection, socialConnectionRng, variableRegistry),
+      }, variableRegistry),
       knownCellIds: [],
     }
   })
@@ -172,7 +172,7 @@ function knownCells(homeCellId: string, byId: ReadonlyMap<string, GeographicCell
     .sort()
 }
 
-function drawInitialValue(id: PersonVariableId, rng: ReturnType<RandomProvider['stream']>): number {
-  const definition = getPersonVariableDefinition(id)
+function drawInitialValue(id: PersonVariableId, rng: ReturnType<RandomProvider['stream']>, variableRegistry?: PersonVariableRegistry): number {
+  const definition = variableRegistry?.byId.get(id) ?? getPersonVariableDefinition(id)
   return definition.initializationMinimum + rng.nextInt(definition.initializationMaximum - definition.initializationMinimum + 1)
 }

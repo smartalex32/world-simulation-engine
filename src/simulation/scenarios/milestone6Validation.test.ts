@@ -207,7 +207,7 @@ describe('Milestone 6 independent validation', () => {
         if (!person) throw new Error(`Missing exposed person ${personId}`)
         expect(Object.prototype.hasOwnProperty.call(person, 'communityId')).toBe(false)
         expect(entry.communityId).toBe(state.communities.find(({ catchment: area }) => area.cellIds.includes(person.locationCellId))?.catchment.id)
-        return sum + person.variables[PERSON_VARIABLE_ID.curiosity]
+        return sum + (person.variables[PERSON_VARIABLE_ID.curiosity] ?? 0)
       }, 0)
       expect(entry.counters.curiosityPersonHourSum).toBe(expectedCuriosityPersonHours)
       expect(entry.counters.exposedPersonHours).toBe(entry.counters.exposedPersonIds.length)

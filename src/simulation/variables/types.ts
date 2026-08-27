@@ -11,10 +11,12 @@ export const PERSON_VARIABLE_IDS = Object.freeze([
   'person.need.socialConnection',
 ] as const)
 
-export type PersonVariableId = typeof PERSON_VARIABLE_IDS[number]
+/** Content packs own the supported variable namespace for a run.  The built-in
+ * IDs below remain useful constants, but a pack may define additional stable IDs. */
+export type PersonVariableId = string
 export type PersonVariableLayer = 'trait' | 'state' | 'need'
 export type PersonVariableCategory = 'cognitive' | 'temperament' | 'social' | 'physical'
-export type PersonVariableValues = Record<PersonVariableId, number>
+export type PersonVariableValues = Record<string, number>
 
 export interface PersonVariableDefinition {
   id: PersonVariableId

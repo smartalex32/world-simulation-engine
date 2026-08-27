@@ -22,6 +22,7 @@ export function evaluateInfluences(
   for (const edge of registry.getByTarget(targetId)) {
     if (!edge.enabled) continue
     const sourceValue = values[edge.sourceId]
+    if (sourceValue === undefined) throw new Error(`Influence source value is missing: ${edge.sourceId}`)
     const effect = roundHalfAwayFromZero((sourceValue * edge.weightPermille) / 1000)
     contributions.push(Object.freeze({
       kind: 'influence',
