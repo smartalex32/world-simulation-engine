@@ -661,6 +661,7 @@ export interface HealthStressTrace {
   coPresenceDelta: number
   waterDelta: number
   hungerDelta: number
+  infectionDelta: number
   requestedDelta: number
   appliedDelta: number
   currentValue: number

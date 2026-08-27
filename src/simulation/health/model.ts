@@ -87,7 +87,7 @@ export function emptyHealthExposure(): HealthExposureState {
   return { observedHours: 0, crowdingPersonHours: 0, coPresenceHours: 0, waterAvailabilityPermilleHours: 0 }
 }
 
-export function resolveDailyHealthStress(person: PersonState, tick: number): HealthStressTrace {
+export function resolveDailyHealthStress(person: PersonState, tick: number, infectionDelta = 0): HealthStressTrace {
   const exposure = person.healthExposure ?? emptyHealthExposure()
   const hours = Math.max(1, exposure.observedHours)
   const averageCrowding = Math.floor(exposure.crowdingPersonHours / hours)
@@ -98,10 +98,10 @@ export function resolveDailyHealthStress(person: PersonState, tick: number): Hea
   const coPresenceDelta = Math.floor(exposure.coPresenceHours / HEALTH_STRESS.coPresenceDivisor)
   const waterDelta = Math.floor(Math.max(0, HEALTH_STRESS.waterComfortPermille - averageWater) / HEALTH_STRESS.waterDivisor)
   const hungerDelta = Math.floor(getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger) / HEALTH_STRESS.hungerDivisor)
-  const requestedDelta = recoveryDelta + crowdingDelta + coPresenceDelta + waterDelta + hungerDelta
+  const requestedDelta = recoveryDelta + crowdingDelta + coPresenceDelta + waterDelta + hungerDelta + infectionDelta
   const currentValue = adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.healthStress, requestedDelta)
   const trace: HealthStressTrace = {
-    tick, previousValue, recoveryDelta, crowdingDelta, coPresenceDelta, waterDelta, hungerDelta,
+    tick, previousValue, recoveryDelta, crowdingDelta, coPresenceDelta, waterDelta, hungerDelta, infectionDelta,
     requestedDelta, appliedDelta: currentValue - previousValue, currentValue,
     annualMortalityRiskPermille: healthStressMortalityRiskPermille(currentValue),
   }

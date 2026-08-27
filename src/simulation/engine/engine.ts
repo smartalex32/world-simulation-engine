@@ -191,6 +191,9 @@ export class SimulationEngine {
     const preserveLegacyHomePlacement = typeof seedOrDraft === 'string' || (draft.populationZones.length === 0 && draft.initialPopulationCount === 200)
     const runtime = createContentPackRuntime(contentPack)
     const generatedPopulation = generatePopulation(world.grid.cells, creation.populationZones, random, preserveLegacyHomePlacement, runtime.variables)
+    const initialPathogen = [...runtime.pack.pathogens].sort((a, b) => a.id.localeCompare(b.id))[0]
+    const initialPerson = [...generatedPopulation.people].sort((a, b) => compareIds(a.id, b.id))[0]
+    if (initialPathogen && initialPerson) initialPerson.fictionalInfection = { version: 1, pathogenId: initialPathogen.id, phase: 'incubating', startedTick: 0, phaseEndsTick: initialPathogen.incubationHours }
     const catchments = createTwoCatchmentGeography({ cells: world.grid.cells, width: creation.width, height: creation.height })
     const worldCellById = new Map(world.grid.cells.map((cell) => [cell.id, cell]))
     const communities: CommunitySimulationState[] = catchments.map((catchment) => {
@@ -722,7 +725,12 @@ export class SimulationEngine {
 
   private resolveDailyHealthStress(pushEvent: (event: SimulationEvent) => void): void {
     for (const trace of progressFictionalInfections(this.livingPeople(), this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('FICTIONAL_INFECTION_PROGRESS', { pathogenId: trace.pathogenId, kind: trace.kind, sourcePersonId: trace.sourcePersonId ?? null }))
-    for (const person of this.livingPeople()) resolveDailyHealthStress(person, this.state.tick)
+    const pathogens = new Map(this.contentPackRuntime.pack.pathogens.map((pathogen) => [pathogen.id, pathogen]))
+    for (const person of this.livingPeople()) {
+      const infection = person.fictionalInfection
+      const infectionDelta = infection?.phase === 'immune' ? 0 : pathogens.get(infection?.pathogenId ?? '')?.dailyHealthStressPermille ?? 0
+      resolveDailyHealthStress(person, this.state.tick, infectionDelta)
+    }
   }
 
   private recordTravel(cost: number): void {
