@@ -346,6 +346,22 @@ export interface HouseholdRelocationTrace {
   utilityPermille: number
   probabilityPermille: number
   randomRollPermille: number
+  settlementMigration?: SettlementMigrationTrace
+}
+
+/** Structured regional rationale retained with an accepted household move. */
+export interface SettlementMigrationTrace {
+  sourceSettlementId?: string
+  destinationSettlementId?: string
+  employmentPermille: number
+  foodPermille: number
+  housingPermille: number
+  safetyPermille: number
+  tiesPermille: number
+  infrastructurePermille: number
+  servicesPermille: number
+  geographyPermille: number
+  shockPermille: number
 }
 export type ParentChildLinkId = string
 export type ActivityLocationId = string

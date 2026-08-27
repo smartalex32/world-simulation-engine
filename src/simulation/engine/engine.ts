@@ -96,7 +96,7 @@ import { COHORT_MODEL_VERSION, advanceCohortsAnnual, advanceCohortsDaily, create
 import { materializeCohortPeople, materializationStreamName } from '../cohorts/materialization'
 import { applyCohortMaterialization, planCohortMaterialization } from '../cohorts/transitions'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
-import { reconcileSettlementRegions } from '../settlements/regional'
+import { reconcileSettlementRegions, settlementMigrationTrace } from '../settlements/regional'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -1291,6 +1291,7 @@ export class SimulationEngine {
       if (!evaluation.candidate || evaluation.probabilityPermille === 0) continue
       const trace = relocationTrace(evaluation, this.state.tick, relocationRng.nextInt(1000))
       if (!trace) continue
+      trace.settlementMigration = settlementMigrationTrace(this.state.world.settlements, trace.sourceCellId, trace.destinationCellId, trace.householdTiePermille, trace.foodAccessDeltaPermille, trace.travelCost)
       const homeActivity = this.activityLocationById.get(household.homeActivityLocationId)
       if (!homeActivity || homeActivity.kind !== 'home') throw new Error(`Household ${household.id} has no valid home activity`)
       household.homeCellId = trace.destinationCellId
@@ -1318,6 +1319,10 @@ export class SimulationEngine {
         travelCost: trace.travelCost,
         householdTiePermille: trace.householdTiePermille,
         crowdingDelta: trace.crowdingDelta,
+        destinationSettlementId: trace.settlementMigration.destinationSettlementId ?? null,
+        sourceSettlementId: trace.settlementMigration.sourceSettlementId ?? null,
+        servicesPermille: trace.settlementMigration.servicesPermille,
+        infrastructurePermille: trace.settlementMigration.infrastructurePermille,
         riskCostPermille: trace.riskCostPermille,
         utilityPermille: trace.utilityPermille,
         probabilityPermille: trace.probabilityPermille,

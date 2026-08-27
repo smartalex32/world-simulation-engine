@@ -1,4 +1,4 @@
-import type { GeographicCell, HouseholdState, MarketState, OrganizationState, SettlementRegionalState, SettlementState } from '../domain/types'
+import type { GeographicCell, HouseholdState, MarketState, OrganizationState, SettlementMigrationTrace, SettlementRegionalState, SettlementState } from '../domain/types'
 import { hexDistance } from '../spatial/hex'
 
 export interface SettlementRegionalTransition { settlementId: string; previousStatus: SettlementRegionalState['status']; nextStatus: SettlementRegionalState['status']; kind: NonNullable<SettlementRegionalState['lastTransition']>['kind']; reason: string }
@@ -30,4 +30,26 @@ export function reconcileSettlementRegions(input: { settlements: SettlementState
     if (!previous || previous.status !== status || previous.residentHouseholdIds.length !== residents.length) transitions.push({ settlementId: settlement.id, previousStatus: previous?.status ?? 'abandoned', nextStatus: status, kind, reason })
   }
   return transitions
+}
+
+/** Causal settlement evidence for a real household relocation. Values describe
+ * observed regional conditions; they do not assign settlement membership. */
+export function settlementMigrationTrace(settlements: readonly SettlementState[], sourceCellId: string, destinationCellId: string, householdTiePermille: number, foodAccessDeltaPermille: number, travelCost: number): SettlementMigrationTrace {
+  const source = settlements.find((settlement) => settlement.regional?.extentCellIds.includes(sourceCellId))
+  const destination = settlements.find((settlement) => settlement.regional?.extentCellIds.includes(destinationCellId))
+  const regional = destination?.regional
+  const residents = regional?.residentHouseholdIds.length ?? 0
+  return {
+    ...(source === undefined ? {} : { sourceSettlementId: source.id }),
+    ...(destination === undefined ? {} : { destinationSettlementId: destination.id }),
+    employmentPermille: Math.min(1000, Math.floor((regional?.capacity.materials ?? 0) * 1000 / Math.max(1, residents * 3))),
+    foodPermille: Math.max(0, Math.min(1000, 500 + foodAccessDeltaPermille)),
+    housingPermille: Math.min(1000, Math.floor((regional?.capacity.housing ?? 0) * 1000 / Math.max(1, residents))),
+    safetyPermille: regional?.status === 'active' ? 800 : regional?.status === 'contracting' ? 450 : 100,
+    tiesPermille: householdTiePermille,
+    infrastructurePermille: regional?.accessPermille ?? 0,
+    servicesPermille: Math.min(1000, Math.floor((regional?.capacity.services ?? 0) * 1000 / Math.max(1, residents))),
+    geographyPermille: Math.max(0, 1000 - Math.min(1000, Math.floor(travelCost / 10))),
+    shockPermille: source?.regional?.status === 'contracting' ? 350 : source?.regional?.status === 'abandoned' ? 800 : 0,
+  }
 }
