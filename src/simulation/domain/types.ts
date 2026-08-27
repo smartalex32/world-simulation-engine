@@ -35,6 +35,8 @@ export const HEALTH_MODEL_VERSION = 2
 /** Versioned, person-owned knowledge acquisition and application rules. */
 export const KNOWLEDGE_MODEL_VERSION = 1
 export const INNOVATION_MODEL_VERSION = 1
+/** Authoritative network condition, capacity, and repair rules. */
+export const INFRASTRUCTURE_MODEL_VERSION = 1
 export const WORLD_CELL_RADIUS_METERS = 1_000
 
 export type Terrain = 'water' | 'plain' | 'hill'
@@ -352,6 +354,29 @@ export interface HouseholdRelocationTrace {
   probabilityPermille: number
   randomRollPermille: number
   settlementMigration?: SettlementMigrationTrace
+}
+
+/** Runtime network asset; distinct from authored geometry and from institutions. */
+export interface InfrastructureAssetState {
+  version: 1
+  id: string
+  kind: 'road' | 'waterway' | 'port' | 'storage' | 'service'
+  cellIds: string[]
+  ownerSettlementId?: string
+  capacity: number
+  conditionPermille: number
+  disruptionPermille: number
+  maintenanceUnits: number
+  lastTrace?: InfrastructureLifecycleTrace
+}
+
+export interface InfrastructureLifecycleTrace {
+  tick: number
+  kind: 'constructed' | 'maintained' | 'degraded' | 'disrupted' | 'repaired'
+  previousConditionPermille: number
+  conditionDeltaPermille: number
+  capacity: number
+  reason: string
 }
 
 /** Structured regional rationale retained with an accepted household move. */
@@ -823,6 +848,7 @@ export interface RunConfiguration {
   knowledgeModelVersion?: number
   healthModelVersion?: number
   innovationModelVersion?: number
+  infrastructureModelVersion?: number
   cohortModelVersion: number
 }
 
@@ -925,6 +951,7 @@ export interface SimulationState {
   households: HouseholdState[]
   markets: MarketState[]
   organizations: OrganizationState[]
+  infrastructure: InfrastructureAssetState[]
   governance: LocalGovernanceState[]
   disputes: DisputeState[]
   parentChildLinks: ParentChildLink[]

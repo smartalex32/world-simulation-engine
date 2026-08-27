@@ -16,6 +16,7 @@ import {
   HEALTH_MODEL_VERSION,
   KNOWLEDGE_MODEL_VERSION,
   INNOVATION_MODEL_VERSION,
+  INFRASTRUCTURE_MODEL_VERSION,
   HOUSEHOLD_MODEL_VERSION,
   INFLUENCE_REGISTRY_VERSION,
   VARIABLE_REGISTRY_VERSION,
@@ -97,6 +98,7 @@ import { materializeCohortPeople, materializationStreamName } from '../cohorts/m
 import { applyCohortMaterialization, planCohortMaterialization } from '../cohorts/transitions'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
 import { migrateCohortsBetweenSettlements, reconcileSettlementRegions, settlementMigrationTrace } from '../settlements/regional'
+import { createInfrastructureAssets, maintainInfrastructure } from '../infrastructure/model'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -212,6 +214,7 @@ export class SimulationEngine {
     const markets = createInitialMarkets(world.grid.cells, world.settlements)
     const cohorts = createInitialCohorts(world.grid.cells, creation.populationZones)
     reconcileSettlementRegions({ settlements: world.settlements, cells: world.grid.cells, households: generatedPopulation.households, cohorts, markets, organizations, roads: world.roads ?? [], tick: 0 })
+    const infrastructure = createInfrastructureAssets({ roads: world.roads ?? [], cells: world.grid.cells, settlements: world.settlements, markets, organizations, tick: 0 })
     const governance = createLocalGovernance(communities, generatedPopulation.people)
     return new SimulationEngine({
       runId,
@@ -244,6 +247,7 @@ export class SimulationEngine {
         knowledgeModelVersion: KNOWLEDGE_MODEL_VERSION,
         healthModelVersion: HEALTH_MODEL_VERSION,
         innovationModelVersion: INNOVATION_MODEL_VERSION,
+        infrastructureModelVersion: INFRASTRUCTURE_MODEL_VERSION,
         cohortModelVersion: COHORT_MODEL_VERSION,
       },
       world,
@@ -253,6 +257,7 @@ export class SimulationEngine {
       households: generatedPopulation.households,
       markets,
       organizations,
+      infrastructure,
       governance,
       disputes: [],
       parentChildLinks: generatedPopulation.parentChildLinks,
