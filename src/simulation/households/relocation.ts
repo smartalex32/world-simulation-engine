@@ -50,6 +50,7 @@ export interface HouseholdRelocationInput {
   readonly cells: readonly GeographicCell[]
   readonly roadCellIds: ReadonlySet<string>
   readonly settlements?: readonly SettlementState[]
+  readonly healthDisplacementPermille?: number
 }
 
 /**
@@ -101,6 +102,7 @@ export function evaluateHouseholdRelocation(input: HouseholdRelocationInput): Ho
       + Math.floor(householdTiePermille / 4)
       + crowdingDelta * 75
       + settlementUtilityPermille
+      + (input.healthDisplacementPermille ?? 0)
       - travelCostPermille
       - riskCostPermille
     candidates.push({ destinationCellId: destination.id, foodAccessPermille, foodAccessDeltaPermille, foodReservePressurePermille, travelCost, householdTiePermille, crowdingDelta, riskCostPermille, settlementUtilityPermille, utilityPermille })

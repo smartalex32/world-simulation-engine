@@ -177,7 +177,7 @@ or infer a society-level developmental loop.
 
 Seasonal climate is a deterministic regional classification derived from terrain and elevation. It changes seasonal water availability, food regeneration, and the productivity of the existing plain-cell agricultural work path. Derived living-environment evidence also exposes biome, ecological and agricultural potential, local hazard risk, and local harvest pressure. Daily recovery applies a bounded local pressure feedback from people actually present in a cell; there is no global weather simulation or mutable fluid model.
 
-Health stress is a fictional, inspectable temporary state. It is calculated from actual hourly co-presence, cell crowding, water access, and hunger; it adds only a bounded annual mortality-risk component. There are no pathogens, clinical claims, or disease transmission mechanics.
+Health stress is a fictional, inspectable temporary state calculated from actual hourly co-presence, cell crowding, water access, hunger, and the bounded burden of any fictional pack-defined pathogen. Fictional pathogens retain deterministic incubation, infectiousness, recovery, temporary immunity, named-stream co-presence transmission, household care, self-isolation, annual mortality contribution, detailed relocation pressure, and equivalent exact cohort compartments. Outbreak, care, isolation, migration-pressure, and mortality evidence are structured and serialized. These are deliberately non-clinical simulation rules and make no claim about real pathogens, medicine, or genetics.
 
 Capability 4 derives hydrology as a deterministic graph from authored
 elevation. Each exact map cell exposes its downhill target, basin, watershed

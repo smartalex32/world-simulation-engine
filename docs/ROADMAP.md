@@ -150,7 +150,7 @@ named in its title.
 | 31 — Territorial Governance and Civic Legitimacy | Foundation complete | Local food-relief legitimacy evidence; no legal territory or civic membership. |
 | 32 — Collective Conflict and Resolution | Foundation complete | Bounded community contention and non-lethal local resolution evidence. |
 | 33 — Seasonal Climate, Agriculture, and Ecology | Foundation complete | Static terrain/elevation climate classes with seasonal resource and agricultural effects. |
-| 34 — Health, Disease, and Demographic Stress | Foundation complete | Fictional daily health stress from co-presence, crowding, water, and hunger; no pathogen model. |
+| 34 — Health, Disease, and Demographic Stress | Complete | Fictional pack-defined pathogen progression/transmission, bounded household care and self-isolation, detailed/cohort mortality, relocation pressure, and structured outbreak evidence; no clinical or genetics claim. |
 | 35 — Skills, Experimentation, and Practical Innovation | Foundation complete | First seeded foraging experiment and person-owned practical technique. |
 | 36 — Historical Snapshots and Causal Replay | Foundation complete | Bounded checkpoints and read-only retained-state comparison; no mutating replay. |
 | 37 — Scalable Authoritative Simulation | Foundation complete | First measured allocation/index optimization with unchanged canonical output. |

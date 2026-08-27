@@ -1,6 +1,6 @@
 import { canonicalStringify } from '../simulation/serialization/snapshot'
 import { PERSON_VARIABLE_IDS } from '../simulation/variables/types'
-import type { ContentPack, ContentPackDiagnostic, DeterministicCondition, DeterministicExpression, ValidatedContentPack } from './types'
+import type { ContentPack, ContentPackDiagnostic, DeterministicCondition, DeterministicExpression, FictionalPathogenDefinition, ValidatedContentPack } from './types'
 
 export const CONTENT_PACK_SCHEMA_VERSION = 1
 
@@ -17,6 +17,8 @@ export function validateContentPack(value: unknown): ValidatedContentPack {
   else for (const [index, dependency] of manifest.dependencies.entries()) if (!isRecord(dependency) || !stableId(dependency.id) || !version(dependency.version)) diagnostics.push({ path: `manifest.dependencies[${index}]`, message: 'Dependency needs a stable ID and version' })
   validateUnique(pack.personVariables, 'personVariables', (item) => item.id, diagnostics)
   validateUnique(pack.influences, 'influences', (item) => item.id, diagnostics)
+  validateUnique(pack.pathogens, 'pathogens', (item) => item.id, diagnostics)
+  for (const [index, pathogen] of (pack.pathogens ?? []).entries()) validatePathogen(pathogen, `pathogens[${index}]`, diagnostics)
   for (const [index, definition] of (pack.personVariables ?? []).entries()) {
     if (!stableId(definition.id) || !Number.isSafeInteger(definition.minimum) || !Number.isSafeInteger(definition.maximum) || definition.minimum > definition.maximum || !Number.isSafeInteger(definition.defaultValue) || definition.defaultValue < definition.minimum || definition.defaultValue > definition.maximum) diagnostics.push({ path: `personVariables[${index}]`, message: 'Variable bounds/default are invalid' })
   }
@@ -46,7 +48,18 @@ export function migrateContentPack(value: unknown): ContentPack {
     manifest.schemaVersion = CONTENT_PACK_SCHEMA_VERSION
     manifest.dependencies ??= []
   }
+  migrated.pathogens ??= []
   return migrated as unknown as ContentPack
+}
+
+function validatePathogen(pathogen: FictionalPathogenDefinition, path: string, diagnostics: ContentPackDiagnostic[]): void {
+  if (!pathogen || !stableId(pathogen.id)
+    || !positiveInteger(pathogen.incubationHours)
+    || !positiveInteger(pathogen.infectiousHours)
+    || !positiveInteger(pathogen.immunityHours)
+    || !permille(pathogen.transmissionPermille)
+    || !permille(pathogen.dailyHealthStressPermille)
+    || !permille(pathogen.annualMortalityPermille)) diagnostics.push({ path, message: 'Pathogen needs a stable ID, positive durations, and integer permille coefficients' })
 }
 
 function validateExpression(expression: DeterministicExpression, path: string, diagnostics: ContentPackDiagnostic[]): void {
@@ -85,4 +98,6 @@ function validateUnique<T>(items: readonly T[] | undefined, path: string, key: (
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function stableId(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*$/.test(value) }
 function version(value: unknown): value is string { return typeof value === 'string' && /^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(value) }
+function positiveInteger(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) > 0 }
+function permille(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= 1000 }
 function invalid(path: string, message: string): never { throw Object.assign(new Error(`Invalid content pack: ${message}`), { diagnostics: Object.freeze([{ path, message }]) }) }

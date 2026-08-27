@@ -8,8 +8,8 @@ import type {
 } from '../community/types'
 import type { SettlementTemplateId } from '../spatial/settlementTemplates'
 
-export const ENGINE_VERSION = '0.40.0'
-export const SNAPSHOT_SCHEMA_VERSION = 39
+export const ENGINE_VERSION = '0.41.0'
+export const SNAPSHOT_SCHEMA_VERSION = 40
 /** Versioned content-pack selection is authoritative configuration, not UI state. */
 export const CONTENT_PACK_MODEL_VERSION = 2
 export const BASE_TICK_HOURS = 1
@@ -31,7 +31,7 @@ export const LANGUAGE_MODEL_VERSION = 1
 export const GOVERNANCE_MODEL_VERSION = 2
 export const CONFLICT_MODEL_VERSION = 2
 /** Fictional health-stress exposure and risk rules; not a disease model. */
-export const HEALTH_MODEL_VERSION = 1
+export const HEALTH_MODEL_VERSION = 2
 /** Versioned, person-owned knowledge acquisition and application rules. */
 export const KNOWLEDGE_MODEL_VERSION = 1
 export const INNOVATION_MODEL_VERSION = 1
@@ -661,10 +661,41 @@ export interface HealthStressTrace {
   coPresenceDelta: number
   waterDelta: number
   hungerDelta: number
+  infectionDelta: number
   requestedDelta: number
   appliedDelta: number
   currentValue: number
   annualMortalityRiskPermille: number
+}
+
+/** Fictional, non-clinical pathogen progression retained on the affected person. */
+export interface FictionalInfectionState {
+  version: 1
+  pathogenId: string
+  phase: 'incubating' | 'infectious' | 'immune'
+  startedTick: number
+  phaseEndsTick: number
+  sourcePersonId?: string
+}
+
+export interface FictionalInfectionTrace {
+  tick: number
+  pathogenId: string
+  kind: 'acquired' | 'became-infectious' | 'recovered' | 'immunity-expired'
+  previousPhase?: FictionalInfectionState['phase']
+  nextPhase?: FictionalInfectionState['phase']
+  sourcePersonId?: string
+  probabilityPermille?: number
+  randomRollPermille?: number
+}
+
+/** Household care is a bounded co-resident support action, not a clinical service. */
+export interface HealthInterventionTrace {
+  tick: number
+  kind: 'household-care' | 'self-isolation'
+  careCapacityCount: number
+  stressReductionPermille: number
+  displacementPressurePermille: number
 }
 
 export type PersonLifeStage = 'infant' | 'child' | 'adolescent' | 'adult' | 'olderAdult'
@@ -702,6 +733,9 @@ export interface PersonState {
   environmentalExposure?: EnvironmentalExposureState
   healthExposure?: HealthExposureState
   lastHealthStressTrace?: HealthStressTrace
+  fictionalInfection?: FictionalInfectionState
+  lastInfectionTrace?: FictionalInfectionTrace
+  lastHealthIntervention?: HealthInterventionTrace
   variables: PersonVariableValues
   knownCellIds: string[]
   journey?: JourneyState
@@ -805,8 +839,32 @@ export interface PopulationCohortState {
   economicProductivityPermille: number
   culturalCohesionPermille: number
   developmentIndexPermille: number
+  fictionalInfection?: CohortInfectionState
   lastMigration?: CohortMigrationTrace
   eventTotals: { births: number; deaths: number; migrationIn: number; migrationOut: number }
+}
+
+/** Exact aggregate equivalents of the detailed-person disease phases. */
+export interface CohortInfectionState {
+  version: 1
+  pathogenId: string
+  incubatingCount: number
+  infectiousCount: number
+  immuneCount: number
+  lastUpdatedTick: number
+  lastTrace?: CohortInfectionTrace
+}
+
+export interface CohortInfectionTrace {
+  tick: number
+  pathogenId: string
+  susceptibleCount: number
+  newIncubatingCount: number
+  becameInfectiousCount: number
+  recoveredCount: number
+  immunityExpiredCount: number
+  careCapacityCount: number
+  mortalityCount: number
 }
 
 export interface CohortMigrationTrace {
@@ -888,7 +946,7 @@ export interface SimulationEvent {
   id: string
   runId: string
   tick: number
-  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'COHORT_MATERIALIZED' | 'PEOPLE_DEMATERIALIZED' | 'SETTLEMENT_REGIONAL_TRANSITION' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_WORKED' | 'HOUSEHOLDS_SHARED_FOOD' | 'HOUSEHOLDS_EXCHANGED_TOOLS' | 'HOUSEHOLD_RELOCATED' | 'SETTLEMENT_SCALE_CHANGED' | 'COMMUNITY_CONTENTION_RESOLVED' | 'PERSON_ATTENDED_SCHOOL' | 'PERSON_MISSED_SCHOOL' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_KNOWLEDGE_DISCOVERED' | 'PERSON_KNOWLEDGE_SHARED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
+  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'COHORT_MATERIALIZED' | 'PEOPLE_DEMATERIALIZED' | 'SETTLEMENT_REGIONAL_TRANSITION' | 'FICTIONAL_INFECTION_ACQUIRED' | 'FICTIONAL_INFECTION_PROGRESS' | 'COHORT_OUTBREAK_UPDATED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_WORKED' | 'HOUSEHOLDS_SHARED_FOOD' | 'HOUSEHOLDS_EXCHANGED_TOOLS' | 'HOUSEHOLD_RELOCATED' | 'SETTLEMENT_SCALE_CHANGED' | 'COMMUNITY_CONTENTION_RESOLVED' | 'PERSON_ATTENDED_SCHOOL' | 'PERSON_MISSED_SCHOOL' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_KNOWLEDGE_DISCOVERED' | 'PERSON_KNOWLEDGE_SHARED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
   version: 1
   cellId?: string
   payload: Record<string, string | number | boolean | null>

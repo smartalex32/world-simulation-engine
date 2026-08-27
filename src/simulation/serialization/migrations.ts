@@ -22,6 +22,7 @@ const migrations = new Map<number, SnapshotMigration>([
   [36, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 37, state: { ...snapshot.state, populationFidelity: { version: 1, nextTransitionSequence: 1, protectedPersonIds: [], transitions: [] } } })],
   [37, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 38, state: { ...snapshot.state, config: { ...snapshot.state.config, cohortModelVersion: 3 }, cohorts: snapshot.state.cohorts.map((cohort) => ({ ...cohort, version: 3, economicProductivityPermille: 1000, culturalCohesionPermille: 500, developmentIndexPermille: 500 })) } })],
   [38, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 39, state: { ...snapshot.state, config: { ...snapshot.state.config, cohortModelVersion: 3 }, cohorts: snapshot.state.cohorts.map((cohort) => ({ ...cohort, version: 3 })) } })],
+  [39, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 40, state: { ...snapshot.state, config: { ...snapshot.state.config, healthModelVersion: 2 } } })],
 ])
 
 export function migrateSnapshotSchema(value: unknown, targetSchema: number): SnapshotLike {
