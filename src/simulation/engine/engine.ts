@@ -92,7 +92,7 @@ import { discoverLocalTerrain, initialKnowledge, transmitKnowledge } from '../kn
 import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION_STREAM, relocationTrace } from '../households/relocation'
 import { emptyHealthExposure, healthStressMortalityRiskPermille, resolveDailyHealthStress } from '../health/model'
 import { attemptPracticalExperiment, INNOVATION_STREAM } from '../innovation/model'
-import { COHORT_MODEL_VERSION, createInitialCohorts } from '../cohorts/model'
+import { COHORT_MODEL_VERSION, advanceCohortsDaily, createInitialCohorts } from '../cohorts/model'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
 
 interface RuntimeCommunityCounters {
@@ -401,6 +401,7 @@ export class SimulationEngine {
         for (const governance of this.state.governance) { const community = this.state.communities.find((value) => value.catchment.id === governance.communityId); if (community) updateLegitimacy(governance, community, this.state.tick) }
         for (const contention of resolveCommunityContentions(this.disputeById.values(), new Map(this.state.governance.map((governance) => [governance.communityId, governance.legitimacy])))) pushEvent(this.event('COMMUNITY_CONTENTION_RESOLVED', { ...contention }))
         this.regenerateFood()
+        advanceCohortsDaily(this.state.cohorts, this.state.world.grid.cells)
         statistics.push(...this.sampleDailyStatistics())
         this.decayRelationshipFrequencies()
         this.state.dailySpatialCounters = { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 }

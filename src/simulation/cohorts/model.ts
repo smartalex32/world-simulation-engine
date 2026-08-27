@@ -22,6 +22,21 @@ export function cohortPopulationByCell(cohorts: readonly PopulationCohortState[]
   return result
 }
 
+/**
+ * Advances the aggregate food ledger from the cohort's actual cell allocations.
+ * It is deterministic, consumes no RNG, and preserves people, households,
+ * age bands, and allocations exactly.  A later transition may materialize this
+ * same retained aggregate without inventing population.
+ */
+export function advanceCohortsDaily(cohorts: PopulationCohortState[], cells: readonly GeographicCell[]): void {
+  const cellsById = new Map(cells.map((cell) => [cell.id, cell]))
+  for (const cohort of cohorts) {
+    const harvest = cohort.cellAllocations.reduce((total, allocation) => total + Math.min(cellsById.get(allocation.cellId)?.foodAmount ?? 0, Math.max(0, Math.floor(allocation.populationCount / 12))), 0)
+    const required = Math.ceil(cohort.populationCount / 3)
+    cohort.foodUnits = Math.max(0, cohort.foodUnits + harvest - required)
+  }
+}
+
 export function validatePopulationCohorts(value: unknown, zones: readonly PopulationPlacementZone[], cells: readonly GeographicCell[]): asserts value is PopulationCohortState[] {
   if (!Array.isArray(value)) throw new Error('Simulation contains invalid cohorts')
   const zonesById = new Map(zones.map((zone) => [zone.id, zone]))

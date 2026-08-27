@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { WorkbenchProjectionBuilder } from '../../projection/buildMapProjection'
 import { SimulationEngine } from '../engine/engine'
+import { advanceCohortsDaily } from './model'
 import { defaultWorldCreationRequest } from '../domain/worldCreation'
 
 describe('authoritative population cohorts', () => {
+  it('advances the retained cohort food ledger deterministically without changing represented people', () => {
+    const cohorts = [{ version: 1 as const, id: 'cohort:west', sourceZoneId: 'west', populationCount: 12, householdCount: 4, foodUnits: 5, cellAllocations: [{ cellId: '0,0', populationCount: 12 }], ageBands: { children: 2, adults: 9, elders: 1 }, eventTotals: { births: 0, deaths: 0, migrationIn: 0, migrationOut: 0 } }]
+    advanceCohortsDaily(cohorts, [{ id: '0,0', q: 0, r: 0, terrain: 'plain', elevation: 0, habitability: 1000, movementCost: 1000, resourceCapacity: 100, foodAmount: 10, foodRegenerationPerDay: 1 }])
+    expect(cohorts[0]).toMatchObject({ populationCount: 12, householdCount: 4, foodUnits: 2, cellAllocations: [{ cellId: '0,0', populationCount: 12 }] })
+  })
+
   it('retains a hundred-thousand-person distant allocation exactly without creating detailed agents', async () => {
     const draft = {
       ...defaultWorldCreationRequest('cohort-ledger-seed'),
