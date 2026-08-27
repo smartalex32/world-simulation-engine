@@ -1,4 +1,4 @@
-import type { GeographicCell, HouseholdState, MarketState, OrganizationState, SettlementMigrationTrace, SettlementRegionalState, SettlementState } from '../domain/types'
+import type { GeographicCell, HouseholdState, MarketState, OrganizationState, PopulationCohortState, SettlementMigrationTrace, SettlementRegionalState, SettlementState } from '../domain/types'
 import { hexDistance } from '../spatial/hex'
 
 export interface SettlementRegionalTransition { settlementId: string; previousStatus: SettlementRegionalState['status']; nextStatus: SettlementRegionalState['status']; kind: NonNullable<SettlementRegionalState['lastTransition']>['kind']; reason: string }
@@ -52,4 +52,31 @@ export function settlementMigrationTrace(settlements: readonly SettlementState[]
     geographyPermille: Math.max(0, 1000 - Math.min(1000, Math.floor(travelCost / 10))),
     shockPermille: source?.regional?.status === 'contracting' ? 350 : source?.regional?.status === 'abandoned' ? 800 : 0,
   }
+}
+
+/** Moves a bounded aggregate allocation from a contracting/abandoned settlement
+ * to an active one. Total cohort population is conserved exactly. */
+export function migrateCohortsBetweenSettlements(cohorts: PopulationCohortState[], settlements: readonly SettlementState[], cells: readonly GeographicCell[], tick: number): NonNullable<PopulationCohortState['lastMigration']>[] {
+  const destinations = settlements.filter((settlement) => settlement.regional?.status === 'active' && settlement.regional.capacity.housing > settlement.regional.residentHouseholdIds.length * 3).sort((a, b) => a.id.localeCompare(b.id))
+  const sourceSettlements = settlements.filter((settlement) => settlement.regional?.status === 'contracting' || settlement.regional?.status === 'abandoned').sort((a, b) => a.id.localeCompare(b.id))
+  const cellById = new Map(cells.map((cell) => [cell.id, cell]))
+  const traces: NonNullable<PopulationCohortState['lastMigration']>[] = []
+  for (const cohort of [...cohorts].sort((a, b) => a.id.localeCompare(b.id))) {
+    const source = sourceSettlements.find((settlement) => cohort.cellAllocations.some((allocation) => settlement.regional?.extentCellIds.includes(allocation.cellId)))
+    const destination = destinations.find((settlement) => settlement.id !== source?.id && cellById.get(settlement.anchorCellId)?.movementCost)
+    if (!source || !destination) continue
+    const allocation = cohort.cellAllocations.filter((candidate) => source.regional?.extentCellIds.includes(candidate.cellId)).sort((a, b) => b.populationCount - a.populationCount || a.cellId.localeCompare(b.cellId))[0]
+    if (!allocation) continue
+    const populationCount = Math.max(1, Math.floor(allocation.populationCount / 20))
+    allocation.populationCount -= populationCount
+    const existing = cohort.cellAllocations.find((candidate) => candidate.cellId === destination.anchorCellId)
+    if (existing) existing.populationCount += populationCount
+    else cohort.cellAllocations.push({ cellId: destination.anchorCellId, populationCount })
+    cohort.cellAllocations = cohort.cellAllocations.filter((candidate) => candidate.populationCount > 0).sort((a, b) => a.cellId.localeCompare(b.cellId))
+    cohort.eventTotals.migrationOut += populationCount
+    cohort.eventTotals.migrationIn += populationCount
+    const trace = { tick, sourceSettlementId: source.id, destinationSettlementId: destination.id, sourceCellId: allocation.cellId, destinationCellId: destination.anchorCellId, populationCount, reason: 'source settlement contraction and destination housing capacity' }
+    cohort.lastMigration = trace; traces.push(trace)
+  }
+  return traces
 }

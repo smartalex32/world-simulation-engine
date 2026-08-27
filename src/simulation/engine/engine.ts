@@ -96,7 +96,7 @@ import { COHORT_MODEL_VERSION, advanceCohortsAnnual, advanceCohortsDaily, create
 import { materializeCohortPeople, materializationStreamName } from '../cohorts/materialization'
 import { applyCohortMaterialization, planCohortMaterialization } from '../cohorts/transitions'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
-import { reconcileSettlementRegions, settlementMigrationTrace } from '../settlements/regional'
+import { migrateCohortsBetweenSettlements, reconcileSettlementRegions, settlementMigrationTrace } from '../settlements/regional'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -400,6 +400,9 @@ export class SimulationEngine {
         }
         for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], tick: this.state.tick })) {
           pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
+        }
+        for (const trace of migrateCohortsBetweenSettlements(this.state.cohorts, this.state.world.settlements, this.state.world.grid.cells, this.state.tick)) {
+          pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { kind: 'cohort-migration', sourceSettlementId: trace.sourceSettlementId, destinationSettlementId: trace.destinationSettlementId, populationCount: trace.populationCount, reason: trace.reason }))
         }
       }
       if (this.state.tick % 8760 === 0) { this.resolveAnnualLifeCycle(pushEvent); advanceCohortsAnnual(this.state.cohorts) }

@@ -800,7 +800,18 @@ export interface PopulationCohortState {
   economicProductivityPermille: number
   culturalCohesionPermille: number
   developmentIndexPermille: number
+  lastMigration?: CohortMigrationTrace
   eventTotals: { births: number; deaths: number; migrationIn: number; migrationOut: number }
+}
+
+export interface CohortMigrationTrace {
+  tick: number
+  sourceSettlementId: string
+  destinationSettlementId: string
+  sourceCellId: string
+  destinationCellId: string
+  populationCount: number
+  reason: string
 }
 
 /** Bounded aggregate inputs for an authored distant population. */
