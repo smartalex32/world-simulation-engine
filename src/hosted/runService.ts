@@ -91,6 +91,23 @@ export class HostedRunService {
         await this.persist(undefined, result.events, result.statistics)
         break
       }
+      case 'MATERIALIZE_COHORT': {
+        const event = this.engine.materializeCohort(command.cohortId, command.populationCount)
+        responses.push(this.frame(command.requestId, [event]))
+        await this.persist(undefined, [event])
+        break
+      }
+      case 'DEMATERIALIZE_PEOPLE': {
+        const event = this.engine.dematerializePeople(command.personIds)
+        responses.push(this.frame(command.requestId, [event]))
+        await this.persist(undefined, [event])
+        break
+      }
+      case 'SET_PROTECTED_PEOPLE':
+        this.engine.protectDetailedPeople(command.personIds)
+        responses.push(this.frame(command.requestId))
+        await this.persist()
+        break
       case 'SET_VIEWPORT':
         this.viewport = normalizeViewport(command.viewport)
         responses.push(this.frame(command.requestId))

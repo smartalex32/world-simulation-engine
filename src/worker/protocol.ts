@@ -23,6 +23,9 @@ export type SimulationCommand =
   | { type: 'DISCARD_DRAFT'; requestId: string; draftId: string }
   | { type: 'LOAD_RUN'; requestId: string; snapshot: WorkbenchSnapshotEnvelope; contentPack?: ContentPack }
   | { type: 'STEP'; requestId: string; count?: number }
+  | { type: 'MATERIALIZE_COHORT'; requestId: string; cohortId: string; populationCount: number }
+  | { type: 'DEMATERIALIZE_PEOPLE'; requestId: string; personIds: string[] }
+  | { type: 'SET_PROTECTED_PEOPLE'; requestId: string; personIds: string[] }
   | { type: 'PLAY'; requestId: string; ticksPerBatch: number }
   | { type: 'PAUSE'; requestId: string }
   | { type: 'SET_SPEED'; requestId: string; ticksPerBatch: number }
