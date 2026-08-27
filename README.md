@@ -195,8 +195,9 @@ Population cohorts are authoritative aggregate ledgers for explicit
 distant-population allocations. Authors can specify bounded age, productivity,
 cultural-cohesion, and development distributions for each distant cohort.
 Daily cohort harvesting consumes the same environmental food stock as detailed
-people and advances retained food, cultural, and development evidence alongside
-age-band, household, event-total, and cell-allocation state in snapshots.
+people; annual deterministic demographic transitions update births, deaths, and
+age bands. These advance retained food, cultural, development, household,
+event-total, and cell-allocation state in snapshots.
 Cohorts do not imply relationships or membership.
 
 Fidelity conversion is an explicit worker/host command, never a viewport side

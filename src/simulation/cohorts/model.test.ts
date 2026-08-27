@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { WorkbenchProjectionBuilder } from '../../projection/buildMapProjection'
 import { SimulationEngine } from '../engine/engine'
-import { advanceCohortsDaily } from './model'
+import { advanceCohortsAnnual, advanceCohortsDaily } from './model'
 import { defaultWorldCreationRequest } from '../domain/worldCreation'
 
 describe('authoritative population cohorts', () => {
@@ -36,5 +36,11 @@ describe('authoritative population cohorts', () => {
     expect(projection.summary.populationCount).toBe(100_002)
     expect(projection.map.exactCells.reduce((sum, cell) => sum + cell.populationCount, 0)).toBe(100_002)
     expect((await SimulationEngine.restore(snapshot)).project().cohorts).toEqual(source.cohorts)
+  })
+
+  it('advances aggregate demographic bands and retained event totals annually', () => {
+    const cohorts = [{ version: 2 as const, id: 'cohort:west', sourceZoneId: 'west', populationCount: 100, householdCount: 34, foodUnits: 10, cellAllocations: [{ cellId: '0,0', populationCount: 100 }], ageBands: { children: 20, adults: 70, elders: 10 }, economicProductivityPermille: 1000, culturalCohesionPermille: 500, developmentIndexPermille: 500, eventTotals: { births: 0, deaths: 0, migrationIn: 0, migrationOut: 0 } }]
+    advanceCohortsAnnual(cohorts)
+    expect(cohorts[0]).toMatchObject({ populationCount: 103, ageBands: { children: 22, adults: 70, elders: 11 }, eventTotals: { births: 3, deaths: 0 } })
   })
 })

@@ -47,6 +47,42 @@ export function advanceCohortsDaily(cohorts: PopulationCohortState[], cells: Geo
   }
 }
 
+/** Annual aggregate demographic transition. It has no hidden sampling: every
+ * birth, death, and age-band movement is derived from retained cohort state. */
+export function advanceCohortsAnnual(cohorts: PopulationCohortState[]): void {
+  for (const cohort of [...cohorts].sort((first, second) => compareText(first.id, second.id))) {
+    const births = cohort.foodUnits > 0 ? Math.floor(cohort.ageBands.adults * Math.max(1, cohort.developmentIndexPermille) / 10_000) : 0
+    const deaths = cohort.foodUnits === 0 ? Math.min(cohort.populationCount, Math.max(1, Math.ceil(cohort.populationCount / 1000))) : Math.floor(cohort.ageBands.elders / 2_000)
+    const childhoodGraduates = Math.min(cohort.ageBands.children, Math.floor(cohort.ageBands.children / 16))
+    const elderTransitions = Math.min(cohort.ageBands.adults, Math.floor(cohort.ageBands.adults / 50))
+    let adults = cohort.ageBands.adults + childhoodGraduates - elderTransitions
+    let elders = cohort.ageBands.elders + elderTransitions
+    let children = cohort.ageBands.children - childhoodGraduates + births
+    let remainingDeaths = deaths
+    const elderDeaths = Math.min(elders, remainingDeaths); elders -= elderDeaths; remainingDeaths -= elderDeaths
+    const adultDeaths = Math.min(adults, remainingDeaths); adults -= adultDeaths; remainingDeaths -= adultDeaths
+    children = Math.max(0, children - remainingDeaths)
+    cohort.populationCount += births - deaths
+    cohort.householdCount = Math.ceil(cohort.populationCount / 3)
+    cohort.ageBands = { children, adults, elders }
+    let remainingDeathsForAllocation = deaths
+    const allocations = cohort.cellAllocations.map((allocation) => {
+      const removed = Math.min(allocation.populationCount, remainingDeathsForAllocation)
+      remainingDeathsForAllocation -= removed
+      return { ...allocation, populationCount: allocation.populationCount - removed }
+    }).filter((allocation) => allocation.populationCount > 0)
+    if (remainingDeathsForAllocation > 0) throw new Error(`Cohort ${cohort.id} cannot allocate demographic deaths`)
+    if (births > 0) {
+      const first = allocations[0]
+      if (first) first.populationCount += births
+      else throw new Error(`Cohort ${cohort.id} cannot allocate demographic births`)
+    }
+    cohort.cellAllocations = allocations
+    cohort.eventTotals.births += births
+    cohort.eventTotals.deaths += deaths
+  }
+}
+
 export function validatePopulationCohorts(value: unknown, zones: readonly PopulationPlacementZone[], cells: readonly GeographicCell[]): asserts value is PopulationCohortState[] {
   if (!Array.isArray(value)) throw new Error('Simulation contains invalid cohorts')
   const zonesById = new Map(zones.map((zone) => [zone.id, zone]))

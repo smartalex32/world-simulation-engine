@@ -92,7 +92,7 @@ import { discoverLocalTerrain, initialKnowledge, transmitKnowledge } from '../kn
 import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION_STREAM, relocationTrace } from '../households/relocation'
 import { emptyHealthExposure, healthStressMortalityRiskPermille, resolveDailyHealthStress } from '../health/model'
 import { attemptPracticalExperiment, INNOVATION_STREAM } from '../innovation/model'
-import { COHORT_MODEL_VERSION, advanceCohortsDaily, createInitialCohorts } from '../cohorts/model'
+import { COHORT_MODEL_VERSION, advanceCohortsAnnual, advanceCohortsDaily, createInitialCohorts } from '../cohorts/model'
 import { materializeCohortPeople, materializationStreamName } from '../cohorts/materialization'
 import { applyCohortMaterialization, planCohortMaterialization } from '../cohorts/transitions'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
@@ -396,7 +396,7 @@ export class SimulationEngine {
           }))
         }
       }
-      if (this.state.tick % 8760 === 0) this.resolveAnnualLifeCycle(pushEvent)
+      if (this.state.tick % 8760 === 0) { this.resolveAnnualLifeCycle(pushEvent); advanceCohortsAnnual(this.state.cohorts) }
       if (this.state.tick % 24 === 0) {
         this.resolveDailyHealthStress()
         this.resolveDailyFoodSharing(pushEvent)
