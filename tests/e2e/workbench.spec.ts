@@ -157,6 +157,9 @@ test('keeps real map tools and presentation diagnostics available from workbench
   await page.getByRole('button', { name: 'settings', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Workbench settings' })).toBeVisible()
   await expect(page.getByText('Presentation diagnostics')).toBeVisible()
+  await expect(page.getByLabel('Run content pack')).toBeVisible()
+  await expect(page.getByLabel('Content pack JSON')).toBeVisible()
+  await expect(page.getByLabel('Content pack differences')).toContainText('0 field-level difference')
   await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', tick ?? '')
 })
 
