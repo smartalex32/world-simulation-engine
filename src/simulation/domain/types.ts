@@ -31,7 +31,7 @@ export const LANGUAGE_MODEL_VERSION = 1
 export const GOVERNANCE_MODEL_VERSION = 2
 export const CONFLICT_MODEL_VERSION = 2
 /** Fictional health-stress exposure and risk rules; not a disease model. */
-export const HEALTH_MODEL_VERSION = 1
+export const HEALTH_MODEL_VERSION = 2
 /** Versioned, person-owned knowledge acquisition and application rules. */
 export const KNOWLEDGE_MODEL_VERSION = 1
 export const INNOVATION_MODEL_VERSION = 1
@@ -667,6 +667,27 @@ export interface HealthStressTrace {
   annualMortalityRiskPermille: number
 }
 
+/** Fictional, non-clinical pathogen progression retained on the affected person. */
+export interface FictionalInfectionState {
+  version: 1
+  pathogenId: string
+  phase: 'incubating' | 'infectious' | 'immune'
+  startedTick: number
+  phaseEndsTick: number
+  sourcePersonId?: string
+}
+
+export interface FictionalInfectionTrace {
+  tick: number
+  pathogenId: string
+  kind: 'acquired' | 'became-infectious' | 'recovered' | 'immunity-expired'
+  previousPhase?: FictionalInfectionState['phase']
+  nextPhase?: FictionalInfectionState['phase']
+  sourcePersonId?: string
+  probabilityPermille?: number
+  randomRollPermille?: number
+}
+
 export type PersonLifeStage = 'infant' | 'child' | 'adolescent' | 'adult' | 'olderAdult'
 export type PersonLifeStatus = 'alive' | 'dead'
 
@@ -702,6 +723,8 @@ export interface PersonState {
   environmentalExposure?: EnvironmentalExposureState
   healthExposure?: HealthExposureState
   lastHealthStressTrace?: HealthStressTrace
+  fictionalInfection?: FictionalInfectionState
+  lastInfectionTrace?: FictionalInfectionTrace
   variables: PersonVariableValues
   knownCellIds: string[]
   journey?: JourneyState
@@ -805,8 +828,32 @@ export interface PopulationCohortState {
   economicProductivityPermille: number
   culturalCohesionPermille: number
   developmentIndexPermille: number
+  fictionalInfection?: CohortInfectionState
   lastMigration?: CohortMigrationTrace
   eventTotals: { births: number; deaths: number; migrationIn: number; migrationOut: number }
+}
+
+/** Exact aggregate equivalents of the detailed-person disease phases. */
+export interface CohortInfectionState {
+  version: 1
+  pathogenId: string
+  incubatingCount: number
+  infectiousCount: number
+  immuneCount: number
+  lastUpdatedTick: number
+  lastTrace?: CohortInfectionTrace
+}
+
+export interface CohortInfectionTrace {
+  tick: number
+  pathogenId: string
+  susceptibleCount: number
+  newIncubatingCount: number
+  becameInfectiousCount: number
+  recoveredCount: number
+  immunityExpiredCount: number
+  careCapacityCount: number
+  mortalityCount: number
 }
 
 export interface CohortMigrationTrace {
