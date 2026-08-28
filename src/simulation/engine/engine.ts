@@ -83,6 +83,7 @@ import { climateConditionsAt, regeneratedFoodAmount } from '../environment/clima
 import { calculateCuriosityInheritance } from '../households/inheritance'
 import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STREAM, partnershipEligible } from '../lifecycle/model'
 import { createInitialMarkets, resolveFoodShares, resolveToolExchanges } from '../economy/model'
+import { createEconomyState, initializeGoods } from '../economy/stockFlow'
 import { createInitialSchools } from '../organizations/model'
 import { evaluateSchoolAttendance, SCHOOL_ATTENDANCE, SCHOOL_ATTENDANCE_STREAM, schoolAttendanceTrace, schoolTravelCost } from '../organizations/attendance'
 import { createCulturalState, transmitCulture } from '../culture/model'
@@ -213,6 +214,8 @@ export class SimulationEngine {
     // A school is an authored place service; an unmarked home cell is never silently promoted into one.
     const organizations = createInitialSchools(generatedPopulation.people, world.settlements.map((settlement) => settlement.anchorCellId))
     const markets = createInitialMarkets(world.grid.cells, world.settlements)
+    for (const household of generatedPopulation.households) if (household.inventory) initializeGoods(household.inventory)
+    const economy = createEconomyState(markets, runtime.pack.economy.goods)
     const cohorts = createInitialCohorts(world.grid.cells, creation.populationZones)
     reconcileSettlementRegions({ settlements: world.settlements, cells: world.grid.cells, households: generatedPopulation.households, cohorts, markets, organizations, roads: world.roads ?? [], tick: 0 })
     const infrastructure = createInfrastructureAssets({ roads: world.roads ?? [], cells: world.grid.cells, settlements: world.settlements, markets, organizations, tick: 0 })
@@ -259,6 +262,7 @@ export class SimulationEngine {
       markets,
       organizations,
       infrastructure,
+      economy,
       governance,
       disputes: [],
       parentChildLinks: generatedPopulation.parentChildLinks,

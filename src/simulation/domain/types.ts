@@ -24,7 +24,7 @@ export const WORLD_GENERATOR_VERSION = 1
 export const ENVIRONMENT_MODEL_VERSION = 3
 export const LIFE_CYCLE_MODEL_VERSION = 1
 /** Versioned, non-monetary household food production and sharing rules. */
-export const ECONOMY_MODEL_VERSION = 2
+export const ECONOMY_MODEL_VERSION = 3
 export const ORGANIZATION_MODEL_VERSION = 2
 export const CULTURE_MODEL_VERSION = 1
 export const LANGUAGE_MODEL_VERSION = 1
@@ -335,7 +335,10 @@ export interface KnowledgeTrace {
   currentValue: number
 }
 export type PersonOccupation = 'forager' | 'household' | 'dependent'
-export interface HouseholdInventory { food: number; tools: number }
+export interface HouseholdInventory { food: number; tools: number; currencyUnits?: number; goods?: Record<string, number> }
+export interface EconomyMarketState { version: 1; marketId: string; prices: Record<string, number>; treasuryUnits: number; lastClearedTick: number }
+export interface EconomyTradeTrace { tick: number; marketId: string; goodId: string; sellerHouseholdId: string; buyerHouseholdId: string; quantity: number; unitPriceUnits: number; transportCostUnits: number; taxUnits: number }
+export interface EconomyState { version: 1; markets: EconomyMarketState[]; tradeTraces: EconomyTradeTrace[]; totalTaxCollectedUnits: number }
 /** A market is a bounded exchange designation attached to an existing commons location. */
 export interface MarketState { id: string; cellId: string; activityLocationId: ActivityLocationId }
 /** The last successful geographic home change, retained for inspection rather than inference. */
@@ -952,6 +955,7 @@ export interface SimulationState {
   markets: MarketState[]
   organizations: OrganizationState[]
   infrastructure: InfrastructureAssetState[]
+  economy: EconomyState
   governance: LocalGovernanceState[]
   disputes: DisputeState[]
   parentChildLinks: ParentChildLink[]
