@@ -8,7 +8,7 @@ export const MAX_ECONOMY_TRACES = 2_000
 /** Creates deterministic market ledgers with pack-defined, integer price anchors. */
 export function createEconomyState(markets: readonly MarketState[], goods: readonly EconomyGoodDefinition[]): EconomyState {
   const prices = Object.fromEntries([...goods].sort((a, b) => a.id.localeCompare(b.id)).map((good) => [good.id, good.basePriceUnits]))
-  return { version: 1, markets: [...markets].sort((a, b) => a.id.localeCompare(b.id)).map((market) => ({ version: 1, marketId: market.id, prices: { ...prices }, treasuryUnits: 0, lastClearedTick: 0 })), tradeTraces: [], productionTraces: [], totalTaxCollectedUnits: 0 }
+  return { version: 1, markets: [...markets].sort((a, b) => a.id.localeCompare(b.id)).map((market) => ({ version: 1, marketId: market.id, prices: { ...prices }, treasuryUnits: 0, lastClearedTick: 0 })), tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 }
 }
 
 /** Keeps legacy food/tool fields explicit while adding a canonical sparse good ledger. */
@@ -47,10 +47,11 @@ export function clearMarkets(input: { economy: EconomyState; households: Househo
         if (!seller) break
         const price = ledger.prices[goodId]!
         const transportCostUnits = transportCost(input.cellsById.get(seller.homeCellId), input.cellsById.get(buyer.homeCellId), marketCell)
-        const affordableQuantity = Math.floor((buyer.inventory!.currencyUnits ?? 0) / Math.max(1, price + transportCostUnits))
+        const taxPerUnit = Math.max(1, Math.floor(price * ECONOMY_TAX_PERMILLE / 1000))
+        const affordableQuantity = Math.floor((buyer.inventory!.currencyUnits ?? 0) / Math.max(1, price + transportCostUnits + taxPerUnit))
         const quantity = Math.min(1, affordableQuantity, (seller.inventory!.goods![goodId] ?? 0) - reserveFor(seller, goodId), reserveFor(buyer, goodId) - (buyer.inventory!.goods![goodId] ?? 0))
         if (quantity < 1) continue
-        const taxUnits = Math.max(1, Math.floor(price * quantity * ECONOMY_TAX_PERMILLE / 1000))
+        const taxUnits = taxPerUnit * quantity
         const payment = price * quantity + transportCostUnits + taxUnits
         const sellerGoods = seller.inventory!.goods!
         const buyerGoods = buyer.inventory!.goods!
@@ -104,6 +105,21 @@ export function decayGoods(households: HouseholdState[], goods: readonly Economy
     synchronizeLegacyGoods(inventory)
   }
   return decayed
+}
+
+/** Pays one bounded monthly wage unit from an actual market treasury to each
+ * working household, in canonical market/household order. */
+export function distributeMarketWages(input: { economy: EconomyState; households: HouseholdState[]; peopleById: ReadonlyMap<string, { occupation?: string; lifeStatus?: string }>; tick: number }): EconomyState['wageTraces'] {
+  const traces: EconomyState['wageTraces'] = []
+  const eligible = [...input.households].filter((household) => household.inventory && household.memberIds.some((id) => { const person = input.peopleById.get(id); return person?.lifeStatus !== 'dead' && person?.occupation !== 'dependent' })).sort((a, b) => a.id.localeCompare(b.id))
+  for (const ledger of input.economy.markets.sort((a, b) => a.marketId.localeCompare(b.marketId))) for (const household of eligible) {
+    if (ledger.treasuryUnits < 1) break
+    const workerCount = household.memberIds.filter((id) => { const person = input.peopleById.get(id); return person?.lifeStatus !== 'dead' && person?.occupation !== 'dependent' }).length
+    ledger.treasuryUnits -= 1; household.inventory!.currencyUnits = (household.inventory!.currencyUnits ?? 0) + 1
+    traces.push({ tick: input.tick, marketId: ledger.marketId, householdId: household.id, wageUnits: 1, workerCount })
+  }
+  input.economy.wageTraces = [...input.economy.wageTraces, ...traces].slice(-MAX_ECONOMY_TRACES)
+  return traces
 }
 
 function reserveFor(household: HouseholdState, goodId: string): number { return goodId === 'good.food' ? household.memberIds.length * 4 : goodId === 'good.tool' ? household.memberIds.length : 0 }

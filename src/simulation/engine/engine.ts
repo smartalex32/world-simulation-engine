@@ -83,7 +83,7 @@ import { climateConditionsAt, regeneratedFoodAmount } from '../environment/clima
 import { calculateCuriosityInheritance } from '../households/inheritance'
 import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STREAM, partnershipEligible } from '../lifecycle/model'
 import { createInitialMarkets, resolveFoodShares, resolveToolExchanges } from '../economy/model'
-import { clearMarkets, createEconomyState, decayGoods, initializeGoods, produceMonthlyGoods } from '../economy/stockFlow'
+import { clearMarkets, createEconomyState, decayGoods, distributeMarketWages, initializeGoods, produceMonthlyGoods } from '../economy/stockFlow'
 import { createInitialSchools } from '../organizations/model'
 import { evaluateSchoolAttendance, SCHOOL_ATTENDANCE, SCHOOL_ATTENDANCE_STREAM, schoolAttendanceTrace, schoolTravelCost } from '../organizations/attendance'
 import { createCulturalState, transmitCulture } from '../culture/model'
@@ -407,6 +407,9 @@ export class SimulationEngine {
         for (const trade of clearMarkets({ economy: this.state.economy, households: this.state.households, markets: this.state.markets, cellsById: this.cellById, tick: this.state.tick })) {
           this.economicCounters().exchangeCount += 1
           pushEvent(this.event('HOUSEHOLDS_EXCHANGED_TOOLS', { marketId: trade.marketId, sellerHouseholdId: trade.sellerHouseholdId, buyerHouseholdId: trade.buyerHouseholdId, goodId: trade.goodId, quantity: trade.quantity, unitPriceUnits: trade.unitPriceUnits, transportCostUnits: trade.transportCostUnits, taxUnits: trade.taxUnits }))
+        }
+        for (const wage of distributeMarketWages({ economy: this.state.economy, households: this.state.households, peopleById: this.personById, tick: this.state.tick })) {
+          pushEvent(this.event('PERSON_WORKED', { householdId: wage.householdId, marketId: wage.marketId, wageUnits: wage.wageUnits, workerCount: wage.workerCount }))
         }
         for (const allocation of allocateInfrastructureMaintenance(this.state.infrastructure, this.state.households, this.state.world.settlements)) {
           pushEvent(this.event('INFRASTRUCTURE_UPDATED', { assetId: allocation.assetId, householdId: allocation.householdId, kind: 'maintenance-funded', units: allocation.units }))

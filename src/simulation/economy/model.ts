@@ -1,7 +1,7 @@
 import type { GeographicCell, HouseholdInventory, HouseholdState, MarketState, PersonOccupation, RelationshipState, SettlementState } from '../domain/types'
 import { commonsActivityId } from '../activities/model'
 import { hexDistance } from '../spatial/hex'
-import { initializeGoods } from './stockFlow'
+import { initializeGoods, synchronizeLegacyGoods } from './stockFlow'
 
 /** Small, inspectable economy: food is harvested from a public cell into household ownership. */
 export const ECONOMY = Object.freeze({
@@ -57,6 +57,7 @@ export function resolveToolExchanges(households: readonly HouseholdState[], mark
       const amount = Math.min(1, need, donor.inventory.tools - donor.memberIds.length)
       if (amount <= 0) continue
       donor.inventory.tools -= amount; recipient.inventory.tools += amount
+      synchronizeLegacyGoods(donor.inventory); synchronizeLegacyGoods(recipient.inventory)
       committed.add(donor.id); committed.add(recipient.id); exchanges.push({ marketId: market.id, donorHouseholdId: donor.id, recipientHouseholdId: recipient.id, amount })
     }
   }

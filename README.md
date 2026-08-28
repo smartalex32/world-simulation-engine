@@ -144,6 +144,8 @@ Monthly working households create material flow and execute only feasible
 declared recipes; daily pack-defined decay removes goods with fixed-point floor
 rounding. Physical markets clear deterministic, bounded trades with integer
 prices, transport cost, and tax transfers retained as structured traces.
+Collected tax can pay a bounded worker wage from the same market treasury, also
+with retained trace evidence.
 The workbench projects separate food/tool/currency inequality, aggregate goods,
 market prices and treasuries, tax totals, and retained production/trade counts;
 it does not expose mutable economic state.

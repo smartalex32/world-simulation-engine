@@ -8,8 +8,8 @@ import type {
 } from '../community/types'
 import type { SettlementTemplateId } from '../spatial/settlementTemplates'
 
-export const ENGINE_VERSION = '0.43.0'
-export const SNAPSHOT_SCHEMA_VERSION = 42
+export const ENGINE_VERSION = '0.44.0'
+export const SNAPSHOT_SCHEMA_VERSION = 43
 /** Versioned content-pack selection is authoritative configuration, not UI state. */
 export const CONTENT_PACK_MODEL_VERSION = 2
 export const BASE_TICK_HOURS = 1
@@ -339,7 +339,8 @@ export interface HouseholdInventory { food: number; tools: number; currencyUnits
 export interface EconomyMarketState { version: 1; marketId: string; prices: Record<string, number>; treasuryUnits: number; lastClearedTick: number }
 export interface EconomyTradeTrace { tick: number; marketId: string; goodId: string; sellerHouseholdId: string; buyerHouseholdId: string; quantity: number; unitPriceUnits: number; transportCostUnits: number; taxUnits: number }
 export interface EconomyProductionTrace { tick: number; householdId: string; recipeId: string; inputs: Record<string, number>; outputs: Record<string, number>; laborHours: number }
-export interface EconomyState { version: 1; markets: EconomyMarketState[]; tradeTraces: EconomyTradeTrace[]; productionTraces: EconomyProductionTrace[]; totalTaxCollectedUnits: number }
+export interface EconomyWageTrace { tick: number; marketId: string; householdId: string; wageUnits: number; workerCount: number }
+export interface EconomyState { version: 1; markets: EconomyMarketState[]; tradeTraces: EconomyTradeTrace[]; productionTraces: EconomyProductionTrace[]; wageTraces: EconomyWageTrace[]; totalTaxCollectedUnits: number }
 /** A market is a bounded exchange designation attached to an existing commons location. */
 export interface MarketState { id: string; cellId: string; activityLocationId: ActivityLocationId }
 /** The last successful geographic home change, retained for inspection rather than inference. */

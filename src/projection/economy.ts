@@ -18,10 +18,11 @@ export interface ProjectedEconomicSummary {
   totalTaxCollectedUnits: number
   retainedTradeCount: number
   retainedProductionCount: number
+  retainedWageCount: number
   occupationCounts: { dependent: number; household: number; forager: number; unassigned: number }
 }
 
-export function buildProjectedEconomicSummary(households: readonly HouseholdState[], people: readonly PersonState[], economy: EconomyState = { version: 1, markets: [], tradeTraces: [], productionTraces: [], totalTaxCollectedUnits: 0 }): ProjectedEconomicSummary {
+export function buildProjectedEconomicSummary(households: readonly HouseholdState[], people: readonly PersonState[], economy: EconomyState = { version: 1, markets: [], tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 }): ProjectedEconomicSummary {
   const orderedHouseholds = [...households].sort((first, second) => first.id.localeCompare(second.id))
   const food = orderedHouseholds.map((household) => Math.max(0, household.inventory?.food ?? 0))
   const tools = orderedHouseholds.map((household) => Math.max(0, household.inventory?.tools ?? 0))
@@ -52,6 +53,7 @@ export function buildProjectedEconomicSummary(households: readonly HouseholdStat
     totalTaxCollectedUnits: economy.totalTaxCollectedUnits,
     retainedTradeCount: economy.tradeTraces.length,
     retainedProductionCount: economy.productionTraces.length,
+    retainedWageCount: economy.wageTraces.length,
     occupationCounts,
   }
 }

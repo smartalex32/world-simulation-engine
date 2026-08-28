@@ -17,7 +17,7 @@ describe('buildProjectedEconomicSummary', () => {
     )).toEqual({
       householdCount: 2, householdsWithoutFoodCount: 1, foodUnits: 20, toolUnits: 8,
       foodGiniPermille: 500, toolGiniPermille: 500,
-      currencyUnits: 0, currencyGiniPermille: 0, goodsById: {}, marketPrices: [], totalTaxCollectedUnits: 0, retainedTradeCount: 0, retainedProductionCount: 0,
+      currencyUnits: 0, currencyGiniPermille: 0, goodsById: {}, marketPrices: [], totalTaxCollectedUnits: 0, retainedTradeCount: 0, retainedProductionCount: 0, retainedWageCount: 0,
       occupationCounts: { forager: 1, household: 1, dependent: 1, unassigned: 1 },
     })
   })

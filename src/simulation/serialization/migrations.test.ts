@@ -13,6 +13,11 @@ describe('snapshot migration registry', () => {
     expect(migrateSnapshotSchema(legacy, 36)).toMatchObject({ schemaVersion: 36, engineVersion: ENGINE_VERSION, state: { world: { settlements: [{ id: 's' }] }, config: { contentPackId: 'setting.preindustrial.default', contentPackVersion: '1.0.0', contentPackModelVersion: 2 } } })
   })
 
+  it('adds an empty wage ledger without reinterpreting existing economy evidence', () => {
+    const legacy = { schemaVersion: 42, engineVersion: '0.43.0', state: { economy: { version: 1, markets: [], tradeTraces: [], productionTraces: [], totalTaxCollectedUnits: 2 } }, digest: 'digest' }
+    expect(migrateSnapshotSchema(legacy, 43)).toMatchObject({ schemaVersion: 43, engineVersion: ENGINE_VERSION, state: { economy: { totalTaxCollectedUnits: 2, wageTraces: [] } } })
+  })
+
   it('rejects schemas outside the explicit rolling window', () => {
     expect(() => migrateSnapshotSchema({ schemaVersion: 29 }, 32)).toThrow('Unsupported snapshot schema')
   })
