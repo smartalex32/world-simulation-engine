@@ -8,8 +8,8 @@ import type {
 } from '../community/types'
 import type { SettlementTemplateId } from '../spatial/settlementTemplates'
 
-export const ENGINE_VERSION = '0.42.0'
-export const SNAPSHOT_SCHEMA_VERSION = 41
+export const ENGINE_VERSION = '0.43.0'
+export const SNAPSHOT_SCHEMA_VERSION = 42
 /** Versioned content-pack selection is authoritative configuration, not UI state. */
 export const CONTENT_PACK_MODEL_VERSION = 2
 export const BASE_TICK_HOURS = 1

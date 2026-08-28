@@ -24,6 +24,14 @@ export function validateInfrastructureState(state: SimulationState): void {
   }
 }
 
+export function validateEconomyState(state: SimulationState): void {
+  const economy = state.economy
+  if (!economy || economy.version !== 1 || !Array.isArray(economy.markets) || !Array.isArray(economy.tradeTraces) || !Number.isSafeInteger(economy.totalTaxCollectedUnits) || economy.totalTaxCollectedUnits < 0) throw new Error('Simulation contains invalid economy state')
+  const marketIds = new Set(state.markets.map((market) => market.id))
+  if (economy.markets.some((market) => market.version !== 1 || !marketIds.has(market.marketId) || !Number.isSafeInteger(market.treasuryUnits) || market.treasuryUnits < 0 || !Number.isSafeInteger(market.lastClearedTick) || Object.values(market.prices).some((price) => !Number.isSafeInteger(price) || price < 1))) throw new Error('Simulation contains invalid economy market ledger')
+  if (economy.tradeTraces.some((trace) => trace.tick > state.tick || trace.quantity < 1 || trace.unitPriceUnits < 1 || trace.transportCostUnits < 0 || trace.taxUnits < 0)) throw new Error('Simulation contains invalid economy trade trace')
+}
+
 export function validateHouseholdActivityState(state: SimulationState): void {
   validatePopulationCohorts(state.cohorts, state.config.worldCreation.populationZones, state.world.grid.cells)
   validatePopulationFidelity(state)
