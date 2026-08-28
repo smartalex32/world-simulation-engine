@@ -20,7 +20,7 @@ export function occupationFor(ageYears: number, ordinal: number): PersonOccupati
 }
 
 export function initialInventory(memberCount: number, ordinal = 1): HouseholdInventory {
-  const inventory = { food: memberCount * ECONOMY.initialFoodPerHouseholdMember, tools: ordinal % 2 === 0 ? memberCount * 2 : 0, currencyUnits: 0, goods: {} }
+  const inventory = { food: memberCount * ECONOMY.initialFoodPerHouseholdMember, tools: ordinal % 2 === 0 ? memberCount * 2 : 0, currencyUnits: memberCount * 8, goods: {} }
   return initializeGoods(inventory)
 }
 

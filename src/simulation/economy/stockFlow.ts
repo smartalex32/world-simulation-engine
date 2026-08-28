@@ -50,7 +50,7 @@ export function clearMarkets(input: { economy: EconomyState; households: Househo
         const affordableQuantity = Math.floor((buyer.inventory!.currencyUnits ?? 0) / Math.max(1, price + transportCostUnits))
         const quantity = Math.min(1, affordableQuantity, (seller.inventory!.goods![goodId] ?? 0) - reserveFor(seller, goodId), reserveFor(buyer, goodId) - (buyer.inventory!.goods![goodId] ?? 0))
         if (quantity < 1) continue
-        const taxUnits = Math.floor(price * quantity * ECONOMY_TAX_PERMILLE / 1000)
+        const taxUnits = Math.max(1, Math.floor(price * quantity * ECONOMY_TAX_PERMILLE / 1000))
         const payment = price * quantity + transportCostUnits + taxUnits
         const sellerGoods = seller.inventory!.goods!
         const buyerGoods = buyer.inventory!.goods!

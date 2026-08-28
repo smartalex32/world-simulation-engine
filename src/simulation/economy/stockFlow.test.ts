@@ -11,7 +11,7 @@ describe('preindustrial market clearing', () => {
     const cells = new Map([['0,0', { id: '0,0', q: 0, r: 0 }], ['1,0', { id: '1,0', q: 1, r: 0 }], ['2,0', { id: '2,0', q: 2, r: 0 }]])
     const traces = clearMarkets({ economy, households: [seller, buyer], markets: [market], cellsById: cells as never, tick: 720 })
     expect(traces).toHaveLength(1)
-    expect(traces[0]).toMatchObject({ sellerHouseholdId: 'seller', buyerHouseholdId: 'buyer', goodId: 'good.food', quantity: 1, taxUnits: 0 })
+    expect(traces[0]).toMatchObject({ sellerHouseholdId: 'seller', buyerHouseholdId: 'buyer', goodId: 'good.food', quantity: 1, taxUnits: 1 })
     expect(seller.inventory.goods?.['good.food']).toBe(19)
     expect(buyer.inventory.goods?.['good.food']).toBe(1)
     expect(buyer.inventory.currencyUnits).toBeLessThan(20)
