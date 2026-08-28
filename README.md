@@ -138,10 +138,17 @@ ambient randomness is introduced. A shared physical-cell access view feeds
 settlement viability, market storage availability, public-service health
 support, and governance service evidence. The workbench remains read-only.
 
-The analytics surface also reports read-only household material distribution:
-food and tools remain separate, alongside zero-food households, separate Gini
-indicators, and living occupation counts. This is not a combined wealth score
-or a money, price, ownership, or trade model.
+The economy is authoritative and pack-defined: households own sparse goods and
+currency ledgers while legacy food/tool fields remain synchronized views.
+Monthly working households create material flow and execute only feasible
+declared recipes; daily pack-defined decay removes goods with fixed-point floor
+rounding. Physical markets clear deterministic, bounded trades with integer
+prices, transport cost, and tax transfers retained as structured traces.
+Collected tax can pay a bounded worker wage from the same market treasury, also
+with retained trace evidence.
+The workbench projects separate food/tool/currency inequality, aggregate goods,
+market prices and treasuries, tax totals, and retained production/trade counts;
+it does not expose mutable economic state.
 
 Existing school organizations also have read-only group profiles in the entity
 catalog. These show the explicit goal, member roles, capacity, shared rules,

@@ -1,6 +1,7 @@
 import type { GeographicCell, HouseholdInventory, HouseholdState, MarketState, PersonOccupation, RelationshipState, SettlementState } from '../domain/types'
 import { commonsActivityId } from '../activities/model'
 import { hexDistance } from '../spatial/hex'
+import { initializeGoods, synchronizeLegacyGoods } from './stockFlow'
 
 /** Small, inspectable economy: food is harvested from a public cell into household ownership. */
 export const ECONOMY = Object.freeze({
@@ -19,7 +20,8 @@ export function occupationFor(ageYears: number, ordinal: number): PersonOccupati
 }
 
 export function initialInventory(memberCount: number, ordinal = 1): HouseholdInventory {
-  return { food: memberCount * ECONOMY.initialFoodPerHouseholdMember, tools: ordinal % 2 === 0 ? memberCount * 2 : 0 }
+  const inventory = { food: memberCount * ECONOMY.initialFoodPerHouseholdMember, tools: ordinal % 2 === 0 ? memberCount * 2 : 0, currencyUnits: memberCount * 8, goods: {} }
+  return initializeGoods(inventory)
 }
 
 export function createInitialMarkets(cells: readonly GeographicCell[], settlements: readonly SettlementState[]): MarketState[] {
@@ -55,6 +57,7 @@ export function resolveToolExchanges(households: readonly HouseholdState[], mark
       const amount = Math.min(1, need, donor.inventory.tools - donor.memberIds.length)
       if (amount <= 0) continue
       donor.inventory.tools -= amount; recipient.inventory.tools += amount
+      synchronizeLegacyGoods(donor.inventory); synchronizeLegacyGoods(recipient.inventory)
       committed.add(donor.id); committed.add(recipient.id); exchanges.push({ marketId: market.id, donorHouseholdId: donor.id, recipientHouseholdId: recipient.id, amount })
     }
   }
@@ -66,12 +69,16 @@ export function harvestFood(cell: GeographicCell, inventory: HouseholdInventory,
   const amount = Math.min(Math.floor(ECONOMY.foodPerWorkHour * efficiencyPermille / 1000), cell.foodAmount)
   cell.foodAmount -= amount
   inventory.food += amount
+  const goods = initializeGoods(inventory).goods!
+  goods['good.food'] = (goods['good.food'] ?? 0) + amount
   return amount
 }
 
 export function consumeHouseholdFood(inventory: HouseholdInventory, desired: number): number {
   const amount = Math.min(Math.max(0, desired), inventory.food)
   inventory.food -= amount
+  const goods = initializeGoods(inventory).goods!
+  goods['good.food'] = Math.max(0, (goods['good.food'] ?? 0) - amount)
   return amount
 }
 
@@ -115,6 +122,10 @@ export function resolveFoodShares(
     if (amount <= 0) continue
     donor.inventory.food -= amount
     recipient.inventory.food += amount
+    const donorGoods = initializeGoods(donor.inventory).goods!
+    const recipientGoods = initializeGoods(recipient.inventory).goods!
+    donorGoods['good.food'] = Math.max(0, (donorGoods['good.food'] ?? 0) - amount)
+    recipientGoods['good.food'] = (recipientGoods['good.food'] ?? 0) + amount
     committed.add(donor.id)
     committed.add(recipient.id)
     shares.push({ donorHouseholdId: donor.id, recipientHouseholdId: recipient.id, amount })

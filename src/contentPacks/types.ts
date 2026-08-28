@@ -25,6 +25,24 @@ export interface FictionalPathogenDefinition {
   annualMortalityPermille: number
 }
 
+/** A conserved, pack-defined preindustrial good. Base value is expressed in
+ * integer currency units and is only an initial price anchor. */
+export interface EconomyGoodDefinition {
+  id: string
+  name: string
+  category: 'food' | 'material' | 'tool'
+  basePriceUnits: number
+  decayPermillePerDay: number
+}
+
+/** A deterministic recipe. Inputs are removed before outputs are created. */
+export interface EconomyRecipeDefinition {
+  id: string
+  inputs: Readonly<Record<string, number>>
+  outputs: Readonly<Record<string, number>>
+  laborHours: number
+}
+
 /** Declarative formulas are intentionally data, not source code. */
 export type DeterministicExpression =
   | { kind: 'constant'; value: number }
@@ -46,6 +64,7 @@ export interface ContentPack {
   personVariables: readonly PersonVariableDefinition[]
   influences: readonly InfluenceEdgeDefinition[]
   pathogens: readonly FictionalPathogenDefinition[]
+  economy: { goods: readonly EconomyGoodDefinition[]; recipes: readonly EconomyRecipeDefinition[] }
   formulas?: Readonly<Record<string, DeterministicExpression>>
 }
 

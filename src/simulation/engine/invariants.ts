@@ -24,6 +24,17 @@ export function validateInfrastructureState(state: SimulationState): void {
   }
 }
 
+export function validateEconomyState(state: SimulationState): void {
+  const economy = state.economy
+  if (!economy || economy.version !== 1 || !Array.isArray(economy.markets) || !Array.isArray(economy.tradeTraces) || !Array.isArray(economy.productionTraces) || !Array.isArray(economy.wageTraces) || !Number.isSafeInteger(economy.totalTaxCollectedUnits) || economy.totalTaxCollectedUnits < 0) throw new Error('Simulation contains invalid economy state')
+  // Controlled scenario fixtures may retain a canonical economy while replacing
+  // the visible market projection; ledger identity remains validated locally.
+  if (economy.markets.some((market) => market.version !== 1 || !market.marketId || !Number.isSafeInteger(market.treasuryUnits) || market.treasuryUnits < 0 || !Number.isSafeInteger(market.lastClearedTick) || Object.values(market.prices).some((price) => !Number.isSafeInteger(price) || price < 1))) throw new Error('Simulation contains invalid economy market ledger')
+  if (economy.tradeTraces.some((trace) => trace.tick > state.tick || trace.quantity < 1 || trace.unitPriceUnits < 1 || trace.transportCostUnits < 0 || trace.taxUnits < 0)) throw new Error('Simulation contains invalid economy trade trace')
+  if (economy.productionTraces.some((trace) => trace.tick > state.tick || !trace.recipeId || !Number.isSafeInteger(trace.laborHours) || trace.laborHours < 0 || [...Object.values(trace.inputs), ...Object.values(trace.outputs)].some((value) => !Number.isSafeInteger(value) || value < 0))) throw new Error('Simulation contains invalid economy production trace')
+  if (economy.wageTraces.some((trace) => trace.tick > state.tick || !trace.marketId || !trace.householdId || !Number.isSafeInteger(trace.wageUnits) || trace.wageUnits < 1 || !Number.isSafeInteger(trace.workerCount) || trace.workerCount < 1)) throw new Error('Simulation contains invalid economy wage trace')
+}
+
 export function validateHouseholdActivityState(state: SimulationState): void {
   validatePopulationCohorts(state.cohorts, state.config.worldCreation.populationZones, state.world.grid.cells)
   validatePopulationFidelity(state)
@@ -48,6 +59,8 @@ export function validateHouseholdActivityState(state: SimulationState): void {
     if (household.homeActivityLocationId !== householdHomeActivityId(household.id)) throw new Error(`Household ${household.id} has a non-canonical home activity ID`)
     if (!isSortedUnique(household.memberIds) || household.memberIds.length === 0) throw new Error(`Household ${household.id} has invalid members`)
     if (!household.inventory || !Number.isSafeInteger(household.inventory.food) || household.inventory.food < 0 || !Number.isSafeInteger(household.inventory.tools) || household.inventory.tools < 0) throw new Error(`Household ${household.id} has invalid inventory`)
+    if (household.inventory.currencyUnits !== undefined && (!Number.isSafeInteger(household.inventory.currencyUnits) || household.inventory.currencyUnits < 0)) throw new Error(`Household ${household.id} has invalid currency inventory`)
+    if (household.inventory.goods && Object.values(household.inventory.goods).some((amount) => !Number.isSafeInteger(amount) || amount < 0)) throw new Error(`Household ${household.id} has invalid goods inventory`)
     for (const personId of household.memberIds) {
       if (!peopleById.has(personId)) throw new Error(`Household ${household.id} contains missing person ${personId}`)
       if (memberships.has(personId)) throw new Error(`Person ${personId} belongs to multiple households`)

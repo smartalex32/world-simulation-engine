@@ -11,6 +11,16 @@ export const DEFAULT_PREINDUSTRIAL_PACK: ContentPack = Object.freeze({
   pathogens: Object.freeze([
     Object.freeze({ id: 'pathogen.fictional.respiratory-fever', incubationHours: 48, infectiousHours: 120, immunityHours: 720, transmissionPermille: 90, dailyHealthStressPermille: 45, annualMortalityPermille: 8 }),
   ]),
+  economy: Object.freeze({
+    goods: Object.freeze([
+      Object.freeze({ id: 'good.food', name: 'Food', category: 'food', basePriceUnits: 2, decayPermillePerDay: 20 }),
+      Object.freeze({ id: 'good.wood', name: 'Wood', category: 'material', basePriceUnits: 3, decayPermillePerDay: 0 }),
+      Object.freeze({ id: 'good.tool', name: 'Tool', category: 'tool', basePriceUnits: 12, decayPermillePerDay: 0 }),
+    ]),
+    recipes: Object.freeze([
+      Object.freeze({ id: 'recipe.tool.woodworking', inputs: Object.freeze({ 'good.wood': 2 }), outputs: Object.freeze({ 'good.tool': 1 }), laborHours: 8 }),
+    ]),
+  }),
   formulas: Object.freeze({
     // Retains the historical authored base weight while exercising the
     // engine-owned declarative formula path.

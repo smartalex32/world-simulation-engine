@@ -69,7 +69,7 @@ import { PERSON_VARIABLE_DEFINITIONS, PERSON_VARIABLE_ID } from '../variables/re
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
 import { createContentPackRuntime, evaluateExpression, type ContentPack, type ContentPackRuntime } from '../../contentPacks'
 import { adjustPersonVariable, createDefaultPersonVariableValues, getPersonVariable, setPersonVariable, validatePersonVariableValues } from '../variables/storage'
-import { validateHouseholdActivityState, validateInfrastructureState } from './invariants'
+import { validateEconomyState, validateHouseholdActivityState, validateInfrastructureState } from './invariants'
 import {
   accumulateParentCuriosityExposure,
   completeParentCuriosityExposureWindow,
@@ -83,6 +83,7 @@ import { climateConditionsAt, regeneratedFoodAmount } from '../environment/clima
 import { calculateCuriosityInheritance } from '../households/inheritance'
 import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STREAM, partnershipEligible } from '../lifecycle/model'
 import { createInitialMarkets, resolveFoodShares, resolveToolExchanges } from '../economy/model'
+import { clearMarkets, createEconomyState, decayGoods, distributeMarketWages, initializeGoods, produceMonthlyGoods } from '../economy/stockFlow'
 import { createInitialSchools } from '../organizations/model'
 import { evaluateSchoolAttendance, SCHOOL_ATTENDANCE, SCHOOL_ATTENDANCE_STREAM, schoolAttendanceTrace, schoolTravelCost } from '../organizations/attendance'
 import { createCulturalState, transmitCulture } from '../culture/model'
@@ -213,6 +214,8 @@ export class SimulationEngine {
     // A school is an authored place service; an unmarked home cell is never silently promoted into one.
     const organizations = createInitialSchools(generatedPopulation.people, world.settlements.map((settlement) => settlement.anchorCellId))
     const markets = createInitialMarkets(world.grid.cells, world.settlements)
+    for (const household of generatedPopulation.households) if (household.inventory) initializeGoods(household.inventory)
+    const economy = createEconomyState(markets, runtime.pack.economy.goods)
     const cohorts = createInitialCohorts(world.grid.cells, creation.populationZones)
     reconcileSettlementRegions({ settlements: world.settlements, cells: world.grid.cells, households: generatedPopulation.households, cohorts, markets, organizations, roads: world.roads ?? [], tick: 0 })
     const infrastructure = createInfrastructureAssets({ roads: world.roads ?? [], cells: world.grid.cells, settlements: world.settlements, markets, organizations, tick: 0 })
@@ -259,6 +262,7 @@ export class SimulationEngine {
       markets,
       organizations,
       infrastructure,
+      economy,
       governance,
       disputes: [],
       parentChildLinks: generatedPopulation.parentChildLinks,
@@ -397,6 +401,16 @@ export class SimulationEngine {
       this.recordCommunityDevelopmentExposure()
       this.accumulateDevelopmentExposure()
       if (this.state.tick % 720 === 0) {
+        for (const production of produceMonthlyGoods({ economy: this.state.economy, households: this.state.households, peopleById: this.personById, recipes: this.contentPackRuntime.pack.economy.recipes, tick: this.state.tick })) {
+          pushEvent(this.event('PERSON_WORKED', { householdId: production.householdId, recipeId: production.recipeId, laborHours: production.laborHours, outputUnits: Object.values(production.outputs).reduce((sum, value) => sum + value, 0) }))
+        }
+        for (const trade of clearMarkets({ economy: this.state.economy, households: this.state.households, markets: this.state.markets, cellsById: this.cellById, tick: this.state.tick })) {
+          this.economicCounters().exchangeCount += 1
+          pushEvent(this.event('HOUSEHOLDS_EXCHANGED_TOOLS', { marketId: trade.marketId, sellerHouseholdId: trade.sellerHouseholdId, buyerHouseholdId: trade.buyerHouseholdId, goodId: trade.goodId, quantity: trade.quantity, unitPriceUnits: trade.unitPriceUnits, transportCostUnits: trade.transportCostUnits, taxUnits: trade.taxUnits }))
+        }
+        for (const wage of distributeMarketWages({ economy: this.state.economy, households: this.state.households, peopleById: this.personById, tick: this.state.tick })) {
+          pushEvent(this.event('PERSON_WORKED', { householdId: wage.householdId, marketId: wage.marketId, wageUnits: wage.wageUnits, workerCount: wage.workerCount }))
+        }
         for (const allocation of allocateInfrastructureMaintenance(this.state.infrastructure, this.state.households, this.state.world.settlements)) {
           pushEvent(this.event('INFRASTRUCTURE_UPDATED', { assetId: allocation.assetId, householdId: allocation.householdId, kind: 'maintenance-funded', units: allocation.units }))
         }
@@ -435,6 +449,7 @@ export class SimulationEngine {
         for (const trace of applyAnnualCohortInfectionMortality(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, mortalityCount: trace.mortalityCount }))
       }
       if (this.state.tick % 24 === 0) {
+        decayGoods(this.state.households, this.contentPackRuntime.pack.economy.goods)
         this.resolveDailyHealthStress(pushEvent)
         for (const trace of advanceCohortFictionalInfections(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, susceptibleCount: trace.susceptibleCount, newIncubatingCount: trace.newIncubatingCount, becameInfectiousCount: trace.becameInfectiousCount, recoveredCount: trace.recoveredCount }))
         this.resolveDailyFoodSharing(pushEvent)
@@ -584,6 +599,7 @@ export class SimulationEngine {
       populationFidelity: this.state.populationFidelity,
       households: this.state.households,
       markets: this.state.markets,
+      economy: this.state.economy,
       organizations: this.state.organizations,
       infrastructure: this.state.infrastructure,
       governance: this.state.governance,
@@ -1593,6 +1609,7 @@ export class SimulationEngine {
 
   private assertInvariants(): void {
     validateInfrastructureState(this.state)
+    validateEconomyState(this.state)
     validateHouseholdActivityState(this.state)
     validateCommunitySimulationState(this.state)
     const { width, height, cells } = this.state.world.grid

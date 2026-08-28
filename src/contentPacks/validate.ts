@@ -1,6 +1,6 @@
 import { canonicalStringify } from '../simulation/serialization/snapshot'
 import { PERSON_VARIABLE_IDS } from '../simulation/variables/types'
-import type { ContentPack, ContentPackDiagnostic, DeterministicCondition, DeterministicExpression, FictionalPathogenDefinition, ValidatedContentPack } from './types'
+import type { ContentPack, ContentPackDiagnostic, DeterministicCondition, DeterministicExpression, EconomyGoodDefinition, EconomyRecipeDefinition, FictionalPathogenDefinition, ValidatedContentPack } from './types'
 
 export const CONTENT_PACK_SCHEMA_VERSION = 1
 
@@ -18,6 +18,14 @@ export function validateContentPack(value: unknown): ValidatedContentPack {
   validateUnique(pack.personVariables, 'personVariables', (item) => item.id, diagnostics)
   validateUnique(pack.influences, 'influences', (item) => item.id, diagnostics)
   validateUnique(pack.pathogens, 'pathogens', (item) => item.id, diagnostics)
+  if (!pack.economy || !Array.isArray(pack.economy.goods) || !Array.isArray(pack.economy.recipes)) diagnostics.push({ path: 'economy', message: 'Economy needs goods and recipes arrays' })
+  else {
+    validateUnique(pack.economy.goods, 'economy.goods', (item) => item.id, diagnostics)
+    validateUnique(pack.economy.recipes, 'economy.recipes', (item) => item.id, diagnostics)
+    for (const [index, good] of pack.economy.goods.entries()) validateEconomyGood(good, `economy.goods[${index}]`, diagnostics)
+    const goodIds = new Set(pack.economy.goods.map((good) => good.id))
+    for (const [index, recipe] of pack.economy.recipes.entries()) validateEconomyRecipe(recipe, goodIds, `economy.recipes[${index}]`, diagnostics)
+  }
   for (const [index, pathogen] of (pack.pathogens ?? []).entries()) validatePathogen(pathogen, `pathogens[${index}]`, diagnostics)
   for (const [index, definition] of (pack.personVariables ?? []).entries()) {
     if (!stableId(definition.id) || !Number.isSafeInteger(definition.minimum) || !Number.isSafeInteger(definition.maximum) || definition.minimum > definition.maximum || !Number.isSafeInteger(definition.defaultValue) || definition.defaultValue < definition.minimum || definition.defaultValue > definition.maximum) diagnostics.push({ path: `personVariables[${index}]`, message: 'Variable bounds/default are invalid' })
@@ -49,7 +57,16 @@ export function migrateContentPack(value: unknown): ContentPack {
     manifest.dependencies ??= []
   }
   migrated.pathogens ??= []
+  migrated.economy ??= { goods: [], recipes: [] }
   return migrated as unknown as ContentPack
+}
+
+function validateEconomyGood(good: EconomyGoodDefinition, path: string, diagnostics: ContentPackDiagnostic[]): void {
+  if (!good || !stableId(good.id) || typeof good.name !== 'string' || good.name.trim().length === 0 || !['food', 'material', 'tool'].includes(good.category) || !positiveInteger(good.basePriceUnits) || !permille(good.decayPermillePerDay)) diagnostics.push({ path, message: 'Good needs a stable ID, name, category, positive price, and decay permille' })
+}
+function validateEconomyRecipe(recipe: EconomyRecipeDefinition, goodIds: ReadonlySet<string>, path: string, diagnostics: ContentPackDiagnostic[]): void {
+  const validEntries = (entries: unknown) => !!entries && typeof entries === 'object' && Object.entries(entries as Record<string, unknown>).length > 0 && Object.entries(entries as Record<string, unknown>).every(([id, quantity]) => goodIds.has(id) && positiveInteger(quantity))
+  if (!recipe || !stableId(recipe.id) || !positiveInteger(recipe.laborHours) || !validEntries(recipe.inputs) || !validEntries(recipe.outputs)) diagnostics.push({ path, message: 'Recipe needs stable input/output goods and positive labor hours' })
 }
 
 function validatePathogen(pathogen: FictionalPathogenDefinition, path: string, diagnostics: ContentPackDiagnostic[]): void {
