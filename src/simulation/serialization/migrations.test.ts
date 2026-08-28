@@ -18,6 +18,17 @@ describe('snapshot migration registry', () => {
     expect(migrateSnapshotSchema(legacy, 43)).toMatchObject({ schemaVersion: 43, engineVersion: ENGINE_VERSION, state: { economy: { totalTaxCollectedUnits: 2, wageTraces: [] } } })
   })
 
+  it('rejects old-engine ordering semantics before any intermediate migration can relabel them', () => {
+    const state = { economy: { version: 1, markets: [], tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 } }
+    expect(() => migrateSnapshotSchema({ schemaVersion: 42, engineVersion: '0.43.0', state, digest: 'digest' }, 44)).toThrow('ordering semantics')
+    expect(() => migrateSnapshotSchema({ schemaVersion: 43, engineVersion: '0.44.0', state, digest: 'digest' }, 44)).toThrow('ordering semantics')
+  })
+
+  it('advances a schema-43 fixture created by the current engine', () => {
+    const state = { economy: { version: 1, markets: [], tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 } }
+    expect(migrateSnapshotSchema({ schemaVersion: 43, engineVersion: ENGINE_VERSION, state, digest: 'digest' }, 44)).toMatchObject({ schemaVersion: 44, engineVersion: ENGINE_VERSION })
+  })
+
   it('rejects schemas outside the explicit rolling window', () => {
     expect(() => migrateSnapshotSchema({ schemaVersion: 29 }, 32)).toThrow('Unsupported snapshot schema')
   })

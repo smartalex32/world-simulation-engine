@@ -39,8 +39,12 @@ export function migrateSnapshotSchema(value: unknown, targetSchema: number): Sna
   if (!value || typeof value !== 'object') throw new Error('Snapshot is not an object')
   let migrated = structuredClone(value) as SnapshotLike
   if (!Number.isSafeInteger(migrated.schemaVersion)) throw new Error('Snapshot schema version is invalid')
+  const sourceEngineVersion = migrated.engineVersion
   if (migrated.schemaVersion < OLDEST_SUPPORTED_SNAPSHOT_SCHEMA || migrated.schemaVersion > targetSchema) {
     throw new Error(`Unsupported snapshot schema: ${String(migrated.schemaVersion)}`)
+  }
+  if (migrated.schemaVersion < 44 && targetSchema >= 44 && sourceEngineVersion !== ENGINE_VERSION) {
+    throw new Error('Snapshot ordering semantics are incompatible with this engine version')
   }
   while (migrated.schemaVersion < targetSchema) {
     const migrate = migrations.get(migrated.schemaVersion)
