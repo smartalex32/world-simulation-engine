@@ -88,6 +88,24 @@ export function produceMonthlyGoods(input: { economy: EconomyState; households: 
   return traces
 }
 
+/** Applies pack-defined daily spoilage using integer floor rounding. */
+export function decayGoods(households: HouseholdState[], goods: readonly EconomyGoodDefinition[]): number {
+  const decayById = new Map(goods.map((good) => [good.id, good.decayPermillePerDay]))
+  let decayed = 0
+  for (const household of households) {
+    if (!household.inventory) continue
+    const inventory = initializeGoods(household.inventory)
+    for (const [goodId, rate] of [...decayById.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      const current = inventory.goods![goodId] ?? 0
+      const amount = Math.floor(current * rate / 1000)
+      inventory.goods![goodId] = current - amount
+      decayed += amount
+    }
+    synchronizeLegacyGoods(inventory)
+  }
+  return decayed
+}
+
 function reserveFor(household: HouseholdState, goodId: string): number { return goodId === 'good.food' ? household.memberIds.length * 4 : goodId === 'good.tool' ? household.memberIds.length : 0 }
 function adjustPrice(previous: number, supply: number, demand: number): number { return Math.max(1, previous + Math.trunc((demand - supply) * 100 / Math.max(1, supply + demand))) }
 function transportCost(seller: GeographicCell | undefined, buyer: GeographicCell | undefined, market: GeographicCell): number { if (!seller || !buyer) return 0; return Math.max(0, hexDistance(seller, market) + hexDistance(buyer, market) - 2) }

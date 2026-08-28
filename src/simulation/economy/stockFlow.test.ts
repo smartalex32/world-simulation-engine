@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clearMarkets, createEconomyState, initializeGoods, produceMonthlyGoods } from './stockFlow'
+import { clearMarkets, createEconomyState, decayGoods, initializeGoods, produceMonthlyGoods } from './stockFlow'
 
 describe('preindustrial market clearing', () => {
   it('transfers explicit goods and currency with fixed-point price, transport, and tax traces', () => {
@@ -23,5 +23,11 @@ describe('preindustrial market clearing', () => {
     const traces = produceMonthlyGoods({ economy, households: [household], peopleById: new Map([['person', { occupation: 'household', lifeStatus: 'alive' }]]), recipes: [{ id: 'recipe.tool', inputs: { 'good.wood': 2 }, outputs: { 'good.tool': 1 }, laborHours: 8 }], tick: 720 })
     expect(traces).toMatchObject([{ recipeId: 'recipe.tool', inputs: { 'good.wood': 2 }, outputs: { 'good.tool': 1 } }])
     expect(household.inventory.goods).toMatchObject({ 'good.wood': 1, 'good.tool': 1 })
+  })
+
+  it('applies only pack-declared daily decay with fixed-point floor rounding', () => {
+    const household = { id: 'h', homeCellId: '0,0', homeActivityLocationId: 'a', memberIds: [], inventory: initializeGoods({ food: 99, tools: 1, goods: { 'good.food': 99, 'good.tool': 1, 'good.wood': 0 } }) }
+    expect(decayGoods([household], [{ id: 'good.food', name: 'Food', category: 'food', basePriceUnits: 1, decayPermillePerDay: 100 }, { id: 'good.tool', name: 'Tool', category: 'tool', basePriceUnits: 1, decayPermillePerDay: 0 }])).toBe(9)
+    expect(household.inventory.goods?.['good.food']).toBe(90)
   })
 })

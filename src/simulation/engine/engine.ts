@@ -83,7 +83,7 @@ import { climateConditionsAt, regeneratedFoodAmount } from '../environment/clima
 import { calculateCuriosityInheritance } from '../households/inheritance'
 import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STREAM, partnershipEligible } from '../lifecycle/model'
 import { createInitialMarkets, resolveFoodShares, resolveToolExchanges } from '../economy/model'
-import { clearMarkets, createEconomyState, initializeGoods, produceMonthlyGoods } from '../economy/stockFlow'
+import { clearMarkets, createEconomyState, decayGoods, initializeGoods, produceMonthlyGoods } from '../economy/stockFlow'
 import { createInitialSchools } from '../organizations/model'
 import { evaluateSchoolAttendance, SCHOOL_ATTENDANCE, SCHOOL_ATTENDANCE_STREAM, schoolAttendanceTrace, schoolTravelCost } from '../organizations/attendance'
 import { createCulturalState, transmitCulture } from '../culture/model'
@@ -446,6 +446,7 @@ export class SimulationEngine {
         for (const trace of applyAnnualCohortInfectionMortality(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, mortalityCount: trace.mortalityCount }))
       }
       if (this.state.tick % 24 === 0) {
+        decayGoods(this.state.households, this.contentPackRuntime.pack.economy.goods)
         this.resolveDailyHealthStress(pushEvent)
         for (const trace of advanceCohortFictionalInfections(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, susceptibleCount: trace.susceptibleCount, newIncubatingCount: trace.newIncubatingCount, becameInfectiousCount: trace.becameInfectiousCount, recoveredCount: trace.recoveredCount }))
         this.resolveDailyFoodSharing(pushEvent)
