@@ -1,4 +1,4 @@
-import type { HouseholdState, PersonState } from '../simulation/domain/types'
+import type { EconomyState, HouseholdState, PersonState } from '../simulation/domain/types'
 
 /**
  * Bounded, read-only material evidence for the workbench. Food and tools stay
@@ -11,13 +11,23 @@ export interface ProjectedEconomicSummary {
   toolUnits: number
   foodGiniPermille: number
   toolGiniPermille: number
+  currencyUnits: number
+  currencyGiniPermille: number
+  goodsById: Record<string, number>
+  marketPrices: { marketId: string; prices: Record<string, number>; treasuryUnits: number }[]
+  totalTaxCollectedUnits: number
+  retainedTradeCount: number
+  retainedProductionCount: number
   occupationCounts: { dependent: number; household: number; forager: number; unassigned: number }
 }
 
-export function buildProjectedEconomicSummary(households: readonly HouseholdState[], people: readonly PersonState[]): ProjectedEconomicSummary {
+export function buildProjectedEconomicSummary(households: readonly HouseholdState[], people: readonly PersonState[], economy: EconomyState = { version: 1, markets: [], tradeTraces: [], productionTraces: [], totalTaxCollectedUnits: 0 }): ProjectedEconomicSummary {
   const orderedHouseholds = [...households].sort((first, second) => first.id.localeCompare(second.id))
   const food = orderedHouseholds.map((household) => Math.max(0, household.inventory?.food ?? 0))
   const tools = orderedHouseholds.map((household) => Math.max(0, household.inventory?.tools ?? 0))
+  const currency = orderedHouseholds.map((household) => Math.max(0, household.inventory?.currencyUnits ?? 0))
+  const goodsById: Record<string, number> = {}
+  for (const household of orderedHouseholds) for (const [goodId, amount] of Object.entries(household.inventory?.goods ?? {})) goodsById[goodId] = (goodsById[goodId] ?? 0) + Math.max(0, amount)
   const occupationCounts = { dependent: 0, household: 0, forager: 0, unassigned: 0 }
   for (const person of people) {
     if (person.lifeStatus === 'dead') continue
@@ -35,6 +45,13 @@ export function buildProjectedEconomicSummary(households: readonly HouseholdStat
     toolUnits: tools.reduce((sum, value) => sum + value, 0),
     foodGiniPermille: giniPermille(food),
     toolGiniPermille: giniPermille(tools),
+    currencyUnits: currency.reduce((sum, value) => sum + value, 0),
+    currencyGiniPermille: giniPermille(currency),
+    goodsById: Object.fromEntries(Object.entries(goodsById).sort(([a], [b]) => a.localeCompare(b))),
+    marketPrices: economy.markets.map((market) => ({ marketId: market.marketId, prices: Object.fromEntries(Object.entries(market.prices).sort(([a], [b]) => a.localeCompare(b))), treasuryUnits: market.treasuryUnits })).sort((a, b) => a.marketId.localeCompare(b.marketId)),
+    totalTaxCollectedUnits: economy.totalTaxCollectedUnits,
+    retainedTradeCount: economy.tradeTraces.length,
+    retainedProductionCount: economy.productionTraces.length,
     occupationCounts,
   }
 }

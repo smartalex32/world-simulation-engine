@@ -596,6 +596,7 @@ export class SimulationEngine {
       populationFidelity: this.state.populationFidelity,
       households: this.state.households,
       markets: this.state.markets,
+      economy: this.state.economy,
       organizations: this.state.organizations,
       infrastructure: this.state.infrastructure,
       governance: this.state.governance,

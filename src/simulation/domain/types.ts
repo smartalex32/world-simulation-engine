@@ -954,9 +954,9 @@ export interface SimulationState {
   populationFidelity: PopulationFidelityState
   households: HouseholdState[]
   markets: MarketState[]
+  economy: EconomyState
   organizations: OrganizationState[]
   infrastructure: InfrastructureAssetState[]
-  economy: EconomyState
   governance: LocalGovernanceState[]
   disputes: DisputeState[]
   parentChildLinks: ParentChildLink[]
@@ -1019,6 +1019,7 @@ export interface WorldProjection {
   populationFidelity: PopulationFidelityState
   households: HouseholdState[]
   markets: MarketState[]
+  economy: EconomyState
   organizations: OrganizationState[]
   infrastructure: InfrastructureAssetState[]
   governance: LocalGovernanceState[]
