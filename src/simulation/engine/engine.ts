@@ -83,7 +83,7 @@ import { climateConditionsAt, regeneratedFoodAmount } from '../environment/clima
 import { calculateCuriosityInheritance } from '../households/inheritance'
 import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STREAM, partnershipEligible } from '../lifecycle/model'
 import { createInitialMarkets, resolveFoodShares, resolveToolExchanges } from '../economy/model'
-import { clearMarkets, createEconomyState, initializeGoods } from '../economy/stockFlow'
+import { clearMarkets, createEconomyState, initializeGoods, produceMonthlyGoods } from '../economy/stockFlow'
 import { createInitialSchools } from '../organizations/model'
 import { evaluateSchoolAttendance, SCHOOL_ATTENDANCE, SCHOOL_ATTENDANCE_STREAM, schoolAttendanceTrace, schoolTravelCost } from '../organizations/attendance'
 import { createCulturalState, transmitCulture } from '../culture/model'
@@ -401,6 +401,9 @@ export class SimulationEngine {
       this.recordCommunityDevelopmentExposure()
       this.accumulateDevelopmentExposure()
       if (this.state.tick % 720 === 0) {
+        for (const production of produceMonthlyGoods({ economy: this.state.economy, households: this.state.households, peopleById: this.personById, recipes: this.contentPackRuntime.pack.economy.recipes, tick: this.state.tick })) {
+          pushEvent(this.event('PERSON_WORKED', { householdId: production.householdId, recipeId: production.recipeId, laborHours: production.laborHours, outputUnits: Object.values(production.outputs).reduce((sum, value) => sum + value, 0) }))
+        }
         for (const trade of clearMarkets({ economy: this.state.economy, households: this.state.households, markets: this.state.markets, cellsById: this.cellById, tick: this.state.tick })) {
           this.economicCounters().exchangeCount += 1
           pushEvent(this.event('HOUSEHOLDS_EXCHANGED_TOOLS', { marketId: trade.marketId, sellerHouseholdId: trade.sellerHouseholdId, buyerHouseholdId: trade.buyerHouseholdId, goodId: trade.goodId, quantity: trade.quantity, unitPriceUnits: trade.unitPriceUnits, transportCostUnits: trade.transportCostUnits, taxUnits: trade.taxUnits }))

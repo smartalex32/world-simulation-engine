@@ -1,5 +1,5 @@
 import type { EconomyState, GeographicCell, HouseholdInventory, HouseholdState, MarketState } from '../domain/types'
-import type { EconomyGoodDefinition } from '../../contentPacks/types'
+import type { EconomyGoodDefinition, EconomyRecipeDefinition } from '../../contentPacks/types'
 import { hexDistance } from '../spatial/hex'
 
 export const ECONOMY_TAX_PERMILLE = 50
@@ -8,7 +8,7 @@ export const MAX_ECONOMY_TRACES = 2_000
 /** Creates deterministic market ledgers with pack-defined, integer price anchors. */
 export function createEconomyState(markets: readonly MarketState[], goods: readonly EconomyGoodDefinition[]): EconomyState {
   const prices = Object.fromEntries([...goods].sort((a, b) => a.id.localeCompare(b.id)).map((good) => [good.id, good.basePriceUnits]))
-  return { version: 1, markets: [...markets].sort((a, b) => a.id.localeCompare(b.id)).map((market) => ({ version: 1, marketId: market.id, prices: { ...prices }, treasuryUnits: 0, lastClearedTick: 0 })), tradeTraces: [], totalTaxCollectedUnits: 0 }
+  return { version: 1, markets: [...markets].sort((a, b) => a.id.localeCompare(b.id)).map((market) => ({ version: 1, marketId: market.id, prices: { ...prices }, treasuryUnits: 0, lastClearedTick: 0 })), tradeTraces: [], productionTraces: [], totalTaxCollectedUnits: 0 }
 }
 
 /** Keeps legacy food/tool fields explicit while adding a canonical sparse good ledger. */
@@ -65,6 +65,26 @@ export function clearMarkets(input: { economy: EconomyState; households: Househo
     ledger.lastClearedTick = input.tick
   }
   input.economy.tradeTraces = [...input.economy.tradeTraces, ...traces].slice(-MAX_ECONOMY_TRACES)
+  return traces
+}
+
+/** Produces a small material flow from actual working household members, then
+ * applies at most one feasible pack recipe per household per month. */
+export function produceMonthlyGoods(input: { economy: EconomyState; households: HouseholdState[]; peopleById: ReadonlyMap<string, { occupation?: string; lifeStatus: string }>; recipes: readonly EconomyRecipeDefinition[]; tick: number }): EconomyState['productionTraces'] {
+  const traces: EconomyState['productionTraces'] = []
+  for (const household of [...input.households].filter((household) => household.inventory).sort((a, b) => a.id.localeCompare(b.id))) {
+    const inventory = initializeGoods(household.inventory!)
+    const workers = household.memberIds.filter((id) => { const person = input.peopleById.get(id); return person?.lifeStatus !== 'dead' && person?.occupation !== 'dependent' }).length
+    const goods = inventory.goods!
+    goods['good.wood'] = (goods['good.wood'] ?? 0) + workers
+    const recipe = [...input.recipes].sort((a, b) => a.id.localeCompare(b.id)).find((candidate) => Object.entries(candidate.inputs).every(([goodId, quantity]) => (inventory.goods![goodId] ?? 0) >= quantity))
+    if (!recipe) { synchronizeLegacyGoods(inventory); continue }
+    for (const [goodId, quantity] of Object.entries(recipe.inputs)) goods[goodId] = (goods[goodId] ?? 0) - quantity
+    for (const [goodId, quantity] of Object.entries(recipe.outputs)) goods[goodId] = (goods[goodId] ?? 0) + quantity
+    synchronizeLegacyGoods(inventory)
+    traces.push({ tick: input.tick, householdId: household.id, recipeId: recipe.id, inputs: { ...recipe.inputs }, outputs: { ...recipe.outputs }, laborHours: recipe.laborHours })
+  }
+  input.economy.productionTraces = [...input.economy.productionTraces, ...traces].slice(-MAX_ECONOMY_TRACES)
   return traces
 }
 

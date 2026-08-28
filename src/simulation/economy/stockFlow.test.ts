@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clearMarkets, createEconomyState, initializeGoods } from './stockFlow'
+import { clearMarkets, createEconomyState, initializeGoods, produceMonthlyGoods } from './stockFlow'
 
 describe('preindustrial market clearing', () => {
   it('transfers explicit goods and currency with fixed-point price, transport, and tax traces', () => {
@@ -15,5 +15,13 @@ describe('preindustrial market clearing', () => {
     expect(seller.inventory.goods?.['good.food']).toBe(19)
     expect(buyer.inventory.goods?.['good.food']).toBe(1)
     expect(buyer.inventory.currencyUnits).toBeLessThan(20)
+  })
+
+  it('conserves declared recipe inputs while creating only declared outputs', () => {
+    const household = { id: 'craft', homeCellId: '0,0', homeActivityLocationId: 'a', memberIds: ['person'], inventory: initializeGoods({ food: 0, tools: 0, currencyUnits: 0, goods: { 'good.food': 0, 'good.tool': 0, 'good.wood': 2 } }) }
+    const economy = createEconomyState([], [{ id: 'good.wood', name: 'Wood', category: 'material', basePriceUnits: 2, decayPermillePerDay: 0 }, { id: 'good.tool', name: 'Tool', category: 'tool', basePriceUnits: 4, decayPermillePerDay: 0 }])
+    const traces = produceMonthlyGoods({ economy, households: [household], peopleById: new Map([['person', { occupation: 'household', lifeStatus: 'alive' }]]), recipes: [{ id: 'recipe.tool', inputs: { 'good.wood': 2 }, outputs: { 'good.tool': 1 }, laborHours: 8 }], tick: 720 })
+    expect(traces).toMatchObject([{ recipeId: 'recipe.tool', inputs: { 'good.wood': 2 }, outputs: { 'good.tool': 1 } }])
+    expect(household.inventory.goods).toMatchObject({ 'good.wood': 1, 'good.tool': 1 })
   })
 })
