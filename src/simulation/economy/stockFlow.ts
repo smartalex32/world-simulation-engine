@@ -70,7 +70,7 @@ export function clearMarkets(input: { economy: EconomyState; households: Househo
 
 /** Produces a small material flow from actual working household members, then
  * applies at most one feasible pack recipe per household per month. */
-export function produceMonthlyGoods(input: { economy: EconomyState; households: HouseholdState[]; peopleById: ReadonlyMap<string, { occupation?: string; lifeStatus: string }>; recipes: readonly EconomyRecipeDefinition[]; tick: number }): EconomyState['productionTraces'] {
+export function produceMonthlyGoods(input: { economy: EconomyState; households: HouseholdState[]; peopleById: ReadonlyMap<string, { occupation?: string; lifeStatus?: string }>; recipes: readonly EconomyRecipeDefinition[]; tick: number }): EconomyState['productionTraces'] {
   const traces: EconomyState['productionTraces'] = []
   for (const household of [...input.households].filter((household) => household.inventory).sort((a, b) => a.id.localeCompare(b.id))) {
     const inventory = initializeGoods(household.inventory!)
