@@ -3,6 +3,7 @@ import { createCommonsActivity, createHouseholdHomeActivity } from '../../src/si
 import { scheduleForAge } from '../../src/simulation/activities/config'
 import { createCommunityState, createDailyCommunityCounters, createTwoCatchmentGeography } from '../../src/simulation/community'
 import type { PersonState } from '../../src/simulation/domain/types'
+import { defaultWorldCreationRequest } from '../../src/simulation/domain/worldCreation'
 import { SimulationEngine } from '../../src/simulation/engine/engine'
 import { createParentCuriosityExposureAccumulator } from '../../src/simulation/exposure/model'
 import { createSnapshot } from '../../src/simulation/serialization/snapshot'
@@ -477,6 +478,27 @@ test('the same seed and step count produce the same digest', async ({ page }) =>
   await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '0')
   await advanceOneHour(page, 1)
   await expect(page.locator('.fact').filter({ hasText: 'SAVED HASH' }).locator('strong')).toHaveText(firstDigest ?? '')
+})
+
+test('browser worker preserves the Node golden digest for adversarial stable IDs', async ({ page }) => {
+  const creation = defaultWorldCreationRequest('ordering-A_10.a')
+  creation.settlements = [{ id: 'settlement-z-2', name: 'Z', anchorCellId: '8,8' }, { id: 'settlement-a-10', name: 'A', anchorCellId: '10,8' }, { id: 'settlement-a-02', name: 'a', anchorCellId: '12,8' }]
+  const engine = SimulationEngine.create(creation); engine.advance(48)
+  const expected = await engine.snapshot()
+  await page.goto('/')
+  await storeNamedSnapshot(page, expected, 'e2e:ordering', 'Ordering fixture')
+  await page.reload()
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  const orderingSnapshot = page.getByRole('button', { name: /Ordering fixture Hour 48/ })
+  await expect.poll(() => orderingSnapshot.count(), { timeout: 30_000 }).toBe(1)
+  await expect(orderingSnapshot).toBeEnabled({ timeout: 30_000 })
+  await orderingSnapshot.click({ force: true })
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '48', { timeout: 30_000 })
+  await page.getByPlaceholder('Snapshot name').fill('Browser ordering result')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('status')).toHaveText('Saved snapshot: Browser ordering result')
+  const digest = await page.evaluate(async () => new Promise<string>((resolve, reject) => { const request = indexedDB.open('world-simulation-workbench'); request.onsuccess = () => { const db = request.result; const transaction = db.transaction('snapshots'); const get = transaction.objectStore('snapshots').getAll(); get.onsuccess = () => { const record = get.result.find((value) => value.name === 'Browser ordering result'); db.close(); resolve(record.snapshot.digest) }; get.onerror = () => reject(get.error) }; request.onerror = () => reject(request.error) }))
+  expect(digest).toBe(expected.digest)
 })
 
 test('encounter events navigate between hooked people and their relationships', async ({ page }) => {
