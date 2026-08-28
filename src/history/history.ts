@@ -1,4 +1,5 @@
 import type { SimulationEvent, StatisticSample, WorldStatisticMetricId } from '../simulation/domain/types'
+import { compareStableText } from '../shared/stableOrder'
 
 /**
  * Historical views are derived only from persisted authoritative events and
@@ -42,7 +43,7 @@ export function eventInvolvesPerson(event: SimulationEvent, personId: string): b
 export function personTimeline(events: readonly SimulationEvent[], personId: string, limit = 100): SimulationEvent[] {
   return events
     .filter((event) => eventInvolvesPerson(event, personId))
-    .sort((first, second) => second.tick - first.tick || second.id.localeCompare(first.id))
+    .sort((first, second) => second.tick - first.tick || compareStableText(second.id, first.id))
     .slice(0, limit)
 }
 
@@ -53,7 +54,7 @@ export function historicalHighlights(events: readonly SimulationEvent[], limit =
       const reason = HIGHLIGHT_REASONS[event.type]
       return reason ? [{ event, reason }] : []
     })
-    .sort((first, second) => second.event.tick - first.event.tick || second.event.id.localeCompare(first.event.id))
+    .sort((first, second) => second.event.tick - first.event.tick || compareStableText(second.event.id, first.event.id))
     .slice(0, limit)
 }
 
@@ -61,7 +62,7 @@ export function historicalHighlights(events: readonly SimulationEvent[], limit =
 export function metricTimeline(samples: readonly StatisticSample[], metricId: WorldStatisticMetricId): StatisticSample[] {
   return samples
     .filter((sample): sample is Extract<StatisticSample, { scope: 'world' }> => sample.scope === 'world' && sample.metricId === metricId)
-    .sort((first, second) => first.tick - second.tick || first.metricId.localeCompare(second.metricId))
+    .sort((first, second) => first.tick - second.tick || compareStableText(first.metricId, second.metricId))
 }
 
 export function metricDelta(samples: readonly StatisticSample[], metricId: WorldStatisticMetricId): number | undefined {

@@ -1,6 +1,7 @@
 import type { LocalGovernanceState, OrganizationState, PersonState } from '../simulation/domain/types'
 import { evaluateLegitimacy } from '../simulation/governance/model'
 import type { ProjectedCommunityState, ProjectedGovernanceProfile } from './types'
+import { compareStableText } from '../shared/stableOrder'
 
 /**
  * Governance projection keeps observed geographic catchments separate from
@@ -11,7 +12,7 @@ export function buildProjectedGovernanceProfiles(governance: readonly LocalGover
   const communityById = new Map(communities.map((community) => [community.catchment.id, community]))
   const peopleById = new Map(people.map((person) => [person.id, person]))
   const organizationIds = new Set(organizations.map((organization) => organization.id))
-  return [...governance].sort((first, second) => first.id.localeCompare(second.id)).map((record) => {
+  return [...governance].sort((first, second) => compareStableText(first.id, second.id)).map((record) => {
     const community = communityById.get(record.communityId)
     const representativeIds = [...new Set(record.representativeIds)].sort()
     const legitimacy = evaluateLegitimacy({ serviceAccessPermille: record.serviceAccessPermille, contributionFairnessPermille: record.contributionFairnessPermille, socialTrustPermille: community?.emergent?.['community.emergent.socialTrust'] ?? 0, conflictPermille: community?.emergent?.['community.emergent.conflict'] ?? 1000 })

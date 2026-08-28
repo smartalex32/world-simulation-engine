@@ -1,5 +1,6 @@
 import type { DisputeState } from '../simulation/domain/types'
 import type { ProjectedCommunityState, ProjectedContentionProfile } from './types'
+import { compareStableText } from '../shared/stableOrder'
 
 /**
  * Read-only contention evidence from recorded interpersonal disputes. This is
@@ -12,8 +13,8 @@ export function buildProjectedContentionProfiles(communities: readonly Projected
     if (group) group.push(dispute)
     else disputesByCommunity.set(dispute.communityId, [dispute])
   }
-  return [...communities].sort((first, second) => first.catchment.id.localeCompare(second.catchment.id)).map((community) => {
-    const group = (disputesByCommunity.get(community.catchment.id) ?? []).sort((first, second) => first.id.localeCompare(second.id))
+  return [...communities].sort((first, second) => compareStableText(first.catchment.id, second.catchment.id)).map((community) => {
+    const group = (disputesByCommunity.get(community.catchment.id) ?? []).sort((first, second) => compareStableText(first.id, second.id))
     const active = group.filter((dispute) => dispute.grievance >= 240)
     const averageGrievance = active.length === 0 ? 0 : Math.round(active.reduce((sum, dispute) => sum + dispute.grievance, 0) / active.length)
     return {

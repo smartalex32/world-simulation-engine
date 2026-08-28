@@ -1,13 +1,14 @@
 import type { CommunitySimulationState } from '../simulation/community/types'
 import type { PersonState } from '../simulation/domain/types'
 import type { ProjectedCollectiveKnowledge } from './types'
+import { compareStableText } from '../shared/stableOrder'
 
 /**
  * Read-only geographic observation of person-owned knowledge and techniques.
  * It does not create a technology level, shared tool ownership, or diffusion.
  */
 export function buildProjectedCollectiveKnowledge(communities: readonly CommunitySimulationState[], people: readonly PersonState[]): ProjectedCollectiveKnowledge[] {
-  return [...communities].sort((first, second) => first.catchment.id.localeCompare(second.catchment.id)).map((community) => {
+  return [...communities].sort((first, second) => compareStableText(first.catchment.id, second.catchment.id)).map((community) => {
     const cells = new Set(community.catchment.cellIds)
     const residents = people.filter((person) => person.lifeStatus !== 'dead' && cells.has(person.homeCellId))
     const average = (value: (person: PersonState) => number): number => residents.length === 0 ? 0 : Math.round(residents.reduce((sum, person) => sum + value(person), 0) / residents.length)

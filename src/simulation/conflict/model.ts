@@ -1,4 +1,5 @@
 import type { DisputeState, EncounterOutcome } from '../domain/types'
+import { compareStableText } from '../../shared/stableOrder'
 
 export function disputeId(first: string, second: string): string { return first < second ? `dispute.${first}|${second}` : `dispute.${second}|${first}` }
 export function applyDispute(existing: DisputeState | undefined, first: string, second: string, outcome: EncounterOutcome, communityId: string, tick: number): DisputeState | undefined {
@@ -13,7 +14,7 @@ export function resolveCommunityContentions(disputes: Iterable<DisputeState>, le
   const groups = new Map<string, DisputeState[]>()
   for (const dispute of disputes) if (dispute.grievance >= 240) { const group = groups.get(dispute.communityId); if (group) group.push(dispute); else groups.set(dispute.communityId, [dispute]) }
   const results: ContentionResolution[] = []
-  for (const [communityId, group] of [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [communityId, group] of [...groups.entries()].sort(([a], [b]) => compareStableText(a, b))) {
     const grievance = Math.round(group.reduce((sum, dispute) => sum + dispute.grievance, 0) / group.length)
     const legitimacy = legitimacyByCommunity.get(communityId) ?? 500
     const outcome = legitimacy >= 650 ? 'mediation' : grievance >= 700 ? 'confrontation' : 'withdrawal'

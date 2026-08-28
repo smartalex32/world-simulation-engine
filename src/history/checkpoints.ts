@@ -1,5 +1,6 @@
 import { buildProjectedSettlements } from '../projection/settlements'
 import type { SnapshotEnvelope } from '../simulation/domain/types'
+import { compareStableText } from '../shared/stableOrder'
 
 /** A bounded, read-only summary derived from one retained authoritative checkpoint. */
 export interface HistoricalCheckpoint {
@@ -50,7 +51,7 @@ export function summarizeCheckpoint(snapshot: SnapshotEnvelope): HistoricalCheck
   const cohortPopulationCount = state.cohorts.reduce((sum, cohort) => sum + cohort.populationCount, 0)
   const settlements = buildProjectedSettlements(state.world.settlements, state.world.grid.cells, state.people, state.households)
     .map((settlement) => ({ settlementId: settlement.id, name: settlement.name, residentCount: settlement.nearbyResidentCount, householdCount: settlement.nearbyHouseholdCount, foodStoreUnits: settlement.householdFoodStoreUnits, scale: settlement.scale }))
-    .sort((first, second) => first.settlementId.localeCompare(second.settlementId))
+    .sort((first, second) => compareStableText(first.settlementId, second.settlementId))
   return {
     tick: state.tick,
     populationCount: detailedPopulationCount + cohortPopulationCount,
@@ -79,7 +80,7 @@ export function settlementChangeSummaries(checkpoints: readonly HistoricalCheckp
     const latest = samples.at(-1)
     if (!first || !latest) return []
     return [{ settlementId, name: first.name, firstTick: first.tick, latestTick: latest.tick, firstResidentCount: first.residentCount, latestResidentCount: latest.residentCount, residentDelta: latest.residentCount - first.residentCount, householdDelta: latest.householdCount - first.householdCount, foodStoreDelta: latest.foodStoreUnits - first.foodStoreUnits, firstScale: first.scale, latestScale: latest.scale }]
-  }).sort((first, second) => first.name.localeCompare(second.name) || first.settlementId.localeCompare(second.settlementId))
+  }).sort((first, second) => compareStableText(first.name, second.name) || compareStableText(first.settlementId, second.settlementId))
 }
 
 /** Compares only retained checkpoints; missing periods are never replayed. */

@@ -1,5 +1,6 @@
 import { PERSON_VARIABLE_DEFINITIONS, getPersonVariableDefinition } from './registry'
 import { PERSON_VARIABLE_IDS, type PersonVariableDefinition, type PersonVariableId, type PersonVariableValues } from './types'
+import { compareStableText } from '../../shared/stableOrder'
 
 const personVariableIdSet: ReadonlySet<string> = new Set(PERSON_VARIABLE_IDS)
 
@@ -9,7 +10,7 @@ export interface PersonVariableRegistry {
 }
 
 export function createPersonVariableRegistry(definitions: readonly PersonVariableDefinition[] = PERSON_VARIABLE_DEFINITIONS): PersonVariableRegistry {
-  const ordered = Object.freeze([...definitions].sort((left, right) => left.order - right.order || left.id.localeCompare(right.id)))
+  const ordered = Object.freeze([...definitions].sort((left, right) => left.order - right.order || compareStableText(left.id, right.id)))
   const byId = new Map<string, PersonVariableDefinition>()
   for (const definition of ordered) {
     if (byId.has(definition.id)) throw new Error(`Duplicate person variable ID: ${definition.id}`)

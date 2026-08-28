@@ -5,6 +5,7 @@ import { validateSnapshot } from '../simulation/serialization/snapshot'
 import { validateWorkerContinuation } from '../worker/frameScheduler'
 import type { WorkbenchSnapshotEnvelope } from '../worker/protocol'
 import { exportContentPack, validateContentPack, type ContentPack } from '../contentPacks'
+import { compareStableText } from '../shared/stableOrder'
 
 const DATABASE_NAME = 'world-simulation-workbench'
 const DATABASE_VERSION = 3
@@ -131,7 +132,7 @@ export class WorkbenchDatabase {
   async listWorldDrafts(): Promise<WorldDraftRecord[]> {
     const database = await this.open()
     const records = await request<unknown[]>(database.transaction('worldDrafts').objectStore('worldDrafts').getAll())
-    return records.map(validateWorldDraftRecord).sort((first, second) => first.draftId.localeCompare(second.draftId))
+    return records.map(validateWorldDraftRecord).sort((first, second) => compareStableText(first.draftId, second.draftId))
   }
 
   async deleteWorldDraft(draftId: string): Promise<void> {
@@ -160,7 +161,7 @@ export class WorkbenchDatabase {
   async listContentPacks(): Promise<StoredContentPack[]> {
     const database = await this.open()
     const records = await request<StoredContentPack[]>(database.transaction('contentPacks').objectStore('contentPacks').getAll())
-    return records.map((record) => ({ ...record, pack: validateContentPack(record.pack).pack })).sort((left, right) => left.id.localeCompare(right.id) || left.version.localeCompare(right.version))
+    return records.map((record) => ({ ...record, pack: validateContentPack(record.pack).pack })).sort((left, right) => compareStableText(left.id, right.id) || compareStableText(left.version, right.version))
   }
   async deleteContentPack(id: string, version: string): Promise<void> {
     const database = await this.open(); const transaction = database.transaction('contentPacks', 'readwrite')
@@ -170,14 +171,14 @@ export class WorkbenchDatabase {
   async listRuns(): Promise<RunRecord[]> {
     const database = await this.open()
     const records = await request<RunRecord[]>(database.transaction('runs').objectStore('runs').getAll())
-    return records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    return records.sort((a, b) => compareStableText(b.updatedAt, a.updatedAt))
   }
 
   async listSnapshots(runId?: string): Promise<SavedSnapshot[]> {
     const database = await this.open()
     const store = database.transaction('snapshots').objectStore('snapshots')
     const records = runId ? await request<SavedSnapshot[]>(store.index('runId').getAll(runId)) : await request<SavedSnapshot[]>(store.getAll())
-    return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    return records.sort((a, b) => compareStableText(b.createdAt, a.createdAt))
   }
 
   /**
@@ -208,7 +209,7 @@ export class WorkbenchDatabase {
       events: events.map(({ storageKey: _, ...event }) => event),
       statistics: statistics
         .map(({ storageKey: _, ...sample }) => sample)
-        .sort((first, second) => first.tick - second.tick || first.metricId.localeCompare(second.metricId)),
+        .sort((first, second) => first.tick - second.tick || compareStableText(first.metricId, second.metricId)),
       checkpoints: (await this.listSnapshots(runId))
         .filter((snapshot) => snapshot.kind === 'checkpoint')
         .slice(0, DEFAULT_CHECKPOINT_LIMIT)

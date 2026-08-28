@@ -29,6 +29,10 @@ const migrations = new Map<number, SnapshotMigration>([
   [40, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 41, state: { ...snapshot.state, config: { ...snapshot.state.config, infrastructureModelVersion: 1 }, infrastructure: createInfrastructureAssets({ roads: snapshot.state.world.roads ?? [], cells: snapshot.state.world.grid.cells, settlements: snapshot.state.world.settlements, markets: snapshot.state.markets, organizations: snapshot.state.organizations, tick: snapshot.state.tick }) } })],
   [41, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 42, state: { ...snapshot.state, config: { ...snapshot.state.config, economyModelVersion: 3 }, households: snapshot.state.households.map((household) => ({ ...household, ...(household.inventory ? { inventory: initializeGoods(household.inventory) } : {}) })), economy: createEconomyState(snapshot.state.markets, DEFAULT_PREINDUSTRIAL_PACK.economy.goods) } })],
   [42, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 43, state: { ...snapshot.state, economy: { ...snapshot.state.economy, wageTraces: [] } } })],
+  [43, (snapshot) => {
+    if (snapshot.engineVersion !== ENGINE_VERSION) throw new Error('Snapshot ordering semantics are incompatible with this engine version')
+    return { ...snapshot, schemaVersion: 44 }
+  }],
 ])
 
 export function migrateSnapshotSchema(value: unknown, targetSchema: number): SnapshotLike {

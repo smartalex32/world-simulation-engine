@@ -37,6 +37,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm check:determinism
       - run: pnpm test
       - run: pnpm build
       - run: pnpm test:e2e

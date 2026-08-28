@@ -1,5 +1,6 @@
 import { symmetricRoundDivision, assertPermille } from './math'
 import { COMMUNITY_EMERGENT_IDS, type CommunityActionTarget, type CommunityEmergentValues, type CommunityFeedbackEdgeDefinition, type CommunityFeedbackEvaluation, type CommunityFeedbackRegistry } from './types'
+import { compareStableText } from '../../shared/stableOrder'
 
 export const COMMUNITY_FEEDBACK_DEFINITIONS: readonly CommunityFeedbackEdgeDefinition[] = Object.freeze([
   { id: 'community-social-trust-socialize-utility', sourceId: 'community.emergent.socialTrust', targetId: 'decision.socialize.utility', weightPermille: 240, enabled: true, order: 10 },
@@ -18,7 +19,7 @@ export function createCommunityFeedbackRegistry(definitions: readonly CommunityF
     if (edge.targetId !== 'decision.socialize.utility' && edge.targetId !== 'decision.explore.utility') throw new Error(`Unknown community feedback target: ${edge.targetId}`)
     if (!Number.isSafeInteger(edge.weightPermille) || !Number.isSafeInteger(edge.order)) throw new Error(`Community feedback edge ${edge.id} requires integer weight and order`)
     return Object.freeze({ ...edge })
-  }).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+  }).sort((a, b) => a.order - b.order || compareStableText(a.id, b.id))
   const byTarget = new Map<CommunityActionTarget, readonly CommunityFeedbackEdgeDefinition[]>()
   for (const edge of sorted) byTarget.set(edge.targetId, Object.freeze([...(byTarget.get(edge.targetId) ?? []), edge]))
   return Object.freeze({ definitions: Object.freeze(sorted), getByTarget: (targetId: CommunityActionTarget) => byTarget.get(targetId) ?? EMPTY })

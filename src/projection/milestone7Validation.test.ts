@@ -3,6 +3,7 @@ import { SimulationEngine } from '../simulation/engine/engine'
 import { SimulationBatchScheduler, TelemetryBuffer } from '../worker/frameScheduler'
 import { WorkbenchProjectionBuilder, selectRegionSize } from './buildMapProjection'
 import { regionCount } from './chunks'
+import { compareStableText } from '../shared/stableOrder'
 import { MAX_ACTIVITY_MARKERS, MAX_HOUSEHOLD_MARKERS, MAX_POPULATION_MARKERS, MAX_RELATIONSHIP_SEGMENTS, MAX_TERRAIN_PRIMITIVES, type MapProjectionRequest } from './types'
 
 describe('milestone 7 projection validation', () => {
@@ -35,7 +36,7 @@ describe('milestone 7 projection validation', () => {
     const projection = new WorkbenchProjectionBuilder(source).build(source, request)
     const regions = projection.map.regions
 
-    expect(regions.map((region) => region.key)).toEqual([...regions].sort((a, b) => a.size - b.size || a.r - b.r || a.q - b.q || a.key.localeCompare(b.key)).map((region) => region.key))
+    expect(regions.map((region) => region.key)).toEqual([...regions].sort((a, b) => a.size - b.size || a.r - b.r || a.q - b.q || compareStableText(a.key, b.key)).map((region) => region.key))
     expect(regions.reduce((sum, region) => sum + region.cellCount, 0)).toBe(source.world.grid.cells.length)
     expect(regions.reduce((sum, region) => sum + region.populationCount, 0)).toBe(source.people.length)
     expect(projection.map.activityMarkers.reduce((sum, marker) => sum + marker.count, 0)).toBe(source.activityLocations.length)

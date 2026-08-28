@@ -1,6 +1,7 @@
 import { createSessionToken, hashPassword, hashSessionToken, requireRole, verifyPassword, type DraftAuditEntry, type DraftLease, type HostedAccount, type HostedSession, type WorldAccess, type WorldRole } from './collaboration'
 import { createHash } from 'node:crypto'
 import { canonicalStringify } from '../simulation/serialization/snapshot'
+import { compareStableText } from '../shared/stableOrder'
 
 export interface SharedWorld { id: string; name: string; ownerAccountId: string; currentRevision: number; createdAt: string; updatedAt: string }
 export interface SharedWorldDraftRevision { worldId: string; revision: number; parentRevision?: number; canonicalDigest: string; authorAccountId: string; payload: unknown; createdAt: string }
@@ -84,7 +85,7 @@ export class SharedWorldService {
   getWorld(worldId: string, accountId: string): SharedWorld { requireRole(this.member(worldId, accountId), 'owner', 'editor', 'viewer'); return structuredClone(this.world(worldId)) }
   listMembers(worldId: string, accountId: string): readonly WorldAccess[] {
     requireRole(this.member(worldId, accountId), 'owner', 'editor', 'viewer')
-    return Object.freeze([...this.access.values()].filter((entry) => entry.worldId === worldId).sort((a, b) => a.accountId.localeCompare(b.accountId)).map((entry) => structuredClone(entry)))
+    return Object.freeze([...this.access.values()].filter((entry) => entry.worldId === worldId).sort((a, b) => compareStableText(a.accountId, b.accountId)).map((entry) => structuredClone(entry)))
   }
   acquireLease(worldId: string, accountId: string, now: string, durationMs = 60_000): DraftLease {
     requireRole(this.member(worldId, accountId), 'owner', 'editor'); const existing = this.leases.get(worldId)
@@ -117,7 +118,7 @@ export class SharedWorldService {
     return { run: structuredClone(run), draft: structuredClone(draft.payload) }
   }
   getRun(worldId: string, runId: string, accountId: string): SharedWorldRun { requireRole(this.member(worldId, accountId), 'owner', 'editor', 'viewer'); const run = this.runs.get(runId); if (!run || run.worldId !== worldId) throw new Error('Shared world run does not exist'); return structuredClone(run) }
-  listRuns(worldId: string, accountId: string): readonly SharedWorldRun[] { requireRole(this.member(worldId, accountId), 'owner', 'editor', 'viewer'); return Object.freeze([...this.runs.values()].filter((run) => run.worldId === worldId).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.runId.localeCompare(b.runId)).map((run) => structuredClone(run))) }
+  listRuns(worldId: string, accountId: string): readonly SharedWorldRun[] { requireRole(this.member(worldId, accountId), 'owner', 'editor', 'viewer'); return Object.freeze([...this.runs.values()].filter((run) => run.worldId === worldId).sort((a, b) => compareStableText(a.createdAt, b.createdAt) || compareStableText(a.runId, b.runId)).map((run) => structuredClone(run))) }
   draftForRun(run: SharedWorldRun): unknown { const draft = this.revisions.get(run.worldId)?.find((entry) => entry.revision === run.revision); if (!draft) throw new Error('Shared world run revision is unavailable'); return structuredClone(draft.payload) }
   recordRunControl(run: SharedWorldRun, accountId: string, commandType: string, now: string): void {
     requireRole(this.member(run.worldId, accountId), 'owner')
@@ -129,7 +130,7 @@ export class SharedWorldService {
     const token = createSessionToken(); const record = Object.freeze({ id, accountId, tokenHash: hashSessionToken(token), scopes: Object.freeze([...new Set(scopes)].sort()), createdAt: now })
     this.tokens.set(id, record); return { token, record }
   }
-  listTokens(accountId: string): readonly Omit<SharedApiToken, 'tokenHash'>[] { return Object.freeze([...this.tokens.values()].filter((token) => token.accountId === accountId).sort((a, b) => a.id.localeCompare(b.id)).map(({ tokenHash: _, ...token }) => structuredClone(token))) }
+  listTokens(accountId: string): readonly Omit<SharedApiToken, 'tokenHash'>[] { return Object.freeze([...this.tokens.values()].filter((token) => token.accountId === accountId).sort((a, b) => compareStableText(a.id, b.id)).map(({ tokenHash: _, ...token }) => structuredClone(token))) }
   revokeToken(id: string, accountId: string): void { const token = this.tokens.get(id); if (!token || token.accountId !== accountId) throw new Error('Shared world authorization failed'); this.tokens.delete(id) }
   authenticateToken(token: string, scope: string, now = new Date().toISOString()): string {
     const hash = hashSessionToken(token)

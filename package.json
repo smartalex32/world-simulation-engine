@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "typecheck:hosted": "tsc -p tsconfig.hosted.json --pretty false",
+    "check:determinism": "node scripts/check-determinism-boundaries.mjs",
     "test": "node --env-file-if-exists=.env --env-file-if-exists=.env.development node_modules/vitest/vitest.mjs run",
     "test:watch": "node --env-file-if-exists=.env --env-file-if-exists=.env.development node_modules/vitest/vitest.mjs",
     "test:e2e": "node node_modules/@playwright/test/cli.js test",

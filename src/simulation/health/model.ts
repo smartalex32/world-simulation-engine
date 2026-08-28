@@ -2,6 +2,7 @@ import type { CohortInfectionTrace, FictionalInfectionTrace, HealthExposureState
 import type { FictionalPathogenDefinition } from '../../contentPacks/types'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { adjustPersonVariable, getPersonVariable } from '../variables/storage'
+import { compareStableText } from '../../shared/stableOrder'
 
 /** A fictional exposure/stress model, explicitly not a pathogen or medical model. */
 export const HEALTH_STRESS = Object.freeze({
@@ -20,7 +21,7 @@ export const FICTIONAL_PATHOGEN_STREAM = 'health.fictional-pathogen' as const
 export function progressFictionalInfections(people: readonly PersonState[], pathogens: readonly FictionalPathogenDefinition[], tick: number): FictionalInfectionTrace[] {
   const byId = new Map(pathogens.map((pathogen) => [pathogen.id, pathogen]))
   const traces: FictionalInfectionTrace[] = []
-  for (const person of [...people].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const person of [...people].sort((a, b) => compareStableText(a.id, b.id))) {
     const infection = person.fictionalInfection
     if (!infection || tick < infection.phaseEndsTick) continue
     const pathogen = byId.get(infection.pathogenId)
@@ -45,8 +46,8 @@ export function progressFictionalInfections(people: readonly PersonState[], path
 export function transmitFictionalPathogens(input: { peopleById: ReadonlyMap<string, PersonState>; occupantsByActivity: ReadonlyMap<string, readonly string[]>; pathogens: readonly FictionalPathogenDefinition[]; tick: number; nextPermille: () => number }): FictionalInfectionTrace[] {
   const pathogens = new Map(input.pathogens.map((pathogen) => [pathogen.id, pathogen]))
   const traces: FictionalInfectionTrace[] = []
-  for (const [, ids] of [...input.occupantsByActivity].sort(([a], [b]) => a.localeCompare(b))) {
-    const sources = [...ids].map((id) => input.peopleById.get(id)).filter((person): person is PersonState => person?.fictionalInfection?.phase === 'infectious').sort((a, b) => a.id.localeCompare(b.id))
+  for (const [, ids] of [...input.occupantsByActivity].sort(([a], [b]) => compareStableText(a, b))) {
+    const sources = [...ids].map((id) => input.peopleById.get(id)).filter((person): person is PersonState => person?.fictionalInfection?.phase === 'infectious').sort((a, b) => compareStableText(a.id, b.id))
     for (const candidateId of [...ids].sort()) {
       const candidate = input.peopleById.get(candidateId)
       if (!candidate || candidate.fictionalInfection) continue
@@ -66,10 +67,10 @@ export function transmitFictionalPathogens(input: { peopleById: ReadonlyMap<stri
 
 /** Exact aggregate analogue of daily phase progression and exposure pressure. */
 export function advanceCohortFictionalInfections(cohorts: readonly PopulationCohortState[], pathogens: readonly FictionalPathogenDefinition[], tick: number): CohortInfectionTrace[] {
-  const pathogen = [...pathogens].sort((a, b) => a.id.localeCompare(b.id))[0]
+  const pathogen = [...pathogens].sort((a, b) => compareStableText(a.id, b.id))[0]
   if (!pathogen) return []
   const traces: CohortInfectionTrace[] = []
-  for (const cohort of [...cohorts].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const cohort of [...cohorts].sort((a, b) => compareStableText(a.id, b.id))) {
     const state = cohort.fictionalInfection ?? { version: 1 as const, pathogenId: pathogen.id, incubatingCount: cohort.populationCount > 0 ? 1 : 0, infectiousCount: 0, immuneCount: 0, lastUpdatedTick: tick }
     const susceptibleCount = Math.max(0, cohort.populationCount - state.incubatingCount - state.infectiousCount - state.immuneCount)
     const newIncubatingCount = state.infectiousCount === 0 ? 0 : Math.min(susceptibleCount, Math.floor(susceptibleCount * state.infectiousCount * pathogen.transmissionPermille / Math.max(1, cohort.populationCount * 1000)))
@@ -88,7 +89,7 @@ export function advanceCohortFictionalInfections(cohorts: readonly PopulationCoh
 export function applyAnnualCohortInfectionMortality(cohorts: readonly PopulationCohortState[], pathogens: readonly FictionalPathogenDefinition[], tick: number): CohortInfectionTrace[] {
   const byId = new Map(pathogens.map((pathogen) => [pathogen.id, pathogen]))
   const traces: CohortInfectionTrace[] = []
-  for (const cohort of [...cohorts].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const cohort of [...cohorts].sort((a, b) => compareStableText(a.id, b.id))) {
     const state = cohort.fictionalInfection; const pathogen = state && byId.get(state.pathogenId)
     if (!state || !pathogen || state.infectiousCount === 0) continue
     const mortalityCount = Math.min(cohort.populationCount, Math.floor(state.infectiousCount * pathogen.annualMortalityPermille / 1000))

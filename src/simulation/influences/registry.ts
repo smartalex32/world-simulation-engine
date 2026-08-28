@@ -1,5 +1,6 @@
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { PERSON_VARIABLE_IDS } from '../variables/types'
+import { compareStableText } from '../../shared/stableOrder'
 import type {
   DecisionInfluenceTarget,
   InfluenceEdgeDefinition,
@@ -165,7 +166,7 @@ export function createInfluenceRegistry(
     return Object.freeze({ ...definition })
   })
 
-  frozenDefinitions.sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
+  frozenDefinitions.sort((left, right) => left.order - right.order || compareStableText(left.id, right.id))
 
   const definitionsByTarget = new Map<DecisionInfluenceTarget, readonly InfluenceEdgeDefinition[]>()
   const mutableIndex = new Map<DecisionInfluenceTarget, InfluenceEdgeDefinition[]>()

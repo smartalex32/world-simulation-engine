@@ -1,5 +1,6 @@
 import type { GeographicCell, PersonState, SettlementScale, SettlementState } from '../domain/types'
 import { hexDistance } from '../spatial/hex'
+import { compareStableText } from '../../shared/stableOrder'
 
 const ORDER: readonly SettlementScale[] = ['landmark', 'hamlet', 'village', 'town', 'city']
 const ENTRY: Record<SettlementScale, number> = { landmark: 0, hamlet: 1, village: 25, town: 100, city: 300 }
@@ -52,7 +53,7 @@ export function updateSettlementScales(input: { settlements: SettlementState[]; 
   const cellsById = new Map(input.cells.map((cell) => [cell.id, cell]))
   const waterCells = input.cells.filter((cell) => cell.terrain === 'water')
   const transitions: SettlementScaleTransition[] = []
-  for (const settlement of [...input.settlements].sort((first, second) => first.id.localeCompare(second.id))) {
+  for (const settlement of [...input.settlements].sort((first, second) => compareStableText(first.id, second.id))) {
     const anchor = cellsById.get(settlement.anchorCellId)
     const catchmentIds = settlement.catchmentCellIds ?? (anchor ? input.cells.filter((cell) => hexDistance(anchor, cell) <= SETTLEMENT_SCALE_RADIUS_CELLS).map((cell) => cell.id) : [])
     const catchment = new Set(catchmentIds)
