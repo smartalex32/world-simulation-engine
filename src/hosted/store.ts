@@ -5,7 +5,7 @@ import { compareStableText } from '../shared/stableOrder'
 export class MemoryHostedRunStore implements HostedRunStore, HostedJobStore, HostedRunMutationStore {
   private readonly records = new Map<string, HostedRunRecord>()
   private readonly jobs = new Map<string, HostedSimulationJob>()
-  private readonly mutations = new Map<string, string>()
+  private readonly mutations = new Map<string, { digest: string; fingerprint: string }>()
 
   async load(runId: string): Promise<HostedRunRecord | undefined> {
     const record = this.records.get(runId)
@@ -20,12 +20,12 @@ export class MemoryHostedRunStore implements HostedRunStore, HostedJobStore, Hos
     const record = validateHostedRunRecord(mutation.record)
     const key = `${record.runId}:${mutation.mutationId}`
     const previous = this.mutations.get(key)
-    if (previous !== undefined) return 'already-committed'
+    if (previous !== undefined) { if (previous.fingerprint !== mutation.mutationFingerprint) throw new Error('Hosted mutation ID was reused with a different request'); return 'already-committed' }
     const current = this.records.get(record.runId)
     if (!current || current.snapshot.state.tick !== mutation.expectedTick || current.snapshot.digest !== mutation.expectedDigest) throw new Error('Hosted job run state conflict')
     if (mutation.job) this.jobs.set(jobKey(mutation.job.runId, mutation.job.jobId), structuredClone(validateHostedJob(mutation.job)))
     this.records.set(record.runId, structuredClone(record))
-    this.mutations.set(key, record.snapshot.digest)
+    this.mutations.set(key, { digest: record.snapshot.digest, fingerprint: mutation.mutationFingerprint })
     return 'committed'
   }
   async list(ownerId: string): Promise<HostedRunRecord[]> { return [...this.records.values()].map((record) => validateHostedRunRecord(structuredClone(record))).filter((record) => record.ownerId === ownerId).sort((a, b) => compareStableText(a.runId, b.runId)) }

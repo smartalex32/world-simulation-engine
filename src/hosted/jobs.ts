@@ -185,9 +185,9 @@ export class HostedSimulationJobManager {
     if (observation.tick === job.pendingQuantum.expectedTick && observation.digest === job.pendingQuantum.expectedDigest) {
       return this.save({ ...job, pendingQuantum: undefined, updatedAt: new Date().toISOString() })
     }
-    if (observation.tick === job.pendingQuantum.expectedTick + job.pendingQuantum.ticks) {
-      return this.completeQuantum(job, job.pendingQuantum, observation)
-    }
+    // A tick count alone is not evidence that this job owned the mutation.
+    // Transactional stores persist the completed job with the same mutation;
+    // legacy ambiguous records fail safely instead of stealing other work.
     return this.fail(job, new Error('Hosted job run state conflict'))
   }
 

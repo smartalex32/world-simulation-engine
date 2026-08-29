@@ -31,7 +31,7 @@ do not change a canonical engine digest.
 
 `DATABASE_MIGRATION_VERSION` is the hosted storage contract. This release
 accepts the current generation and the two immediately preceding generations
-(5, 6, and 7). A database newer than this application is rejected. Server
+(6, 7, and 8). A database newer than this application is rejected. Server
 startup refuses an older or uninitialized database; only the guarded migration
 command can bring it forward.
 

@@ -10,7 +10,7 @@ import { SharedWorldService, type SharedWorldServiceState } from './sharedWorlds
 import { HostedEventStream, type HostedEventStreamState } from './eventStream'
 
 /** Current hosted database generation; migrations retain the two prior generations. */
-export const DATABASE_MIGRATION_VERSION = 7
+export const DATABASE_MIGRATION_VERSION = 8
 
 /**
  * PostgreSQL durable store. Payload bytes are canonical JSON compressed with
@@ -107,6 +107,10 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
         )`)
         await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (7)')
       }
+      if (version < 8) {
+        await client.query("ALTER TABLE hosted_run_mutations ADD COLUMN IF NOT EXISTS mutation_fingerprint text NOT NULL DEFAULT ''")
+        await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (8)')
+      }
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
@@ -142,18 +146,19 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
-      const existing = await client.query<{ snapshot_digest: string }>('SELECT snapshot_digest FROM hosted_run_mutations WHERE run_id = $1 AND mutation_id = $2 FOR UPDATE', [valid.runId, mutation.mutationId])
-      if (existing.rows[0]) {
-        await client.query('COMMIT'); return 'already-committed'
-      }
       const current = await client.query<StoredPayload>('SELECT snapshot_payload AS payload, snapshot_sha256 AS sha, snapshot_encoding AS encoding FROM hosted_runs WHERE run_id = $1 FOR UPDATE', [valid.runId])
       if (!current.rows[0]) throw new Error('Hosted run state conflict')
+      const existing = await client.query<{ snapshot_digest: string; mutation_fingerprint: string }>('SELECT snapshot_digest, mutation_fingerprint FROM hosted_run_mutations WHERE run_id = $1 AND mutation_id = $2', [valid.runId, mutation.mutationId])
+      if (existing.rows[0]) {
+        if (existing.rows[0].mutation_fingerprint !== mutation.mutationFingerprint) throw new Error('Hosted mutation ID was reused with a different request')
+        await client.query('COMMIT'); return 'already-committed'
+      }
       const currentRecord = validateHostedRunRecord(decodeStoredPayload(current.rows[0]))
       if (currentRecord.snapshot.state.tick !== mutation.expectedTick || currentRecord.snapshot.digest !== mutation.expectedDigest) throw new Error('Hosted job run state conflict')
       await this.saveRun(client, valid, encodePayload(valid))
       if (mutation.events.length || mutation.statistics.length) await this.insertTelemetry(client, valid.runId, mutation.events, mutation.statistics)
       if (mutation.job) await this.saveJobWithClient(client, mutation.job)
-      await client.query('INSERT INTO hosted_run_mutations(run_id, mutation_id, snapshot_digest) VALUES ($1,$2,$3)', [valid.runId, mutation.mutationId, valid.snapshot.digest])
+      await client.query('INSERT INTO hosted_run_mutations(run_id, mutation_id, snapshot_digest, mutation_fingerprint) VALUES ($1,$2,$3,$4)', [valid.runId, mutation.mutationId, valid.snapshot.digest, mutation.mutationFingerprint])
       await client.query('COMMIT'); return 'committed'
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }

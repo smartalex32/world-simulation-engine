@@ -31,6 +31,7 @@ export interface HostedRunMutation {
   expectedTick: number
   expectedDigest: string
   mutationId: string
+  mutationFingerprint: string
   record: HostedRunRecord
   events: readonly SimulationEvent[]
   statistics: readonly StatisticSample[]
