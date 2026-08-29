@@ -97,6 +97,7 @@ export class WorkbenchProjectionBuilder {
   private householdEntriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]> = new Map()
   private activityCellById: ReadonlyMap<string, string> = new Map()
   private householdCellById: ReadonlyMap<string, string> = new Map()
+  private populationByCellId: ReadonlyMap<string, number> = new Map()
   private readonly routeCache = new Map<string, RouteHomeProjection>()
 
   constructor(source: WorldProjection) {
@@ -180,8 +181,7 @@ export class WorkbenchProjectionBuilder {
     const size = selectRegionSize(bounds, request.projectedHexRadius)
     const exact = size === 1
     const livingPeople = source.people.filter((person) => person.lifeStatus !== 'dead')
-    const populationByCellId = countPeopleByCell(livingPeople)
-    for (const [cellId, count] of cohortPopulationByCell(source.cohorts)) populationByCellId.set(cellId, (populationByCellId.get(cellId) ?? 0) + count)
+    const populationByCellId = this.populationByCellId
     const environmentCells = exact ? cellsInBounds(this.grid, bounds) : request.focusCellId ? [this.cellById.get(request.focusCellId)].filter((cell): cell is GeographicCell => cell !== undefined) : []
     this.environmentByCellId = deriveLivingEnvironmentCells(environmentCells, source.tick, populationByCellId, this.hydrologyByCellId)
     const communitiesById = new Map(source.communities.map((community) => [community.catchment.id, community]))
@@ -241,6 +241,9 @@ export class WorkbenchProjectionBuilder {
     this.householdEntriesByChunk = buildLocationChunkIndex(householdEntries, this.cellById)
     this.activityCellById = new Map(activityEntries.map(({ id, cellId }) => [id, cellId]))
     this.householdCellById = new Map(householdEntries.map(({ id, cellId }) => [id, cellId]))
+    const population = countPeopleByCell(source.people.filter((person) => person.lifeStatus !== 'dead'))
+    for (const [cellId, count] of cohortPopulationByCell(source.cohorts)) population.set(cellId, (population.get(cellId) ?? 0) + count)
+    this.populationByCellId = population
   }
 
   /** Topology invalidation replaces every terrain-derived cache as one unit. */
@@ -286,10 +289,10 @@ export class WorkbenchProjectionBuilder {
 
   private aggregateRegions(source: WorldProjection, bounds: AxialViewportBounds, size: ProjectionRegionSize, includeFood: boolean, measureId?: CommunityVariableId): AggregateMapRegion[] {
     const result: AggregateMapRegion[] = []
-    const populationByRegion = countPeopleByRegion(source.people, this.cellById, size)
-    for (const [cellId, count] of cohortPopulationByCell(source.cohorts)) {
+    const populationByRegion = new Map<string, number>()
+    for (const [cellId, count] of this.populationByCellId) {
       const cell = this.cellById.get(cellId)
-      if (cell) populationByRegion.set(regionKey(size, cell.q, cell.r), (populationByRegion.get(regionKey(size, cell.q, cell.r)) ?? 0) + count)
+      if (cell && inBounds(cell, bounds)) populationByRegion.set(regionKey(size, cell.q, cell.r), (populationByRegion.get(regionKey(size, cell.q, cell.r)) ?? 0) + count)
     }
     const communityById = new Map(source.communities.map((community) => [community.catchment.id, community]))
     for (let r = alignRegionOrigin(bounds.minR, size); r <= bounds.maxR; r += size) {
