@@ -6,7 +6,6 @@ import { HostedSimulationJobManager } from './jobs'
 import { HostedRunService } from './runService'
 import { MemoryHostedRunStore } from './store'
 import { DEFAULT_PREINDUSTRIAL_PACK, MemoryContentPackCatalog } from '../contentPacks'
-import { SharedWorldService } from './sharedWorlds'
 import { HostedEventStream } from './eventStream'
 import { SharedRunCoordinator } from './sharedRuns'
 
@@ -40,7 +39,7 @@ describe('hosted HTTP boundary', () => {
 describe('shared world HTTP boundary', () => {
   it('uses sessions for authorized role, lease, revision, and audit operations', async () => {
     const store = new MemoryHostedRunStore(); const service = await HostedRunService.open({ runId: 'shared-run', ownerId: 'owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('shared-seed') }, store)
-    const shared = new SharedWorldService(); const server = createHostedHttpServer({ runId: 'shared-run', ownerToken: 'secret', service, jobs: new HostedSimulationJobManager(service, store, 'owner', 'secret'), sharedWorlds: shared, eventStream: new HostedEventStream() })
+    const shared = await store.loadSharedWorldService(); const server = createHostedHttpServer({ runId: 'shared-run', ownerToken: 'secret', service, jobs: new HostedSimulationJobManager(service, store, 'owner', 'secret'), sharedWorlds: shared, sharedStore: store, eventStream: new HostedEventStream() })
     server.listen(0, '127.0.0.1'); await once(server, 'listening'); const address = server.address(); if (!address || typeof address === 'string') throw new Error('Expected TCP')
     try {
       const base = `http://127.0.0.1:${address.port}`; const json = { 'content-type': 'application/json' }
@@ -53,6 +52,13 @@ describe('shared world HTTP boundary', () => {
       const lease = await (await fetch(`${base}/api/v1/worlds/world-1/lease`, { method: 'POST', headers, body: '{}' })).json() as { leaseId: string; revision: number }
       const revision = await (await fetch(`${base}/api/v1/worlds/world-1/revisions`, { method: 'POST', headers, body: JSON.stringify({ leaseId: lease.leaseId, expectedRevision: lease.revision, clientMutationId: 'edit-1', payload: { terrain: 'hills' } }) })).json() as { revision: number }
       expect(revision.revision).toBe(2)
+      const storageRevisionBeforeRetry = shared.storageRevision()
+      const retry = await (await fetch(`${base}/api/v1/worlds/world-1/revisions`, { method: 'POST', headers, body: JSON.stringify({ leaseId: lease.leaseId, expectedRevision: lease.revision, clientMutationId: 'edit-1', payload: { terrain: 'hills' } }) })).json() as { revision: number }
+      expect(retry.revision).toBe(2)
+      expect(shared.storageRevision()).toBe(storageRevisionBeforeRetry)
+      expect((await store.outboxAfter()).filter((event) => event.topic === 'draft.revised')).toHaveLength(1)
+      expect((await store.outboxAfter(1)).every((event) => event.id > 1)).toBe(true)
+      expect((await fetch(`${base}/api/v1/events`, { headers: { authorization: `Bearer ${session.token}`, 'last-event-id': '-1' } })).status).toBe(400)
       expect((await (await fetch(`${base}/api/v1/worlds/world-1/audits`, { headers })).json()) as unknown[]).toHaveLength(3)
       expect((await fetch(`${base}/api/v1/worlds/world-1/revisions`, { method: 'POST', headers, body: JSON.stringify({ leaseId: lease.leaseId, expectedRevision: 1, clientMutationId: 'stale', payload: {} }) })).status).toBe(409)
       expect((await fetch(`${base}/api/v1/worlds/world-1`, { headers: { authorization: `Bearer ${apiToken.token}` } })).status).toBe(200)
@@ -60,12 +66,24 @@ describe('shared world HTTP boundary', () => {
       expect((await fetch(`${base}/api/v1/tokens/read-token`, { method: 'DELETE', headers })).status).toBe(204)
     } finally { server.close(); await once(server, 'close') }
   })
+
+  it('keeps live and durable shared state unchanged when its transaction fails', async () => {
+    const store = new FailingSharedStore(); const service = await HostedRunService.open({ runId: 'shared-fault-run', ownerId: 'owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('shared-fault') }, store); const shared = await store.loadSharedWorldService()
+    const server = createHostedHttpServer({ runId: 'shared-fault-run', ownerToken: 'secret', service, jobs: new HostedSimulationJobManager(service, store, 'owner', 'secret'), sharedWorlds: shared, sharedStore: store })
+    server.listen(0, '127.0.0.1'); await once(server, 'listening'); const address = server.address(); if (!address || typeof address === 'string') throw new Error('Expected TCP')
+    try {
+      const url = `http://127.0.0.1:${address.port}/api/v1/accounts`; const request = { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'owner', email: 'owner@example.test', password: 'correct-horse-battery' }) }
+      store.failSharedCommit = true; expect((await fetch(url, request)).status).toBe(500)
+      expect(shared.snapshotState().accounts).toHaveLength(0); expect((await store.loadSharedWorldService()).snapshotState().accounts).toHaveLength(0)
+      store.failSharedCommit = false; expect((await fetch(url, request)).status).toBe(201)
+    } finally { server.close(); await once(server, 'close') }
+  })
 })
 
 describe('shared authoritative runs', () => {
   it('commits an immutable revision into an owner-controlled server run with viewer projections', async () => {
-    const store = new MemoryHostedRunStore(); const service = await HostedRunService.open({ runId: 'host', ownerId: 'host-owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('host') }, store); const shared = new SharedWorldService()
-    const server = createHostedHttpServer({ runId: 'host', ownerToken: 'secret', service, jobs: new HostedSimulationJobManager(service, store, 'host-owner', 'secret'), sharedWorlds: shared, eventStream: new HostedEventStream(), sharedRuns: new SharedRunCoordinator(store) })
+    const store = new MemoryHostedRunStore(); const service = await HostedRunService.open({ runId: 'host', ownerId: 'host-owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('host') }, store); const shared = await store.loadSharedWorldService()
+    const server = createHostedHttpServer({ runId: 'host', ownerToken: 'secret', service, jobs: new HostedSimulationJobManager(service, store, 'host-owner', 'secret'), sharedWorlds: shared, sharedStore: store, eventStream: new HostedEventStream(), sharedRuns: new SharedRunCoordinator(store) })
     server.listen(0, '127.0.0.1'); await once(server, 'listening'); const address = server.address(); if (!address || typeof address === 'string') throw new Error('Expected TCP')
     try {
       const base = `http://127.0.0.1:${address.port}`; const json = { 'content-type': 'application/json' }
@@ -78,7 +96,10 @@ describe('shared authoritative runs', () => {
       expect((await fetch(`${base}/api/v1/worlds/world-1/runs/shared-run/projection`, { headers: viewerHeaders })).status).toBe(200)
       expect((await fetch(`${base}/api/v1/worlds/world-1/runs/shared-run/commands`, { method: 'POST', headers: viewerHeaders, body: JSON.stringify({ type: 'STEP', requestId: 'viewer-step' }) })).status).toBe(401)
       expect((await fetch(`${base}/api/v1/worlds/world-1/runs/shared-run/commands`, { method: 'POST', headers: ownerHeaders, body: JSON.stringify({ type: 'STEP', requestId: 'owner-step' }) })).status).toBe(200)
+      expect((await fetch(`${base}/api/v1/worlds/world-1/runs/shared-run/commands`, { method: 'POST', headers: ownerHeaders, body: JSON.stringify({ type: 'STEP', requestId: 'owner-step' }) })).status).toBe(200)
       expect(((await (await fetch(`${base}/api/v1/worlds/world-1/audits`, { headers: ownerHeaders })).json()) as { action: string }[]).some((entry) => entry.action === 'run.command.step')).toBe(true)
+      expect((await store.loadSharedWorldService()).listAudits('world-1', 'owner').filter((entry) => entry.action === 'run.command.step')).toHaveLength(1)
+      expect((await store.outboxAfter()).filter((event) => event.topic === 'run.command')).toHaveLength(1)
     } finally { server.close(); await once(server, 'close') }
   })
 })
@@ -95,3 +116,8 @@ describe('hosted content-pack boundary', () => {
     } finally { server.close(); await once(server, 'close') }
   })
 })
+
+class FailingSharedStore extends MemoryHostedRunStore {
+  failSharedCommit = false
+  override async commitSharedWorldMutation(...args: Parameters<MemoryHostedRunStore['commitSharedWorldMutation']>) { if (this.failSharedCommit) throw new Error('injected shared persistence failure'); return super.commitSharedWorldMutation(...args) }
+}

@@ -30,6 +30,7 @@ export class HostedSimulationJobManager {
       const now = new Date().toISOString()
       const created: HostedSimulationJob = {
         version: HOSTED_JOB_VERSION,
+        recordRevision: 1,
         jobId: request.jobId,
         runId: this.service.runId(),
         ownerId: this.ownerId,
@@ -46,7 +47,7 @@ export class HostedSimulationJobManager {
         createdAt: now,
         updatedAt: now,
       }
-      await this.store.saveJob(created)
+      await this.store.saveJob(created, 0)
       return created
     })
     this.schedule()
@@ -71,8 +72,7 @@ export class HostedSimulationJobManager {
       if (isTerminal(job.status)) return job
       const status = job.status === 'queued' ? 'cancelled' as const : 'cancelling' as const
       const next = { ...job, status, updatedAt: new Date().toISOString() }
-      await this.store.saveJob(next)
-      return next
+      return this.save(next)
     })
     this.schedule()
     return updated
@@ -166,11 +166,13 @@ export class HostedSimulationJobManager {
 
     let observation: HostedRunObservation
     try {
-      observation = await this.service.advanceJob(this.ownerToken, { tick: pending.expectedTick, digest: pending.expectedDigest }, pending.ticks)
+      observation = await this.service.advanceJob(this.ownerToken, { tick: pending.expectedTick, digest: pending.expectedDigest }, pending.ticks, (after) => completedQuantum(job, pending, after))
     } catch (error) {
       await this.fail(job, error)
       return
     }
+    // A transactional store may already have persisted the transition. The
+    // reconciliation helper recognizes that committed state without rewriting it.
     await this.commitQuantum(jobId, pending, observation)
   }
 
@@ -183,16 +185,17 @@ export class HostedSimulationJobManager {
     if (observation.tick === job.pendingQuantum.expectedTick && observation.digest === job.pendingQuantum.expectedDigest) {
       return this.save({ ...job, pendingQuantum: undefined, updatedAt: new Date().toISOString() })
     }
-    if (observation.tick === job.pendingQuantum.expectedTick + job.pendingQuantum.ticks) {
-      return this.completeQuantum(job, job.pendingQuantum, observation)
-    }
+    // A tick count alone is not evidence that this job owned the mutation.
+    // Transactional stores persist the completed job with the same mutation;
+    // legacy ambiguous records fail safely instead of stealing other work.
     return this.fail(job, new Error('Hosted job run state conflict'))
   }
 
   private async commitQuantum(jobId: string, pending: NonNullable<HostedSimulationJob['pendingQuantum']>, observation: HostedRunObservation): Promise<HostedSimulationJob> {
     return this.mutate(async () => {
       const latest = await this.required(jobId)
-      if (!latest.pendingQuantum || latest.pendingQuantum.expectedTick !== pending.expectedTick || latest.pendingQuantum.expectedDigest !== pending.expectedDigest) {
+      if (!latest.pendingQuantum) return latest
+      if (latest.pendingQuantum.expectedTick !== pending.expectedTick || latest.pendingQuantum.expectedDigest !== pending.expectedDigest) {
         return this.fail(latest, new Error('Hosted job run state conflict'))
       }
       return this.completeQuantum(latest, pending, observation)
@@ -226,7 +229,11 @@ export class HostedSimulationJobManager {
     }
   }
 
-  private async save(job: HostedSimulationJob): Promise<HostedSimulationJob> { await this.store.saveJob(job); return job }
+  private async save(job: HostedSimulationJob): Promise<HostedSimulationJob> {
+    const next = { ...job, recordRevision: job.recordRevision + 1 }
+    await this.store.saveJob(next, job.recordRevision)
+    return next
+  }
   private async required(jobId: string): Promise<HostedSimulationJob> {
     const job = await this.get(jobId)
     if (!job) throw new Error(`Hosted job not found: ${jobId}`)
@@ -242,6 +249,10 @@ export class HostedSimulationJobManager {
 }
 
 function isTerminal(status: HostedSimulationJob['status']): boolean { return status === 'cancelled' || status === 'completed' || status === 'failed' }
+function completedQuantum(job: HostedSimulationJob, pending: NonNullable<HostedSimulationJob['pendingQuantum']>, observation: HostedRunObservation): HostedSimulationJob {
+  const advancedTicks = job.advancedTicks + pending.ticks; const completed = advancedTicks >= job.totalTicks; const cancelled = job.status === 'cancelling'; const checkpoint = completed || cancelled || observation.tick - job.lastCheckpointTick >= job.checkpointIntervalTicks
+  return { ...job, recordRevision: job.recordRevision + 1, status: cancelled ? 'cancelled' : completed ? 'completed' : 'running', advancedTicks, committedTick: observation.tick, committedDigest: observation.digest, pendingQuantum: undefined, lastCheckpointTick: checkpoint ? observation.tick : job.lastCheckpointTick, updatedAt: new Date().toISOString() }
+}
 
 function failureFor(error: unknown, fallback: HostedJobFailure['code'] = 'advance-failed'): HostedJobFailure {
   const message = error instanceof Error ? error.message : String(error)

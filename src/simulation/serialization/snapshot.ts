@@ -70,7 +70,12 @@ export async function createSnapshot(state: SimulationState): Promise<SnapshotEn
  * Snapshot payloads carry only its stable reference so content is never silently
  * embedded, reinterpreted, or changed by a later pack edit. */
 export async function validateSnapshot(value: unknown, contentPack: ContentPack = DEFAULT_PREINDUSTRIAL_PACK): Promise<SnapshotEnvelope> {
+  const source = structuredClone(value) as Partial<SnapshotEnvelope>
   const snapshot = migrateSnapshotSchema(value, SNAPSHOT_SCHEMA_VERSION) as Partial<SnapshotEnvelope>
+  if (source.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) {
+    if (!source.state || typeof source.digest !== 'string' || await stateDigest(source.state) !== source.digest) throw new Error('Snapshot digest does not match its contents')
+    if (snapshot.state) snapshot.digest = await stateDigest(snapshot.state)
+  }
   if (snapshot.engineVersion !== ENGINE_VERSION) throw new Error(`Unsupported engine version: ${String(snapshot.engineVersion)}`)
   if (!snapshot.state || typeof snapshot.digest !== 'string') throw new Error('Snapshot is missing state or digest')
   if (snapshot.state.config?.baseTickHours !== 1 || !Number.isSafeInteger(snapshot.state.tick) || snapshot.state.tick < 0) {

@@ -48,7 +48,9 @@ export function generateValley(seed: string, width = 32, height = 24, options: {
       name: options.name ?? 'Seeded Valley',
       scale: fixedWorldScale(options.hexRadiusMeters),
       grid: { width, height, cells: applyResourceCapacityOverrides(applyTerrainOverrides(applyElevationOverrides(cells, options.elevationOverrides ?? []), options.terrainOverrides ?? []), options.resourceCapacityOverrides ?? []) },
-      settlements: [...(options.settlements ?? [])],
+      // The generated world owns mutable runtime settlement state. Keep it
+      // disjoint from the immutable authoring request retained in config.
+      settlements: (options.settlements ?? []).map((settlement) => structuredClone(settlement)),
       ...(options.roads?.length ? { roads: options.roads.map((road) => ({ id: road.id, cellIds: [...road.cellIds] })) } : {}),
     },
     random,

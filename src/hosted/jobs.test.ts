@@ -72,10 +72,10 @@ describe('hosted simulation jobs', () => {
     const observation = await service.observe('secret')
     const now = new Date().toISOString()
     await store.saveJob({
-      version: HOSTED_JOB_VERSION, jobId: 'resume', runId: 'conflict', ownerId: 'owner', status: 'running', queueOrder: 1,
+      version: HOSTED_JOB_VERSION, recordRevision: 1, jobId: 'resume', runId: 'conflict', ownerId: 'owner', status: 'running', queueOrder: 1,
       startTick: observation.tick, totalTicks: 48, advancedTicks: 0, committedTick: observation.tick, committedDigest: observation.digest,
       quantumTicks: 24, checkpointIntervalTicks: 24, lastCheckpointTick: observation.tick, createdAt: now, updatedAt: now,
-    })
+    }, 0)
     await expect(manager.executeDirect({ type: 'STEP', requestId: 'blocked-step', count: 1 })).rejects.toThrow('owned by an active hosted job')
     await service.execute('secret', { type: 'STEP', requestId: 'outside-job', count: 24 })
     const failed = await manager.drain('resume')
@@ -84,33 +84,37 @@ describe('hosted simulation jobs', () => {
     expect(await service.tick('secret')).toBe(24)
   })
 
-  it('reconciles a job-owned quantum persisted before a simulated crash', async () => {
-    const store = new FailAfterRunCommitStore()
+  it('recovers a transactionally committed job quantum after restart', async () => {
+    const store = new MemoryHostedRunStore()
     const firstService = await HostedRunService.open(bootstrap('restart'), store)
     const first = new HostedSimulationJobManager(firstService, store, 'owner', 'secret')
     await first.start({ jobId: 'resume', totalTicks: 48, quantumTicks: 24 })
-    await waitFor(() => first.failures().length > 0)
+    await waitFor(async () => (await first.get('resume'))?.advancedTicks === 24)
 
     const restarted = new HostedSimulationJobManager(await HostedRunService.open(bootstrap('restart'), store), store, 'owner', 'secret')
     const completed = await restarted.drain('resume')
     expect(completed).toMatchObject({ status: 'completed', advancedTicks: 48, committedTick: 48 })
   })
+
+  it('rejects a stale job progress writer instead of blindly overwriting newer progress', async () => {
+    const store = new MemoryHostedRunStore(); const service = await HostedRunService.open(bootstrap('job-cas'), store); const observation = await service.observe('secret'); const now = new Date().toISOString()
+    const initial: HostedSimulationJob = {
+      version: HOSTED_JOB_VERSION, recordRevision: 1, jobId: 'cas', runId: 'job-cas', ownerId: 'owner', status: 'running', queueOrder: 1,
+      startTick: 0, totalTicks: 48, advancedTicks: 0, committedTick: observation.tick, committedDigest: observation.digest,
+      quantumTicks: 24, checkpointIntervalTicks: 24, lastCheckpointTick: 0, createdAt: now, updatedAt: now,
+    }
+    await store.saveJob(initial, 0)
+    const [first, stale] = await Promise.all([store.loadJob('job-cas', 'cas'), store.loadJob('job-cas', 'cas')])
+    if (!first || !stale) throw new Error('Expected job candidates')
+    await store.saveJob({ ...first, recordRevision: 2, advancedTicks: 24, committedTick: 24 }, 1)
+    await expect(store.saveJob({ ...stale, recordRevision: 2, status: 'failed' }, 1)).rejects.toThrow('job state conflict')
+    expect(await store.loadJob('job-cas', 'cas')).toMatchObject({ recordRevision: 2, advancedTicks: 24, status: 'running' })
+  })
 })
 
-class FailAfterRunCommitStore extends MemoryHostedRunStore {
-  private failed = false
-  override async saveJob(job: HostedSimulationJob): Promise<void> {
-    if (!this.failed && job.status === 'running' && job.advancedTicks > 0 && job.pendingQuantum === undefined) {
-      this.failed = true
-      throw new Error('Injected job record persistence failure')
-    }
-    await super.saveJob(job)
-  }
-}
-
-async function waitFor(condition: () => boolean): Promise<void> {
+async function waitFor(condition: () => boolean | Promise<boolean>): Promise<void> {
   for (let attempts = 0; attempts < 100; attempts += 1) {
-    if (condition()) return
+    if (await condition()) return
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
   throw new Error('Timed out waiting for hosted background work')

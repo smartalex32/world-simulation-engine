@@ -20,13 +20,21 @@ describe('snapshot migration registry', () => {
 
   it('rejects old-engine ordering semantics before any intermediate migration can relabel them', () => {
     const state = { economy: { version: 1, markets: [], tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 } }
-    expect(() => migrateSnapshotSchema({ schemaVersion: 42, engineVersion: '0.43.0', state, digest: 'digest' }, 44)).toThrow('ordering semantics')
-    expect(() => migrateSnapshotSchema({ schemaVersion: 43, engineVersion: '0.44.0', state, digest: 'digest' }, 44)).toThrow('ordering semantics')
+    expect(() => migrateSnapshotSchema({ schemaVersion: 42, engineVersion: '0.43.0', state, digest: 'digest' }, 45)).toThrow('ordering semantics')
+    expect(() => migrateSnapshotSchema({ schemaVersion: 43, engineVersion: '0.44.0', state, digest: 'digest' }, 45)).toThrow('ordering semantics')
   })
 
-  it('advances a schema-43 fixture created by the current engine', () => {
+  it('advances a schema-43 fixture created with stable ordering', () => {
     const state = { economy: { version: 1, markets: [], tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 } }
-    expect(migrateSnapshotSchema({ schemaVersion: 43, engineVersion: ENGINE_VERSION, state, digest: 'digest' }, 44)).toMatchObject({ schemaVersion: 44, engineVersion: ENGINE_VERSION })
+    expect(migrateSnapshotSchema({ schemaVersion: 43, engineVersion: '0.45.0', state, digest: 'digest' }, 44)).toMatchObject({ schemaVersion: 44, engineVersion: '0.45.0' })
+  })
+
+  it('removes derived runtime settlement fields from the retained creation request', () => {
+    const authored = { id: 'settlement-1', name: 'One', anchorCellId: '0,0' }
+    const runtime = { ...authored, scale: 'hamlet', regional: { version: 1, status: 'active' } }
+    const state = { config: { worldCreation: { settlements: [runtime] } }, world: { settlements: [runtime] } }
+    const migrated = migrateSnapshotSchema({ schemaVersion: 44, engineVersion: '0.45.0', state, digest: 'digest' }, 45)
+    expect(migrated).toMatchObject({ schemaVersion: 45, engineVersion: ENGINE_VERSION, state: { config: { worldCreation: { settlements: [authored] } }, world: { settlements: [runtime] } } })
   })
 
   it('rejects schemas outside the explicit rolling window', () => {

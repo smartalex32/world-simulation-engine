@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { SimulationEngine } from '../engine/engine'
 import { ENGINE_VERSION, KNOWLEDGE_MODEL_VERSION, SNAPSHOT_SCHEMA_VERSION } from '../domain/types'
-import { createSnapshot, canonicalStringify, validateSnapshot } from './snapshot'
+import { defaultWorldCreationRequest } from '../domain/worldCreation'
+import { createSnapshot, canonicalStringify, stateDigest, validateSnapshot } from './snapshot'
 
 describe('canonical serialization', () => {
   it('sorts object keys recursively without reordering arrays', () => {
@@ -35,6 +36,22 @@ describe('canonical serialization', () => {
       const legacy = { ...structuredClone(current), schemaVersion }
       await expect(validateSnapshot(legacy)).resolves.toEqual(current)
     }
+  })
+
+  it('repairs schema-44 creation input contaminated by runtime settlement state', async () => {
+    const creation = defaultWorldCreationRequest('schema-44-settlement-repair')
+    creation.settlements = [{ id: 'settlement-one', name: 'One', anchorCellId: '8,8' }]
+    const current = await SimulationEngine.create(creation).snapshot()
+    const legacy = structuredClone(current) as any
+    legacy.schemaVersion = 44
+    legacy.engineVersion = '0.45.0'
+    legacy.state.config.worldCreation.settlements = structuredClone(legacy.state.world.settlements)
+    legacy.digest = await stateDigest(legacy.state)
+
+    const restored = await validateSnapshot(legacy)
+    expect(restored.state.config.worldCreation.settlements).toEqual(creation.settlements)
+    expect(restored.state.world.settlements[0]).toHaveProperty('regional')
+    expect(restored.digest).toBe(await stateDigest(restored.state))
   })
 
   it('rejects unsupported household, activity, development, community, and life-cycle registry versions', async () => {
