@@ -16,6 +16,7 @@ import { createSnapshot } from '../serialization/snapshot'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { getPersonVariable, setPersonVariable } from '../variables/storage'
 import { PERSON_VARIABLE_IDS } from '../variables/types'
+import { compareStableText } from '../../shared/stableOrder'
 import { createCommunityState, createDailyCommunityCounters, createTwoCatchmentGeography } from '../community'
 
 function expectAllVariablesBounded(projection: WorldProjection): void {
@@ -81,7 +82,7 @@ async function controlledSnapshot(seed: string, personCount: number): Promise<Sn
     createCommonsActivity(cell.id),
     createCommonsActivity(secondCell.id),
     ...state.households.map((household) => createHouseholdHomeActivity(household.id, cell.id)),
-  ].sort((first, second) => first.id.localeCompare(second.id))
+  ].sort((first, second) => compareStableText(first.id, second.id))
   state.relationships = []
   state.dailySpatialCounters = { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 }
   state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }

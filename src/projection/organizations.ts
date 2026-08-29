@@ -1,16 +1,17 @@
 import type { OrganizationState, RelationshipState } from '../simulation/domain/types'
 import type { ProjectedOrganizationProfile } from './types'
+import { compareStableText } from '../shared/stableOrder'
 
 /**
  * Read-only group evidence. Membership alone creates neither a relationship,
  * reputation, shared wealth, nor a behavioral modifier.
  */
 export function buildProjectedOrganizationProfiles(organizations: readonly OrganizationState[], relationships: readonly RelationshipState[]): ProjectedOrganizationProfile[] {
-  return [...organizations].sort((first, second) => first.id.localeCompare(second.id)).map((organization) => {
+  return [...organizations].sort((first, second) => compareStableText(first.id, second.id)).map((organization) => {
     const memberIds = new Set(organization.members.map((member) => member.personId))
     const internalRelationships = relationships
       .filter((relationship) => memberIds.has(relationship.personAId) && memberIds.has(relationship.personBId))
-      .sort((first, second) => first.id.localeCompare(second.id))
+      .sort((first, second) => compareStableText(first.id, second.id))
     const roleCounts = organization.members.reduce((counts, member) => {
       counts[member.role] = (counts[member.role] ?? 0) + 1
       return counts

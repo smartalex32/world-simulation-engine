@@ -1,6 +1,7 @@
 import type { CommunitySimulationState } from '../simulation/community/types'
 import type { ParentChildLink, PersonState } from '../simulation/domain/types'
 import type { ProjectedGenerationalEvidence } from './types'
+import { compareStableText } from '../shared/stableOrder'
 
 /**
  * Bounded observation of retained child-development evidence by home
@@ -14,7 +15,7 @@ export function buildProjectedGenerationalEvidence(communities: readonly Communi
     if (group) group.push(link)
     else linksByChildId.set(link.childId, [link])
   }
-  return [...communities].sort((first, second) => first.catchment.id.localeCompare(second.catchment.id)).map((community) => {
+  return [...communities].sort((first, second) => compareStableText(first.catchment.id, second.catchment.id)).map((community) => {
     const cells = new Set(community.catchment.cellIds)
     const children = people.filter((person) => person.lifeStatus !== 'dead' && person.ageYears < 18 && cells.has(person.homeCellId))
     return {

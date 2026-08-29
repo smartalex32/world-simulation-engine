@@ -2,6 +2,7 @@ import type { GeographicCell, HouseholdInventory, HouseholdState, MarketState, P
 import { commonsActivityId } from '../activities/model'
 import { hexDistance } from '../spatial/hex'
 import { initializeGoods, synchronizeLegacyGoods } from './stockFlow'
+import { compareStableText } from '../../shared/stableOrder'
 
 /** Small, inspectable economy: food is harvested from a public cell into household ownership. */
 export const ECONOMY = Object.freeze({
@@ -25,7 +26,7 @@ export function initialInventory(memberCount: number, ordinal = 1): HouseholdInv
 }
 
 export function createInitialMarkets(cells: readonly GeographicCell[], settlements: readonly SettlementState[]): MarketState[] {
-  const authoredTemplateSettlements = [...settlements].filter((settlement) => settlement.template !== undefined).sort((a, b) => a.id.localeCompare(b.id))
+  const authoredTemplateSettlements = [...settlements].filter((settlement) => settlement.template !== undefined).sort((a, b) => compareStableText(a.id, b.id))
   if (authoredTemplateSettlements.length > 0) {
     return authoredTemplateSettlements.map((settlement, index) => {
       const cell = cells.find((candidate) => candidate.id === settlement.anchorCellId)
@@ -33,8 +34,8 @@ export function createInitialMarkets(cells: readonly GeographicCell[], settlemen
       return { id: `market-${(index + 1).toString().padStart(4, '0')}`, cellId: cell.id, activityLocationId: commonsActivityId(cell.id) }
     })
   }
-  const anchor = [...settlements].sort((a, b) => a.id.localeCompare(b.id)).map((settlement) => cells.find((cell) => cell.id === settlement.anchorCellId)).find((cell) => cell?.movementCost)
-    ?? [...cells].filter((cell) => cell.movementCost > 0).sort((a, b) => Math.abs(a.q - 16) + Math.abs(a.r - 12) - (Math.abs(b.q - 16) + Math.abs(b.r - 12)) || a.id.localeCompare(b.id))[0]
+  const anchor = [...settlements].sort((a, b) => compareStableText(a.id, b.id)).map((settlement) => cells.find((cell) => cell.id === settlement.anchorCellId)).find((cell) => cell?.movementCost)
+    ?? [...cells].filter((cell) => cell.movementCost > 0).sort((a, b) => Math.abs(a.q - 16) + Math.abs(a.r - 12) - (Math.abs(b.q - 16) + Math.abs(b.r - 12)) || compareStableText(a.id, b.id))[0]
   return anchor ? [{ id: 'market-0001', cellId: anchor.id, activityLocationId: commonsActivityId(anchor.id) }] : []
 }
 
@@ -43,16 +44,16 @@ export interface ToolExchange { marketId: string; donorHouseholdId: string; reci
 export function resolveToolExchanges(households: readonly HouseholdState[], markets: readonly MarketState[], occupantsByActivity: ReadonlyMap<string, readonly string[]>, peopleById: ReadonlyMap<string, { householdId: string }>, storageAccessPermilleByMarketId: ReadonlyMap<string, number> = new Map()): ToolExchange[] {
   const byId = new Map(households.map((household) => [household.id, household]))
   const exchanges: ToolExchange[] = []
-  for (const market of [...markets].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const market of [...markets].sort((a, b) => compareStableText(a.id, b.id))) {
     if ((storageAccessPermilleByMarketId.get(market.id) ?? 1000) === 0) continue
     const present = [...new Set((occupantsByActivity.get(market.activityLocationId) ?? []).map((personId) => peopleById.get(personId)?.householdId).filter((id): id is string => id !== undefined))]
-      .map((id) => byId.get(id)).filter((household): household is HouseholdState => household !== undefined).sort((a, b) => a.id.localeCompare(b.id))
+      .map((id) => byId.get(id)).filter((household): household is HouseholdState => household !== undefined).sort((a, b) => compareStableText(a.id, b.id))
     const committed = new Set<string>()
     for (const recipient of present) {
       const need = recipient.memberIds.length - (recipient.inventory?.tools ?? 0)
       if (need <= 0 || committed.has(recipient.id) || !recipient.inventory) continue
       const donor = present.filter((candidate) => candidate.id !== recipient.id && !committed.has(candidate.id) && (candidate.inventory?.tools ?? 0) > candidate.memberIds.length)
-        .sort((a, b) => ((b.inventory?.tools ?? 0) - b.memberIds.length) - ((a.inventory?.tools ?? 0) - a.memberIds.length) || a.id.localeCompare(b.id))[0]
+        .sort((a, b) => ((b.inventory?.tools ?? 0) - b.memberIds.length) - ((a.inventory?.tools ?? 0) - a.memberIds.length) || compareStableText(a.id, b.id))[0]
       if (!donor?.inventory) continue
       const amount = Math.min(1, need, donor.inventory.tools - donor.memberIds.length)
       if (amount <= 0) continue
@@ -104,7 +105,7 @@ export function resolveFoodShares(
   }
   const shares: FoodShare[] = []
   const committed = new Set<string>()
-  const ordered = [...households].sort((a, b) => a.id.localeCompare(b.id))
+  const ordered = [...households].sort((a, b) => compareStableText(a.id, b.id))
   for (const recipient of ordered) {
     if ((recipient.inventory?.food ?? 0) >= ECONOMY.targetFoodForRecipient || committed.has(recipient.id)) continue
     const recipientCell = cellsById.get(recipient.homeCellId)
@@ -115,7 +116,7 @@ export function resolveFoodShares(
         const cell = cellsById.get(candidate.homeCellId)
         return cell !== undefined && hexDistance(cell, recipientCell) <= 1 && (familiarityByPair.get(pairKey(candidate.id, recipient.id)) ?? 0) >= ECONOMY.minimumFamiliarityToShare
       })
-      .sort((a, b) => (b.inventory?.food ?? 0) - (a.inventory?.food ?? 0) || a.id.localeCompare(b.id))[0]
+      .sort((a, b) => (b.inventory?.food ?? 0) - (a.inventory?.food ?? 0) || compareStableText(a.id, b.id))[0]
     if (!donor) continue
     if (!donor.inventory || !recipient.inventory) continue
     const amount = Math.min(ECONOMY.maximumFoodPerExchange, donor.inventory.food - ECONOMY.targetFoodForRecipient, ECONOMY.targetFoodForRecipient - recipient.inventory.food)

@@ -1,5 +1,6 @@
 import type { OrganizationState, PersonState } from '../domain/types'
 import { SCHOOL_ATTENDANCE } from './attendance'
+import { compareStableText } from '../../shared/stableOrder'
 
 /** First generic organization slice: deterministic local schools, without belief assignment. */
 export function createInitialSchools(people: readonly PersonState[], anchorCellIds: readonly string[]): OrganizationState[] {
@@ -15,7 +16,7 @@ export function createInitialSchools(people: readonly PersonState[], anchorCellI
 
 function nearestAnchor(homeCellId: string, anchors: readonly string[]): string | undefined {
   const home = coordinate(homeCellId)
-  return anchors.slice().sort((first, second) => hexDistance(home, coordinate(first)) - hexDistance(home, coordinate(second)) || first.localeCompare(second))[0]
+  return anchors.slice().sort((first, second) => hexDistance(home, coordinate(first)) - hexDistance(home, coordinate(second)) || compareStableText(first, second))[0]
 }
 
 function coordinate(cellId: string): { q: number; r: number } {

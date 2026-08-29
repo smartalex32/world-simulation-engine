@@ -3,6 +3,7 @@ import { getPersonVariable } from '../variables/storage'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { findPathDetailed } from '../spatial/pathfinding'
 import { hexDistance } from '../spatial/hex'
+import { compareStableText } from '../../shared/stableOrder'
 import { ROAD_MOVEMENT_COST_MULTIPLIER_PERMILLE } from '../agents/actionConfig'
 import { settlementMigrationTrace } from '../settlements/regional'
 
@@ -74,7 +75,7 @@ export function evaluateHouseholdRelocation(input: HouseholdRelocationInput): Ho
   const scarcityPressure = clamp(averageHunger + foodReservePressurePermille, 0, 1000)
   const candidateHomes = input.cells
     .filter((cell) => cell.id !== source.id && cell.movementCost > 0 && hexDistance(source, cell) <= HOUSEHOLD_RELOCATION.maximumDistance)
-    .sort((first, second) => hexDistance(source, first) - hexDistance(source, second) || first.id.localeCompare(second.id))
+    .sort((first, second) => hexDistance(source, first) - hexDistance(source, second) || compareStableText(first.id, second.id))
     .slice(0, HOUSEHOLD_RELOCATION.maximumCandidates)
   const candidates: HouseholdRelocationCandidate[] = []
   for (const destination of candidateHomes) {
@@ -107,7 +108,7 @@ export function evaluateHouseholdRelocation(input: HouseholdRelocationInput): Ho
       - riskCostPermille
     candidates.push({ destinationCellId: destination.id, foodAccessPermille, foodAccessDeltaPermille, foodReservePressurePermille, travelCost, householdTiePermille, crowdingDelta, riskCostPermille, settlementUtilityPermille, utilityPermille })
   }
-  const candidate = candidates.sort((first, second) => second.utilityPermille - first.utilityPermille || first.destinationCellId.localeCompare(second.destinationCellId))[0]
+  const candidate = candidates.sort((first, second) => second.utilityPermille - first.utilityPermille || compareStableText(first.destinationCellId, second.destinationCellId))[0]
   if (!candidate || candidate.utilityPermille < HOUSEHOLD_RELOCATION.minimumUtility) return { sourceCellId: source.id, probabilityPermille: 0 }
   return { sourceCellId: source.id, candidate, probabilityPermille: Math.min(HOUSEHOLD_RELOCATION.maximumProbabilityPermille, 150 + Math.floor(candidate.utilityPermille / 2)) }
 }

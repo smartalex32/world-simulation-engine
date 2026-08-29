@@ -4,6 +4,7 @@ import type { PersonVariableDefinition, PersonVariableId } from '../simulation/v
 import { createPersonVariableRegistry, type PersonVariableRegistry } from '../simulation/variables/storage'
 import { validateContentPack } from './validate'
 import type { ContentPack } from './types'
+import { compareStableText } from '../shared/stableOrder'
 
 /** Immutable, validated registries selected at run creation. No module-level
  * mutation is permitted; every derived registry has stable display ordering. */
@@ -37,7 +38,7 @@ export function validatePackVariableValues(runtime: ContentPackRuntime, values: 
 
 export function createContentPackRuntime(candidate: ContentPack): ContentPackRuntime {
   const pack = validateContentPack(candidate).pack
-  const variableDefinitions = Object.freeze([...pack.personVariables].sort((left, right) => left.order - right.order || left.id.localeCompare(right.id)))
+  const variableDefinitions = Object.freeze([...pack.personVariables].sort((left, right) => left.order - right.order || compareStableText(left.id, right.id)))
   const variableById = new Map<PersonVariableId, PersonVariableDefinition>()
   for (const definition of variableDefinitions) variableById.set(definition.id, definition)
   return Object.freeze({ pack, variableDefinitions, variableById, variables: createPersonVariableRegistry(variableDefinitions), influences: createInfluenceRegistry(pack.influences, new Set(variableDefinitions.map((definition) => definition.id))) })

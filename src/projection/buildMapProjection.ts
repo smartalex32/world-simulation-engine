@@ -18,6 +18,7 @@ import { buildProjectedGenerationalEvidence } from './generations'
 import { deriveDrainage, type DrainageCell } from '../simulation/environment/hydrology'
 import { deriveLivingEnvironment, type LivingEnvironmentCell } from '../simulation/environment/livingEnvironment'
 import { cohortPopulationByCell } from '../simulation/cohorts/model'
+import { compareStableText } from '../shared/stableOrder'
 import { buildLocationChunkIndex, visibleIndexedLocations, type IndexedProjectionLocation } from './locationIndex'
 import { alignRegionOrigin, clampViewportBounds, projectionChunkKey, regionCount, regionKey } from './chunks'
 import {
@@ -115,7 +116,7 @@ export class WorkbenchProjectionBuilder {
     const personCommunityIds = Object.fromEntries(details.people
       .map((person) => [person.id, this.communityIdByCellId.get(person.locationCellId)] as const)
       .filter((entry): entry is readonly [string, string] => entry[1] !== undefined)
-      .sort(([first], [second]) => first.localeCompare(second)))
+      .sort(([first], [second]) => compareStableText(first, second)))
     const livingPeople = source.people.filter((person) => person.lifeStatus !== 'dead')
     const hungerTotal = livingPeople.reduce((sum, person) => sum + getPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger), 0)
     const cohortPopulation = source.cohorts.reduce((sum, cohort) => sum + cohort.populationCount, 0)
@@ -138,12 +139,12 @@ export class WorkbenchProjectionBuilder {
       contentionProfiles: buildProjectedContentionProfiles(projectedCommunities, source.disputes),
       collectiveKnowledge: buildProjectedCollectiveKnowledge(source.communities, source.people),
       generationalEvidence: buildProjectedGenerationalEvidence(source.communities, source.people, source.parentChildLinks),
-      roads: (source.world.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })).sort((a, b) => a.id.localeCompare(b.id)),
+      roads: (source.world.roads ?? []).map((road) => ({ id: road.id, cellIds: [...road.cellIds] })).sort((a, b) => compareStableText(a.id, b.id)),
       populationZones: source.populationZones.map((zone) => zone.settlementId === undefined
         ? { id: zone.id, name: zone.name, populationCount: zone.populationCount, cellCount: zone.cellIds.length }
         : { id: zone.id, name: zone.name, populationCount: zone.populationCount, cellCount: zone.cellIds.length, settlementId: zone.settlementId })
-        .sort((a, b) => a.id.localeCompare(b.id)),
-      cohorts: source.cohorts.map((cohort) => ({ id: cohort.id, sourceZoneId: cohort.sourceZoneId, populationCount: cohort.populationCount, householdCount: cohort.householdCount, foodUnits: cohort.foodUnits, cellAllocationCount: cohort.cellAllocations.length, ageBands: { ...cohort.ageBands }, transitionStatus: cohort.populationCount > 0 ? 'ready' as const : 'empty' as const })).sort((a, b) => a.id.localeCompare(b.id)),
+        .sort((a, b) => compareStableText(a.id, b.id)),
+      cohorts: source.cohorts.map((cohort) => ({ id: cohort.id, sourceZoneId: cohort.sourceZoneId, populationCount: cohort.populationCount, householdCount: cohort.householdCount, foodUnits: cohort.foodUnits, cellAllocationCount: cohort.cellAllocations.length, ageBands: { ...cohort.ageBands }, transitionStatus: cohort.populationCount > 0 ? 'ready' as const : 'empty' as const })).sort((a, b) => compareStableText(a.id, b.id)),
       map,
       people: details.people,
       households: details.households,
@@ -406,7 +407,7 @@ function dominantTerrain(counts: Record<Terrain, number>): Terrain {
 }
 
 function dominantString(counts: ReadonlyMap<string, number>): string | undefined {
-  return [...counts].sort(([a, aCount], [b, bCount]) => bCount - aCount || a.localeCompare(b))[0]?.[0]
+  return [...counts].sort(([a, aCount], [b, bCount]) => bCount - aCount || compareStableText(a, b))[0]?.[0]
 }
 
 function countPeopleByRegion(people: readonly PersonState[], cells: ReadonlyMap<string, GeographicCell>, size: ProjectionRegionSize): Map<string, number> {
@@ -436,7 +437,7 @@ function locationGroups(entries: readonly IndexedProjectionLocation[], cells: Re
     if (current) current.count += 1
     else groups.set(key, { key, q: alignRegionOrigin(cell.q, size) + (size - 1) / 2, r: alignRegionOrigin(cell.r, size) + (size - 1) / 2, originQ: alignRegionOrigin(cell.q, size), originR: alignRegionOrigin(cell.r, size), size, count: 1 })
   }
-  return [...groups.values()].sort((a, b) => a.key.localeCompare(b.key))
+  return [...groups.values()].sort((a, b) => compareStableText(a.key, b.key))
 }
 
 function buildPopulationMarkers(people: readonly PersonState[], cells: ReadonlyMap<string, GeographicCell>, bounds: AxialViewportBounds, terrainSize: ProjectionRegionSize, cohorts: ReadonlyMap<string, number>): PopulationMapMarker[] {
@@ -467,18 +468,18 @@ function projectInspectorDetails(source: WorldProjection, map: MapProjection, re
   }
   const visibleCellIds = map.lod === 'cell' ? new Set(map.exactCells.map((cell) => cell.id)) : new Set<string>()
   if (request.focusCellId) visibleCellIds.add(request.focusCellId)
-  const prioritized = source.people.filter((person) => requiredPersonIds.has(person.id)).sort((a, b) => a.id.localeCompare(b.id))
-  const local = source.people.filter((person) => !requiredPersonIds.has(person.id) && visibleCellIds.has(person.locationCellId)).sort((a, b) => a.id.localeCompare(b.id))
+  const prioritized = source.people.filter((person) => requiredPersonIds.has(person.id)).sort((a, b) => compareStableText(a.id, b.id))
+  const local = source.people.filter((person) => !requiredPersonIds.has(person.id) && visibleCellIds.has(person.locationCellId)).sort((a, b) => compareStableText(a.id, b.id))
   const people = [...prioritized, ...local].slice(0, MAX_PERSON_DETAILS)
   const projectedPersonIds = new Set(people.map((person) => person.id))
   const relationshipCandidates = hooked
     ? source.relationships.filter((relationship) => relationship.personAId === hooked.id || relationship.personBId === hooked.id)
     : source.relationships.filter((relationship) => projectedPersonIds.has(relationship.personAId) && projectedPersonIds.has(relationship.personBId))
-  const relationships = relationshipCandidates.slice().sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_RELATIONSHIP_DETAILS)
+  const relationships = relationshipCandidates.slice().sort((a, b) => compareStableText(a.id, b.id)).slice(0, MAX_RELATIONSHIP_DETAILS)
   const householdIds = new Set(people.map((person) => person.householdId))
-  const householdCandidates = source.households.filter((household) => householdIds.has(household.id)).sort((a, b) => a.id.localeCompare(b.id))
+  const householdCandidates = source.households.filter((household) => householdIds.has(household.id)).sort((a, b) => compareStableText(a.id, b.id))
   const households = householdCandidates.slice(0, MAX_HOUSEHOLD_DETAILS)
-  const parentChildCandidates = source.parentChildLinks.filter((link) => projectedPersonIds.has(link.parentId) || projectedPersonIds.has(link.childId)).sort((a, b) => a.id.localeCompare(b.id))
+  const parentChildCandidates = source.parentChildLinks.filter((link) => projectedPersonIds.has(link.parentId) || projectedPersonIds.has(link.childId)).sort((a, b) => compareStableText(a.id, b.id))
   const parentChildLinks = parentChildCandidates.slice(0, MAX_PARENT_CHILD_LINK_DETAILS)
   return {
     people,
@@ -501,7 +502,7 @@ function populationGroups(people: readonly PersonState[], cells: ReadonlyMap<str
   }), ...[...cohorts.entries()].flatMap(([cellId, count]) => {
     const cell = cells.get(cellId)
     return cell && inBounds(cell, bounds) ? [{ id: `cohort:${cellId}`, q: cell.q, r: cell.r, count }] : []
-  })].sort((a, b) => a.id.localeCompare(b.id))
+  })].sort((a, b) => compareStableText(a.id, b.id))
   const groups = new Map<string, PopulationMapMarker>()
   for (const person of people) {
     const cell = cells.get(person.locationCellId)
@@ -519,7 +520,7 @@ function populationGroups(people: readonly PersonState[], cells: ReadonlyMap<str
     if (current) current.count += count
     else groups.set(key, { id: `population:${key}`, q: alignRegionOrigin(cell.q, size) + (size - 1) / 2, r: alignRegionOrigin(cell.r, size) + (size - 1) / 2, count })
   }
-  return [...groups.values()].sort((a, b) => a.id.localeCompare(b.id))
+  return [...groups.values()].sort((a, b) => compareStableText(a.id, b.id))
 }
 
 function buildHookedMarker(people: readonly PersonState[], cells: ReadonlyMap<string, GeographicCell>, bounds: AxialViewportBounds, id?: string): PopulationMapMarker | undefined {
@@ -541,7 +542,7 @@ function buildRelationshipSegments(source: WorldProjection, cells: ReadonlyMap<s
     const destination = other ? cells.get(other.locationCellId) : undefined
     if (!destination || !inBounds(destination, bounds)) return []
     return [{ id: relationship.id, originQ: origin.q, originR: origin.r, destinationQ: destination.q, destinationR: destination.r, familiarity: relationship.familiarity }]
-  }).sort((a, b) => b.familiarity - a.familiarity || a.id.localeCompare(b.id)).slice(0, MAX_RELATIONSHIP_SEGMENTS)
+  }).sort((a, b) => b.familiarity - a.familiarity || compareStableText(a.id, b.id)).slice(0, MAX_RELATIONSHIP_SEGMENTS)
 }
 
 function projectCommunities(communities: readonly CommunitySimulationState[]): ProjectedCommunityState[] {
@@ -551,7 +552,7 @@ function projectCommunities(communities: readonly CommunitySimulationState[]): P
     structural: community.structural,
     lastUpdatedTick: community.lastUpdatedTick,
     latestTraces: community.latestTraces,
-  })).sort((a, b) => a.catchment.id.localeCompare(b.catchment.id))
+  })).sort((a, b) => compareStableText(a.catchment.id, b.catchment.id))
 }
 
 function communityValue(community: CommunitySimulationState, id: CommunityVariableId): number {
@@ -572,7 +573,7 @@ function nextRegionSize(size: ProjectionRegionSize): ProjectionRegionSize {
 
 
 function compareRegion(a: AggregateMapRegion, b: AggregateMapRegion): number {
-  return a.size - b.size || a.r - b.r || a.q - b.q || a.key.localeCompare(b.key)
+  return a.size - b.size || a.r - b.r || a.q - b.q || compareStableText(a.key, b.key)
 }
 
 function boundedCacheSet<K, V>(cache: Map<K, V>, key: K, value: V, maximum: number): void {

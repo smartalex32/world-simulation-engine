@@ -1,14 +1,15 @@
 import type { EconomyState, GeographicCell, HouseholdInventory, HouseholdState, MarketState } from '../domain/types'
 import type { EconomyGoodDefinition, EconomyRecipeDefinition } from '../../contentPacks/types'
 import { hexDistance } from '../spatial/hex'
+import { compareStableText } from '../../shared/stableOrder'
 
 export const ECONOMY_TAX_PERMILLE = 50
 export const MAX_ECONOMY_TRACES = 2_000
 
 /** Creates deterministic market ledgers with pack-defined, integer price anchors. */
 export function createEconomyState(markets: readonly MarketState[], goods: readonly EconomyGoodDefinition[]): EconomyState {
-  const prices = Object.fromEntries([...goods].sort((a, b) => a.id.localeCompare(b.id)).map((good) => [good.id, good.basePriceUnits]))
-  return { version: 1, markets: [...markets].sort((a, b) => a.id.localeCompare(b.id)).map((market) => ({ version: 1, marketId: market.id, prices: { ...prices }, treasuryUnits: 0, lastClearedTick: 0 })), tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 }
+  const prices = Object.fromEntries([...goods].sort((a, b) => compareStableText(a.id, b.id)).map((good) => [good.id, good.basePriceUnits]))
+  return { version: 1, markets: [...markets].sort((a, b) => compareStableText(a.id, b.id)).map((market) => ({ version: 1, marketId: market.id, prices: { ...prices }, treasuryUnits: 0, lastClearedTick: 0 })), tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 }
 }
 
 /** Keeps legacy food/tool fields explicit while adding a canonical sparse good ledger. */
@@ -30,9 +31,9 @@ export function synchronizeLegacyGoods(inventory: HouseholdInventory): void {
 /** Clears one bounded physical-market cycle. Buyers and sellers retain explicit
  * household ownership; prices, tax, and transport are integer-only. */
 export function clearMarkets(input: { economy: EconomyState; households: HouseholdState[]; markets: readonly MarketState[]; cellsById: ReadonlyMap<string, GeographicCell>; tick: number }): EconomyState['tradeTraces'] {
-  const households = [...input.households].filter((household) => household.inventory).sort((a, b) => a.id.localeCompare(b.id))
+  const households = [...input.households].filter((household) => household.inventory).sort((a, b) => compareStableText(a.id, b.id))
   const traces: EconomyState['tradeTraces'] = []
-  for (const market of [...input.markets].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const market of [...input.markets].sort((a, b) => compareStableText(a.id, b.id))) {
     const ledger = input.economy.markets.find((candidate) => candidate.marketId === market.id)
     const marketCell = input.cellsById.get(market.cellId)
     if (!ledger || !marketCell) continue
@@ -73,12 +74,12 @@ export function clearMarkets(input: { economy: EconomyState; households: Househo
  * applies at most one feasible pack recipe per household per month. */
 export function produceMonthlyGoods(input: { economy: EconomyState; households: HouseholdState[]; peopleById: ReadonlyMap<string, { occupation?: string; lifeStatus?: string }>; recipes: readonly EconomyRecipeDefinition[]; tick: number }): EconomyState['productionTraces'] {
   const traces: EconomyState['productionTraces'] = []
-  for (const household of [...input.households].filter((household) => household.inventory).sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const household of [...input.households].filter((household) => household.inventory).sort((a, b) => compareStableText(a.id, b.id))) {
     const inventory = initializeGoods(household.inventory!)
     const workers = household.memberIds.filter((id) => { const person = input.peopleById.get(id); return person?.lifeStatus !== 'dead' && person?.occupation !== 'dependent' }).length
     const goods = inventory.goods!
     goods['good.wood'] = (goods['good.wood'] ?? 0) + workers
-    const recipe = [...input.recipes].sort((a, b) => a.id.localeCompare(b.id)).find((candidate) => Object.entries(candidate.inputs).every(([goodId, quantity]) => (inventory.goods![goodId] ?? 0) >= quantity))
+    const recipe = [...input.recipes].sort((a, b) => compareStableText(a.id, b.id)).find((candidate) => Object.entries(candidate.inputs).every(([goodId, quantity]) => (inventory.goods![goodId] ?? 0) >= quantity))
     if (!recipe) { synchronizeLegacyGoods(inventory); continue }
     for (const [goodId, quantity] of Object.entries(recipe.inputs)) goods[goodId] = (goods[goodId] ?? 0) - quantity
     for (const [goodId, quantity] of Object.entries(recipe.outputs)) goods[goodId] = (goods[goodId] ?? 0) + quantity
@@ -96,7 +97,7 @@ export function decayGoods(households: HouseholdState[], goods: readonly Economy
   for (const household of households) {
     if (!household.inventory) continue
     const inventory = initializeGoods(household.inventory)
-    for (const [goodId, rate] of [...decayById.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [goodId, rate] of [...decayById.entries()].sort(([a], [b]) => compareStableText(a, b))) {
       const current = inventory.goods![goodId] ?? 0
       const amount = Math.floor(current * rate / 1000)
       inventory.goods![goodId] = current - amount
@@ -111,8 +112,8 @@ export function decayGoods(households: HouseholdState[], goods: readonly Economy
  * working household, in canonical market/household order. */
 export function distributeMarketWages(input: { economy: EconomyState; households: HouseholdState[]; peopleById: ReadonlyMap<string, { occupation?: string; lifeStatus?: string }>; tick: number }): EconomyState['wageTraces'] {
   const traces: EconomyState['wageTraces'] = []
-  const eligible = [...input.households].filter((household) => household.inventory && household.memberIds.some((id) => { const person = input.peopleById.get(id); return person?.lifeStatus !== 'dead' && person?.occupation !== 'dependent' })).sort((a, b) => a.id.localeCompare(b.id))
-  for (const ledger of input.economy.markets.sort((a, b) => a.marketId.localeCompare(b.marketId))) for (const household of eligible) {
+  const eligible = [...input.households].filter((household) => household.inventory && household.memberIds.some((id) => { const person = input.peopleById.get(id); return person?.lifeStatus !== 'dead' && person?.occupation !== 'dependent' })).sort((a, b) => compareStableText(a.id, b.id))
+  for (const ledger of input.economy.markets.sort((a, b) => compareStableText(a.marketId, b.marketId))) for (const household of eligible) {
     if (ledger.treasuryUnits < 1) break
     const workerCount = household.memberIds.filter((id) => { const person = input.peopleById.get(id); return person?.lifeStatus !== 'dead' && person?.occupation !== 'dependent' }).length
     ledger.treasuryUnits -= 1; household.inventory!.currencyUnits = (household.inventory!.currencyUnits ?? 0) + 1

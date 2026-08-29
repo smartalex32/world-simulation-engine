@@ -1,4 +1,5 @@
 import type { EconomyState, HouseholdState, PersonState } from '../simulation/domain/types'
+import { compareStableText } from '../shared/stableOrder'
 
 /**
  * Bounded, read-only material evidence for the workbench. Food and tools stay
@@ -23,7 +24,7 @@ export interface ProjectedEconomicSummary {
 }
 
 export function buildProjectedEconomicSummary(households: readonly HouseholdState[], people: readonly PersonState[], economy: EconomyState = { version: 1, markets: [], tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 }): ProjectedEconomicSummary {
-  const orderedHouseholds = [...households].sort((first, second) => first.id.localeCompare(second.id))
+  const orderedHouseholds = [...households].sort((first, second) => compareStableText(first.id, second.id))
   const food = orderedHouseholds.map((household) => Math.max(0, household.inventory?.food ?? 0))
   const tools = orderedHouseholds.map((household) => Math.max(0, household.inventory?.tools ?? 0))
   const currency = orderedHouseholds.map((household) => Math.max(0, household.inventory?.currencyUnits ?? 0))
@@ -48,8 +49,8 @@ export function buildProjectedEconomicSummary(households: readonly HouseholdStat
     toolGiniPermille: giniPermille(tools),
     currencyUnits: currency.reduce((sum, value) => sum + value, 0),
     currencyGiniPermille: giniPermille(currency),
-    goodsById: Object.fromEntries(Object.entries(goodsById).sort(([a], [b]) => a.localeCompare(b))),
-    marketPrices: economy.markets.map((market) => ({ marketId: market.marketId, prices: Object.fromEntries(Object.entries(market.prices).sort(([a], [b]) => a.localeCompare(b))), treasuryUnits: market.treasuryUnits })).sort((a, b) => a.marketId.localeCompare(b.marketId)),
+    goodsById: Object.fromEntries(Object.entries(goodsById).sort(([a], [b]) => compareStableText(a, b))),
+    marketPrices: economy.markets.map((market) => ({ marketId: market.marketId, prices: Object.fromEntries(Object.entries(market.prices).sort(([a], [b]) => compareStableText(a, b))), treasuryUnits: market.treasuryUnits })).sort((a, b) => compareStableText(a.marketId, b.marketId)),
     totalTaxCollectedUnits: economy.totalTaxCollectedUnits,
     retainedTradeCount: economy.tradeTraces.length,
     retainedProductionCount: economy.productionTraces.length,

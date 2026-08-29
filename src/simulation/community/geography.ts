@@ -1,5 +1,6 @@
 import { hexDistance } from '../spatial/hex'
 import type { CatchmentAssignmentInput, CommunityCatchment } from './types'
+import { compareStableText } from '../../shared/stableOrder'
 
 export const COMMUNITY_CATCHMENT_IDS = Object.freeze(['community-west-valley', 'community-east-valley'] as const)
 export const COMMUNITY_CATCHMENT_DISPLAY_NAMES = Object.freeze({
@@ -14,7 +15,7 @@ export const COMMUNITY_CATCHMENT_DISPLAY_NAMES = Object.freeze({
 export function createTwoCatchmentGeography(input: CatchmentAssignmentInput & { readonly height: number }): readonly CommunityCatchment[] {
   if (!Number.isSafeInteger(input.width) || input.width < 2) throw new Error('width must be an integer of at least 2')
   if (!Number.isSafeInteger(input.height) || input.height < 1) throw new Error('height must be a positive integer')
-  const passable = input.cells.filter((cell) => cell.movementCost > 0).sort((a, b) => a.id.localeCompare(b.id))
+  const passable = input.cells.filter((cell) => cell.movementCost > 0).sort((a, b) => compareStableText(a.id, b.id))
   if (passable.length < 2) throw new Error('Two community catchments require at least two passable cells')
   const centerR = Math.floor(input.height / 2)
   const west = selectAnchor(passable, Math.floor(input.width / 3), centerR)
@@ -23,8 +24,8 @@ export function createTwoCatchmentGeography(input: CatchmentAssignmentInput & { 
   const orderedAnchors = [{ id: COMMUNITY_CATCHMENT_IDS[0], anchor: west }, { id: COMMUNITY_CATCHMENT_IDS[1], anchor: east }]
   const assignments = new Map<string, string[]>()
   for (const entry of orderedAnchors) assignments.set(entry.id, [])
-  for (const cell of [...input.cells].sort((a, b) => a.id.localeCompare(b.id))) {
-    const winner = [...orderedAnchors].sort((a, b) => hexDistance(cell, a.anchor) - hexDistance(cell, b.anchor) || a.id.localeCompare(b.id))[0]
+  for (const cell of [...input.cells].sort((a, b) => compareStableText(a.id, b.id))) {
+    const winner = [...orderedAnchors].sort((a, b) => hexDistance(cell, a.anchor) - hexDistance(cell, b.anchor) || compareStableText(a.id, b.id))[0]
     if (!winner) throw new Error('Missing catchment anchor')
     assignments.get(winner.id)!.push(cell.id)
   }
@@ -35,7 +36,7 @@ export function createTwoCatchmentGeography(input: CatchmentAssignmentInput & { 
 }
 
 function selectAnchor(cells: readonly CatchmentAssignmentInput['cells'][number][], targetQ: number, targetR: number) {
-  const winner = [...cells].sort((a, b) => hexDistance(a, { q: targetQ, r: targetR }) - hexDistance(b, { q: targetQ, r: targetR }) || b.habitability - a.habitability || a.id.localeCompare(b.id))[0]
+  const winner = [...cells].sort((a, b) => hexDistance(a, { q: targetQ, r: targetR }) - hexDistance(b, { q: targetQ, r: targetR }) || b.habitability - a.habitability || compareStableText(a.id, b.id))[0]
   if (!winner) throw new Error('Missing passable catchment anchor')
   return winner
 }

@@ -1,28 +1,29 @@
 import type { GeographicCell, HouseholdState, InfrastructureAssetState, MarketState, OrganizationState, RoadState, SettlementState } from '../domain/types'
 import { hexDistance } from '../spatial/hex'
+import { compareStableText } from '../../shared/stableOrder'
 
 /** Derives bounded runtime assets from real authored roads, water, markets, and services. */
 export function createInfrastructureAssets(input: { roads: readonly RoadState[]; cells: readonly GeographicCell[]; settlements: readonly SettlementState[]; markets: readonly MarketState[]; organizations: readonly OrganizationState[]; tick: number }): InfrastructureAssetState[] {
   const cells = new Map(input.cells.map((cell) => [cell.id, cell]))
-  const owner = (cellId: string) => input.settlements.filter((settlement) => settlement.regional?.extentCellIds.includes(cellId) || settlement.anchorCellId === cellId).sort((a, b) => a.id.localeCompare(b.id))[0]?.id
+  const owner = (cellId: string) => input.settlements.filter((settlement) => settlement.regional?.extentCellIds.includes(cellId) || settlement.anchorCellId === cellId).sort((a, b) => compareStableText(a.id, b.id))[0]?.id
   const assets: InfrastructureAssetState[] = []
   for (const road of input.roads) assets.push(asset(`infrastructure.road.${road.id}`, 'road', road.cellIds, owner(road.cellIds[0]!), road.cellIds.length * 20, input.tick))
   const waterCells = input.cells.filter((cell) => cell.terrain === 'water').map((cell) => cell.id).sort()
   if (waterCells.length > 1) assets.push(asset('infrastructure.waterway.natural', 'waterway', waterCells, undefined, waterCells.length * 10, input.tick))
-  for (const settlement of [...input.settlements].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const settlement of [...input.settlements].sort((a, b) => compareStableText(a.id, b.id))) {
     const anchor = cells.get(settlement.anchorCellId)
-    const portCell = anchor && input.cells.filter((cell) => cell.terrain === 'water' && hexDistance(anchor, cell) <= 2).sort((a, b) => a.id.localeCompare(b.id))[0]
+    const portCell = anchor && input.cells.filter((cell) => cell.terrain === 'water' && hexDistance(anchor, cell) <= 2).sort((a, b) => compareStableText(a.id, b.id))[0]
     if (portCell) assets.push(asset(`infrastructure.port.${settlement.id}`, 'port', [settlement.anchorCellId, portCell.id], settlement.id, 20, input.tick))
   }
   for (const market of input.markets) assets.push(asset(`infrastructure.storage.${market.id}`, 'storage', [market.cellId], owner(market.cellId), 30, input.tick))
   for (const organization of input.organizations) assets.push(asset(`infrastructure.service.${organization.id}`, 'service', [organization.locationCellId], owner(organization.locationCellId), organization.serviceCapacity, input.tick))
-  return assets.sort((a, b) => a.id.localeCompare(b.id))
+  return assets.sort((a, b) => compareStableText(a.id, b.id))
 }
 
 /** Monthly deterministic maintenance cycle. Resources are explicit retained units, not currency. */
 export function maintainInfrastructure(assets: InfrastructureAssetState[], tick: number): InfrastructureAssetState[] {
   const traces: InfrastructureAssetState[] = []
-  for (const asset of [...assets].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const asset of [...assets].sort((a, b) => compareStableText(a.id, b.id))) {
     const previousConditionPermille = asset.conditionPermille
     const repaired = asset.maintenanceUnits > 0
     const delta = repaired ? Math.min(20, asset.maintenanceUnits) : -10
@@ -50,10 +51,10 @@ export function disruptInfrastructure(asset: InfrastructureAssetState, disruptio
  * No currency, ambient state, or implicit settlement membership is used. */
 export function allocateInfrastructureMaintenance(assets: InfrastructureAssetState[], households: HouseholdState[], settlements: readonly SettlementState[]): { assetId: string; householdId: string; units: number }[] {
   const allocations: { assetId: string; householdId: string; units: number }[] = []
-  for (const asset of [...assets].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const asset of [...assets].sort((a, b) => compareStableText(a.id, b.id))) {
     if (!asset.ownerSettlementId || asset.conditionPermille >= 1000) continue
     const settlement = settlements.find((candidate) => candidate.id === asset.ownerSettlementId)
-    const candidates = households.filter((household) => household.inventory && household.inventory.tools > 0 && settlement?.regional?.extentCellIds.includes(household.homeCellId)).sort((a, b) => a.id.localeCompare(b.id))
+    const candidates = households.filter((household) => household.inventory && household.inventory.tools > 0 && settlement?.regional?.extentCellIds.includes(household.homeCellId)).sort((a, b) => compareStableText(a.id, b.id))
     const household = candidates[0]
     if (!household?.inventory) continue
     household.inventory.tools -= 1

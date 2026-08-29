@@ -101,6 +101,7 @@ import { initializeSettlementScales, updateSettlementScales } from '../settlemen
 import { migrateCohortsBetweenSettlements, reconcileSettlementRegions, settlementMigrationTrace } from '../settlements/regional'
 import { allocateInfrastructureMaintenance, createInfrastructureAssets, maintainInfrastructure } from '../infrastructure/model'
 import { infrastructureAccessAcrossCells, infrastructureAccessAtCell } from '../infrastructure/access'
+import { compareStableText } from '../../shared/stableOrder'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -195,7 +196,7 @@ export class SimulationEngine {
     const preserveLegacyHomePlacement = typeof seedOrDraft === 'string' || (draft.populationZones.length === 0 && draft.initialPopulationCount === 200)
     const runtime = createContentPackRuntime(contentPack)
     const generatedPopulation = generatePopulation(world.grid.cells, creation.populationZones, random, preserveLegacyHomePlacement, runtime.variables)
-    const initialPathogen = [...runtime.pack.pathogens].sort((a, b) => a.id.localeCompare(b.id))[0]
+    const initialPathogen = [...runtime.pack.pathogens].sort((a, b) => compareStableText(a.id, b.id))[0]
     const initialPerson = [...generatedPopulation.people].sort((a, b) => compareIds(a.id, b.id))[0]
     if (initialPathogen && initialPerson) initialPerson.fictionalInfection = { version: 1, pathogenId: initialPathogen.id, phase: 'incubating', startedTick: 0, phaseEndsTick: initialPathogen.incubationHours }
     const catchments = createTwoCatchmentGeography({ cells: world.grid.cells, width: creation.width, height: creation.height })
@@ -472,7 +473,7 @@ export class SimulationEngine {
     }
     // Disputes are indexed during encounter resolution.  Materialize the stable serialized
     // collection once per requested advance batch instead of rebuilding it for every encounter.
-    this.state.disputes = [...this.disputeById.values()].sort((first, second) => first.id.localeCompare(second.id))
+    this.state.disputes = [...this.disputeById.values()].sort((first, second) => compareStableText(first.id, second.id))
     this.state.randomStreams = this.random.snapshot()
     this.syncCommunityCounterState()
     if (options.clockEventHours !== false) {

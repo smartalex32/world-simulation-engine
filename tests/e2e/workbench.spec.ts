@@ -1,8 +1,10 @@
 import { expect, test } from '@playwright/test'
+import { DEFAULT_PREINDUSTRIAL_PACK, type ContentPack } from '../../src/contentPacks'
 import { createCommonsActivity, createHouseholdHomeActivity } from '../../src/simulation/activities/model'
 import { scheduleForAge } from '../../src/simulation/activities/config'
 import { createCommunityState, createDailyCommunityCounters, createTwoCatchmentGeography } from '../../src/simulation/community'
 import type { PersonState } from '../../src/simulation/domain/types'
+import { defaultWorldCreationRequest } from '../../src/simulation/domain/worldCreation'
 import { SimulationEngine } from '../../src/simulation/engine/engine'
 import { createParentCuriosityExposureAccumulator } from '../../src/simulation/exposure/model'
 import { createSnapshot } from '../../src/simulation/serialization/snapshot'
@@ -477,6 +479,42 @@ test('the same seed and step count produce the same digest', async ({ page }) =>
   await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '0')
   await advanceOneHour(page, 1)
   await expect(page.locator('.fact').filter({ hasText: 'SAVED HASH' }).locator('strong')).toHaveText(firstDigest ?? '')
+})
+
+test('browser worker preserves the Node golden digest for adversarial stable IDs', async ({ page }) => {
+  const creation = defaultWorldCreationRequest('ordering-A_10.a')
+  creation.settlements = [
+    { id: 'settlement-z-2', name: 'Z', anchorCellId: '8,8' },
+    { id: 'settlement-a-10', name: 'A', anchorCellId: '10,8' },
+    { id: 'settlement-a-02', name: 'a', anchorCellId: '12,8' },
+  ]
+  const pathogen = DEFAULT_PREINDUSTRIAL_PACK.pathogens[0]!
+  const contentPack: ContentPack = {
+    ...DEFAULT_PREINDUSTRIAL_PACK,
+    manifest: { ...DEFAULT_PREINDUSTRIAL_PACK.manifest, id: 'Ordering.A_10-2' },
+    pathogens: [
+      { ...pathogen, id: 'z-2' },
+      { ...pathogen, id: 'A_10' },
+      { ...pathogen, id: 'a-02' },
+    ],
+  }
+  const engine = SimulationEngine.create(creation, 32, 24, contentPack)
+  engine.event('RUN_CREATED')
+  engine.advance(48)
+  const expected = await engine.snapshot()
+  expect(expected.state.people.some((person) => person.fictionalInfection?.pathogenId === 'A_10')).toBe(true)
+  await page.addInitScript(() => { (window as { __playwrightExposeSimulationWorker?: boolean }).__playwrightExposeSimulationWorker = true })
+  await page.goto('/')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  const browserSnapshot = await page.evaluate(async ({ workerCreation, workerContentPack }) => {
+    const client = (window as unknown as { __playwrightSimulationWorker: { create(creation: unknown, contentPack: unknown): void; step(count: number): void; snapshot(): Promise<{ digest: string; state: { tick: number; config: { seed: string } } }> } }).__playwrightSimulationWorker
+    client.create(workerCreation, workerContentPack); client.step(48)
+    return client.snapshot()
+  }, { workerCreation: creation, workerContentPack: contentPack })
+  expect(browserSnapshot.state.tick).toBe(48)
+  expect(browserSnapshot.state.config.seed).toBe(creation.seed)
+  expect(browserSnapshot.state).toEqual(expected.state)
+  expect(browserSnapshot.digest).toBe(expected.digest)
 })
 
 test('encounter events navigate between hooked people and their relationships', async ({ page }) => {

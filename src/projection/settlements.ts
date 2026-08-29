@@ -2,6 +2,7 @@ import type { GeographicCell, HouseholdState, PersonState, SettlementState } fro
 import { hexDistance } from '../simulation/spatial/hex'
 import type { ProjectedSettlement, SettlementScale } from './types'
 import { evaluateSettlementScale, scaleForPopulation } from '../simulation/settlements/growth'
+import { compareStableText } from '../shared/stableOrder'
 
 /**
  * Read-only display rules for authored settlement anchors. These are not a
@@ -26,7 +27,7 @@ export function buildProjectedSettlements(
 ): ProjectedSettlement[] {
   const cellsById = new Map(cells.map((cell) => [cell.id, cell]))
   return [...settlements]
-    .sort((first, second) => first.id.localeCompare(second.id))
+    .sort((first, second) => compareStableText(first.id, second.id))
     .map((settlement) => {
       const anchor = cellsById.get(settlement.anchorCellId)
       const catchmentCellIds = settlement.catchmentCellIds ?? (anchor ? cells.filter((cell) => hexDistance(anchor, cell) <= SETTLEMENT_PROFILE_RADIUS_CELLS).map((cell) => cell.id) : [])

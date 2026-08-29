@@ -14,6 +14,7 @@ import {
   type WorldTerrainBase,
 } from './types'
 import { isSettlementTemplateId, settlementTemplate } from '../spatial/settlementTemplates'
+import { compareStableText } from '../../shared/stableOrder'
 
 export const WORLD_CREATION_LIMITS = Object.freeze({
   minimumWidth: 8,
@@ -310,7 +311,7 @@ function presetTarget(preset: WorldPlacementPreset, width: number, height: numbe
 
 function nearestPassableCell(cells: readonly GeographicCell[], target: { q: number; r: number }): GeographicCell {
   const candidate = cells.filter((cell) => cell.movementCost > 0 && cell.habitability >= 500)
-    .sort((a, b) => axialDistance(a.q, a.r, target.q, target.r) - axialDistance(b.q, b.r, target.q, target.r) || a.id.localeCompare(b.id))[0]
+    .sort((a, b) => axialDistance(a.q, a.r, target.q, target.r) - axialDistance(b.q, b.r, target.q, target.r) || compareStableText(a.id, b.id))[0]
   if (!candidate) throw new Error('World has no habitable cells for population placement')
   return candidate
 }

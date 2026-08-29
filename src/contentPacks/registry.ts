@@ -1,6 +1,7 @@
 import { canonicalStringify } from '../simulation/serialization/snapshot'
 import type { ContentPack, ContentPackId } from './types'
 import { validateContentPack } from './validate'
+import { compareStableText } from '../shared/stableOrder'
 
 export interface ContentPackRegistry {
   readonly packs: readonly ContentPack[]
@@ -9,7 +10,7 @@ export interface ContentPackRegistry {
 }
 
 export function createContentPackRegistry(candidates: readonly ContentPack[]): ContentPackRegistry {
-  const packs = candidates.map((candidate) => validateContentPack(candidate).pack).sort((left, right) => left.manifest.id.localeCompare(right.manifest.id) || left.manifest.version.localeCompare(right.manifest.version))
+  const packs = candidates.map((candidate) => validateContentPack(candidate).pack).sort((left, right) => compareStableText(left.manifest.id, right.manifest.id) || compareStableText(left.manifest.version, right.manifest.version))
   const byId = new Map(packs.map((pack) => [`${pack.manifest.id}@${pack.manifest.version}`, pack]))
   if (byId.size !== packs.length) throw new Error('Duplicate content-pack manifest ID')
   function resolve(id: ContentPackId, version: string | undefined, visiting = new Set<string>(), resolved: ContentPack[] = []): readonly ContentPack[] {

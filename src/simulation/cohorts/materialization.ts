@@ -1,6 +1,7 @@
 import { generatePopulation, type GeneratedPopulation } from '../agents/population'
 import type { GeographicCell, PopulationPlacementZone } from '../domain/types'
 import { RandomProvider } from '../rng/pcg32'
+import { compareStableText } from '../../shared/stableOrder'
 
 /**
  * Generates a self-contained detailed population from an already-apportioned
@@ -37,11 +38,11 @@ export function materializeCohortPeople(input: {
     return { ...link, id: `${parentId}|${childId}`, householdId: required(householdId, link.householdId), parentId, childId }
   })
   return {
-    people: remappedPeople.sort((first, second) => first.id.localeCompare(second.id)),
-    households: remappedHouseholds.sort((first, second) => first.id.localeCompare(second.id)),
-    parentChildLinks: remappedLinks.sort((first, second) => first.id.localeCompare(second.id)),
+    people: remappedPeople.sort((first, second) => compareStableText(first.id, second.id)),
+    households: remappedHouseholds.sort((first, second) => compareStableText(first.id, second.id)),
+    parentChildLinks: remappedLinks.sort((first, second) => compareStableText(first.id, second.id)),
     // Commons already exist; conversion contributes only new home locations.
-    activityLocations: remappedHouseholds.map((household) => ({ id: household.homeActivityLocationId, kind: 'home' as const, cellId: household.homeCellId, householdId: household.id })).sort((first, second) => first.id.localeCompare(second.id)),
+    activityLocations: remappedHouseholds.map((household) => ({ id: household.homeActivityLocationId, kind: 'home' as const, cellId: household.homeCellId, householdId: household.id })).sort((first, second) => compareStableText(first.id, second.id)),
   }
 }
 

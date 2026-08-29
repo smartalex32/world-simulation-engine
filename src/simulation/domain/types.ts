@@ -8,8 +8,10 @@ import type {
 } from '../community/types'
 import type { SettlementTemplateId } from '../spatial/settlementTemplates'
 
-export const ENGINE_VERSION = '0.44.0'
-export const SNAPSHOT_SCHEMA_VERSION = 43
+// Stable text tie-breaks replace locale-dependent ordering. Snapshots from
+// earlier engines are rejected rather than resumed under changed semantics.
+export const ENGINE_VERSION = '0.45.0'
+export const SNAPSHOT_SCHEMA_VERSION = 44
 /** Versioned content-pack selection is authoritative configuration, not UI state. */
 export const CONTENT_PACK_MODEL_VERSION = 2
 export const BASE_TICK_HOURS = 1

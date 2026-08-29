@@ -2,6 +2,7 @@ import type { GeographicCell, InfrastructureAssetState, MarketState, Organizatio
 import { hexDistance } from '../simulation/spatial/hex'
 import { effectiveCapacity } from '../simulation/infrastructure/model'
 import type { ProjectedSettlementService } from './types'
+import { compareStableText } from '../shared/stableOrder'
 
 export const SETTLEMENT_SERVICE_RADIUS_CELLS = 4
 
@@ -13,7 +14,7 @@ export const SETTLEMENT_SERVICE_RADIUS_CELLS = 4
 export function buildProjectedSettlementServices(settlements: readonly SettlementState[], cells: readonly GeographicCell[], markets: readonly MarketState[], organizations: readonly OrganizationState[], roads: readonly RoadState[] = [], infrastructure: readonly InfrastructureAssetState[] = []): ProjectedSettlementService[] {
   const cellsById = new Map(cells.map((cell) => [cell.id, cell]))
   const roadCellIds = new Set(roads.flatMap((road) => road.cellIds))
-  return [...settlements].sort((first, second) => first.id.localeCompare(second.id)).map((settlement) => {
+  return [...settlements].sort((first, second) => compareStableText(first.id, second.id)).map((settlement) => {
     const anchor = cellsById.get(settlement.anchorCellId)
     const catchmentIds = settlement.catchmentCellIds ?? (anchor ? cells.filter((cell) => hexDistance(anchor, cell) <= SETTLEMENT_SERVICE_RADIUS_CELLS).map((cell) => cell.id) : [])
     const catchment = new Set(catchmentIds)

@@ -13,6 +13,9 @@ export class SimulationWorkerClient {
   private ready = false
 
   constructor() {
+    if ((globalThis as { __playwrightExposeSimulationWorker?: boolean }).__playwrightExposeSimulationWorker) {
+      (globalThis as { __playwrightSimulationWorker?: SimulationWorkerClient }).__playwrightSimulationWorker = this
+    }
     this.worker.addEventListener('message', (event: MessageEvent<SimulationResponse>) => {
       const response = event.data
       if (response.type === 'READY') this.ready = true
