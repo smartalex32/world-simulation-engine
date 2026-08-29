@@ -174,8 +174,8 @@ export class WorkbenchProjectionBuilder {
     validateRequest(request)
     // Callers without a change set (new/restore/direct builder use) rebuild
     // safely. Incremental callers update only the affected cache family.
-    if (!invalidation || invalidation.categories.some((category) => category === 'locations' || category === 'people' || category === 'communities' || category === 'relationships' || category === 'topology')) this.refreshDynamicIndexes(source)
     if (invalidation?.categories.includes('topology')) this.refreshTopology(source)
+    if (!invalidation || invalidation.categories.some((category) => category === 'locations' || category === 'people' || category === 'communities' || category === 'relationships' || category === 'topology')) this.refreshDynamicIndexes(source)
     const bounds = clampViewportBounds(request.bounds, this.grid.width, this.grid.height)
     const size = selectRegionSize(bounds, request.projectedHexRadius)
     const exact = size === 1
