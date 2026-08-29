@@ -23,17 +23,36 @@ a newer authoritative snapshot nor an orphaned telemetry/job record visible;
 repeating a mutation ID observes the already-committed result without advancing
 the simulation a second time.
 
+Job rows carry a monotonically increasing `job_revision`. Progress and
+cancellation updates use compare-and-swap writes instead of blind upserts, and
+quantum fingerprints contain only stable request identity—not operational
+timestamps—so a restart can retry an acknowledged or unacknowledged quantum.
+
+Shared-world accounts, sessions, tokens, worlds, access roles, revisions,
+leases, audits, and run references use relational columns, primary/foreign
+keys, uniqueness constraints, and role/digest checks. Only immutable authored
+revision documents remain encoded payloads. A locked
+`hosted_shared_state_meta` revision protects the coordinated relational rewrite
+from multi-process lost updates. Server handlers mutate an isolated candidate
+service, commit the candidate, audit, optional initial run snapshot, and outbox
+event together, and replace live memory only after commit.
+
+`hosted_outbox_events` is the operational event authority. Event keys are
+unique, so idempotent command or revision retries cannot publish twice. SSE
+replay queries this table directly and honors `Last-Event-ID`; the legacy
+in-memory event-stream snapshot is retained only for migration compatibility.
+
 The simulation digest remains a simulation-only contract. Database timestamps,
 owner IDs, job scheduling metadata, and checksums are operational metadata and
 do not change a canonical engine digest.
 
 ## Schema compatibility and migration
 
-`DATABASE_MIGRATION_VERSION` is the hosted storage contract. This release
-accepts the current generation and the two immediately preceding generations
-(7, 8, and 9). A database newer than this application is rejected. Server
-startup refuses an older or uninitialized database; only the guarded migration
-command can bring it forward.
+`DATABASE_MIGRATION_VERSION` is the hosted storage contract. This release uses
+generation 10 and retains explicit forward steps for older hosted generations;
+a database newer than this application is rejected. Server startup refuses an
+older or uninitialized database; only the guarded migration command can bring
+it forward.
 
 Before every migration, create and verify a backup:
 
@@ -48,6 +67,11 @@ pnpm host:migrate
 
 `host:migrate` refuses to run unless the supplied file exists and `pg_restore
 --list` can read it. Use a separate backup for every production migration.
+Generation 10 renames the generation-9 opaque shared tables with a
+`_v9_backup` suffix, backfills the relational schema, restores the service
+through normal validation, and compares a canonical state fingerprint before
+recording the migration. Any invalid reference, checksum mismatch, or
+verification difference rolls the migration transaction back.
 
 ## Restore and recovery
 
@@ -68,11 +92,11 @@ pnpm host
 ```
 
 The server reloads the canonical snapshot and resumes any non-terminal durable
-jobs. Job advancement uses a persisted write-ahead quantum: if a process stops
-between a snapshot write and job-status write, recovery compares the durable
-tick/digest to the pending quantum and either completes reconciliation or marks
-the job as a state conflict. A second executor must never be started for the
-same run.
+jobs. Snapshot, telemetry, completed job progress, and the quantum mutation ID
+commit together. A retry with the same stable mutation identity observes that
+commit; a competing executor with a different mutation is rejected by the
+locked run row and tick/digest precondition. If durable reconciliation itself
+fails, the service is poisoned and already-queued mutations are rejected.
 
 ## Prerequisites and operational limits
 
@@ -83,9 +107,9 @@ migration, `docker compose up --build host` starts the application container.
 Change both compose secrets before any non-local use. The hosted HTTP boundary includes an
 initial `/api/v1` shared-world transport for Argon2id accounts, bearer
 sessions, explicit roles, renewable single-writer leases, immutable revisions,
-audits, and resumable SSE notifications. Collaboration metadata is stored in a
-separate checksummed PostgreSQL payload and is operational rather than
-canonical simulation state. Legacy run endpoints remain owner-token authorized.
+audits, and resumable SSE notifications. Collaboration metadata is relational
+operational state and is not part of canonical simulation output. Legacy run
+endpoints remain owner-token authorized.
 
 ## Network and TLS boundary
 

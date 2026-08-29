@@ -4,6 +4,7 @@ import { createEconomyState, initializeGoods } from '../economy/stockFlow'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
 
 export const OLDEST_SUPPORTED_SNAPSHOT_SCHEMA = 30
+const STABLE_ORDERING_ENGINE_VERSION = '0.45.0'
 
 type SnapshotLike = Omit<SnapshotEnvelope, 'schemaVersion'> & { schemaVersion: number }
 export type SnapshotMigration = (snapshot: SnapshotLike) => SnapshotLike
@@ -30,9 +31,27 @@ const migrations = new Map<number, SnapshotMigration>([
   [41, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 42, state: { ...snapshot.state, config: { ...snapshot.state.config, economyModelVersion: 3 }, households: snapshot.state.households.map((household) => ({ ...household, ...(household.inventory ? { inventory: initializeGoods(household.inventory) } : {}) })), economy: createEconomyState(snapshot.state.markets, DEFAULT_PREINDUSTRIAL_PACK.economy.goods) } })],
   [42, (snapshot) => ({ ...snapshot, engineVersion: ENGINE_VERSION, schemaVersion: 43, state: { ...snapshot.state, economy: { ...snapshot.state.economy, wageTraces: [] } } })],
   [43, (snapshot) => {
-    if (snapshot.engineVersion !== ENGINE_VERSION) throw new Error('Snapshot ordering semantics are incompatible with this engine version')
+    if (!hasStableOrdering(snapshot.engineVersion)) throw new Error('Snapshot ordering semantics are incompatible with this engine version')
     return { ...snapshot, schemaVersion: 44 }
   }],
+  // Engine 0.45 accidentally shared settlement objects between the immutable
+  // creation request and mutable runtime world. Remove only the derived runtime
+  // fields from authoring input; the world-owned settlement state is preserved.
+  [44, (snapshot) => ({
+    ...snapshot,
+    engineVersion: ENGINE_VERSION,
+    schemaVersion: 45,
+    state: {
+      ...snapshot.state,
+      config: {
+        ...snapshot.state.config,
+        worldCreation: {
+          ...snapshot.state.config.worldCreation,
+          settlements: snapshot.state.config.worldCreation.settlements.map(({ scale: _scale, regional: _regional, ...settlement }) => settlement),
+        },
+      },
+    },
+  })],
 ])
 
 export function migrateSnapshotSchema(value: unknown, targetSchema: number): SnapshotLike {
@@ -43,7 +62,7 @@ export function migrateSnapshotSchema(value: unknown, targetSchema: number): Sna
   if (migrated.schemaVersion < OLDEST_SUPPORTED_SNAPSHOT_SCHEMA || migrated.schemaVersion > targetSchema) {
     throw new Error(`Unsupported snapshot schema: ${String(migrated.schemaVersion)}`)
   }
-  if (migrated.schemaVersion < 44 && targetSchema >= 44 && sourceEngineVersion !== ENGINE_VERSION) {
+  if (migrated.schemaVersion < 44 && targetSchema >= 44 && !hasStableOrdering(sourceEngineVersion)) {
     throw new Error('Snapshot ordering semantics are incompatible with this engine version')
   }
   while (migrated.schemaVersion < targetSchema) {
@@ -52,5 +71,9 @@ export function migrateSnapshotSchema(value: unknown, targetSchema: number): Sna
     migrated = migrate(migrated)
   }
   return migrated
+}
+
+function hasStableOrdering(engineVersion: unknown): boolean {
+  return engineVersion === STABLE_ORDERING_ENGINE_VERSION || engineVersion === ENGINE_VERSION
 }
 

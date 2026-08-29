@@ -5,19 +5,19 @@ import type { SimulationEvent, StatisticSample } from '../simulation/domain/type
 import { canonicalStringify } from '../simulation/serialization/snapshot'
 import { compareStableText } from '../shared/stableOrder'
 import { exportContentPack, importContentPack, type ContentPack, type ContentPackCatalog } from '../contentPacks'
-import { validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedRunMutation, type HostedRunMutationStore, type HostedRunRecord, type HostedRunStore, type HostedSimulationJob, type HostedTelemetryStore } from './types'
-import { SharedWorldService, type SharedWorldServiceState } from './sharedWorlds'
+import { HOSTED_JOB_VERSION, validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedRunMutation, type HostedRunMutationResult, type HostedRunMutationStore, type HostedRunRecord, type HostedRunStore, type HostedSimulationJob, type HostedTelemetryStore } from './types'
+import { SharedWorldService, type SharedOutboxEvent, type SharedWorldCommitRequest, type SharedWorldCommitResult, type SharedWorldMutationStore, type SharedWorldServiceState } from './sharedWorlds'
 import { HostedEventStream, type HostedEventStreamState } from './eventStream'
 
-/** Current hosted database generation; migrations retain the two prior generations. */
-export const DATABASE_MIGRATION_VERSION = 9
+/** Current hosted database generation; older generations advance through explicit steps. */
+export const DATABASE_MIGRATION_VERSION = 10
 
 /**
  * PostgreSQL durable store. Payload bytes are canonical JSON compressed with
  * gzip and integrity checked before validation. Timestamps are operational
  * metadata and are never part of a simulation digest.
  */
-export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, HostedTelemetryStore, HostedRunMutationStore, ContentPackCatalog {
+export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, HostedTelemetryStore, HostedRunMutationStore, ContentPackCatalog, SharedWorldMutationStore {
   constructor(readonly pool: Pool) {}
 
   static async connect(connectionString: string): Promise<PostgresHostedRunStore> {
@@ -121,6 +121,28 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
         )`)
         await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (9)')
       }
+      if (version < 10) {
+        const legacyShared = await this.loadLegacySharedState(client)
+        const legacyJobs = await client.query<StoredPayload & { run_id: string; job_id: string }>('SELECT run_id, job_id, payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_jobs')
+        await client.query('ALTER TABLE hosted_jobs ADD COLUMN IF NOT EXISTS job_revision bigint NOT NULL DEFAULT 1 CHECK (job_revision > 0)')
+        for (const row of legacyJobs.rows) {
+          const decoded = decodeStoredPayload(row) as Record<string, unknown>
+          const migrated = decoded.version === 2 ? { ...decoded, version: HOSTED_JOB_VERSION, recordRevision: 1 } : decoded
+          const valid = validateHostedJob(migrated); const encoded = encodePayload(valid)
+          await client.query('UPDATE hosted_jobs SET job_revision=$3,payload=$4,payload_sha256=$5,payload_uncompressed_bytes=$6,payload_encoding=$7 WHERE run_id=$1 AND job_id=$2', [row.run_id, row.job_id, valid.recordRevision, encoded.compressed, encoded.sha256, encoded.uncompressedBytes, PAYLOAD_ENCODING])
+        }
+        await client.query('ALTER TABLE hosted_outbox_events ADD COLUMN IF NOT EXISTS event_key text')
+        await client.query("UPDATE hosted_outbox_events SET event_key='legacy:' || event_id::text WHERE event_key IS NULL")
+        await client.query('ALTER TABLE hosted_outbox_events ALTER COLUMN event_key SET NOT NULL')
+        await client.query('CREATE UNIQUE INDEX IF NOT EXISTS hosted_outbox_event_key ON hosted_outbox_events(event_key)')
+        for (const table of SHARED_BLOB_TABLES) await client.query(`ALTER TABLE ${table} RENAME TO ${table}_v9_backup`)
+        await this.createRelationalSharedSchema(client)
+        await client.query("INSERT INTO hosted_shared_state_meta(state_key, revision) VALUES ('default', 0)")
+        await this.writeNormalizedSharedState(client, legacyShared)
+        const restored = await this.loadNormalizedSharedState(client)
+        if (sharedStateFingerprint(restored.state) !== sharedStateFingerprint(legacyShared)) throw new Error('Hosted shared-world migration verification failed')
+        await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (10)')
+      }
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
@@ -151,7 +173,7 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
 
   /** Locks the durable row before checking the candidate's exact parent state.
    * Nothing becomes visible until snapshot, telemetry, job, and mutation ID commit. */
-  async commitRunMutation(mutation: HostedRunMutation): Promise<'committed' | 'already-committed'> {
+  async commitRunMutation(mutation: HostedRunMutation): Promise<HostedRunMutationResult> {
     const valid = validateHostedRunRecord(mutation.record)
     const client = await this.pool.connect()
     try {
@@ -161,15 +183,16 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
       const existing = await client.query<{ snapshot_digest: string; mutation_fingerprint: string }>('SELECT snapshot_digest, mutation_fingerprint FROM hosted_run_mutations WHERE run_id = $1 AND mutation_id = $2', [valid.runId, mutation.mutationId])
       if (existing.rows[0]) {
         if (existing.rows[0].mutation_fingerprint !== mutation.mutationFingerprint) throw new Error('Hosted mutation ID was reused with a different request')
-        await client.query('COMMIT'); return 'already-committed'
+        await client.query('COMMIT'); return { outcome: 'already-committed' }
       }
       const currentRecord = validateHostedRunRecord(decodeStoredPayload(current.rows[0]))
       if (currentRecord.snapshot.state.tick !== mutation.expectedTick || currentRecord.snapshot.digest !== mutation.expectedDigest) throw new Error('Hosted job run state conflict')
       await this.saveRun(client, valid, encodePayload(valid))
       if (mutation.events.length || mutation.statistics.length) await this.insertTelemetry(client, valid.runId, mutation.events, mutation.statistics)
-      if (mutation.job) await this.saveJobWithClient(client, mutation.job)
+      if (mutation.job) await this.saveJobWithClient(client, mutation.job, mutation.job.recordRevision - 1)
+      const sharedWorld = mutation.sharedWorld ? await this.commitSharedWorldWithClient(client, mutation.sharedWorld) : undefined
       await client.query('INSERT INTO hosted_run_mutations(run_id, mutation_id, snapshot_digest, mutation_fingerprint) VALUES ($1,$2,$3,$4)', [valid.runId, mutation.mutationId, valid.snapshot.digest, mutation.mutationFingerprint])
-      await client.query('COMMIT'); return 'committed'
+      await client.query('COMMIT'); return { outcome: 'committed', ...(sharedWorld ? { sharedWorld } : {}) }
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
 
@@ -183,15 +206,22 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
     return result.rows[0] ? validateHostedJob(decodeStoredPayload(result.rows[0])) : undefined
   }
 
-  async saveJob(job: HostedSimulationJob): Promise<void> {
-    await this.saveJobWithClient(this.pool, job)
+  async saveJob(job: HostedSimulationJob, expectedRecordRevision: number): Promise<void> {
+    await this.saveJobWithClient(this.pool, job, expectedRecordRevision)
   }
-  private async saveJobWithClient(client: Pool | PoolClient, job: HostedSimulationJob): Promise<void> {
+  private async saveJobWithClient(client: Pool | PoolClient, job: HostedSimulationJob, expectedRecordRevision: number): Promise<void> {
     const valid = validateHostedJob(job); const payload = encodePayload(valid)
-    await client.query(`INSERT INTO hosted_jobs(run_id, job_id, owner_id, status, queue_order, updated_at, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-      ON CONFLICT (run_id, job_id) DO UPDATE SET owner_id = EXCLUDED.owner_id, status = EXCLUDED.status, queue_order = EXCLUDED.queue_order, updated_at = EXCLUDED.updated_at, payload = EXCLUDED.payload, payload_sha256 = EXCLUDED.payload_sha256, payload_uncompressed_bytes = EXCLUDED.payload_uncompressed_bytes, payload_encoding = EXCLUDED.payload_encoding`,
-    [valid.runId, valid.jobId, valid.ownerId, valid.status, valid.queueOrder, valid.updatedAt, payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
+    if (valid.recordRevision !== expectedRecordRevision + 1) throw new Error('Hosted job state conflict')
+    if (expectedRecordRevision === 0) {
+      try {
+        await client.query(`INSERT INTO hosted_jobs(run_id, job_id, owner_id, status, queue_order, updated_at, job_revision, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [valid.runId, valid.jobId, valid.ownerId, valid.status, valid.queueOrder, valid.updatedAt, valid.recordRevision, payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
+      } catch (error) { throw new Error('Hosted job state conflict', { cause: error }) }
+      return
+    }
+    const updated = await client.query(`UPDATE hosted_jobs SET owner_id=$4,status=$5,queue_order=$6,updated_at=$7,job_revision=$8,payload=$9,payload_sha256=$10,payload_uncompressed_bytes=$11,payload_encoding=$12 WHERE run_id=$1 AND job_id=$2 AND job_revision=$3`,
+      [valid.runId, valid.jobId, expectedRecordRevision, valid.ownerId, valid.status, valid.queueOrder, valid.updatedAt, valid.recordRevision, payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
+    if (updated.rowCount !== 1) throw new Error('Hosted job state conflict')
   }
 
   async listJobs(runId: string): Promise<HostedSimulationJob[]> {
@@ -216,20 +246,22 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
     return valid
   }
   async loadSharedWorldService(): Promise<SharedWorldService> {
-    const state = await this.loadNormalizedSharedState(this.pool)
-    if (state.accounts.length) return SharedWorldService.restore(state)
-    const legacy = await this.pool.query<StoredPayload>('SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_shared_world_state WHERE state_key = $1', ['default'])
-    return legacy.rows[0] ? SharedWorldService.restore(decodeStoredPayload(legacy.rows[0]) as SharedWorldServiceState) : new SharedWorldService()
+    const loaded = await this.loadNormalizedSharedState(this.pool)
+    return SharedWorldService.restore(loaded.state, loaded.revision)
   }
   async saveSharedWorldService(service: SharedWorldService): Promise<void> {
-    const client = await this.pool.connect(); try { await client.query('BEGIN'); await this.saveNormalizedSharedState(client, service.snapshotState()); await client.query('COMMIT') } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
+    const committed = await this.commitSharedWorldMutation({ expectedRevision: service.storageRevision(), service })
+    service.setStorageRevision(committed.revision)
   }
-  async commitSharedWorldMutation(service: SharedWorldService, topic: string, payload: unknown, occurredAt: string): Promise<void> {
-    const client = await this.pool.connect(); try { await client.query('BEGIN'); await this.saveNormalizedSharedState(client, service.snapshotState()); const event = encodePayload(payload); await client.query('INSERT INTO hosted_outbox_events(topic, payload, payload_sha256, payload_encoding, occurred_at) VALUES ($1,$2,$3,$4,$5)', [topic, event.compressed, event.sha256, PAYLOAD_ENCODING, occurredAt]); await client.query('COMMIT') } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
+  async commitSharedWorldMutation(request: SharedWorldCommitRequest): Promise<SharedWorldCommitResult> {
+    const client = await this.pool.connect()
+    try { await client.query('BEGIN'); const result = await this.commitSharedWorldWithClient(client, request); await client.query('COMMIT'); return result }
+    catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
-  async outboxAfter(lastEventId = 0): Promise<readonly { id: number; topic: string; payload: unknown; createdAt: string }[]> {
-    const rows = await this.pool.query<StoredPayload & { id: string; topic: string; created_at: Date }>('SELECT event_id::text AS id, topic, payload, payload_sha256 AS sha, payload_encoding AS encoding, occurred_at FROM hosted_outbox_events WHERE event_id > $1 ORDER BY event_id ASC', [lastEventId])
-    return rows.rows.map((row) => ({ id: Number(row.id), topic: row.topic, payload: decodeStoredPayload(row), createdAt: row.created_at.toISOString() }))
+  async outboxAfter(lastEventId = 0): Promise<readonly SharedOutboxEvent[]> {
+    if (!Number.isSafeInteger(lastEventId) || lastEventId < 0) throw new Error('Last-Event-ID is invalid')
+    const rows = await this.pool.query<StoredPayload & { id: string; event_key: string; topic: string; created_at: Date }>('SELECT event_id::text AS id, event_key, topic, payload, payload_sha256 AS sha, payload_encoding AS encoding, occurred_at AS created_at FROM hosted_outbox_events WHERE event_id > $1 ORDER BY event_id ASC', [lastEventId])
+    return rows.rows.map((row) => ({ id: Number(row.id), key: row.event_key, topic: row.topic, payload: decodeStoredPayload(row), createdAt: row.created_at.toISOString() }))
   }
   async loadEventStream(capacity = 1_000): Promise<HostedEventStream> {
     const result = await this.pool.query<StoredPayload>('SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_event_stream_state WHERE state_key = $1', ['default'])
@@ -241,18 +273,138 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
       VALUES ('default',$1,$2,$3,$4) ON CONFLICT (state_key) DO UPDATE SET payload = EXCLUDED.payload, payload_sha256 = EXCLUDED.payload_sha256, payload_uncompressed_bytes = EXCLUDED.payload_uncompressed_bytes, payload_encoding = EXCLUDED.payload_encoding, saved_at = now()`, [payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
   }
 
+  private async commitSharedWorldWithClient(client: PoolClient, request: Omit<SharedWorldCommitRequest, 'initialRun'> | SharedWorldCommitRequest): Promise<SharedWorldCommitResult> {
+    if (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 0 || request.service.storageRevision() !== request.expectedRevision) throw new Error('Shared world state conflict')
+    const locked = await client.query<{ revision: string }>("SELECT revision::text FROM hosted_shared_state_meta WHERE state_key='default' FOR UPDATE")
+    const currentRevision = Number(locked.rows[0]?.revision)
+    if (!Number.isSafeInteger(currentRevision) || currentRevision !== request.expectedRevision) throw new Error('Shared world state conflict')
+    const state = request.service.snapshotState(); SharedWorldService.restore(state, request.expectedRevision)
+    if ('initialRun' in request && request.initialRun) {
+      const run = validateHostedRunRecord(request.initialRun)
+      const existing = await client.query('SELECT 1 FROM hosted_runs WHERE run_id=$1', [run.runId])
+      if (existing.rowCount) throw new Error('Hosted run state conflict')
+      await this.saveRun(client, run, encodePayload(run))
+    }
+    await this.writeNormalizedSharedState(client, state)
+    const event = request.event ? await this.insertOutboxEvent(client, request.event) : undefined
+    const nextRevision = currentRevision + 1
+    const updated = await client.query("UPDATE hosted_shared_state_meta SET revision=$1 WHERE state_key='default' AND revision=$2", [nextRevision, currentRevision])
+    if (updated.rowCount !== 1) throw new Error('Shared world state conflict')
+    return { revision: nextRevision, ...(event ? { event } : {}) }
+  }
+
+  private async insertOutboxEvent(client: PoolClient, input: NonNullable<SharedWorldCommitRequest['event']>): Promise<SharedOutboxEvent> {
+    if (!input.key || !input.topic || !input.occurredAt) throw new Error('Hosted outbox event is invalid')
+    const payload = encodePayload(input.payload)
+    const inserted = await client.query<{ id: string; created_at: Date }>(`INSERT INTO hosted_outbox_events(event_key,topic,payload,payload_sha256,payload_encoding,occurred_at)
+      VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (event_key) DO NOTHING RETURNING event_id::text AS id, occurred_at AS created_at`, [input.key, input.topic, payload.compressed, payload.sha256, PAYLOAD_ENCODING, input.occurredAt])
+    if (inserted.rows[0]) return { id: Number(inserted.rows[0].id), key: input.key, topic: input.topic, payload: structuredClone(input.payload), createdAt: inserted.rows[0].created_at.toISOString() }
+    const existing = await client.query<StoredPayload & { id: string; topic: string; created_at: Date }>('SELECT event_id::text AS id,topic,payload,payload_sha256 AS sha,payload_encoding AS encoding,occurred_at AS created_at FROM hosted_outbox_events WHERE event_key=$1', [input.key])
+    const row = existing.rows[0]
+    if (!row || row.topic !== input.topic || row.sha !== payload.sha256) throw new Error('Hosted outbox event key was reused with different content')
+    return { id: Number(row.id), key: input.key, topic: row.topic, payload: decodeStoredPayload(row), createdAt: row.created_at.toISOString() }
+  }
+
+  private async createRelationalSharedSchema(client: PoolClient): Promise<void> {
+    await client.query(`CREATE TABLE hosted_accounts (
+      account_id text PRIMARY KEY, email text NOT NULL UNIQUE, password_hash text NOT NULL, created_at timestamptz NOT NULL
+    )`)
+    await client.query(`CREATE TABLE hosted_sessions (
+      session_id text PRIMARY KEY, account_id text NOT NULL REFERENCES hosted_accounts(account_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+      token_hash text NOT NULL UNIQUE, created_at timestamptz NOT NULL, expires_at timestamptz NOT NULL
+    )`)
+    await client.query(`CREATE TABLE hosted_api_tokens (
+      token_id text PRIMARY KEY, account_id text NOT NULL REFERENCES hosted_accounts(account_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+      token_hash text NOT NULL UNIQUE, scopes text[] NOT NULL CHECK (cardinality(scopes) > 0), created_at timestamptz NOT NULL, expires_at timestamptz
+    )`)
+    await client.query(`CREATE TABLE hosted_worlds (
+      world_id text PRIMARY KEY, name text NOT NULL CHECK (length(name) > 0), owner_account_id text NOT NULL REFERENCES hosted_accounts(account_id) DEFERRABLE INITIALLY DEFERRED,
+      current_revision integer NOT NULL CHECK (current_revision > 0), created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+    )`)
+    await client.query(`CREATE TABLE hosted_world_access (
+      world_id text NOT NULL REFERENCES hosted_worlds(world_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+      account_id text NOT NULL REFERENCES hosted_accounts(account_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+      role text NOT NULL CHECK (role IN ('owner','editor','viewer')), PRIMARY KEY (world_id,account_id)
+    )`)
+    await client.query(`CREATE TABLE hosted_world_revisions (
+      world_id text NOT NULL REFERENCES hosted_worlds(world_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED, revision integer NOT NULL CHECK (revision > 0),
+      parent_revision integer, canonical_digest text NOT NULL CHECK (canonical_digest ~ '^[a-f0-9]{64}$'), author_account_id text NOT NULL REFERENCES hosted_accounts(account_id) DEFERRABLE INITIALLY DEFERRED,
+      payload bytea NOT NULL, payload_sha256 text NOT NULL, payload_uncompressed_bytes integer NOT NULL CHECK (payload_uncompressed_bytes > 0), payload_encoding text NOT NULL DEFAULT 'gzip-json-v1', created_at timestamptz NOT NULL,
+      PRIMARY KEY (world_id,revision), FOREIGN KEY (world_id,parent_revision) REFERENCES hosted_world_revisions(world_id,revision) DEFERRABLE INITIALLY DEFERRED
+    )`)
+    await client.query('ALTER TABLE hosted_worlds ADD CONSTRAINT hosted_world_current_revision_fk FOREIGN KEY (world_id,current_revision) REFERENCES hosted_world_revisions(world_id,revision) DEFERRABLE INITIALLY DEFERRED')
+    await client.query(`CREATE TABLE hosted_world_leases (
+      world_id text PRIMARY KEY REFERENCES hosted_worlds(world_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED, lease_id text NOT NULL UNIQUE,
+      holder_account_id text NOT NULL REFERENCES hosted_accounts(account_id) DEFERRABLE INITIALLY DEFERRED, revision integer NOT NULL,
+      expires_at timestamptz NOT NULL, FOREIGN KEY (world_id,revision) REFERENCES hosted_world_revisions(world_id,revision) DEFERRABLE INITIALLY DEFERRED
+    )`)
+    await client.query(`CREATE TABLE hosted_world_audits (
+      audit_id text PRIMARY KEY, world_id text NOT NULL REFERENCES hosted_worlds(world_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+      actor_account_id text NOT NULL REFERENCES hosted_accounts(account_id) DEFERRABLE INITIALLY DEFERRED, action text NOT NULL,
+      revision integer NOT NULL, created_at timestamptz NOT NULL, FOREIGN KEY (world_id,revision) REFERENCES hosted_world_revisions(world_id,revision) DEFERRABLE INITIALLY DEFERRED
+    )`)
+    await client.query(`CREATE TABLE hosted_world_runs (
+      run_id text PRIMARY KEY REFERENCES hosted_runs(run_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+      world_id text NOT NULL, revision integer NOT NULL, owner_account_id text NOT NULL REFERENCES hosted_accounts(account_id) DEFERRABLE INITIALLY DEFERRED,
+      created_at timestamptz NOT NULL, FOREIGN KEY (world_id,revision) REFERENCES hosted_world_revisions(world_id,revision) DEFERRABLE INITIALLY DEFERRED
+    )`)
+    await client.query(`CREATE TABLE hosted_shared_mutations (
+      mutation_key text PRIMARY KEY, world_id text NOT NULL, revision integer NOT NULL,
+      FOREIGN KEY (world_id,revision) REFERENCES hosted_world_revisions(world_id,revision) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+    )`)
+    await client.query(`CREATE TABLE hosted_shared_state_meta (
+      state_key text PRIMARY KEY CHECK (state_key='default'), revision bigint NOT NULL CHECK (revision >= 0)
+    )`)
+  }
+
+  private async loadLegacySharedState(client: PoolClient): Promise<SharedWorldServiceState> {
+    const read = async (table: string): Promise<unknown[]> => (await client.query<StoredPayload>(`SELECT payload,payload_sha256 AS sha,payload_encoding AS encoding FROM ${table} ORDER BY entity_key ASC`)).rows.map(decodeStoredPayload)
+    const groups: unknown[][] = []
+    // A PoolClient processes one query at a time. Keep migration reads explicit
+    // and sequential rather than relying on deprecated concurrent scheduling.
+    for (const table of SHARED_BLOB_TABLES) groups.push(await read(table))
+    const [accounts = [], sessions = [], tokens = [], worlds = [], access = [], revisions = [], leases = [], audits = [], runs = [], mutations = []] = groups
+    const normalized = { version: 1 as const, accounts, sessions, tokens, worlds, access, revisions, leases, audits, runs, mutations } as SharedWorldServiceState
+    if (accounts.length || worlds.length || sessions.length || tokens.length) return SharedWorldService.restore(normalized).snapshotState()
+    const legacy = await client.query<StoredPayload>("SELECT payload,payload_sha256 AS sha,payload_encoding AS encoding FROM hosted_shared_world_state WHERE state_key='default'")
+    return legacy.rows[0] ? SharedWorldService.restore(decodeStoredPayload(legacy.rows[0]) as SharedWorldServiceState).snapshotState() : new SharedWorldService().snapshotState()
+  }
+
+  private async loadNormalizedSharedState(client: Pool | PoolClient): Promise<{ state: SharedWorldServiceState; revision: number }> {
+    const meta = await client.query<{ revision: string }>("SELECT revision::text FROM hosted_shared_state_meta WHERE state_key='default'")
+    const revision = Number(meta.rows[0]?.revision)
+    if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('Shared world storage revision is invalid')
+    const accounts = (await client.query<any>('SELECT account_id,email,password_hash,created_at FROM hosted_accounts ORDER BY account_id')).rows.map((row: any) => ({ id: row.account_id, email: row.email, passwordHash: row.password_hash, createdAt: iso(row.created_at) }))
+    const sessions = (await client.query<any>('SELECT session_id,account_id,token_hash,created_at,expires_at FROM hosted_sessions ORDER BY session_id')).rows.map((row: any) => ({ id: row.session_id, accountId: row.account_id, tokenHash: row.token_hash, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at) }))
+    const tokens = (await client.query<any>('SELECT token_id,account_id,token_hash,scopes,created_at,expires_at FROM hosted_api_tokens ORDER BY token_id')).rows.map((row: any) => ({ id: row.token_id, accountId: row.account_id, tokenHash: row.token_hash, scopes: row.scopes, createdAt: iso(row.created_at), ...(row.expires_at ? { expiresAt: iso(row.expires_at) } : {}) }))
+    const worlds = (await client.query<any>('SELECT world_id,name,owner_account_id,current_revision,created_at,updated_at FROM hosted_worlds ORDER BY world_id')).rows.map((row: any) => ({ id: row.world_id, name: row.name, ownerAccountId: row.owner_account_id, currentRevision: row.current_revision, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }))
+    const access = (await client.query<any>('SELECT world_id,account_id,role FROM hosted_world_access ORDER BY world_id,account_id')).rows.map((row: any) => ({ worldId: row.world_id, accountId: row.account_id, role: row.role }))
+    const revisionRows = await client.query<StoredPayload & any>('SELECT world_id,revision,parent_revision,canonical_digest,author_account_id,payload,payload_sha256 AS sha,payload_encoding AS encoding,created_at FROM hosted_world_revisions ORDER BY world_id,revision')
+    const revisions = revisionRows.rows.map((row: any) => ({ worldId: row.world_id, revision: row.revision, ...(row.parent_revision === null ? {} : { parentRevision: row.parent_revision }), canonicalDigest: row.canonical_digest, authorAccountId: row.author_account_id, payload: decodeStoredPayload(row), createdAt: iso(row.created_at) }))
+    const leases = (await client.query<any>('SELECT world_id,lease_id,holder_account_id,revision,expires_at FROM hosted_world_leases ORDER BY world_id')).rows.map((row: any) => ({ worldId: row.world_id, leaseId: row.lease_id, holderAccountId: row.holder_account_id, revision: row.revision, expiresAt: iso(row.expires_at) }))
+    const audits = (await client.query<any>('SELECT audit_id,world_id,actor_account_id,action,revision,created_at FROM hosted_world_audits ORDER BY world_id,audit_id')).rows.map((row: any) => ({ id: row.audit_id, worldId: row.world_id, actorAccountId: row.actor_account_id, action: row.action, revision: row.revision, createdAt: iso(row.created_at) }))
+    const runs = (await client.query<any>('SELECT run_id,world_id,revision,owner_account_id,created_at FROM hosted_world_runs ORDER BY run_id')).rows.map((row: any) => ({ runId: row.run_id, worldId: row.world_id, revision: row.revision, ownerAccountId: row.owner_account_id, createdAt: iso(row.created_at) }))
+    const mutations = (await client.query<any>('SELECT mutation_key,world_id,revision FROM hosted_shared_mutations ORDER BY mutation_key')).rows.map((row: any) => { const found = revisions.find((entry: any) => entry.worldId === row.world_id && entry.revision === row.revision); if (!found) throw new Error('Shared world mutation references a missing revision'); return { key: row.mutation_key, revision: found } })
+    const state: SharedWorldServiceState = { version: 1, accounts, sessions, tokens, worlds, access, revisions, leases, audits, runs, mutations }
+    return { state: SharedWorldService.restore(state, revision).snapshotState(), revision }
+  }
+
+  private async writeNormalizedSharedState(client: PoolClient, state: SharedWorldServiceState): Promise<void> {
+    const valid = SharedWorldService.restore(state).snapshotState()
+    for (const table of ['hosted_shared_mutations','hosted_world_audits','hosted_world_leases','hosted_world_runs','hosted_world_access','hosted_world_revisions','hosted_worlds','hosted_api_tokens','hosted_sessions','hosted_accounts']) await client.query(`DELETE FROM ${table}`)
+    for (const row of valid.accounts) await client.query('INSERT INTO hosted_accounts(account_id,email,password_hash,created_at) VALUES ($1,$2,$3,$4)', [row.id,row.email,row.passwordHash,row.createdAt])
+    for (const row of valid.sessions) await client.query('INSERT INTO hosted_sessions(session_id,account_id,token_hash,created_at,expires_at) VALUES ($1,$2,$3,$4,$5)', [row.id,row.accountId,row.tokenHash,row.createdAt,row.expiresAt])
+    for (const row of valid.tokens) await client.query('INSERT INTO hosted_api_tokens(token_id,account_id,token_hash,scopes,created_at,expires_at) VALUES ($1,$2,$3,$4,$5,$6)', [row.id,row.accountId,row.tokenHash,[...row.scopes],row.createdAt,row.expiresAt ?? null])
+    for (const row of valid.worlds) await client.query('INSERT INTO hosted_worlds(world_id,name,owner_account_id,current_revision,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6)', [row.id,row.name,row.ownerAccountId,row.currentRevision,row.createdAt,row.updatedAt])
+    for (const row of valid.access) await client.query('INSERT INTO hosted_world_access(world_id,account_id,role) VALUES ($1,$2,$3)', [row.worldId,row.accountId,row.role])
+    for (const row of valid.revisions) { const payload=encodePayload(row.payload); await client.query('INSERT INTO hosted_world_revisions(world_id,revision,parent_revision,canonical_digest,author_account_id,payload,payload_sha256,payload_uncompressed_bytes,payload_encoding,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [row.worldId,row.revision,row.parentRevision ?? null,row.canonicalDigest,row.authorAccountId,payload.compressed,payload.sha256,payload.uncompressedBytes,PAYLOAD_ENCODING,row.createdAt]) }
+    for (const row of valid.leases) await client.query('INSERT INTO hosted_world_leases(world_id,lease_id,holder_account_id,revision,expires_at) VALUES ($1,$2,$3,$4,$5)', [row.worldId,row.leaseId,row.holderAccountId,row.revision,row.expiresAt])
+    for (const row of valid.audits) await client.query('INSERT INTO hosted_world_audits(audit_id,world_id,actor_account_id,action,revision,created_at) VALUES ($1,$2,$3,$4,$5,$6)', [row.id,row.worldId,row.actorAccountId,row.action,row.revision,row.createdAt])
+    for (const row of valid.runs ?? []) await client.query('INSERT INTO hosted_world_runs(run_id,world_id,revision,owner_account_id,created_at) VALUES ($1,$2,$3,$4,$5)', [row.runId,row.worldId,row.revision,row.ownerAccountId,row.createdAt])
+    for (const row of valid.mutations) await client.query('INSERT INTO hosted_shared_mutations(mutation_key,world_id,revision) VALUES ($1,$2,$3)', [row.key,row.revision.worldId,row.revision.revision])
+  }
+
   private async verifyConnection(): Promise<void> { await this.pool.query('SELECT 1') }
-  private async loadNormalizedSharedState(client: Pool | PoolClient): Promise<SharedWorldServiceState> {
-    const read = async (table: string): Promise<unknown[]> => (await client.query<StoredPayload>(`SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM ${table} ORDER BY entity_key ASC`)).rows.map(decodeStoredPayload)
-    const [accounts, sessions, tokens, worlds, access, revisions, leases, audits, runs, mutations] = await Promise.all(['hosted_accounts', 'hosted_sessions', 'hosted_api_tokens', 'hosted_worlds', 'hosted_world_access', 'hosted_world_revisions', 'hosted_world_leases', 'hosted_world_audits', 'hosted_world_runs', 'hosted_shared_mutations'].map(read))
-    return { version: 1, accounts: accounts as SharedWorldServiceState['accounts'], sessions: sessions as SharedWorldServiceState['sessions'], tokens: tokens as SharedWorldServiceState['tokens'], worlds: worlds as SharedWorldServiceState['worlds'], access: access as SharedWorldServiceState['access'], revisions: revisions as SharedWorldServiceState['revisions'], leases: leases as SharedWorldServiceState['leases'], audits: audits as SharedWorldServiceState['audits'], runs: runs as SharedWorldServiceState['runs'], mutations: mutations as SharedWorldServiceState['mutations'] }
-  }
-  private async saveNormalizedSharedState(client: PoolClient, state: SharedWorldServiceState): Promise<void> {
-    const groups: readonly [string, readonly unknown[], (item: any) => string][] = [
-      ['hosted_accounts', state.accounts, (x) => x.id], ['hosted_sessions', state.sessions, (x) => x.id], ['hosted_api_tokens', state.tokens, (x) => x.id], ['hosted_worlds', state.worlds, (x) => x.id], ['hosted_world_access', state.access, (x) => `${x.worldId}:${x.accountId}`], ['hosted_world_revisions', state.revisions, (x) => `${x.worldId}:${x.revision}`], ['hosted_world_leases', state.leases, (x) => x.worldId], ['hosted_world_audits', state.audits, (x) => x.id], ['hosted_world_runs', state.runs ?? [], (x) => x.runId], ['hosted_shared_mutations', state.mutations, (x) => x.key],
-    ]
-    for (const [table, rows, key] of groups) { await client.query(`DELETE FROM ${table}`); for (const row of rows) { const encoded = encodePayload(row); await client.query(`INSERT INTO ${table}(entity_key,payload,payload_sha256,payload_encoding) VALUES ($1,$2,$3,$4)`, [key(row), encoded.compressed, encoded.sha256, PAYLOAD_ENCODING]) } }
-  }
   private async saveRun(client: PoolClient, record: HostedRunRecord, payload: EncodedPayload): Promise<void> {
     await client.query(`INSERT INTO hosted_runs(run_id, owner_id, saved_at, snapshot_payload, snapshot_sha256, snapshot_uncompressed_bytes, snapshot_encoding)
       VALUES ($1,$2,$3,$4,$5,$6,$7)
@@ -268,6 +420,7 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
 interface EncodedPayload { compressed: Buffer; sha256: string; uncompressedBytes: number }
 interface StoredPayload { payload: Buffer; sha: string; encoding: string }
 const PAYLOAD_ENCODING = 'gzip-json-v1'
+const SHARED_BLOB_TABLES = ['hosted_accounts', 'hosted_sessions', 'hosted_api_tokens', 'hosted_worlds', 'hosted_world_access', 'hosted_world_revisions', 'hosted_world_leases', 'hosted_world_audits', 'hosted_world_runs', 'hosted_shared_mutations'] as const
 export function encodePayload(value: unknown): EncodedPayload {
   const raw = Buffer.from(canonicalStringify(value), 'utf8')
   return { compressed: gzipSync(raw), sha256: createHash('sha256').update(raw).digest('hex'), uncompressedBytes: raw.byteLength }
@@ -281,4 +434,9 @@ export function decodePayload(payload: Buffer, expectedSha256: string): unknown 
 function decodeStoredPayload(payload: StoredPayload): unknown {
   if (payload.encoding !== PAYLOAD_ENCODING) throw new Error(`Hosted persisted payload encoding is unsupported: ${payload.encoding}`)
   return decodePayload(payload.payload, payload.sha)
+}
+function iso(value: Date | string): string { return value instanceof Date ? value.toISOString() : new Date(value).toISOString() }
+function sharedStateFingerprint(state: SharedWorldServiceState): string {
+  const sorted = Object.fromEntries(Object.entries(state).map(([key, value]) => [key, Array.isArray(value) ? [...value].sort((left, right) => compareStableText(canonicalStringify(left), canonicalStringify(right))) : value]))
+  return createHash('sha256').update(canonicalStringify(sorted)).digest('hex')
 }

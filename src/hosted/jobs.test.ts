@@ -72,10 +72,10 @@ describe('hosted simulation jobs', () => {
     const observation = await service.observe('secret')
     const now = new Date().toISOString()
     await store.saveJob({
-      version: HOSTED_JOB_VERSION, jobId: 'resume', runId: 'conflict', ownerId: 'owner', status: 'running', queueOrder: 1,
+      version: HOSTED_JOB_VERSION, recordRevision: 1, jobId: 'resume', runId: 'conflict', ownerId: 'owner', status: 'running', queueOrder: 1,
       startTick: observation.tick, totalTicks: 48, advancedTicks: 0, committedTick: observation.tick, committedDigest: observation.digest,
       quantumTicks: 24, checkpointIntervalTicks: 24, lastCheckpointTick: observation.tick, createdAt: now, updatedAt: now,
-    })
+    }, 0)
     await expect(manager.executeDirect({ type: 'STEP', requestId: 'blocked-step', count: 1 })).rejects.toThrow('owned by an active hosted job')
     await service.execute('secret', { type: 'STEP', requestId: 'outside-job', count: 24 })
     const failed = await manager.drain('resume')
@@ -94,6 +94,21 @@ describe('hosted simulation jobs', () => {
     const restarted = new HostedSimulationJobManager(await HostedRunService.open(bootstrap('restart'), store), store, 'owner', 'secret')
     const completed = await restarted.drain('resume')
     expect(completed).toMatchObject({ status: 'completed', advancedTicks: 48, committedTick: 48 })
+  })
+
+  it('rejects a stale job progress writer instead of blindly overwriting newer progress', async () => {
+    const store = new MemoryHostedRunStore(); const service = await HostedRunService.open(bootstrap('job-cas'), store); const observation = await service.observe('secret'); const now = new Date().toISOString()
+    const initial: HostedSimulationJob = {
+      version: HOSTED_JOB_VERSION, recordRevision: 1, jobId: 'cas', runId: 'job-cas', ownerId: 'owner', status: 'running', queueOrder: 1,
+      startTick: 0, totalTicks: 48, advancedTicks: 0, committedTick: observation.tick, committedDigest: observation.digest,
+      quantumTicks: 24, checkpointIntervalTicks: 24, lastCheckpointTick: 0, createdAt: now, updatedAt: now,
+    }
+    await store.saveJob(initial, 0)
+    const [first, stale] = await Promise.all([store.loadJob('job-cas', 'cas'), store.loadJob('job-cas', 'cas')])
+    if (!first || !stale) throw new Error('Expected job candidates')
+    await store.saveJob({ ...first, recordRevision: 2, advancedTicks: 24, committedTick: 24 }, 1)
+    await expect(store.saveJob({ ...stale, recordRevision: 2, status: 'failed' }, 1)).rejects.toThrow('job state conflict')
+    expect(await store.loadJob('job-cas', 'cas')).toMatchObject({ recordRevision: 2, advancedTicks: 24, status: 'running' })
   })
 })
 

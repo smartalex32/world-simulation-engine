@@ -281,7 +281,8 @@ The browser-hosted workbench remains the default. The hosted runtime now uses
 PostgreSQL as its system of record for one owner-controlled run. It reuses typed worker
 command/response shapes, serializes authoritative commands on the host, writes
 compressed, checksummed canonical snapshots and telemetry batches through
-PostgreSQL transactions, and returns bounded projections. Start PostgreSQL with
+PostgreSQL transactions, rejects competing mutations with a locked tick/digest
+compare-and-swap, and replaces live engine state only after commit. Start PostgreSQL with
 `docker compose up -d postgres`, make and verify a database backup, run
 `HOSTED_MIGRATION_BACKUP_FILE=<absolute-path> DATABASE_URL=<url> pnpm host:migrate`,
 then start with `DATABASE_URL=<url> HOSTED_OWNER_TOKEN=<secret> pnpm host`.
@@ -291,8 +292,11 @@ The hosted HTTP service also exposes the evolving versioned shared-world API at
 draft leases, immutable draft revisions with parent links and canonical payload
 digests, operational audit records, and ordered
 resumable SSE events. This metadata is noncanonical and never changes a world
-or simulation digest. Shared-world records are stored separately from canonical
-run data in PostgreSQL and are reloaded on hosted-server restart.
+or simulation digest. Shared-world records use relational keys, constraints,
+references, and a storage-revision CAS. Immutable authored revision documents
+remain checksummed payloads. Operational SSE replay reads the durable,
+idempotently keyed outbox instead of process memory. Shared run creation and
+authoritative run-control audits commit with their run mutation.
 
 `SharedWorldClient` in `src/hosted/sdk.ts` is the typed browser/Node client for
 these versioned resources. It authenticates once with a bearer session, then
@@ -374,10 +378,10 @@ cancel immediately, running jobs cancel at their next persisted quantum
 boundary, and direct step/reset commands are rejected while a job owns the run.
 Hosted run and job records are validated before use. The local HTTP boundary
 uses owner authorization, bounded JSON bodies, sanitized errors, and a
-configurable `HOSTED_BIND_HOST` (default `127.0.0.1`). Hosted job record version
-1 is explicitly rejected; rolling migration support is Milestone 51. This
-remains a single-node, single-owner foundation rather than a distributed queue
-or public scheduler.
+configurable `HOSTED_BIND_HOST` (default `127.0.0.1`). Hosted job progress uses
+a record-revision CAS, and generation-10 migration explicitly backfills current
+job/shared-world records. This remains a host-owned execution foundation rather
+than a distributed queue or public scheduler.
 
 ## Testing
 

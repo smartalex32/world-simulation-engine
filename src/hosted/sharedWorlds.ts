@@ -2,6 +2,7 @@ import { createSessionToken, hashPassword, hashSessionToken, requireRole, verify
 import { createHash } from 'node:crypto'
 import { canonicalStringify } from '../simulation/serialization/snapshot'
 import { compareStableText } from '../shared/stableOrder'
+import type { HostedRunRecord } from './types'
 
 export interface SharedWorld { id: string; name: string; ownerAccountId: string; currentRevision: number; createdAt: string; updatedAt: string }
 export interface SharedWorldDraftRevision { worldId: string; revision: number; parentRevision?: number; canonicalDigest: string; authorAccountId: string; payload: unknown; createdAt: string }
@@ -21,6 +22,21 @@ export interface SharedWorldServiceState {
   runs?: readonly SharedWorldRun[]
 }
 
+export interface SharedOutboxEventInput { key: string; topic: string; payload: unknown; occurredAt: string }
+export interface SharedOutboxEvent { id: number; key: string; topic: string; payload: unknown; createdAt: string }
+export interface SharedWorldCommitRequest {
+  expectedRevision: number
+  service: SharedWorldService
+  event?: SharedOutboxEventInput
+  initialRun?: HostedRunRecord
+}
+export interface SharedWorldCommitResult { revision: number; event?: SharedOutboxEvent }
+export interface SharedWorldMutationStore {
+  loadSharedWorldService(): Promise<SharedWorldService>
+  commitSharedWorldMutation(request: SharedWorldCommitRequest): Promise<SharedWorldCommitResult>
+  outboxAfter(lastEventId?: number): Promise<readonly SharedOutboxEvent[]>
+}
+
 /** Noncanonical collaboration authority.  Canonical simulation state remains in
  * the run store; revisions, users, leases, and audit timestamps are operational metadata. */
 export class SharedWorldService {
@@ -35,8 +51,9 @@ export class SharedWorldService {
   private readonly tokens = new Map<string, SharedApiToken>()
   private readonly mutations = new Map<string, SharedWorldDraftRevision>()
   private readonly runs = new Map<string, SharedWorldRun>()
+  private storageRevisionValue = 0
 
-  static restore(value: SharedWorldServiceState): SharedWorldService {
+  static restore(value: SharedWorldServiceState, storageRevision = 0): SharedWorldService {
     if (!value || value.version !== 1 || !Array.isArray(value.accounts) || !Array.isArray(value.sessions) || !Array.isArray(value.worlds) || !Array.isArray(value.access) || !Array.isArray(value.revisions) || !Array.isArray(value.leases) || !Array.isArray(value.audits) || !Array.isArray(value.tokens) || !Array.isArray(value.mutations)) throw new Error('Shared world persisted state is invalid')
     const service = new SharedWorldService()
     for (const account of value.accounts) { if (!validId(account.id) || !validEmail(account.email) || typeof account.passwordHash !== 'string' || typeof account.createdAt !== 'string') throw new Error('Shared world account state is invalid'); service.accounts.set(account.id, structuredClone(account)); service.accountsByEmail.set(account.email, account.id) }
@@ -49,10 +66,24 @@ export class SharedWorldService {
     for (const token of value.tokens) { if (!validId(token.id) || !validId(token.accountId) || typeof token.tokenHash !== 'string' || !Array.isArray(token.scopes)) throw new Error('Shared world token state is invalid'); service.tokens.set(token.id, structuredClone(token)) }
     for (const mutation of value.mutations) { if (typeof mutation.key !== 'string') throw new Error('Shared world mutation state is invalid'); service.mutations.set(mutation.key, structuredClone(mutation.revision)) }
     for (const run of value.runs ?? []) { if (!validId(run.worldId) || !validId(run.runId) || !validId(run.ownerAccountId) || !Number.isSafeInteger(run.revision) || run.revision < 1) throw new Error('Shared world run state is invalid'); service.runs.set(run.runId, structuredClone(run)) }
+    service.setStorageRevision(storageRevision)
     return service
   }
   snapshotState(): SharedWorldServiceState {
     return structuredClone({ version: 1 as const, accounts: [...this.accounts.values()], sessions: [...this.sessions.values()], worlds: [...this.worlds.values()], access: [...this.access.values()], revisions: [...this.revisions.values()].flat(), leases: [...this.leases.values()], audits: [...this.audits.values()].flat(), tokens: [...this.tokens.values()], mutations: [...this.mutations.entries()].map(([key, revision]) => ({ key, revision })), runs: [...this.runs.values()] })
+  }
+  storageRevision(): number { return this.storageRevisionValue }
+  setStorageRevision(revision: number): void {
+    if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('Shared world storage revision is invalid')
+    this.storageRevisionValue = revision
+  }
+  fork(): SharedWorldService { return SharedWorldService.restore(this.snapshotState(), this.storageRevisionValue) }
+  replaceWith(candidate: SharedWorldService): void {
+    const restored = SharedWorldService.restore(candidate.snapshotState(), candidate.storageRevision())
+    replaceMap(this.accounts, restored.accounts); replaceMap(this.accountsByEmail, restored.accountsByEmail); replaceMap(this.sessions, restored.sessions)
+    replaceMap(this.worlds, restored.worlds); replaceMap(this.access, restored.access); replaceMap(this.revisions, restored.revisions)
+    replaceMap(this.leases, restored.leases); replaceMap(this.audits, restored.audits); replaceMap(this.tokens, restored.tokens)
+    replaceMap(this.mutations, restored.mutations); replaceMap(this.runs, restored.runs); this.storageRevisionValue = restored.storageRevisionValue
   }
 
   async createAccount(id: string, email: string, password: string, now: string): Promise<HostedAccount> {
@@ -149,3 +180,4 @@ function validId(value: string): boolean { return /^[a-zA-Z0-9_-]{1,128}$/.test(
 function validEmail(value: string): boolean { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) }
 function isWorldRole(value: unknown): value is WorldRole { return value === 'owner' || value === 'editor' || value === 'viewer' }
 function payloadDigest(payload: unknown): string { return createHash('sha256').update(canonicalStringify(payload)).digest('hex') }
+function replaceMap<K, V>(target: Map<K, V>, source: ReadonlyMap<K, V>): void { target.clear(); for (const [key, value] of source) target.set(key, value) }

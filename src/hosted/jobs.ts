@@ -30,6 +30,7 @@ export class HostedSimulationJobManager {
       const now = new Date().toISOString()
       const created: HostedSimulationJob = {
         version: HOSTED_JOB_VERSION,
+        recordRevision: 1,
         jobId: request.jobId,
         runId: this.service.runId(),
         ownerId: this.ownerId,
@@ -46,7 +47,7 @@ export class HostedSimulationJobManager {
         createdAt: now,
         updatedAt: now,
       }
-      await this.store.saveJob(created)
+      await this.store.saveJob(created, 0)
       return created
     })
     this.schedule()
@@ -71,8 +72,7 @@ export class HostedSimulationJobManager {
       if (isTerminal(job.status)) return job
       const status = job.status === 'queued' ? 'cancelled' as const : 'cancelling' as const
       const next = { ...job, status, updatedAt: new Date().toISOString() }
-      await this.store.saveJob(next)
-      return next
+      return this.save(next)
     })
     this.schedule()
     return updated
@@ -229,7 +229,11 @@ export class HostedSimulationJobManager {
     }
   }
 
-  private async save(job: HostedSimulationJob): Promise<HostedSimulationJob> { await this.store.saveJob(job); return job }
+  private async save(job: HostedSimulationJob): Promise<HostedSimulationJob> {
+    const next = { ...job, recordRevision: job.recordRevision + 1 }
+    await this.store.saveJob(next, job.recordRevision)
+    return next
+  }
   private async required(jobId: string): Promise<HostedSimulationJob> {
     const job = await this.get(jobId)
     if (!job) throw new Error(`Hosted job not found: ${jobId}`)
@@ -247,7 +251,7 @@ export class HostedSimulationJobManager {
 function isTerminal(status: HostedSimulationJob['status']): boolean { return status === 'cancelled' || status === 'completed' || status === 'failed' }
 function completedQuantum(job: HostedSimulationJob, pending: NonNullable<HostedSimulationJob['pendingQuantum']>, observation: HostedRunObservation): HostedSimulationJob {
   const advancedTicks = job.advancedTicks + pending.ticks; const completed = advancedTicks >= job.totalTicks; const cancelled = job.status === 'cancelling'; const checkpoint = completed || cancelled || observation.tick - job.lastCheckpointTick >= job.checkpointIntervalTicks
-  return { ...job, status: cancelled ? 'cancelled' : completed ? 'completed' : 'running', advancedTicks, committedTick: observation.tick, committedDigest: observation.digest, pendingQuantum: undefined, lastCheckpointTick: checkpoint ? observation.tick : job.lastCheckpointTick, updatedAt: new Date().toISOString() }
+  return { ...job, recordRevision: job.recordRevision + 1, status: cancelled ? 'cancelled' : completed ? 'completed' : 'running', advancedTicks, committedTick: observation.tick, committedDigest: observation.digest, pendingQuantum: undefined, lastCheckpointTick: checkpoint ? observation.tick : job.lastCheckpointTick, updatedAt: new Date().toISOString() }
 }
 
 function failureFor(error: unknown, fallback: HostedJobFailure['code'] = 'advance-failed'): HostedJobFailure {

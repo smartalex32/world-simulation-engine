@@ -58,6 +58,39 @@ describe('hosted single-node run service', () => {
     expect(await service.tick('secret')).toBe(1)
   })
 
+  it('reconciles from durable state when persistence commits and the caller loses the acknowledgement', async () => {
+    const store = new CommitThenThrowStore()
+    const bootstrap = { runId: 'hosted-ack-loss', ownerId: 'owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('hosted-ack-loss-seed') }
+    const service = await HostedRunService.open(bootstrap, store)
+    store.throwAfterCommit = true
+    await expect(service.execute('secret', { type: 'STEP', requestId: 'ack-lost', count: 1 })).rejects.toThrow('acknowledgement')
+    const durable = await store.load(bootstrap.runId)
+    expect(await service.observe('secret')).toEqual({ tick: 1, digest: durable?.snapshot.digest })
+  })
+
+  it('allows only one process to commit a candidate with the same parent digest', async () => {
+    const store = new MemoryHostedRunStore()
+    const bootstrap = { runId: 'hosted-cas', ownerId: 'owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('hosted-cas-seed') }
+    const [first, second] = await Promise.all([HostedRunService.open(bootstrap, store), HostedRunService.open(bootstrap, store)])
+    const results = await Promise.allSettled([
+      first.execute('secret', { type: 'STEP', requestId: 'process-a', count: 1 }),
+      second.execute('secret', { type: 'STEP', requestId: 'process-b', count: 1 }),
+    ])
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
+    expect((await store.load(bootstrap.runId))?.snapshot.state.tick).toBe(1)
+  })
+
+  it('stops operations that were queued before reconciliation became impossible', async () => {
+    const store = new PoisoningMutationStore()
+    const service = await HostedRunService.open({ runId: 'hosted-poison', ownerId: 'owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('hosted-poison-seed') }, store)
+    store.poison = true
+    const first = service.execute('secret', { type: 'STEP', requestId: 'poison-first', count: 1 })
+    const alreadyQueued = service.execute('secret', { type: 'STEP', requestId: 'poison-second', count: 1 })
+    await expect(first).rejects.toThrow('injected')
+    await expect(alreadyQueued).rejects.toThrow('unreconciled')
+  })
+
 })
 
 class FailingMutationStore extends MemoryHostedRunStore {
@@ -66,4 +99,19 @@ class FailingMutationStore extends MemoryHostedRunStore {
     if (this.fail) throw new Error('injected persistence failure')
     return super.commitRunMutation(...args)
   }
+}
+
+class CommitThenThrowStore extends MemoryHostedRunStore {
+  throwAfterCommit = false
+  override async commitRunMutation(...args: Parameters<MemoryHostedRunStore['commitRunMutation']>) {
+    const result = await super.commitRunMutation(...args)
+    if (this.throwAfterCommit) { this.throwAfterCommit = false; throw new Error('injected lost commit acknowledgement') }
+    return result
+  }
+}
+
+class PoisoningMutationStore extends MemoryHostedRunStore {
+  poison = false
+  override async load(runId: string) { if (this.poison) throw new Error('injected reload failure'); return super.load(runId) }
+  override async commitRunMutation(...args: Parameters<MemoryHostedRunStore['commitRunMutation']>) { if (this.poison) throw new Error('injected persistence failure'); return super.commitRunMutation(...args) }
 }

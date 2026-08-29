@@ -1,6 +1,7 @@
 import type { SimulationEvent, StatisticSample, WorldCreationDraft } from '../simulation/domain/types'
 import type { WorkbenchProjection } from '../projection'
 import type { SimulationCommand, SimulationResponse, WorkbenchSnapshotEnvelope } from '../worker/protocol'
+import type { SharedWorldCommitRequest, SharedWorldCommitResult } from './sharedWorlds'
 
 /** Versioned, owner-authorized wire contract for the initial single-node host. */
 export const HOSTED_PROTOCOL_VERSION = 1
@@ -36,10 +37,15 @@ export interface HostedRunMutation {
   events: readonly SimulationEvent[]
   statistics: readonly StatisticSample[]
   job?: HostedSimulationJob
+  sharedWorld?: Omit<SharedWorldCommitRequest, 'initialRun'>
 }
 
+export interface HostedRunMutationResult {
+  outcome: 'committed' | 'already-committed'
+  sharedWorld?: SharedWorldCommitResult
+}
 export interface HostedRunMutationStore {
-  commitRunMutation(mutation: HostedRunMutation): Promise<'committed' | 'already-committed'>
+  commitRunMutation(mutation: HostedRunMutation): Promise<HostedRunMutationResult>
 }
 
 export interface HostedRunBootstrap {
@@ -79,7 +85,7 @@ export interface HostedRunView {
 export interface HostedRunSummary { runId: string; ownerId: string; tick: number; savedAt: string }
 
 /** Durable, inspectable progress for a host-owned bounded advancement job. */
-export const HOSTED_JOB_VERSION = 2
+export const HOSTED_JOB_VERSION = 3
 export type HostedJobStatus = 'queued' | 'running' | 'cancelling' | 'cancelled' | 'completed' | 'failed'
 
 export interface HostedJobFailure {
@@ -96,6 +102,7 @@ export interface HostedPendingQuantum {
 
 export interface HostedSimulationJob {
   version: typeof HOSTED_JOB_VERSION
+  recordRevision: number
   jobId: string
   runId: string
   ownerId: string
@@ -118,7 +125,7 @@ export interface HostedSimulationJob {
 /** Job durability is deliberately separate from run snapshots. */
 export interface HostedJobStore {
   loadJob(runId: string, jobId: string): Promise<HostedSimulationJob | undefined>
-  saveJob(job: HostedSimulationJob): Promise<void>
+  saveJob(job: HostedSimulationJob, expectedRecordRevision: number): Promise<void>
   listJobs(runId: string): Promise<HostedSimulationJob[]>
 }
 
@@ -134,6 +141,7 @@ export function validateHostedRunRecord(value: unknown): HostedRunRecord {
 
 export function validateHostedJob(value: unknown): HostedSimulationJob {
   if (!isRecord(value) || value.version !== HOSTED_JOB_VERSION || !validId(value.jobId) || !validId(value.runId) || !validId(value.ownerId)
+    || !positiveInteger(value.recordRevision)
     || !isHostedJobStatus(value.status) || !positiveInteger(value.queueOrder) || !nonNegativeInteger(value.startTick)
     || !positiveInteger(value.totalTicks) || !nonNegativeInteger(value.advancedTicks) || value.advancedTicks > value.totalTicks
     || !nonNegativeInteger(value.committedTick) || typeof value.committedDigest !== 'string' || value.committedDigest.length === 0

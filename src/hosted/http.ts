@@ -5,8 +5,10 @@ import { HostedSimulationJobManager, type HostedJobRequest } from './jobs'
 import { HostedRunService } from './runService'
 import { importContentPack, type ContentPackCatalog } from '../contentPacks'
 import { HostedEventStream } from './eventStream'
-import { SharedWorldService } from './sharedWorlds'
+import { SharedWorldService, type SharedOutboxEventInput, type SharedWorldMutationStore } from './sharedWorlds'
 import { SharedRunCoordinator } from './sharedRuns'
+import type { HostedRunRecord } from './types'
+import { canonicalStringify } from '../simulation/serialization/snapshot'
 
 export interface HostedHttpServerOptions {
   runId: string
@@ -16,11 +18,11 @@ export interface HostedHttpServerOptions {
   maximumRequestBytes?: number
   contentPacks?: ContentPackCatalog
   sharedWorlds?: SharedWorldService
+  sharedStore?: SharedWorldMutationStore
   eventStream?: HostedEventStream
-  saveSharedWorlds?: () => Promise<void>
+  saveSharedWorlds?: (service: SharedWorldService) => Promise<void>
   sharedRuns?: SharedRunCoordinator
   saveEventStream?: () => Promise<void>
-  commitSharedWorldMutation?: (topic: string, payload: unknown, occurredAt: string) => Promise<void>
 }
 
 /** The HTTP layer only validates/authorizes transport; services retain state ownership. */
@@ -33,47 +35,53 @@ export function createHostedHttpServer(options: HostedHttpServerOptions): Server
       if (request.method === 'GET' && pathname === '/api/v1/events') {
         const accountId = requiredShared(options).authenticateToken(bearerToken(request), 'worlds:read')
         void accountId
-        const last = request.headers['last-event-id']; const lastEventId = typeof last === 'string' && last.length ? Number(last) : undefined
+        const lastEventId = parseLastEventId(request.headers['last-event-id'])
+        if (options.sharedStore) return writeSse(response, await options.sharedStore.outboxAfter(lastEventId ?? 0))
         return requiredEvents(options).writeSse(response, lastEventId)
       }
       if (request.method === 'POST' && pathname === '/api/v1/accounts') {
-        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const account = await requiredShared(options).createAccount(requiredText(body.id), requiredText(body.email), requiredText(body.password), new Date().toISOString())
-        await saveSharedWorlds(options); return sendJson(response, 201, { id: account.id, email: account.email, createdAt: account.createdAt })
+        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const now = new Date().toISOString()
+        const account = await mutateShared(options, async (service) => ({ value: await service.createAccount(requiredText(body.id), requiredText(body.email), requiredText(body.password), now) }))
+        return sendJson(response, 201, { id: account.id, email: account.email, createdAt: account.createdAt })
       }
       if (request.method === 'POST' && pathname === '/api/v1/sessions') {
-        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const session = await requiredShared(options).createSession(requiredText(body.email), requiredText(body.password), new Date().toISOString())
-        await saveSharedWorlds(options); return sendJson(response, 201, { token: session.token, expiresAt: session.session.expiresAt })
+        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const now = new Date().toISOString()
+        const session = await mutateShared(options, async (service) => ({ value: await service.createSession(requiredText(body.email), requiredText(body.password), now) }))
+        return sendJson(response, 201, { token: session.token, expiresAt: session.session.expiresAt })
       }
-      if (request.method === 'POST' && pathname === '/api/v1/tokens') { const body = requiredRecord(await readJson(request, maximumRequestBytes)); const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); const issued = service.issueToken(requiredText(body.id), accountId, requiredScopes(body.scopes), new Date().toISOString()); await saveSharedWorlds(options); return sendJson(response, 201, { token: issued.token, record: publicToken(issued.record) }) }
+      if (request.method === 'POST' && pathname === '/api/v1/tokens') { const body = requiredRecord(await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); const issued = await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); return { value: service.issueToken(requiredText(body.id), accountId, requiredScopes(body.scopes), now) } }); return sendJson(response, 201, { token: issued.token, record: publicToken(issued.record) }) }
       if (request.method === 'GET' && pathname === '/api/v1/tokens') { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listTokens(accountId)) }
       const tokenMatch = /^\/api\/v1\/tokens\/([a-zA-Z0-9_-]+)$/.exec(pathname)
-      if (request.method === 'DELETE' && tokenMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); service.revokeToken(tokenMatch[1]!, accountId); await saveSharedWorlds(options); return sendJson(response, 204, undefined) }
+      if (request.method === 'DELETE' && tokenMatch) { const bearer = bearerToken(request); await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); service.revokeToken(tokenMatch[1]!, accountId); return { value: undefined } }); return sendJson(response, 204, undefined) }
       if (request.method === 'POST' && pathname === '/api/v1/worlds') {
-        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); const world = service.createWorld(requiredText(body.id), requiredText(body.name), accountId, body.draft ?? {}, new Date().toISOString()); await commitShared(options, 'world', { id: world.id, revision: world.currentRevision }, world.updatedAt); return sendJson(response, 201, world)
+        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); const id = requiredText(body.id)
+        const world = await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); const created = service.createWorld(id, requiredText(body.name), accountId, body.draft ?? {}, now); return { value: created, event: { key: `world:${id}:created`, topic: 'world', payload: { id: created.id, revision: created.currentRevision }, occurredAt: created.updatedAt } } })
+        return sendJson(response, 201, world)
       }
       const worldMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)$/.exec(pathname)
       if (request.method === 'GET' && worldMatch) { const accountId = requiredShared(options).authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, requiredShared(options).getWorld(worldMatch[1]!, accountId)) }
       const membersMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/members$/.exec(pathname)
       if (request.method === 'GET' && membersMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listMembers(membersMatch[1]!, accountId)) }
-      if (request.method === 'PUT' && membersMatch) { const body = requiredRecord(await readJson(request, maximumRequestBytes)); const service = requiredShared(options); const actorId = service.authenticateToken(bearerToken(request), 'worlds:write'); const role = requiredWorldRole(body.role); const member = service.addMember(membersMatch[1]!, actorId, requiredText(body.accountId), role, new Date().toISOString()); await saveSharedWorlds(options); return sendJson(response, 200, member) }
+      if (request.method === 'PUT' && membersMatch) { const body = requiredRecord(await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); const member = await mutateShared(options, (service) => { const actorId = service.authenticateToken(bearer, 'worlds:write'); return { value: service.addMember(membersMatch[1]!, actorId, requiredText(body.accountId), requiredWorldRole(body.role), now) } }); return sendJson(response, 200, member) }
       const leaseMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/lease$/.exec(pathname)
-      if (request.method === 'POST' && leaseMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); const body = requiredRecord(await readJson(request, maximumRequestBytes)); const now = new Date().toISOString(); const lease = typeof body.leaseId === 'string' ? service.renewLease(leaseMatch[1]!, accountId, body.leaseId, requiredInteger(body.expectedRevision), now) : service.acquireLease(leaseMatch[1]!, accountId, now); await saveSharedWorlds(options); return sendJson(response, 200, lease) }
+      if (request.method === 'POST' && leaseMatch) { const bearer = bearerToken(request); const body = requiredRecord(await readJson(request, maximumRequestBytes)); const now = new Date().toISOString(); const lease = await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); return { value: typeof body.leaseId === 'string' ? service.renewLease(leaseMatch[1]!, accountId, body.leaseId, requiredInteger(body.expectedRevision), now) : service.acquireLease(leaseMatch[1]!, accountId, now) } }); return sendJson(response, 200, lease) }
       const revisionsMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/revisions$/.exec(pathname)
       if (request.method === 'GET' && revisionsMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listRevisions(revisionsMatch[1]!, accountId)) }
-      if (request.method === 'POST' && revisionsMatch) { const body = requiredRecord(await readJson(request, maximumRequestBytes)); const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); const revision = service.saveRevision(revisionsMatch[1]!, accountId, requiredText(body.leaseId), requiredInteger(body.expectedRevision), requiredText(body.clientMutationId), body.payload, new Date().toISOString()); await commitShared(options, 'draft.revised', { worldId: revision.worldId, revision: revision.revision }, revision.createdAt); return sendJson(response, 201, revision) }
+      if (request.method === 'POST' && revisionsMatch) { const body = requiredRecord(await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const clientMutationId = requiredText(body.clientMutationId); const now = new Date().toISOString(); const revision = await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); const saved = service.saveRevision(revisionsMatch[1]!, accountId, requiredText(body.leaseId), requiredInteger(body.expectedRevision), clientMutationId, body.payload, now); return { value: saved, event: { key: `revision:${saved.worldId}:${accountId}:${clientMutationId}`, topic: 'draft.revised', payload: { worldId: saved.worldId, revision: saved.revision }, occurredAt: saved.createdAt } } }); return sendJson(response, 201, revision) }
       const auditsMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/audits$/.exec(pathname)
       if (request.method === 'GET' && auditsMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listAudits(auditsMatch[1]!, accountId)) }
       const runsMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/runs$/.exec(pathname)
       if (request.method === 'GET' && runsMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listRuns(runsMatch[1]!, accountId)) }
       if (request.method === 'POST' && runsMatch) {
-        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); const committed = service.commitRun(runsMatch[1]!, accountId, requiredInteger(body.revision), requiredText(body.runId), new Date().toISOString())
-        await requiredSharedRuns(options).create(committed.run.runId, committed.run.ownerAccountId, committed.draft); await commitShared(options, 'run.committed', committed.run, committed.run.createdAt); return sendJson(response, 201, committed.run)
+        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); const runId = requiredText(body.runId); const coordinator = requiredSharedRuns(options)
+        const run = await mutateShared(options, async (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); const committed = service.commitRun(runsMatch[1]!, accountId, requiredInteger(body.revision), runId, now); const initialRun = await coordinator.prepare(committed.run.runId, committed.run.ownerAccountId, committed.draft, now); return { value: committed.run, initialRun, event: { key: `run:${runId}:committed`, topic: 'run.committed', payload: committed.run, occurredAt: committed.run.createdAt } } })
+        return sendJson(response, 201, run)
       }
       const sharedRunMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/runs\/([a-zA-Z0-9_-]+)\/(projection|commands)$/.exec(pathname)
       if (sharedRunMatch) {
-        const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), sharedRunMatch[3] === 'projection' ? 'worlds:read' : 'worlds:write'); const run = service.getRun(sharedRunMatch[1]!, sharedRunMatch[2]!, accountId); const draft = service.draftForRun(run)
-        if (request.method === 'GET' && sharedRunMatch[3] === 'projection') return sendJson(response, 200, await requiredSharedRuns(options).projection(run.runId, run.ownerAccountId, draft))
-        if (request.method === 'POST' && sharedRunMatch[3] === 'commands') { if (service.member(run.worldId, accountId)?.role !== 'owner') throw new Error('Shared world authorization failed'); const command = validateHostedCommand(await readJson(request, maximumRequestBytes)); const result = await requiredSharedRuns(options).command(run.runId, run.ownerAccountId, draft, command); service.recordRunControl(run, accountId, command.type, new Date().toISOString()); await saveSharedWorlds(options); return sendJson(response, 200, result) }
+        const bearer = bearerToken(request)
+        if (request.method === 'GET' && sharedRunMatch[3] === 'projection') { const service = requiredShared(options); const accountId = service.authenticateToken(bearer, 'worlds:read'); const run = service.getRun(sharedRunMatch[1]!, sharedRunMatch[2]!, accountId); return sendJson(response, 200, await requiredSharedRuns(options).projection(run.runId, run.ownerAccountId, service.draftForRun(run))) }
+        if (request.method === 'POST' && sharedRunMatch[3] === 'commands') { const command = validateHostedCommand(await readJson(request, maximumRequestBytes)); const result = await executeSharedRunCommand(options, sharedRunMatch[1]!, sharedRunMatch[2]!, bearer, command, new Date().toISOString()); return sendJson(response, 200, result) }
       }
       if (request.method === 'GET' && pathname === '/health') return sendJson(response, 200, { status: 'ok', runId: options.runId })
       const token = bearerToken(request)
@@ -111,9 +119,81 @@ function requiredContentPacks(options: HostedHttpServerOptions): ContentPackCata
 function requiredShared(options: HostedHttpServerOptions): SharedWorldService { if (!options.sharedWorlds) throw new HostedHttpError(404, 'Shared worlds are not configured'); return options.sharedWorlds }
 function requiredEvents(options: HostedHttpServerOptions): HostedEventStream { if (!options.eventStream) throw new HostedHttpError(404, 'Event stream is not configured'); return options.eventStream }
 function requiredSharedRuns(options: HostedHttpServerOptions): SharedRunCoordinator { if (!options.sharedRuns) throw new HostedHttpError(404, 'Shared runs are not configured'); return options.sharedRuns }
-async function saveSharedWorlds(options: HostedHttpServerOptions): Promise<void> { if (options.saveSharedWorlds) await options.saveSharedWorlds() }
 async function saveEventStream(options: HostedHttpServerOptions): Promise<void> { if (options.saveEventStream) await options.saveEventStream() }
-async function commitShared(options: HostedHttpServerOptions, topic: string, payload: unknown, occurredAt: string): Promise<void> { if (options.commitSharedWorldMutation) { await options.commitSharedWorldMutation(topic, payload, occurredAt); requiredEvents(options).publish(topic, payload, occurredAt); return }; await saveSharedWorlds(options); requiredEvents(options).publish(topic, payload, occurredAt); await saveEventStream(options) }
+
+interface PreparedSharedMutation<T> { value: T; event?: SharedOutboxEventInput; initialRun?: HostedRunRecord }
+const sharedQueues = new WeakMap<SharedWorldService, Promise<void>>()
+const unreconciledSharedServices = new WeakSet<SharedWorldService>()
+
+async function mutateShared<T>(options: HostedHttpServerOptions, operation: (candidate: SharedWorldService) => PreparedSharedMutation<T> | Promise<PreparedSharedMutation<T>>): Promise<T> {
+  const service = requiredShared(options)
+  return enqueueShared(service, async () => {
+    const candidate = service.fork(); const prepared = await operation(candidate)
+    // A semantic retry (notably a repeated draft clientMutationId) may return
+    // the prior result without changing state. Its original transaction already
+    // owns the durable outbox event, so do not create a new storage revision.
+    if (!prepared.initialRun && canonicalStringify(candidate.snapshotState()) === canonicalStringify(service.snapshotState())) return prepared.value
+    await commitSharedCandidate(options, service, candidate, prepared.event, prepared.initialRun)
+    return prepared.value
+  })
+}
+
+async function commitSharedCandidate(options: HostedHttpServerOptions, service: SharedWorldService, candidate: SharedWorldService, event?: SharedOutboxEventInput, initialRun?: HostedRunRecord): Promise<void> {
+  try {
+    if (options.sharedStore) {
+      const committed = await options.sharedStore.commitSharedWorldMutation({ expectedRevision: service.storageRevision(), service: candidate, event, initialRun })
+      candidate.setStorageRevision(committed.revision)
+    } else {
+      if (initialRun) await requiredSharedRuns(options).persistPrepared(initialRun)
+      if (options.saveSharedWorlds) await options.saveSharedWorlds(candidate)
+      candidate.setStorageRevision(service.storageRevision() + 1)
+      if (event) { requiredEvents(options).publish(event.topic, event.payload, event.occurredAt); await saveEventStream(options) }
+    }
+    service.replaceWith(candidate)
+  } catch (error) {
+    if (options.sharedStore) {
+      try { service.replaceWith(await options.sharedStore.loadSharedWorldService()) }
+      catch { unreconciledSharedServices.add(service) }
+    }
+    throw error
+  }
+}
+
+async function executeSharedRunCommand(options: HostedHttpServerOptions, worldId: string, runId: string, bearer: string, command: HostedRunCommand, now: string): Promise<unknown> {
+  const service = requiredShared(options)
+  return enqueueShared(service, async () => {
+    const candidate = service.fork(); const accountId = candidate.authenticateToken(bearer, 'worlds:write'); const run = candidate.getRun(worldId, runId, accountId)
+    if (candidate.member(run.worldId, accountId)?.role !== 'owner') throw new Error('Shared world authorization failed')
+    const draft = candidate.draftForRun(run); candidate.recordRunControl(run, accountId, command.type, now)
+    const event: SharedOutboxEventInput = { key: `run-command:${run.runId}:${command.requestId}`, topic: 'run.command', payload: { worldId: run.worldId, runId: run.runId, command: command.type }, occurredAt: now }
+    if (options.sharedStore && isAuthoritativeCommand(command)) {
+      try {
+        const transaction = await requiredSharedRuns(options).command(run.runId, run.ownerAccountId, draft, command, { expectedRevision: service.storageRevision(), service: candidate, event })
+        if (transaction.outcome === 'committed') {
+          if (!transaction.sharedWorld) throw new Error('Shared world transaction result is missing')
+          candidate.setStorageRevision(transaction.sharedWorld.revision); service.replaceWith(candidate)
+        } else service.replaceWith(await options.sharedStore.loadSharedWorldService())
+        return transaction.result
+      } catch (error) {
+        try { service.replaceWith(await options.sharedStore.loadSharedWorldService()) }
+        catch { unreconciledSharedServices.add(service) }
+        throw error
+      }
+    }
+    const result = (await requiredSharedRuns(options).command(run.runId, run.ownerAccountId, draft, command)).result
+    await commitSharedCandidate(options, service, candidate, event)
+    return result
+  })
+}
+
+async function enqueueShared<T>(service: SharedWorldService, operation: () => Promise<T>): Promise<T> {
+  const previous = sharedQueues.get(service) ?? Promise.resolve(); let result!: T
+  const queued = previous.then(async () => { if (unreconciledSharedServices.has(service)) throw new Error('Shared world authority is unreconciled; restart or restore durable state before continuing'); result = await operation() })
+  sharedQueues.set(service, queued.then(() => undefined, () => undefined)); await queued; return result
+}
+function isAuthoritativeCommand(command: HostedRunCommand): boolean { return command.type === 'STEP' || command.type === 'RESET' || command.type === 'MATERIALIZE_COHORT' || command.type === 'DEMATERIALIZE_PEOPLE' || command.type === 'SET_PROTECTED_PEOPLE' }
+function parseLastEventId(value: string | string[] | undefined): number | undefined { if (value === undefined || value === '') return undefined; if (Array.isArray(value)) throw new Error('Last-Event-ID is invalid'); const parsed = Number(value); if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error('Last-Event-ID is invalid'); return parsed }
+function writeSse(response: ServerResponse, events: readonly { id: number; topic: string; payload: unknown }[]): void { response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' }); for (const event of events) response.write(`id: ${event.id}\nevent: ${event.topic}\ndata: ${JSON.stringify(event.payload)}\n\n`) }
 
 function bearerToken(request: IncomingMessage): string {
   const authorization = request.headers.authorization
@@ -204,7 +284,7 @@ function httpFailure(error: unknown): HostedHttpError {
   if (error instanceof HostedHttpError) return error
   const message = error instanceof Error ? error.message : ''
   if (message.includes('authorization')) return new HostedHttpError(401, 'Hosted run authorization failed')
-  if (message.includes('already exists') || message.includes('run state conflict') || message.includes('owned by an active') || message.includes('lease') || message.includes('stale')) return new HostedHttpError(409, 'Hosted operation conflicts with current run state')
+  if (message.includes('already exists') || message.includes('state conflict') || message.includes('owned by an active') || message.includes('lease') || message.includes('stale')) return new HostedHttpError(409, 'Hosted operation conflicts with current run state')
   if (message.includes('invalid') || message.includes('unsupported') || message.includes('must be')) return new HostedHttpError(400, 'Hosted request is invalid')
   return new HostedHttpError(500, 'Hosted server could not complete the request')
 }
