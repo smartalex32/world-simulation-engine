@@ -176,7 +176,7 @@ export class WorkbenchProjectionBuilder {
     // Callers without a change set (new/restore/direct builder use) rebuild
     // safely. Incremental callers update only the affected cache family.
     if (invalidation?.categories.includes('topology')) this.refreshTopology(source)
-    if (!invalidation || invalidation.categories.some((category) => category === 'locations' || category === 'people' || category === 'communities' || category === 'relationships' || category === 'topology')) this.refreshDynamicIndexes(source)
+    if (!invalidation || invalidation.categories.length > 0) this.refreshDynamicIndexes(source, invalidation?.categories)
     const bounds = clampViewportBounds(request.bounds, this.grid.width, this.grid.height)
     const size = selectRegionSize(bounds, request.projectedHexRadius)
     const exact = size === 1
@@ -187,7 +187,9 @@ export class WorkbenchProjectionBuilder {
     const communitiesById = new Map(source.communities.map((community) => [community.catchment.id, community]))
     const exactCells = exact ? cellsInBounds(this.grid, bounds).map((cell) => this.projectCell(cell, populationByCellId, communitiesById, request.communityMeasureId)) : []
     const regions = exact ? [] : this.aggregateRegions(source, bounds, size, request.overlay === 'food', request.communityMeasureId)
-    const populationMarkers = buildPopulationMarkers(livingPeople, this.cellById, bounds, exact ? 1 : size, cohortPopulationByCell(source.cohorts))
+    const populationMarkers = exact
+      ? buildPopulationMarkers(livingPeople, this.cellById, bounds, 1, cohortPopulationByCell(source.cohorts))
+      : buildPopulationMarkersFromCounts(this.populationByCellId, this.cellById, bounds, size)
     const hookedPersonMarker = buildHookedMarker(livingPeople, this.cellById, bounds, request.hookedPersonId)
     const selectedPerson = request.hookedPersonId ? source.people.find((person) => person.id === request.hookedPersonId) : undefined
     const activityMarkers = this.buildLocationMarkers(this.activityEntriesByChunk, this.activityCellById, bounds, size, MAX_ACTIVITY_MARKERS, 'activity', selectedPerson?.currentActivity.locationId ?? undefined)
@@ -232,18 +234,19 @@ export class WorkbenchProjectionBuilder {
     return { staticRegions: this.staticRegions.size, activityChunks: this.activityEntriesByChunk.size, householdChunks: this.householdEntriesByChunk.size, routes: this.routeCache.size }
   }
 
-  private refreshDynamicIndexes(source: WorldProjection): void {
-    this.communityIdByCellId.clear()
-    for (const community of source.communities) for (const cellId of community.catchment.cellIds) this.communityIdByCellId.set(cellId, community.catchment.id)
-    const activityEntries = source.activityLocations.map(({ id, cellId }) => ({ id, cellId }))
-    const householdEntries = source.households.map(({ id, homeCellId }) => ({ id, cellId: homeCellId }))
-    this.activityEntriesByChunk = buildLocationChunkIndex(activityEntries, this.cellById)
-    this.householdEntriesByChunk = buildLocationChunkIndex(householdEntries, this.cellById)
-    this.activityCellById = new Map(activityEntries.map(({ id, cellId }) => [id, cellId]))
-    this.householdCellById = new Map(householdEntries.map(({ id, cellId }) => [id, cellId]))
-    const population = countPeopleByCell(source.people.filter((person) => person.lifeStatus !== 'dead'))
-    for (const [cellId, count] of cohortPopulationByCell(source.cohorts)) population.set(cellId, (population.get(cellId) ?? 0) + count)
-    this.populationByCellId = population
+  private refreshDynamicIndexes(source: WorldProjection, categories?: readonly ProjectionInvalidation['categories'][number][]): void {
+    const changed = new Set(categories)
+    if (!categories || changed.has('communities') || changed.has('topology')) {
+      this.communityIdByCellId.clear(); for (const community of source.communities) for (const cellId of community.catchment.cellIds) this.communityIdByCellId.set(cellId, community.catchment.id)
+    }
+    if (!categories || changed.has('locations') || changed.has('topology')) {
+      const activityEntries = source.activityLocations.map(({ id, cellId }) => ({ id, cellId })); const householdEntries = source.households.map(({ id, homeCellId }) => ({ id, cellId: homeCellId }))
+      this.activityEntriesByChunk = buildLocationChunkIndex(activityEntries, this.cellById); this.householdEntriesByChunk = buildLocationChunkIndex(householdEntries, this.cellById)
+      this.activityCellById = new Map(activityEntries.map(({ id, cellId }) => [id, cellId])); this.householdCellById = new Map(householdEntries.map(({ id, cellId }) => [id, cellId]))
+    }
+    if (!categories || changed.has('people') || changed.has('topology')) {
+      const population = countPeopleByCell(source.people.filter((person) => person.lifeStatus !== 'dead')); for (const [cellId, count] of cohortPopulationByCell(source.cohorts)) population.set(cellId, (population.get(cellId) ?? 0) + count); this.populationByCellId = population
+    }
   }
 
   /** Topology invalidation replaces every terrain-derived cache as one unit. */
@@ -478,6 +481,25 @@ function buildPopulationMarkers(people: readonly PersonState[], cells: ReadonlyM
     groups = populationGroups(people, cells, bounds, markerSize, cohorts)
   }
   return groups
+}
+
+function buildPopulationMarkersFromCounts(population: ReadonlyMap<string, number>, cells: ReadonlyMap<string, GeographicCell>, bounds: AxialViewportBounds, size: ProjectionRegionSize): PopulationMapMarker[] {
+  let markerSize = size
+  let groups = groupedPopulationCounts(population, cells, bounds, markerSize)
+  while (groups.length > MAX_POPULATION_MARKERS) { markerSize = nextRegionSize(markerSize); groups = groupedPopulationCounts(population, cells, bounds, markerSize) }
+  return groups
+}
+
+function groupedPopulationCounts(population: ReadonlyMap<string, number>, cells: ReadonlyMap<string, GeographicCell>, bounds: AxialViewportBounds, size: ProjectionRegionSize): PopulationMapMarker[] {
+  const groups = new Map<string, PopulationMapMarker>()
+  for (const [cellId, count] of population) {
+    const cell = cells.get(cellId)
+    if (!cell || !inBounds(cell, bounds)) continue
+    const key = regionKey(size, cell.q, cell.r); const current = groups.get(key)
+    if (current) current.count += count
+    else groups.set(key, { id: `population:${key}`, q: alignRegionOrigin(cell.q, size) + (size - 1) / 2, r: alignRegionOrigin(cell.r, size) + (size - 1) / 2, count })
+  }
+  return [...groups.values()].sort((a, b) => compareStableText(a.id, b.id))
 }
 
 /** Bounded inspector transport: the worker retains every entity and a hook takes priority. */

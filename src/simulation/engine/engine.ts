@@ -1779,14 +1779,18 @@ function serializeRuntimeCommunityCounters(runtime: RuntimeCommunityCounters): C
   }
 }
 
-/** Events intentionally produce a conservative neutral change set: consumers
- * may optimize it, but may never use it to retain stale projected state. */
 function changeSetFromEvents(events: readonly SimulationEvent[]): AuthoritativeChangeSet {
   if (events.length === 0) return { categories: [], cellIds: [] }
   const cellIds = new Set<string>()
-  for (const event of events) if (event.type === 'HOUSEHOLD_RELOCATED') {
-    if (typeof event.payload.sourceCellId === 'string') cellIds.add(event.payload.sourceCellId)
-    if (typeof event.payload.destinationCellId === 'string') cellIds.add(event.payload.destinationCellId)
+  const categories = new Set<AuthoritativeChangeSet['categories'][number]>()
+  for (const event of events) {
+    if (event.type === 'HOUSEHOLD_RELOCATED' || event.type === 'PERSON_MOVED' || event.type === 'PERSON_STARTED_TRAVEL' || event.type === 'PERSON_MOVED_HOUSEHOLD' || event.type === 'COHORT_MATERIALIZED' || event.type === 'PEOPLE_DEMATERIALIZED' || event.type === 'PERSON_BORN' || event.type === 'PERSON_DIED') { categories.add('people'); categories.add('locations') }
+    if (event.type === 'RELATIONSHIP_FORMED' || event.type === 'PARTNERSHIP_FORMED' || event.type === 'PERSON_DIED' || event.type === 'PERSON_BORN') categories.add('relationships')
+    if (event.type === 'COMMUNITY_MEASURES_UPDATED' || event.type === 'COMMUNITY_CONTENTION_RESOLVED' || event.type === 'SETTLEMENT_SCALE_CHANGED' || event.type === 'INFRASTRUCTURE_UPDATED') categories.add('communities')
+    if (event.type === 'HOUSEHOLD_RELOCATED') {
+      if (typeof event.payload.sourceCellId === 'string') cellIds.add(event.payload.sourceCellId)
+      if (typeof event.payload.destinationCellId === 'string') cellIds.add(event.payload.destinationCellId)
+    }
   }
-  return { categories: ['people', 'locations', 'relationships', 'communities'], cellIds: [...cellIds].sort(compareIds) }
+  return { categories: [...categories].sort(), cellIds: [...cellIds].sort(compareIds) }
 }
