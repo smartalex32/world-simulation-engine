@@ -150,6 +150,16 @@ describe('bounded workbench projection', () => {
     expect(after.activityMarkers.reduce((sum, marker) => sum + marker.count, 0)).toBeGreaterThan(0)
     expect(builder.cacheCardinality().staticRegions).toBe(staticCacheCount)
   })
+
+  it('rebuilds terrain-derived caches when topology is invalidated', () => {
+    const source = SimulationEngine.create('projection-topology').project()
+    const builder = new WorkbenchProjectionBuilder(source)
+    const changed = structuredClone(source)
+    changed.world.grid = { width: 1, height: 1, cells: [changed.world.grid.cells[0]!] }
+    const map = builder.buildMap(changed, request({ minQ: 0, maxQ: 0, minR: 0, maxR: 0 }, 12), { categories: ['topology'], cellIds: [] })
+    expect(map.exactCells).toHaveLength(1)
+    expect(map.exactCells[0]?.id).toBe(changed.world.grid.cells[0]?.id)
+  })
 })
 
 function request(bounds: MapProjectionRequest['bounds'], projectedHexRadius: number, overlay: MapProjectionRequest['overlay'] = 'terrain'): MapProjectionRequest {

@@ -85,12 +85,12 @@ interface StaticLocationGroup {
 }
 
 export class WorkbenchProjectionBuilder {
-  private readonly grid: HexGrid
+  private grid: HexGrid
   private readonly staticRegions = new Map<string, StaticRegionAggregate>()
-  private readonly cellById: Map<string, GeographicCell>
-  private readonly drainageByCellId: ReadonlyMap<string, DrainageCell>
+  private cellById: Map<string, GeographicCell>
+  private drainageByCellId: ReadonlyMap<string, DrainageCell>
   /** Immutable terrain-derived hydrology is independent of dynamic populations. */
-  private readonly hydrologyByCellId: ReadonlyMap<string, HydrologyCell>
+  private hydrologyByCellId: ReadonlyMap<string, HydrologyCell>
   private environmentByCellId: ReadonlyMap<string, LivingEnvironmentCell> = new Map()
   private readonly communityIdByCellId = new Map<string, string>()
   private activityEntriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]> = new Map()
@@ -101,9 +101,10 @@ export class WorkbenchProjectionBuilder {
 
   constructor(source: WorldProjection) {
     this.grid = source.world.grid
-    this.cellById = new Map(this.grid.cells.map((cell) => [cell.id, cell]))
-    this.drainageByCellId = deriveDrainage(this.grid)
-    this.hydrologyByCellId = deriveHydrology(this.grid).cells
+    this.cellById = new Map()
+    this.drainageByCellId = new Map()
+    this.hydrologyByCellId = new Map()
+    this.refreshTopology(source)
     this.refreshDynamicIndexes(source)
   }
 
@@ -174,7 +175,7 @@ export class WorkbenchProjectionBuilder {
     // Callers without a change set (new/restore/direct builder use) rebuild
     // safely. Incremental callers update only the affected cache family.
     if (!invalidation || invalidation.categories.some((category) => category === 'locations' || category === 'people' || category === 'communities' || category === 'relationships' || category === 'topology')) this.refreshDynamicIndexes(source)
-    if (invalidation?.categories.includes('topology')) this.staticRegions.clear()
+    if (invalidation?.categories.includes('topology')) this.refreshTopology(source)
     const bounds = clampViewportBounds(request.bounds, this.grid.width, this.grid.height)
     const size = selectRegionSize(bounds, request.projectedHexRadius)
     const exact = size === 1
@@ -240,6 +241,16 @@ export class WorkbenchProjectionBuilder {
     this.householdEntriesByChunk = buildLocationChunkIndex(householdEntries, this.cellById)
     this.activityCellById = new Map(activityEntries.map(({ id, cellId }) => [id, cellId]))
     this.householdCellById = new Map(householdEntries.map(({ id, cellId }) => [id, cellId]))
+  }
+
+  /** Topology invalidation replaces every terrain-derived cache as one unit. */
+  private refreshTopology(source: WorldProjection): void {
+    this.grid = source.world.grid
+    this.cellById = new Map(this.grid.cells.map((cell) => [cell.id, cell]))
+    this.drainageByCellId = deriveDrainage(this.grid)
+    this.hydrologyByCellId = deriveHydrology(this.grid).cells
+    this.staticRegions.clear()
+    this.routeCache.clear()
   }
 
   private routeHome(people: readonly PersonState[], hookedPersonId?: string): RouteHomeProjection | undefined {
