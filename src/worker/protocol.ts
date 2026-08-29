@@ -1,4 +1,4 @@
-import type { MapProjectionRequest, WorkbenchProjection } from '../projection'
+import type { MapProjectionRequest, ProjectionInvalidation, WorkbenchProjection } from '../projection'
 import type { DraftViewportProjection, DraftViewportRequest, SimulationEvent, SnapshotEnvelope, StatisticSample, Terrain, WorldCreationDraft, WorldDraftPreview, WorldDraftRecord } from '../simulation/domain/types'
 import type { WorkerContinuationState } from './frameScheduler'
 import type { ContentPack } from '../contentPacks'
@@ -36,7 +36,7 @@ export type SimulationCommand =
 
 export type SimulationResponse =
   | { type: 'READY' }
-  | { type: 'FRAME'; requestId?: string; projection: WorkbenchProjection; events: SimulationEvent[]; statistics: StatisticSample[]; processingMs: number }
+  | { type: 'FRAME'; requestId?: string; projection: WorkbenchProjection; events: SimulationEvent[]; statistics: StatisticSample[]; processingMs: number; projectionInvalidation: ProjectionInvalidation }
   | { type: 'STATUS'; requestId?: string; status: 'idle' | 'paused' | 'playing'; ticksPerBatch: number }
   | { type: 'DRAFT'; requestId: string; action: 'created' | 'hydrated' | 'updated' | 'zoneCellsUpdated' | 'terrainPainted' | 'elevationPainted' | 'resourcesPainted' | 'undone' | 'redone' | 'reset' | 'previewed' | 'committing' | 'committed' | 'discarded'; draft?: WorldDraftRecord; preview?: WorldDraftPreview }
   | { type: 'DRAFT_VIEWPORT'; requestId: string; viewport: DraftViewportProjection }

@@ -131,6 +131,25 @@ describe('bounded workbench projection', () => {
     expect(JSON.stringify(source)).toBe(before)
     expect(builder.cacheCardinality()).toEqual({ staticRegions: expect.any(Number), activityChunks: expect.any(Number), householdChunks: expect.any(Number), routes: 0 })
   })
+
+  it('refreshes retained dynamic indexes while retaining immutable terrain caches', () => {
+    const source = SimulationEngine.create('projection-dynamic-indexes').project()
+    const builder = new WorkbenchProjectionBuilder(source)
+    const household = source.households[0]
+    if (!household) throw new Error('Projection fixture needs a household')
+    const home = source.activityLocations.find((location) => location.id === household.homeActivityLocationId)
+    const destination = source.world.grid.cells.find((cell) => cell.movementCost > 0 && cell.id !== household.homeCellId)
+    if (!home || !destination) throw new Error('Projection fixture needs a distinct passable destination')
+    const before = builder.buildMap(source, request({ minQ: 0, maxQ: source.world.grid.width - 1, minR: 0, maxR: source.world.grid.height - 1 }, 0.1))
+    const staticCacheCount = builder.cacheCardinality().staticRegions
+    household.homeCellId = destination.id
+    home.cellId = destination.id
+    const after = builder.buildMap(source, request({ minQ: destination.q, maxQ: destination.q, minR: destination.r, maxR: destination.r }, 12))
+    expect(before.householdMarkers.some((marker) => marker.q === destination.q && marker.r === destination.r)).toBe(false)
+    expect(after.householdMarkers.reduce((sum, marker) => sum + marker.count, 0)).toBeGreaterThan(0)
+    expect(after.activityMarkers.reduce((sum, marker) => sum + marker.count, 0)).toBeGreaterThan(0)
+    expect(builder.cacheCardinality().staticRegions).toBe(staticCacheCount)
+  })
 })
 
 function request(bounds: MapProjectionRequest['bounds'], projectedHexRadius: number, overlay: MapProjectionRequest['overlay'] = 'terrain'): MapProjectionRequest {

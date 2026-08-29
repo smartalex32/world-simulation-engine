@@ -25,9 +25,15 @@ export interface LivingEnvironmentCell {
  */
 export function deriveLivingEnvironment(grid: HexGrid, tick: number, populationByCellId: ReadonlyMap<string, number> = new Map()): ReadonlyMap<string, LivingEnvironmentCell> {
   const hydrology = deriveHydrology(grid)
+  return deriveLivingEnvironmentCells(grid.cells, tick, populationByCellId, hydrology.cells)
+}
+
+/** Derives only the requested cells when a viewport needs environmental detail. */
+export function deriveLivingEnvironmentCells(cells: readonly GeographicCell[], tick: number, populationByCellId: ReadonlyMap<string, number>, hydrologyByCellId: ReadonlyMap<string, HydrologyCell>): ReadonlyMap<string, LivingEnvironmentCell> {
   const result = new Map<string, LivingEnvironmentCell>()
-  for (const cell of grid.cells) {
-    const water = hydrology.cells.get(cell.id)!
+  for (const cell of cells) {
+    const water = hydrologyByCellId.get(cell.id)
+    if (!water) continue
     const climate = climateConditionsAt(cell, tick)
     const biomeId = biomeFor(cell, water)
     const ecologicalProductivityPermille = ecologyFor(cell, water, climate.waterAvailabilityPermille)

@@ -1105,6 +1105,16 @@ authoring work.
 
 Rendering uses bounded worker projections rather than transferring the complete authoritative world to the UI.
 
+Projection caches are explicitly noncanonical: immutable terrain, drainage, and
+authored-geography aggregates have an independent lifetime from dynamic
+household/activity indexes. Retained builders rebuild dynamic location indexes
+from the current authoritative projection before every frame, while exact-cell
+living-environment evidence is derived only for visible or focused cells.
+Advance and fidelity-command results also carry noncanonical invalidation hints
+(`people`, `locations`, `relationships`, `communities`, and `topology`) for
+future incremental consumers; those hints never affect snapshots, RNG, or
+authoritative execution.
+
 Current projection capabilities include:
 
 * Exact local cells

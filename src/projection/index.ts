@@ -1,6 +1,7 @@
 export * from './types'
 export * from './chunks'
 export * from './buildMapProjection'
+export * from './invalidation'
 export * from './settlements'
 export * from './regionalNetwork'
 export * from './diffusion'

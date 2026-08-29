@@ -7,6 +7,7 @@ describe('projection-free engine advance', () => {
     const advanced = SimulationEngine.create('advance-equivalence')
     const stepResult = stepped.step(48)
     const advanceResult = advanced.advance(48)
+    expect(advanceResult.projectionInvalidation.categories).toEqual(expect.any(Array))
     expect(advanceResult.events).toEqual(stepResult.events)
     expect(advanceResult.statistics).toEqual(stepResult.statistics)
     expect(await advanced.snapshot()).toEqual(await stepped.snapshot())

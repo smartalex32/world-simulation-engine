@@ -16,10 +16,12 @@ import { buildProjectedContentionProfiles } from './conflict'
 import { buildProjectedCollectiveKnowledge } from './collectiveKnowledge'
 import { buildProjectedGenerationalEvidence } from './generations'
 import { deriveDrainage, type DrainageCell } from '../simulation/environment/hydrology'
-import { deriveLivingEnvironment, type LivingEnvironmentCell } from '../simulation/environment/livingEnvironment'
+import { deriveLivingEnvironmentCells, type LivingEnvironmentCell } from '../simulation/environment/livingEnvironment'
+import { deriveHydrology, type HydrologyCell } from '../simulation/environment/hydrology'
 import { cohortPopulationByCell } from '../simulation/cohorts/model'
 import { compareStableText } from '../shared/stableOrder'
 import { buildLocationChunkIndex, visibleIndexedLocations, type IndexedProjectionLocation } from './locationIndex'
+import type { ProjectionInvalidation } from './invalidation'
 import { alignRegionOrigin, clampViewportBounds, projectionChunkKey, regionCount, regionKey } from './chunks'
 import {
   MAX_ACTIVITY_MARKERS,
@@ -70,7 +72,6 @@ interface StaticRegionAggregate {
   habitabilitySum: number
   movementCostSum: number
   resourceCapacity: number
-  communityCounts: Map<string, number>
 }
 
 interface StaticLocationGroup {
@@ -88,28 +89,25 @@ export class WorkbenchProjectionBuilder {
   private readonly staticRegions = new Map<string, StaticRegionAggregate>()
   private readonly cellById: Map<string, GeographicCell>
   private readonly drainageByCellId: ReadonlyMap<string, DrainageCell>
+  /** Immutable terrain-derived hydrology is independent of dynamic populations. */
+  private readonly hydrologyByCellId: ReadonlyMap<string, HydrologyCell>
   private environmentByCellId: ReadonlyMap<string, LivingEnvironmentCell> = new Map()
   private readonly communityIdByCellId = new Map<string, string>()
-  private readonly activityEntriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]>
-  private readonly householdEntriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]>
-  private readonly activityCellById: ReadonlyMap<string, string>
-  private readonly householdCellById: ReadonlyMap<string, string>
+  private activityEntriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]> = new Map()
+  private householdEntriesByChunk: ReadonlyMap<string, readonly IndexedProjectionLocation[]> = new Map()
+  private activityCellById: ReadonlyMap<string, string> = new Map()
+  private householdCellById: ReadonlyMap<string, string> = new Map()
   private readonly routeCache = new Map<string, RouteHomeProjection>()
 
   constructor(source: WorldProjection) {
     this.grid = source.world.grid
     this.cellById = new Map(this.grid.cells.map((cell) => [cell.id, cell]))
     this.drainageByCellId = deriveDrainage(this.grid)
-    for (const community of source.communities) for (const cellId of community.catchment.cellIds) this.communityIdByCellId.set(cellId, community.catchment.id)
-    const activityEntries = source.activityLocations.map(({ id, cellId }) => ({ id, cellId }))
-    const householdEntries = source.households.map(({ id, homeCellId }) => ({ id, cellId: homeCellId }))
-    this.activityEntriesByChunk = buildLocationChunkIndex(activityEntries, this.cellById)
-    this.householdEntriesByChunk = buildLocationChunkIndex(householdEntries, this.cellById)
-    this.activityCellById = new Map(activityEntries.map(({ id, cellId }) => [id, cellId]))
-    this.householdCellById = new Map(householdEntries.map(({ id, cellId }) => [id, cellId]))
+    this.hydrologyByCellId = deriveHydrology(this.grid).cells
+    this.refreshDynamicIndexes(source)
   }
 
-  build(source: WorldProjection, request: MapProjectionRequest, digest?: string, projectionEpoch = 0): WorkbenchProjection {
+  build(source: WorldProjection, request: MapProjectionRequest, digest?: string, projectionEpoch = 0, _invalidation?: ProjectionInvalidation): WorkbenchProjection {
     const map = this.buildMap(source, request)
     const projectedCommunities = projectCommunities(source.communities)
     const details = projectInspectorDetails(source, map, request)
@@ -173,13 +171,17 @@ export class WorkbenchProjectionBuilder {
 
   buildMap(source: WorldProjection, request: MapProjectionRequest): MapProjection {
     validateRequest(request)
+    // Locations are authoritative and mutable. Rebuild their small, bounded
+    // projection index from the current source; static terrain caches remain independent.
+    this.refreshDynamicIndexes(source)
     const bounds = clampViewportBounds(request.bounds, this.grid.width, this.grid.height)
     const size = selectRegionSize(bounds, request.projectedHexRadius)
     const exact = size === 1
     const livingPeople = source.people.filter((person) => person.lifeStatus !== 'dead')
     const populationByCellId = countPeopleByCell(livingPeople)
     for (const [cellId, count] of cohortPopulationByCell(source.cohorts)) populationByCellId.set(cellId, (populationByCellId.get(cellId) ?? 0) + count)
-    this.environmentByCellId = deriveLivingEnvironment(this.grid, source.tick, populationByCellId)
+    const environmentCells = exact ? cellsInBounds(this.grid, bounds) : request.focusCellId ? [this.cellById.get(request.focusCellId)].filter((cell): cell is GeographicCell => cell !== undefined) : []
+    this.environmentByCellId = deriveLivingEnvironmentCells(environmentCells, source.tick, populationByCellId, this.hydrologyByCellId)
     const communitiesById = new Map(source.communities.map((community) => [community.catchment.id, community]))
     const exactCells = exact ? cellsInBounds(this.grid, bounds).map((cell) => this.projectCell(cell, populationByCellId, communitiesById, request.communityMeasureId)) : []
     const regions = exact ? [] : this.aggregateRegions(source, bounds, size, request.overlay === 'food', request.communityMeasureId)
@@ -226,6 +228,17 @@ export class WorkbenchProjectionBuilder {
 
   cacheCardinality(): { staticRegions: number; activityChunks: number; householdChunks: number; routes: number } {
     return { staticRegions: this.staticRegions.size, activityChunks: this.activityEntriesByChunk.size, householdChunks: this.householdEntriesByChunk.size, routes: this.routeCache.size }
+  }
+
+  private refreshDynamicIndexes(source: WorldProjection): void {
+    this.communityIdByCellId.clear()
+    for (const community of source.communities) for (const cellId of community.catchment.cellIds) this.communityIdByCellId.set(cellId, community.catchment.id)
+    const activityEntries = source.activityLocations.map(({ id, cellId }) => ({ id, cellId }))
+    const householdEntries = source.households.map(({ id, homeCellId }) => ({ id, cellId: homeCellId }))
+    this.activityEntriesByChunk = buildLocationChunkIndex(activityEntries, this.cellById)
+    this.householdEntriesByChunk = buildLocationChunkIndex(householdEntries, this.cellById)
+    this.activityCellById = new Map(activityEntries.map(({ id, cellId }) => [id, cellId]))
+    this.householdCellById = new Map(householdEntries.map(({ id, cellId }) => [id, cellId]))
   }
 
   private routeHome(people: readonly PersonState[], hookedPersonId?: string): RouteHomeProjection | undefined {
@@ -276,7 +289,12 @@ export class WorkbenchProjectionBuilder {
           foodAmount = 0
           forEachRegionCell(this.grid, staticValue, (cell) => { foodAmount! += cell.foodAmount })
         }
-        const communityId = dominantString(staticValue.communityCounts)
+        const communityCounts = new Map<string, number>()
+        forEachRegionCell(this.grid, staticValue, (cell) => {
+          const communityId = this.communityIdByCellId.get(cell.id)
+          if (communityId) communityCounts.set(communityId, (communityCounts.get(communityId) ?? 0) + 1)
+        })
+        const communityId = dominantString(communityCounts)
         const community = communityId ? communityById.get(communityId) : undefined
         result.push({
           key: staticValue.key,
@@ -324,7 +342,6 @@ export class WorkbenchProjectionBuilder {
       habitabilitySum: 0,
       movementCostSum: 0,
       resourceCapacity: 0,
-      communityCounts: new Map(),
     }
     forEachRegionCell(this.grid, aggregate, (cell) => {
       aggregate.cellCount += 1
@@ -333,8 +350,6 @@ export class WorkbenchProjectionBuilder {
       aggregate.habitabilitySum += cell.habitability
       aggregate.movementCostSum += cell.movementCost
       aggregate.resourceCapacity += cell.resourceCapacity
-      const communityId = this.communityIdByCellId.get(cell.id)
-      if (communityId) aggregate.communityCounts.set(communityId, (aggregate.communityCounts.get(communityId) ?? 0) + 1)
     })
     aggregate.dominantTerrain = dominantTerrain(aggregate.terrainCounts)
     boundedCacheSet(this.staticRegions, key, aggregate, MAX_STATIC_REGION_CACHE_ENTRIES)

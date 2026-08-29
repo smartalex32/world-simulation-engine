@@ -96,6 +96,7 @@ import { advanceCohortFictionalInfections, applyAnnualCohortInfectionMortality, 
 import { attemptPracticalExperiment, INNOVATION_STREAM } from '../innovation/model'
 import { COHORT_MODEL_VERSION, advanceCohortsAnnual, advanceCohortsDaily, createInitialCohorts } from '../cohorts/model'
 import { materializeCohortPeople, materializationStreamName } from '../cohorts/materialization'
+import { projectionInvalidationFromEvents, type ProjectionInvalidation } from '../../projection/invalidation'
 import { applyCohortMaterialization, planCohortMaterialization } from '../cohorts/transitions'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
 import { migrateCohortsBetweenSettlements, reconcileSettlementRegions, settlementMigrationTrace } from '../settlements/regional'
@@ -138,7 +139,11 @@ export interface StepResult {
 export interface AdvanceResult {
   events: SimulationEvent[]
   statistics: StatisticSample[]
+  /** Noncanonical cache hints; authoritative execution never reads these. */
+  projectionInvalidation: ProjectionInvalidation
 }
+
+export type FidelityCommandResult = SimulationEvent & { projectionInvalidation: ProjectionInvalidation }
 
 export interface AdvanceOptions {
   /** False defers the batch clock event so a worker may yield without changing event sequencing. */
@@ -485,7 +490,7 @@ export class SimulationEngine {
       events.splice(0, events.length, ...ordered)
     }
     this.assertInvariants()
-    return { events, statistics }
+    return { events, statistics, projectionInvalidation: projectionInvalidationFromEvents(events) }
   }
 
   /** Formula evaluation is deliberately owned by the engine: declared streams
@@ -510,7 +515,7 @@ export class SimulationEngine {
 
   /** Explicit fidelity command. It is independent of the viewport and consumes
    * no ambient timing; retained evidence makes the resulting people auditable. */
-  materializeCohort(cohortId: string, requestedPopulationCount: number): SimulationEvent {
+  materializeCohort(cohortId: string, requestedPopulationCount: number): FidelityCommandResult {
     const cohort = this.state.cohorts.find((candidate) => candidate.id === cohortId)
     if (!cohort) throw new Error(`Unknown cohort: ${cohortId}`)
     const plan = planCohortMaterialization(cohort, requestedPopulationCount)
@@ -536,7 +541,7 @@ export class SimulationEngine {
     this.state.populationFidelity.nextTransitionSequence += 1
     this.livingPersonCache = undefined
     this.assertInvariants()
-    return this.event('COHORT_MATERIALIZED', { cohortId, transitionId, populationCount: generated.people.length, residualPopulationCount: plan.residualPopulationCount })
+    return this.fidelityEvent('COHORT_MATERIALIZED', { cohortId, transitionId, populationCount: generated.people.length, residualPopulationCount: plan.residualPopulationCount })
   }
 
   /** Protection is authoritative conversion policy, never a UI-only hook. */
@@ -548,7 +553,7 @@ export class SimulationEngine {
     this.assertInvariants()
   }
 
-  dematerializePeople(personIds: readonly string[]): SimulationEvent {
+  dematerializePeople(personIds: readonly string[]): FidelityCommandResult {
     const selected = [...new Set(personIds)].sort(compareIds)
     if (selected.length === 0) throw new RangeError('Dematerialization requires at least one person')
     const protectedIds = new Set(this.state.populationFidelity.protectedPersonIds)
@@ -584,7 +589,7 @@ export class SimulationEngine {
     this.state.populationFidelity.transitions.push({ version: 1, id: transitionId, tick: this.state.tick, kind: 'dematerialized', cohortId, personIds: selected, protectedPersonIds: [...protectedIds].sort(compareIds), populationCount: selected.length, rngStream: 'cohort.dematerialization.none' })
     this.livingPersonCache = undefined
     this.assertInvariants()
-    return this.event('PEOPLE_DEMATERIALIZED', { cohortId, transitionId, populationCount: selected.length, residualPopulationCount: populationCount })
+    return this.fidelityEvent('PEOPLE_DEMATERIALIZED', { cohortId, transitionId, populationCount: selected.length, residualPopulationCount: populationCount })
   }
 
   project(digest?: string): WorldProjection {
@@ -634,6 +639,11 @@ export class SimulationEngine {
       version: 1,
       payload,
     }
+  }
+
+  private fidelityEvent(type: 'COHORT_MATERIALIZED' | 'PEOPLE_DEMATERIALIZED', payload: SimulationEvent['payload']): FidelityCommandResult {
+    const event = this.event(type, payload)
+    return Object.assign(event, { projectionInvalidation: projectionInvalidationFromEvents([event]) })
   }
 
   /** Non-authoritative instrumentation for scale benchmarks and diagnostics. */

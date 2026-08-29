@@ -2,7 +2,7 @@
 
 import { SimulationEngine } from '../simulation/engine/engine'
 import { DEFAULT_PREINDUSTRIAL_PACK, type ContentPack } from '../contentPacks'
-import { WorkbenchProjectionBuilder, type MapProjectionRequest } from '../projection'
+import { NO_PROJECTION_INVALIDATION, WorkbenchProjectionBuilder, mergeProjectionInvalidations, type MapProjectionRequest, type ProjectionInvalidation } from '../projection'
 import type { SimulationEvent, StatisticSample, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
 import { createWorldDraftRecord, paintWorldDraftElevation, paintWorldDraftResources, paintWorldDraftTerrain, previewWorldDraft, projectWorldDraftViewport, redoWorldDraftRecord, resetWorldDraftRecord, undoWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from '../simulation/domain/worldDraft'
@@ -14,6 +14,7 @@ let engine: SimulationEngine | undefined
 let projectionBuilder: WorkbenchProjectionBuilder | undefined
 let viewportRequest: MapProjectionRequest | undefined
 let projectionEpoch = 0
+let pendingProjectionInvalidation: ProjectionInvalidation = NO_PROJECTION_INVALIDATION
 let initialCreation: WorldCreationDraft = defaultWorldCreationRequest('valley-001')
 let activeDraft: WorldDraftRecord | undefined
 let playing = false
@@ -69,6 +70,7 @@ function runLoop(): void {
     const quantum = batchScheduler.next(ticksPerBatch, MAX_TICKS_PER_WORKER_TURN)
     const started = performance.now()
     const result = engine.advance(quantum.ticks, { clockEventHours: quantum.clockEventHours })
+    pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
     processingSinceFrame += performance.now() - started
     telemetry.append(result.events, result.statistics)
     const now = performance.now()
@@ -88,6 +90,7 @@ function installProjectionBuilder(): void {
   const source = engine.project()
   projectionBuilder = new WorkbenchProjectionBuilder(source)
   projectionEpoch += 1
+  pendingProjectionInvalidation = NO_PROJECTION_INVALIDATION
   viewportRequest = defaultViewportRequest(source.world.grid.width, source.world.grid.height)
   batchScheduler.reset()
   processingSinceFrame = 0
@@ -113,8 +116,10 @@ function sendFrame(requestId?: string, digest?: string, events?: SimulationEvent
   if (!engine || !projectionBuilder || !viewportRequest) throw new Error('No simulation projection is available')
   const drainsTelemetry = events === undefined || statistics === undefined
   const drained = drainsTelemetry ? telemetry.drain() : { events, statistics }
-  const projection = projectionBuilder.build(engine.project(), viewportRequest, digest, projectionEpoch)
-  respond({ type: 'FRAME', requestId, projection, events: drained.events, statistics: drained.statistics, processingMs })
+  const invalidation = pendingProjectionInvalidation
+  pendingProjectionInvalidation = NO_PROJECTION_INVALIDATION
+  const projection = projectionBuilder.build(engine.project(), viewportRequest, digest, projectionEpoch, invalidation)
+  respond({ type: 'FRAME', requestId, projection, events: drained.events, statistics: drained.statistics, processingMs, projectionInvalidation: invalidation })
   if (drainsTelemetry) processingSinceFrame = 0
 }
 
@@ -271,6 +276,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           batchScheduler.reset()
           const started = performance.now()
           const result = engine.advance(command.count ?? 1)
+          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
           const snapshot = await engine.snapshot()
           telemetry.append(result.events, result.statistics)
           processingSinceFrame += performance.now() - started
@@ -282,6 +288,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           if (!engine) throw new Error('No simulation run is loaded')
           playing = false
           const event = engine.materializeCohort(command.cohortId, command.populationCount)
+          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, event.projectionInvalidation)
           const snapshot = await engine.snapshot()
           telemetry.append([event], [])
           flushFrame(command.requestId, snapshot.digest)
@@ -292,6 +299,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           if (!engine) throw new Error('No simulation run is loaded')
           playing = false
           const event = engine.dematerializePeople(command.personIds)
+          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, event.projectionInvalidation)
           const snapshot = await engine.snapshot()
           telemetry.append([event], [])
           flushFrame(command.requestId, snapshot.digest)

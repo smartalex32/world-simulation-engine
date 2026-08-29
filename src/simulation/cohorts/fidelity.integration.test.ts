@@ -52,4 +52,24 @@ describe('authoritative population fidelity transitions', () => {
     second.advance(24)
     expect((await first.snapshot()).digest).toBe((await second.snapshot()).digest)
   })
+
+  it('updates a retained projection builder across materialization, restore, and dematerialization', async () => {
+    const engine = created()
+    const initial = engine.project()
+    const builder = new WorkbenchProjectionBuilder(initial)
+    const request = { revision: 1, bounds: { minQ: 0, maxQ: 15, minR: 0, maxR: 11 }, projectedHexRadius: 12, overlay: 'terrain' as const }
+    const count = (source: ReturnType<SimulationEngine['project']>) => builder.buildMap(source, request).householdMarkers.reduce((sum, marker) => sum + marker.count, 0)
+    const before = count(initial)
+    const materialized = engine.materializeCohort('cohort:distant', 12)
+    expect(materialized.projectionInvalidation.categories).toEqual(expect.arrayContaining(['people', 'locations']))
+    const materializedSource = engine.project()
+    const addedHouseholds = materializedSource.households.length - initial.households.length
+    expect(count(materializedSource)).toBe(before + addedHouseholds)
+    const restored = await SimulationEngine.restore(await engine.snapshot())
+    expect(count(restored.project())).toBe(before + addedHouseholds)
+    const ids = restored.project().populationFidelity.transitions[0]?.personIds ?? []
+    const dematerialized = restored.dematerializePeople(ids)
+    expect(dematerialized.projectionInvalidation.categories).toEqual(expect.arrayContaining(['people', 'locations']))
+    expect(count(restored.project())).toBe(before)
+  })
 })
