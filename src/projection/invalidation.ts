@@ -1,4 +1,4 @@
-import type { SimulationEvent } from '../simulation/domain/types'
+import type { AuthoritativeChangeSet } from '../simulation/domain/types'
 
 /**
  * Noncanonical hints for projection caches. They never participate in a
@@ -20,26 +20,8 @@ export function mergeProjectionInvalidations(...values: readonly ProjectionInval
   return { categories: [...categories].sort(), cellIds: [...cellIds].sort() }
 }
 
-export function projectionInvalidationFromEvents(events: readonly SimulationEvent[]): ProjectionInvalidation {
+export function projectionInvalidationFromChangeSet(changeSet: AuthoritativeChangeSet): ProjectionInvalidation {
   const categories = new Set<ProjectionInvalidationCategory>()
-  const cellIds = new Set<string>()
-  for (const event of events) {
-    if (event.type === 'HOUSEHOLD_RELOCATED') {
-      categories.add('people'); categories.add('locations')
-      addCellId(cellIds, event.payload.sourceCellId); addCellId(cellIds, event.payload.destinationCellId)
-    } else if (event.type === 'COHORT_MATERIALIZED' || event.type === 'PEOPLE_DEMATERIALIZED') {
-      categories.add('people'); categories.add('locations'); categories.add('relationships')
-    } else if (event.type === 'PERSON_DIED' || event.type === 'PERSON_BORN') {
-      categories.add('people'); categories.add('locations'); categories.add('relationships')
-    } else if (event.type === 'PERSON_MOVED' || event.type === 'PERSON_STARTED_TRAVEL' || event.type === 'PERSON_MOVED_HOUSEHOLD') {
-      categories.add('people'); categories.add('locations')
-    } else if (event.type === 'RELATIONSHIP_FORMED' || event.type === 'PARTNERSHIP_FORMED') {
-      categories.add('relationships')
-    }
-  }
-  return { categories: [...categories].sort(), cellIds: [...cellIds].sort() }
-}
-
-function addCellId(target: Set<string>, value: unknown): void {
-  if (typeof value === 'string') target.add(value)
+  for (const category of changeSet.categories) categories.add(category)
+  return { categories: [...categories].sort(), cellIds: [...new Set(changeSet.cellIds)].sort() }
 }

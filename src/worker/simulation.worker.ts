@@ -2,7 +2,7 @@
 
 import { SimulationEngine } from '../simulation/engine/engine'
 import { DEFAULT_PREINDUSTRIAL_PACK, type ContentPack } from '../contentPacks'
-import { NO_PROJECTION_INVALIDATION, WorkbenchProjectionBuilder, mergeProjectionInvalidations, type MapProjectionRequest, type ProjectionInvalidation } from '../projection'
+import { NO_PROJECTION_INVALIDATION, WorkbenchProjectionBuilder, mergeProjectionInvalidations, projectionInvalidationFromChangeSet, type MapProjectionRequest, type ProjectionInvalidation } from '../projection'
 import type { SimulationEvent, StatisticSample, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
 import { createWorldDraftRecord, paintWorldDraftElevation, paintWorldDraftResources, paintWorldDraftTerrain, previewWorldDraft, projectWorldDraftViewport, redoWorldDraftRecord, resetWorldDraftRecord, undoWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from '../simulation/domain/worldDraft'
@@ -70,7 +70,7 @@ function runLoop(): void {
     const quantum = batchScheduler.next(ticksPerBatch, MAX_TICKS_PER_WORKER_TURN)
     const started = performance.now()
     const result = engine.advance(quantum.ticks, { clockEventHours: quantum.clockEventHours })
-    pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
+    pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, projectionInvalidationFromChangeSet(result.changeSet))
     processingSinceFrame += performance.now() - started
     telemetry.append(result.events, result.statistics)
     const now = performance.now()
@@ -276,7 +276,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           batchScheduler.reset()
           const started = performance.now()
           const result = engine.advance(command.count ?? 1)
-          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
+          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, projectionInvalidationFromChangeSet(result.changeSet))
           const snapshot = await engine.snapshot()
           telemetry.append(result.events, result.statistics)
           processingSinceFrame += performance.now() - started
@@ -287,10 +287,10 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
         case 'MATERIALIZE_COHORT': {
           if (!engine) throw new Error('No simulation run is loaded')
           playing = false
-          const event = engine.materializeCohort(command.cohortId, command.populationCount)
-          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, event.projectionInvalidation)
+          const result = engine.materializeCohort(command.cohortId, command.populationCount)
+          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, projectionInvalidationFromChangeSet(result.changeSet))
           const snapshot = await engine.snapshot()
-          telemetry.append([event], [])
+          telemetry.append([result.event], [])
           flushFrame(command.requestId, snapshot.digest)
           respond({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch })
           break
@@ -298,10 +298,10 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
         case 'DEMATERIALIZE_PEOPLE': {
           if (!engine) throw new Error('No simulation run is loaded')
           playing = false
-          const event = engine.dematerializePeople(command.personIds)
-          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, event.projectionInvalidation)
+          const result = engine.dematerializePeople(command.personIds)
+          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, projectionInvalidationFromChangeSet(result.changeSet))
           const snapshot = await engine.snapshot()
-          telemetry.append([event], [])
+          telemetry.append([result.event], [])
           flushFrame(command.requestId, snapshot.digest)
           respond({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch })
           break

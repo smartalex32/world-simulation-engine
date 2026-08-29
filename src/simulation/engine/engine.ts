@@ -25,6 +25,7 @@ import {
   type SimulationEvent,
   type SimulationState,
   type ActionName,
+  type AuthoritativeChangeSet,
   type ParentCuriosityModelingExperience,
   type SnapshotEnvelope,
   type StatisticSample,
@@ -96,7 +97,6 @@ import { advanceCohortFictionalInfections, applyAnnualCohortInfectionMortality, 
 import { attemptPracticalExperiment, INNOVATION_STREAM } from '../innovation/model'
 import { COHORT_MODEL_VERSION, advanceCohortsAnnual, advanceCohortsDaily, createInitialCohorts } from '../cohorts/model'
 import { materializeCohortPeople, materializationStreamName } from '../cohorts/materialization'
-import { projectionInvalidationFromEvents, type ProjectionInvalidation } from '../../projection/invalidation'
 import { applyCohortMaterialization, planCohortMaterialization } from '../cohorts/transitions'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
 import { migrateCohortsBetweenSettlements, reconcileSettlementRegions, settlementMigrationTrace } from '../settlements/regional'
@@ -140,10 +140,10 @@ export interface AdvanceResult {
   events: SimulationEvent[]
   statistics: StatisticSample[]
   /** Noncanonical cache hints; authoritative execution never reads these. */
-  projectionInvalidation: ProjectionInvalidation
+  changeSet: AuthoritativeChangeSet
 }
 
-export type FidelityCommandResult = SimulationEvent & { projectionInvalidation: ProjectionInvalidation }
+export interface FidelityCommandResult { event: SimulationEvent; changeSet: AuthoritativeChangeSet }
 
 export interface AdvanceOptions {
   /** False defers the batch clock event so a worker may yield without changing event sequencing. */
@@ -490,7 +490,7 @@ export class SimulationEngine {
       events.splice(0, events.length, ...ordered)
     }
     this.assertInvariants()
-    return { events, statistics, projectionInvalidation: projectionInvalidationFromEvents(events) }
+    return { events, statistics, changeSet: changeSetFromEvents(events) }
   }
 
   /** Formula evaluation is deliberately owned by the engine: declared streams
@@ -643,7 +643,7 @@ export class SimulationEngine {
 
   private fidelityEvent(type: 'COHORT_MATERIALIZED' | 'PEOPLE_DEMATERIALIZED', payload: SimulationEvent['payload']): FidelityCommandResult {
     const event = this.event(type, payload)
-    return Object.assign(event, { projectionInvalidation: projectionInvalidationFromEvents([event]) })
+    return { event, changeSet: changeSetFromEvents([event]) }
   }
 
   /** Non-authoritative instrumentation for scale benchmarks and diagnostics. */
@@ -1777,4 +1777,16 @@ function serializeRuntimeCommunityCounters(runtime: RuntimeCommunityCounters): C
       foodCapacity: runtime.foodCapacity,
     },
   }
+}
+
+/** Events intentionally produce a conservative neutral change set: consumers
+ * may optimize it, but may never use it to retain stale projected state. */
+function changeSetFromEvents(events: readonly SimulationEvent[]): AuthoritativeChangeSet {
+  if (events.length === 0) return { categories: [], cellIds: [] }
+  const cellIds = new Set<string>()
+  for (const event of events) if (event.type === 'HOUSEHOLD_RELOCATED') {
+    if (typeof event.payload.sourceCellId === 'string') cellIds.add(event.payload.sourceCellId)
+    if (typeof event.payload.destinationCellId === 'string') cellIds.add(event.payload.destinationCellId)
+  }
+  return { categories: ['people', 'locations', 'relationships', 'communities'], cellIds: [...cellIds].sort(compareIds) }
 }

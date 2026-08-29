@@ -1,4 +1,4 @@
-import { NO_PROJECTION_INVALIDATION, WorkbenchProjectionBuilder, type MapProjectionRequest, type ProjectionInvalidation } from '../projection'
+import { NO_PROJECTION_INVALIDATION, WorkbenchProjectionBuilder, projectionInvalidationFromChangeSet, type MapProjectionRequest, type ProjectionInvalidation } from '../projection'
 import { SimulationEngine } from '../simulation/engine/engine'
 import { canonicalStringify } from '../simulation/serialization/snapshot'
 import { createHash } from 'node:crypto'
@@ -33,9 +33,9 @@ export class HostedRunService {
     if (command.type === 'PAUSE') return { result: this.result([{ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch: 1 }]) }
     if (command.type === 'SET_SPEED') return { result: this.result([{ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch: boundedSpeed(command.ticksPerBatch) }]) }
     const before = await this.snapshot(this.engine); const candidate = command.type === 'RESET' ? SimulationEngine.create(this.bootstrap.creation) : await SimulationEngine.restore(before); const events: SimulationEvent[] = []; const statistics: StatisticSample[] = []; let projectionInvalidation: ProjectionInvalidation = NO_PROJECTION_INVALIDATION
-    if (command.type === 'STEP') { const count = command.count ?? 1; if (!Number.isSafeInteger(count) || count < 1) throw new Error('Hosted step count must be a positive safe integer'); const result = candidate.advance(count); events.push(...result.events); statistics.push(...result.statistics); projectionInvalidation = result.projectionInvalidation }
-    else if (command.type === 'MATERIALIZE_COHORT') { const event = candidate.materializeCohort(command.cohortId, command.populationCount); events.push(event); projectionInvalidation = event.projectionInvalidation }
-    else if (command.type === 'DEMATERIALIZE_PEOPLE') { const event = candidate.dematerializePeople(command.personIds); events.push(event); projectionInvalidation = event.projectionInvalidation }
+    if (command.type === 'STEP') { const count = command.count ?? 1; if (!Number.isSafeInteger(count) || count < 1) throw new Error('Hosted step count must be a positive safe integer'); const result = candidate.advance(count); events.push(...result.events); statistics.push(...result.statistics); projectionInvalidation = projectionInvalidationFromChangeSet(result.changeSet) }
+    else if (command.type === 'MATERIALIZE_COHORT') { const result = candidate.materializeCohort(command.cohortId, command.populationCount); events.push(result.event); projectionInvalidation = projectionInvalidationFromChangeSet(result.changeSet) }
+    else if (command.type === 'DEMATERIALIZE_PEOPLE') { const result = candidate.dematerializePeople(command.personIds); events.push(result.event); projectionInvalidation = projectionInvalidationFromChangeSet(result.changeSet) }
     else if (command.type === 'SET_PROTECTED_PEOPLE') candidate.protectDetailedPeople(command.personIds)
     else if (command.type === 'RESET') { const snapshot = await this.snapshot(candidate); events.push(candidate.event('RUN_CREATED', { seed: snapshot.state.config.seed, width: snapshot.state.config.worldWidth, height: snapshot.state.config.worldHeight, population: snapshot.state.people.length, worldName: snapshot.state.world.name })) }
     else assertNever(command)

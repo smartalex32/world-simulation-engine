@@ -107,8 +107,8 @@ export class WorkbenchProjectionBuilder {
     this.refreshDynamicIndexes(source)
   }
 
-  build(source: WorldProjection, request: MapProjectionRequest, digest?: string, projectionEpoch = 0, _invalidation?: ProjectionInvalidation): WorkbenchProjection {
-    const map = this.buildMap(source, request)
+  build(source: WorldProjection, request: MapProjectionRequest, digest?: string, projectionEpoch = 0, invalidation?: ProjectionInvalidation): WorkbenchProjection {
+    const map = this.buildMap(source, request, invalidation)
     const projectedCommunities = projectCommunities(source.communities)
     const details = projectInspectorDetails(source, map, request)
     const personCommunityIds = Object.fromEntries(details.people
@@ -169,11 +169,12 @@ export class WorkbenchProjectionBuilder {
     }
   }
 
-  buildMap(source: WorldProjection, request: MapProjectionRequest): MapProjection {
+  buildMap(source: WorldProjection, request: MapProjectionRequest, invalidation?: ProjectionInvalidation): MapProjection {
     validateRequest(request)
-    // Locations are authoritative and mutable. Rebuild their small, bounded
-    // projection index from the current source; static terrain caches remain independent.
-    this.refreshDynamicIndexes(source)
+    // Callers without a change set (new/restore/direct builder use) rebuild
+    // safely. Incremental callers update only the affected cache family.
+    if (!invalidation || invalidation.categories.some((category) => category === 'locations' || category === 'people' || category === 'communities' || category === 'relationships' || category === 'topology')) this.refreshDynamicIndexes(source)
+    if (invalidation?.categories.includes('topology')) this.staticRegions.clear()
     const bounds = clampViewportBounds(request.bounds, this.grid.width, this.grid.height)
     const size = selectRegionSize(bounds, request.projectedHexRadius)
     const exact = size === 1
