@@ -39,4 +39,31 @@ describe('hosted single-node run service', () => {
     expect(results.map((result) => result.observedTick)).toEqual([1, 2])
   })
 
+  it('does not advance the live engine when candidate persistence fails', async () => {
+    const store = new FailingMutationStore()
+    const service = await HostedRunService.open({ runId: 'hosted-failure', ownerId: 'owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('hosted-failure-seed') }, store)
+    const before = await service.observe('secret')
+    store.fail = true
+    await expect(service.execute('secret', { type: 'STEP', requestId: 'will-fail', count: 1 })).rejects.toThrow('injected')
+    expect(await service.observe('secret')).toEqual(before)
+    expect(await store.load('hosted-failure')).toMatchObject({ snapshot: { digest: before.digest, state: { tick: before.tick } } })
+  })
+
+  it('treats a retried mutation ID as an idempotent observation of its durable result', async () => {
+    const store = new MemoryHostedRunStore()
+    const service = await HostedRunService.open({ runId: 'hosted-idempotent', ownerId: 'owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('hosted-idempotent-seed') }, store)
+    await service.execute('secret', { type: 'STEP', requestId: 'same-command', count: 1 })
+    const retry = await service.execute('secret', { type: 'STEP', requestId: 'same-command', count: 1 })
+    expect(retry.observedTick).toBe(1)
+    expect(await service.tick('secret')).toBe(1)
+  })
+
 })
+
+class FailingMutationStore extends MemoryHostedRunStore {
+  fail = false
+  override async commitRunMutation(...args: Parameters<MemoryHostedRunStore['commitRunMutation']>) {
+    if (this.fail) throw new Error('injected persistence failure')
+    return super.commitRunMutation(...args)
+  }
+}

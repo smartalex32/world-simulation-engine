@@ -5,19 +5,19 @@ import type { SimulationEvent, StatisticSample } from '../simulation/domain/type
 import { canonicalStringify } from '../simulation/serialization/snapshot'
 import { compareStableText } from '../shared/stableOrder'
 import { exportContentPack, importContentPack, type ContentPack, type ContentPackCatalog } from '../contentPacks'
-import { validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedRunRecord, type HostedRunStore, type HostedSimulationJob, type HostedTelemetryStore } from './types'
+import { validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedRunMutation, type HostedRunMutationStore, type HostedRunRecord, type HostedRunStore, type HostedSimulationJob, type HostedTelemetryStore } from './types'
 import { SharedWorldService, type SharedWorldServiceState } from './sharedWorlds'
 import { HostedEventStream, type HostedEventStreamState } from './eventStream'
 
 /** Current hosted database generation; migrations retain the two prior generations. */
-export const DATABASE_MIGRATION_VERSION = 6
+export const DATABASE_MIGRATION_VERSION = 7
 
 /**
  * PostgreSQL durable store. Payload bytes are canonical JSON compressed with
  * gzip and integrity checked before validation. Timestamps are operational
  * metadata and are never part of a simulation digest.
  */
-export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, HostedTelemetryStore, ContentPackCatalog {
+export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, HostedTelemetryStore, HostedRunMutationStore, ContentPackCatalog {
   constructor(readonly pool: Pool) {}
 
   static async connect(connectionString: string): Promise<PostgresHostedRunStore> {
@@ -100,6 +100,13 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
         )`)
         await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (6)')
       }
+      if (version < 7) {
+        await client.query(`CREATE TABLE IF NOT EXISTS hosted_run_mutations (
+          run_id text NOT NULL REFERENCES hosted_runs(run_id) ON DELETE CASCADE, mutation_id text NOT NULL,
+          snapshot_digest text NOT NULL, committed_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (run_id, mutation_id)
+        )`)
+        await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (7)')
+      }
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
@@ -128,6 +135,29 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
 
+  /** Locks the durable row before checking the candidate's exact parent state.
+   * Nothing becomes visible until snapshot, telemetry, job, and mutation ID commit. */
+  async commitRunMutation(mutation: HostedRunMutation): Promise<'committed' | 'already-committed'> {
+    const valid = validateHostedRunRecord(mutation.record)
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const existing = await client.query<{ snapshot_digest: string }>('SELECT snapshot_digest FROM hosted_run_mutations WHERE run_id = $1 AND mutation_id = $2 FOR UPDATE', [valid.runId, mutation.mutationId])
+      if (existing.rows[0]) {
+        await client.query('COMMIT'); return 'already-committed'
+      }
+      const current = await client.query<StoredPayload>('SELECT snapshot_payload AS payload, snapshot_sha256 AS sha, snapshot_encoding AS encoding FROM hosted_runs WHERE run_id = $1 FOR UPDATE', [valid.runId])
+      if (!current.rows[0]) throw new Error('Hosted run state conflict')
+      const currentRecord = validateHostedRunRecord(decodeStoredPayload(current.rows[0]))
+      if (currentRecord.snapshot.state.tick !== mutation.expectedTick || currentRecord.snapshot.digest !== mutation.expectedDigest) throw new Error('Hosted job run state conflict')
+      await this.saveRun(client, valid, encodePayload(valid))
+      if (mutation.events.length || mutation.statistics.length) await this.insertTelemetry(client, valid.runId, mutation.events, mutation.statistics)
+      if (mutation.job) await this.saveJobWithClient(client, mutation.job)
+      await client.query('INSERT INTO hosted_run_mutations(run_id, mutation_id, snapshot_digest) VALUES ($1,$2,$3)', [valid.runId, mutation.mutationId, valid.snapshot.digest])
+      await client.query('COMMIT'); return 'committed'
+    } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
+  }
+
   async list(ownerId: string): Promise<HostedRunRecord[]> {
     const result = await this.pool.query<StoredPayload>('SELECT snapshot_payload AS payload, snapshot_sha256 AS sha, snapshot_encoding AS encoding FROM hosted_runs WHERE owner_id = $1 ORDER BY run_id ASC', [ownerId])
     return result.rows.map((row) => validateHostedRunRecord(decodeStoredPayload(row))).sort((a, b) => compareStableText(a.runId, b.runId))
@@ -139,8 +169,11 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
   }
 
   async saveJob(job: HostedSimulationJob): Promise<void> {
+    await this.saveJobWithClient(this.pool, job)
+  }
+  private async saveJobWithClient(client: Pool | PoolClient, job: HostedSimulationJob): Promise<void> {
     const valid = validateHostedJob(job); const payload = encodePayload(valid)
-    await this.pool.query(`INSERT INTO hosted_jobs(run_id, job_id, owner_id, status, queue_order, updated_at, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding)
+    await client.query(`INSERT INTO hosted_jobs(run_id, job_id, owner_id, status, queue_order, updated_at, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       ON CONFLICT (run_id, job_id) DO UPDATE SET owner_id = EXCLUDED.owner_id, status = EXCLUDED.status, queue_order = EXCLUDED.queue_order, updated_at = EXCLUDED.updated_at, payload = EXCLUDED.payload, payload_sha256 = EXCLUDED.payload_sha256, payload_uncompressed_bytes = EXCLUDED.payload_uncompressed_bytes, payload_encoding = EXCLUDED.payload_encoding`,
     [valid.runId, valid.jobId, valid.ownerId, valid.status, valid.queueOrder, valid.updatedAt, payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
@@ -192,6 +225,10 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
       VALUES ($1,$2,$3,$4,$5,$6,$7)
       ON CONFLICT (run_id) DO UPDATE SET owner_id = EXCLUDED.owner_id, saved_at = EXCLUDED.saved_at, snapshot_payload = EXCLUDED.snapshot_payload, snapshot_sha256 = EXCLUDED.snapshot_sha256, snapshot_uncompressed_bytes = EXCLUDED.snapshot_uncompressed_bytes, snapshot_encoding = EXCLUDED.snapshot_encoding`,
     [record.runId, record.ownerId, record.savedAt, payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
+  }
+  private async insertTelemetry(client: PoolClient, runId: string, events: readonly SimulationEvent[], statistics: readonly StatisticSample[]): Promise<void> {
+    const telemetry = encodePayload({ events: [...events], statistics: [...statistics] }); const ticks = [...events.map((event) => event.tick), ...statistics.map((sample) => sample.tick)]
+    await client.query(`INSERT INTO hosted_telemetry_batches(run_id, first_tick, last_tick, event_count, statistic_count, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [runId, Math.min(...ticks), Math.max(...ticks), events.length, statistics.length, telemetry.compressed, telemetry.sha256, telemetry.uncompressedBytes, PAYLOAD_ENCODING])
   }
 }
 

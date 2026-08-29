@@ -25,6 +25,22 @@ export interface HostedTelemetryStore {
   saveWithTelemetry(record: HostedRunRecord, events: readonly SimulationEvent[], statistics: readonly StatisticSample[]): Promise<void>
 }
 
+/** A compare-and-swap mutation is the hosted authority boundary. Implementations
+ * commit the run, telemetry, and optional job transition as one durable unit. */
+export interface HostedRunMutation {
+  expectedTick: number
+  expectedDigest: string
+  mutationId: string
+  record: HostedRunRecord
+  events: readonly SimulationEvent[]
+  statistics: readonly StatisticSample[]
+  job?: HostedSimulationJob
+}
+
+export interface HostedRunMutationStore {
+  commitRunMutation(mutation: HostedRunMutation): Promise<'committed' | 'already-committed'>
+}
+
 export interface HostedRunBootstrap {
   runId: string
   ownerId: string

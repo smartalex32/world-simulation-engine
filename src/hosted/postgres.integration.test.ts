@@ -15,7 +15,7 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
   beforeEach(async () => {
     const store = await storePromise
     await store.initialize()
-    await store.pool.query('TRUNCATE hosted_event_stream_state, hosted_shared_world_state, hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_runs CASCADE')
+    await store.pool.query('TRUNCATE hosted_event_stream_state, hosted_shared_world_state, hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_run_mutations, hosted_runs CASCADE')
   })
 
   afterAll(async () => { await (await storePromise).close() })
@@ -103,7 +103,7 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
 })
 
 async function installLegacySchema(store: PostgresHostedRunStore, version: 2 | 3 | 4 | 5): Promise<void> {
-  await store.pool.query('DROP TABLE IF EXISTS hosted_event_stream_state, hosted_shared_world_state, hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_runs, world_simulation_schema_migrations CASCADE')
+  await store.pool.query('DROP TABLE IF EXISTS hosted_run_mutations, hosted_event_stream_state, hosted_shared_world_state, hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_runs, world_simulation_schema_migrations CASCADE')
   await store.pool.query('CREATE TABLE world_simulation_schema_migrations (version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())')
   await store.pool.query(`CREATE TABLE hosted_runs (
     run_id text PRIMARY KEY, owner_id text NOT NULL, saved_at timestamptz NOT NULL,

@@ -1,10 +1,11 @@
-import { validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedSimulationJob, type HostedRunRecord, type HostedRunStore } from './types'
+import { validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedRunMutation, type HostedRunMutationStore, type HostedSimulationJob, type HostedRunRecord, type HostedRunStore } from './types'
 import { compareStableText } from '../shared/stableOrder'
 
 /** In-memory store used only by tests and embedding hosts. */
-export class MemoryHostedRunStore implements HostedRunStore, HostedJobStore {
+export class MemoryHostedRunStore implements HostedRunStore, HostedJobStore, HostedRunMutationStore {
   private readonly records = new Map<string, HostedRunRecord>()
   private readonly jobs = new Map<string, HostedSimulationJob>()
+  private readonly mutations = new Map<string, string>()
 
   async load(runId: string): Promise<HostedRunRecord | undefined> {
     const record = this.records.get(runId)
@@ -14,6 +15,18 @@ export class MemoryHostedRunStore implements HostedRunStore, HostedJobStore {
   async save(record: HostedRunRecord): Promise<void> {
     const valid = validateHostedRunRecord(record)
     this.records.set(valid.runId, structuredClone(valid))
+  }
+  async commitRunMutation(mutation: HostedRunMutation): Promise<'committed' | 'already-committed'> {
+    const record = validateHostedRunRecord(mutation.record)
+    const key = `${record.runId}:${mutation.mutationId}`
+    const previous = this.mutations.get(key)
+    if (previous !== undefined) return 'already-committed'
+    const current = this.records.get(record.runId)
+    if (!current || current.snapshot.state.tick !== mutation.expectedTick || current.snapshot.digest !== mutation.expectedDigest) throw new Error('Hosted job run state conflict')
+    if (mutation.job) this.jobs.set(jobKey(mutation.job.runId, mutation.job.jobId), structuredClone(validateHostedJob(mutation.job)))
+    this.records.set(record.runId, structuredClone(record))
+    this.mutations.set(key, record.snapshot.digest)
+    return 'committed'
   }
   async list(ownerId: string): Promise<HostedRunRecord[]> { return [...this.records.values()].map((record) => validateHostedRunRecord(structuredClone(record))).filter((record) => record.ownerId === ownerId).sort((a, b) => compareStableText(a.runId, b.runId)) }
   async loadJob(runId: string, jobId: string): Promise<HostedSimulationJob | undefined> {

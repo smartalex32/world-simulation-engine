@@ -166,11 +166,13 @@ export class HostedSimulationJobManager {
 
     let observation: HostedRunObservation
     try {
-      observation = await this.service.advanceJob(this.ownerToken, { tick: pending.expectedTick, digest: pending.expectedDigest }, pending.ticks)
+      observation = await this.service.advanceJob(this.ownerToken, { tick: pending.expectedTick, digest: pending.expectedDigest }, pending.ticks, (after) => completedQuantum(job, pending, after))
     } catch (error) {
       await this.fail(job, error)
       return
     }
+    // A transactional store may already have persisted the transition. The
+    // reconciliation helper recognizes that committed state without rewriting it.
     await this.commitQuantum(jobId, pending, observation)
   }
 
@@ -192,7 +194,8 @@ export class HostedSimulationJobManager {
   private async commitQuantum(jobId: string, pending: NonNullable<HostedSimulationJob['pendingQuantum']>, observation: HostedRunObservation): Promise<HostedSimulationJob> {
     return this.mutate(async () => {
       const latest = await this.required(jobId)
-      if (!latest.pendingQuantum || latest.pendingQuantum.expectedTick !== pending.expectedTick || latest.pendingQuantum.expectedDigest !== pending.expectedDigest) {
+      if (!latest.pendingQuantum) return latest
+      if (latest.pendingQuantum.expectedTick !== pending.expectedTick || latest.pendingQuantum.expectedDigest !== pending.expectedDigest) {
         return this.fail(latest, new Error('Hosted job run state conflict'))
       }
       return this.completeQuantum(latest, pending, observation)
@@ -242,6 +245,10 @@ export class HostedSimulationJobManager {
 }
 
 function isTerminal(status: HostedSimulationJob['status']): boolean { return status === 'cancelled' || status === 'completed' || status === 'failed' }
+function completedQuantum(job: HostedSimulationJob, pending: NonNullable<HostedSimulationJob['pendingQuantum']>, observation: HostedRunObservation): HostedSimulationJob {
+  const advancedTicks = job.advancedTicks + pending.ticks; const completed = advancedTicks >= job.totalTicks; const cancelled = job.status === 'cancelling'; const checkpoint = completed || cancelled || observation.tick - job.lastCheckpointTick >= job.checkpointIntervalTicks
+  return { ...job, status: cancelled ? 'cancelled' : completed ? 'completed' : 'running', advancedTicks, committedTick: observation.tick, committedDigest: observation.digest, pendingQuantum: undefined, lastCheckpointTick: checkpoint ? observation.tick : job.lastCheckpointTick, updatedAt: new Date().toISOString() }
+}
 
 function failureFor(error: unknown, fallback: HostedJobFailure['code'] = 'advance-failed'): HostedJobFailure {
   const message = error instanceof Error ? error.message : String(error)

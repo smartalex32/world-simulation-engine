@@ -15,9 +15,13 @@ events and statistic samples produced with a run snapshot. Each payload is:
 3. checksummed over the uncompressed canonical bytes using SHA-256; and
 4. decoded only after its encoding and checksum have been verified.
 
-The snapshot plus its new telemetry batch are committed in one PostgreSQL
-transaction. A failed transaction leaves neither a newer authoritative snapshot
-nor an orphaned telemetry batch visible.
+Every hosted mutation uses the persisted tick and digest as a compare-and-swap
+precondition. Its snapshot, telemetry batch, optional job progress, and durable
+mutation ID are committed in one PostgreSQL transaction. The in-process engine
+is replaced only after that commit succeeds. A failed transaction leaves neither
+a newer authoritative snapshot nor an orphaned telemetry/job record visible;
+repeating a mutation ID observes the already-committed result without advancing
+the simulation a second time.
 
 The simulation digest remains a simulation-only contract. Database timestamps,
 owner IDs, job scheduling metadata, and checksums are operational metadata and
@@ -27,7 +31,7 @@ do not change a canonical engine digest.
 
 `DATABASE_MIGRATION_VERSION` is the hosted storage contract. This release
 accepts the current generation and the two immediately preceding generations
-(4, 5, and 6). A database newer than this application is rejected. Server
+(5, 6, and 7). A database newer than this application is rejected. Server
 startup refuses an older or uninitialized database; only the guarded migration
 command can bring it forward.
 
