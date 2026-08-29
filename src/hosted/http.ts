@@ -20,6 +20,7 @@ export interface HostedHttpServerOptions {
   saveSharedWorlds?: () => Promise<void>
   sharedRuns?: SharedRunCoordinator
   saveEventStream?: () => Promise<void>
+  commitSharedWorldMutation?: (topic: string, payload: unknown, occurredAt: string) => Promise<void>
 }
 
 /** The HTTP layer only validates/authorizes transport; services retain state ownership. */
@@ -48,7 +49,7 @@ export function createHostedHttpServer(options: HostedHttpServerOptions): Server
       const tokenMatch = /^\/api\/v1\/tokens\/([a-zA-Z0-9_-]+)$/.exec(pathname)
       if (request.method === 'DELETE' && tokenMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); service.revokeToken(tokenMatch[1]!, accountId); await saveSharedWorlds(options); return sendJson(response, 204, undefined) }
       if (request.method === 'POST' && pathname === '/api/v1/worlds') {
-        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); const world = service.createWorld(requiredText(body.id), requiredText(body.name), accountId, body.draft ?? {}, new Date().toISOString()); await saveSharedWorlds(options); requiredEvents(options).publish('world', { id: world.id, revision: world.currentRevision }, world.updatedAt); await saveEventStream(options); return sendJson(response, 201, world)
+        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); const world = service.createWorld(requiredText(body.id), requiredText(body.name), accountId, body.draft ?? {}, new Date().toISOString()); await commitShared(options, 'world', { id: world.id, revision: world.currentRevision }, world.updatedAt); return sendJson(response, 201, world)
       }
       const worldMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)$/.exec(pathname)
       if (request.method === 'GET' && worldMatch) { const accountId = requiredShared(options).authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, requiredShared(options).getWorld(worldMatch[1]!, accountId)) }
@@ -59,14 +60,14 @@ export function createHostedHttpServer(options: HostedHttpServerOptions): Server
       if (request.method === 'POST' && leaseMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); const body = requiredRecord(await readJson(request, maximumRequestBytes)); const now = new Date().toISOString(); const lease = typeof body.leaseId === 'string' ? service.renewLease(leaseMatch[1]!, accountId, body.leaseId, requiredInteger(body.expectedRevision), now) : service.acquireLease(leaseMatch[1]!, accountId, now); await saveSharedWorlds(options); return sendJson(response, 200, lease) }
       const revisionsMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/revisions$/.exec(pathname)
       if (request.method === 'GET' && revisionsMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listRevisions(revisionsMatch[1]!, accountId)) }
-      if (request.method === 'POST' && revisionsMatch) { const body = requiredRecord(await readJson(request, maximumRequestBytes)); const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); const revision = service.saveRevision(revisionsMatch[1]!, accountId, requiredText(body.leaseId), requiredInteger(body.expectedRevision), requiredText(body.clientMutationId), body.payload, new Date().toISOString()); await saveSharedWorlds(options); requiredEvents(options).publish('draft.revised', { worldId: revision.worldId, revision: revision.revision }, revision.createdAt); await saveEventStream(options); return sendJson(response, 201, revision) }
+      if (request.method === 'POST' && revisionsMatch) { const body = requiredRecord(await readJson(request, maximumRequestBytes)); const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); const revision = service.saveRevision(revisionsMatch[1]!, accountId, requiredText(body.leaseId), requiredInteger(body.expectedRevision), requiredText(body.clientMutationId), body.payload, new Date().toISOString()); await commitShared(options, 'draft.revised', { worldId: revision.worldId, revision: revision.revision }, revision.createdAt); return sendJson(response, 201, revision) }
       const auditsMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/audits$/.exec(pathname)
       if (request.method === 'GET' && auditsMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listAudits(auditsMatch[1]!, accountId)) }
       const runsMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/runs$/.exec(pathname)
       if (request.method === 'GET' && runsMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listRuns(runsMatch[1]!, accountId)) }
       if (request.method === 'POST' && runsMatch) {
         const body = requiredRecord(await readJson(request, maximumRequestBytes)); const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:write'); const committed = service.commitRun(runsMatch[1]!, accountId, requiredInteger(body.revision), requiredText(body.runId), new Date().toISOString())
-        await requiredSharedRuns(options).create(committed.run.runId, committed.run.ownerAccountId, committed.draft); await saveSharedWorlds(options); requiredEvents(options).publish('run.committed', committed.run, committed.run.createdAt); await saveEventStream(options); return sendJson(response, 201, committed.run)
+        await requiredSharedRuns(options).create(committed.run.runId, committed.run.ownerAccountId, committed.draft); await commitShared(options, 'run.committed', committed.run, committed.run.createdAt); return sendJson(response, 201, committed.run)
       }
       const sharedRunMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/runs\/([a-zA-Z0-9_-]+)\/(projection|commands)$/.exec(pathname)
       if (sharedRunMatch) {
@@ -112,6 +113,7 @@ function requiredEvents(options: HostedHttpServerOptions): HostedEventStream { i
 function requiredSharedRuns(options: HostedHttpServerOptions): SharedRunCoordinator { if (!options.sharedRuns) throw new HostedHttpError(404, 'Shared runs are not configured'); return options.sharedRuns }
 async function saveSharedWorlds(options: HostedHttpServerOptions): Promise<void> { if (options.saveSharedWorlds) await options.saveSharedWorlds() }
 async function saveEventStream(options: HostedHttpServerOptions): Promise<void> { if (options.saveEventStream) await options.saveEventStream() }
+async function commitShared(options: HostedHttpServerOptions, topic: string, payload: unknown, occurredAt: string): Promise<void> { if (options.commitSharedWorldMutation) { await options.commitSharedWorldMutation(topic, payload, occurredAt); requiredEvents(options).publish(topic, payload, occurredAt); return }; await saveSharedWorlds(options); requiredEvents(options).publish(topic, payload, occurredAt); await saveEventStream(options) }
 
 function bearerToken(request: IncomingMessage): string {
   const authorization = request.headers.authorization

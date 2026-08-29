@@ -31,7 +31,7 @@ const sharedWorlds = await store.loadSharedWorldService()
 const eventStream = await store.loadEventStream()
 const sharedRuns = new SharedRunCoordinator(store)
 
-createHostedHttpServer({ runId, ownerToken, service, jobs, contentPacks: store, sharedWorlds, eventStream, sharedRuns, saveSharedWorlds: () => store.saveSharedWorldService(sharedWorlds), saveEventStream: () => store.saveEventStream(eventStream) }).listen(port, bindHost, () => {
+createHostedHttpServer({ runId, ownerToken, service, jobs, contentPacks: store, sharedWorlds, eventStream, sharedRuns, saveSharedWorlds: () => store.saveSharedWorldService(sharedWorlds), saveEventStream: () => store.saveEventStream(eventStream), commitSharedWorldMutation: (topic, payload, occurredAt) => store.commitSharedWorldMutation(sharedWorlds, topic, payload, occurredAt) }).listen(port, bindHost, () => {
   console.info(`Hosted single-node simulation listening on http://${bindHost}:${port} for run ${runId}`)
 })
 

@@ -10,7 +10,7 @@ import { SharedWorldService, type SharedWorldServiceState } from './sharedWorlds
 import { HostedEventStream, type HostedEventStreamState } from './eventStream'
 
 /** Current hosted database generation; migrations retain the two prior generations. */
-export const DATABASE_MIGRATION_VERSION = 8
+export const DATABASE_MIGRATION_VERSION = 9
 
 /**
  * PostgreSQL durable store. Payload bytes are canonical JSON compressed with
@@ -111,6 +111,16 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
         await client.query("ALTER TABLE hosted_run_mutations ADD COLUMN IF NOT EXISTS mutation_fingerprint text NOT NULL DEFAULT ''")
         await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (8)')
       }
+      if (version < 9) {
+        for (const table of ['hosted_accounts', 'hosted_sessions', 'hosted_api_tokens', 'hosted_worlds', 'hosted_world_access', 'hosted_world_revisions', 'hosted_world_leases', 'hosted_world_audits', 'hosted_world_runs', 'hosted_shared_mutations']) {
+          await client.query(`CREATE TABLE IF NOT EXISTS ${table} (entity_key text PRIMARY KEY, payload bytea NOT NULL, payload_sha256 text NOT NULL, payload_encoding text NOT NULL DEFAULT 'gzip-json-v1')`)
+        }
+        await client.query(`CREATE TABLE IF NOT EXISTS hosted_outbox_events (
+          event_id bigserial PRIMARY KEY, topic text NOT NULL, payload bytea NOT NULL, payload_sha256 text NOT NULL,
+          payload_encoding text NOT NULL DEFAULT 'gzip-json-v1', occurred_at timestamptz NOT NULL
+        )`)
+        await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (9)')
+      }
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
@@ -206,13 +216,20 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
     return valid
   }
   async loadSharedWorldService(): Promise<SharedWorldService> {
-    const result = await this.pool.query<StoredPayload>('SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_shared_world_state WHERE state_key = $1', ['default'])
-    return result.rows[0] ? SharedWorldService.restore(decodeStoredPayload(result.rows[0]) as SharedWorldServiceState) : new SharedWorldService()
+    const state = await this.loadNormalizedSharedState(this.pool)
+    if (state.accounts.length) return SharedWorldService.restore(state)
+    const legacy = await this.pool.query<StoredPayload>('SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_shared_world_state WHERE state_key = $1', ['default'])
+    return legacy.rows[0] ? SharedWorldService.restore(decodeStoredPayload(legacy.rows[0]) as SharedWorldServiceState) : new SharedWorldService()
   }
   async saveSharedWorldService(service: SharedWorldService): Promise<void> {
-    const payload = encodePayload(service.snapshotState())
-    await this.pool.query(`INSERT INTO hosted_shared_world_state(state_key, payload, payload_sha256, payload_uncompressed_bytes, payload_encoding)
-      VALUES ('default',$1,$2,$3,$4) ON CONFLICT (state_key) DO UPDATE SET payload = EXCLUDED.payload, payload_sha256 = EXCLUDED.payload_sha256, payload_uncompressed_bytes = EXCLUDED.payload_uncompressed_bytes, payload_encoding = EXCLUDED.payload_encoding, saved_at = now()`, [payload.compressed, payload.sha256, payload.uncompressedBytes, PAYLOAD_ENCODING])
+    const client = await this.pool.connect(); try { await client.query('BEGIN'); await this.saveNormalizedSharedState(client, service.snapshotState()); await client.query('COMMIT') } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
+  }
+  async commitSharedWorldMutation(service: SharedWorldService, topic: string, payload: unknown, occurredAt: string): Promise<void> {
+    const client = await this.pool.connect(); try { await client.query('BEGIN'); await this.saveNormalizedSharedState(client, service.snapshotState()); const event = encodePayload(payload); await client.query('INSERT INTO hosted_outbox_events(topic, payload, payload_sha256, payload_encoding, occurred_at) VALUES ($1,$2,$3,$4,$5)', [topic, event.compressed, event.sha256, PAYLOAD_ENCODING, occurredAt]); await client.query('COMMIT') } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
+  }
+  async outboxAfter(lastEventId = 0): Promise<readonly { id: number; topic: string; payload: unknown; createdAt: string }[]> {
+    const rows = await this.pool.query<StoredPayload & { id: string; topic: string; created_at: Date }>('SELECT event_id::text AS id, topic, payload, payload_sha256 AS sha, payload_encoding AS encoding, occurred_at FROM hosted_outbox_events WHERE event_id > $1 ORDER BY event_id ASC', [lastEventId])
+    return rows.rows.map((row) => ({ id: Number(row.id), topic: row.topic, payload: decodeStoredPayload(row), createdAt: row.created_at.toISOString() }))
   }
   async loadEventStream(capacity = 1_000): Promise<HostedEventStream> {
     const result = await this.pool.query<StoredPayload>('SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_event_stream_state WHERE state_key = $1', ['default'])
@@ -225,6 +242,17 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
   }
 
   private async verifyConnection(): Promise<void> { await this.pool.query('SELECT 1') }
+  private async loadNormalizedSharedState(client: Pool | PoolClient): Promise<SharedWorldServiceState> {
+    const read = async (table: string): Promise<unknown[]> => (await client.query<StoredPayload>(`SELECT payload, payload_sha256 AS sha, payload_encoding AS encoding FROM ${table} ORDER BY entity_key ASC`)).rows.map(decodeStoredPayload)
+    const [accounts, sessions, tokens, worlds, access, revisions, leases, audits, runs, mutations] = await Promise.all(['hosted_accounts', 'hosted_sessions', 'hosted_api_tokens', 'hosted_worlds', 'hosted_world_access', 'hosted_world_revisions', 'hosted_world_leases', 'hosted_world_audits', 'hosted_world_runs', 'hosted_shared_mutations'].map(read))
+    return { version: 1, accounts: accounts as SharedWorldServiceState['accounts'], sessions: sessions as SharedWorldServiceState['sessions'], tokens: tokens as SharedWorldServiceState['tokens'], worlds: worlds as SharedWorldServiceState['worlds'], access: access as SharedWorldServiceState['access'], revisions: revisions as SharedWorldServiceState['revisions'], leases: leases as SharedWorldServiceState['leases'], audits: audits as SharedWorldServiceState['audits'], runs: runs as SharedWorldServiceState['runs'], mutations: mutations as SharedWorldServiceState['mutations'] }
+  }
+  private async saveNormalizedSharedState(client: PoolClient, state: SharedWorldServiceState): Promise<void> {
+    const groups: readonly [string, readonly unknown[], (item: any) => string][] = [
+      ['hosted_accounts', state.accounts, (x) => x.id], ['hosted_sessions', state.sessions, (x) => x.id], ['hosted_api_tokens', state.tokens, (x) => x.id], ['hosted_worlds', state.worlds, (x) => x.id], ['hosted_world_access', state.access, (x) => `${x.worldId}:${x.accountId}`], ['hosted_world_revisions', state.revisions, (x) => `${x.worldId}:${x.revision}`], ['hosted_world_leases', state.leases, (x) => x.worldId], ['hosted_world_audits', state.audits, (x) => x.id], ['hosted_world_runs', state.runs ?? [], (x) => x.runId], ['hosted_shared_mutations', state.mutations, (x) => x.key],
+    ]
+    for (const [table, rows, key] of groups) { await client.query(`DELETE FROM ${table}`); for (const row of rows) { const encoded = encodePayload(row); await client.query(`INSERT INTO ${table}(entity_key,payload,payload_sha256,payload_encoding) VALUES ($1,$2,$3,$4)`, [key(row), encoded.compressed, encoded.sha256, PAYLOAD_ENCODING]) } }
+  }
   private async saveRun(client: PoolClient, record: HostedRunRecord, payload: EncodedPayload): Promise<void> {
     await client.query(`INSERT INTO hosted_runs(run_id, owner_id, saved_at, snapshot_payload, snapshot_sha256, snapshot_uncompressed_bytes, snapshot_encoding)
       VALUES ($1,$2,$3,$4,$5,$6,$7)
