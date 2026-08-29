@@ -49,7 +49,7 @@ do not change a canonical engine digest.
 ## Schema compatibility and migration
 
 `DATABASE_MIGRATION_VERSION` is the hosted storage contract. This release uses
-generation 10 and retains explicit forward steps for older hosted generations;
+generation 11 and retains explicit forward steps for older hosted generations;
 a database newer than this application is rejected. Server startup refuses an
 older or uninitialized database; only the guarded migration command can bring
 it forward.
@@ -64,6 +64,17 @@ pnpm host:backup
 $env:HOSTED_MIGRATION_BACKUP_FILE = $env:HOSTED_BACKUP_FILE
 pnpm host:migrate
 ```
+
+`host:migrate` also locks every hosted run, verifies each original snapshot
+envelope and source state digest before transformation, writes the exact source
+payload to `hosted_snapshot_migration_backups`, and commits the authenticated
+migrated envelope with its provenance in the same transaction. Any hosted job
+reference to that exact source tick/digest is reconciled atomically; an
+incompatible pending quantum aborts the migration without changing the run.
+Backups are append-only migration generations keyed by run, source schema and
+digest, and target schema, so later compatible snapshot releases retain their
+own independently recoverable source artifact. Startup refuses to serve a
+retained old snapshot until this guarded migration has completed.
 
 `host:migrate` refuses to run unless the supplied file exists and `pg_restore
 --list` can read it. Use a separate backup for every production migration.

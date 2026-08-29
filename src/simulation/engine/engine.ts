@@ -163,7 +163,7 @@ export class SimulationEngine {
   private livingPersonCache: SimulationState['people'][number][] | undefined
   private livingPersonIndexBuilds = 0
 
-  private constructor(private state: SimulationState, random: RandomProvider, private readonly contentPackRuntime: ContentPackRuntime = createContentPackRuntime(DEFAULT_PREINDUSTRIAL_PACK)) {
+  private constructor(private state: SimulationState, random: RandomProvider, private readonly contentPackRuntime: ContentPackRuntime = createContentPackRuntime(DEFAULT_PREINDUSTRIAL_PACK), private readonly migrationProvenance?: SnapshotEnvelope['migrationProvenance']) {
     this.random = random
     this.cellById = new Map(state.world.grid.cells.map((cell) => [cell.id, cell]))
     this.roadCellIds = new Set((state.world.roads ?? []).flatMap((road) => road.cellIds))
@@ -285,7 +285,7 @@ export class SimulationEngine {
   static async restore(snapshotValue: unknown, contentPack: ContentPack = DEFAULT_PREINDUSTRIAL_PACK): Promise<SimulationEngine> {
     const snapshot = await validateSnapshot(snapshotValue, contentPack)
     const state = structuredClone(snapshot.state)
-    return new SimulationEngine(state, new RandomProvider(state.config.seed, state.randomStreams), createContentPackRuntime(contentPack))
+    return new SimulationEngine(state, new RandomProvider(state.config.seed, state.randomStreams), createContentPackRuntime(contentPack), snapshot.migrationProvenance)
   }
 
   step(count = 1): StepResult {
@@ -619,7 +619,8 @@ export class SimulationEngine {
   async snapshot(): Promise<SnapshotEnvelope> {
     this.state.randomStreams = this.random.snapshot()
     this.syncCommunityCounterState()
-    return createSnapshot(this.state)
+    const snapshot = await createSnapshot(this.state)
+    return this.migrationProvenance === undefined ? snapshot : { ...snapshot, migrationProvenance: structuredClone(this.migrationProvenance) }
   }
 
   event(type: SimulationEvent['type'], payload: SimulationEvent['payload'] = {}): SimulationEvent {
