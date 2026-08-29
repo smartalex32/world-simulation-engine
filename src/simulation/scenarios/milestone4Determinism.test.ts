@@ -12,7 +12,7 @@ import {
 } from '../domain/types'
 import { SimulationEngine } from '../engine/engine'
 import { createCommonsActivity, createHouseholdHomeActivity } from '../activities/model'
-import { createSnapshot } from '../serialization/snapshot'
+import { createSnapshot, stateDigest } from '../serialization/snapshot'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { getPersonVariable, setPersonVariable } from '../variables/storage'
 import { PERSON_VARIABLE_IDS } from '../variables/types'
@@ -206,30 +206,36 @@ describe('Milestone 4 deterministic state and persistence', () => {
     const snapshot = await SimulationEngine.create('milestone-4-registry-rejection').snapshot()
     const variableMismatch = cloneSnapshot(snapshot)
     variableMismatch.state.config.variableRegistryVersion += 1
+    variableMismatch.digest = await stateDigest(variableMismatch.state)
     await expect(SimulationEngine.restore(variableMismatch)).rejects.toThrow('Unsupported variable registry version')
 
     const influenceMismatch = cloneSnapshot(snapshot)
     influenceMismatch.state.config.influenceRegistryVersion += 1
+    influenceMismatch.digest = await stateDigest(influenceMismatch.state)
     await expect(SimulationEngine.restore(influenceMismatch)).rejects.toThrow('Unsupported influence registry version')
   })
 
-  it('rejects malformed variable records in schema-7 snapshots', async () => {
+  it('rejects authenticated snapshots with malformed variable records', async () => {
     const snapshot = await SimulationEngine.create('milestone-4-malformed-variables').snapshot()
 
     const missing = cloneSnapshot(snapshot)
     delete (missing.state.people[0]?.variables as unknown as Record<string, number>)[PERSON_VARIABLE_ID.persistence]
+    missing.digest = await stateDigest(missing.state)
     await expect(SimulationEngine.restore(missing)).rejects.toThrow(`Missing person variable value: ${PERSON_VARIABLE_ID.persistence}`)
 
     const unknown = cloneSnapshot(snapshot)
     ;(unknown.state.people[0]?.variables as unknown as Record<string, number>)['person.trait.unknown'] = 500
+    unknown.digest = await stateDigest(unknown.state)
     await expect(SimulationEngine.restore(unknown)).rejects.toThrow('Unknown person variable ID')
 
     const fractional = cloneSnapshot(snapshot)
     ;(fractional.state.people[0]?.variables as unknown as Record<string, number>)[PERSON_VARIABLE_ID.fatigue] = 1.5
+    fractional.digest = await stateDigest(fractional.state)
     await expect(SimulationEngine.restore(fractional)).rejects.toThrow('must be a safe integer')
 
     const outOfRange = cloneSnapshot(snapshot)
     ;(outOfRange.state.people[0]?.variables as unknown as Record<string, number>)[PERSON_VARIABLE_ID.socialConnection] = 1001
+    outOfRange.digest = await stateDigest(outOfRange.state)
     await expect(SimulationEngine.restore(outOfRange)).rejects.toThrow('must be between 0 and 1000')
   })
 })

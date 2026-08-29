@@ -24,6 +24,7 @@ import {
   type SimulationState,
   type SnapshotEnvelope,
 } from '../domain/types'
+import { canonicalStringify, stateDigest } from './digest'
 import { normalizeWorldCreationRequest } from '../domain/worldCreation'
 import { HOUSEHOLD_GENERATION_STREAM } from '../households/config'
 import { validateEconomyState, validateHouseholdActivityState, validateInfrastructureState } from '../engine/invariants'
@@ -34,28 +35,7 @@ import { migrateSnapshotSchema } from './migrations'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
 import { createContentPackRuntime, type ContentPack } from '../../contentPacks'
 
-export function canonicalStringify(value: unknown): string {
-  return JSON.stringify(sortValue(value))
-}
-
-function sortValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortValue)
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([, entry]) => entry !== undefined)
-        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-        .map(([key, entry]) => [key, sortValue(entry)]),
-    )
-  }
-  return value
-}
-
-export async function stateDigest(state: SimulationState): Promise<string> {
-  const bytes = new TextEncoder().encode(canonicalStringify(state))
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
-}
+export { canonicalStringify, stateDigest } from './digest'
 
 export async function createSnapshot(state: SimulationState): Promise<SnapshotEnvelope> {
   return {
@@ -70,12 +50,7 @@ export async function createSnapshot(state: SimulationState): Promise<SnapshotEn
  * Snapshot payloads carry only its stable reference so content is never silently
  * embedded, reinterpreted, or changed by a later pack edit. */
 export async function validateSnapshot(value: unknown, contentPack: ContentPack = DEFAULT_PREINDUSTRIAL_PACK): Promise<SnapshotEnvelope> {
-  const source = structuredClone(value) as Partial<SnapshotEnvelope>
-  const snapshot = migrateSnapshotSchema(value, SNAPSHOT_SCHEMA_VERSION) as Partial<SnapshotEnvelope>
-  if (source.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) {
-    if (!source.state || typeof source.digest !== 'string' || await stateDigest(source.state) !== source.digest) throw new Error('Snapshot digest does not match its contents')
-    if (snapshot.state) snapshot.digest = await stateDigest(snapshot.state)
-  }
+  const snapshot = await migrateSnapshotSchema(value, SNAPSHOT_SCHEMA_VERSION) as Partial<SnapshotEnvelope>
   if (snapshot.engineVersion !== ENGINE_VERSION) throw new Error(`Unsupported engine version: ${String(snapshot.engineVersion)}`)
   if (!snapshot.state || typeof snapshot.digest !== 'string') throw new Error('Snapshot is missing state or digest')
   if (snapshot.state.config?.baseTickHours !== 1 || !Number.isSafeInteger(snapshot.state.tick) || snapshot.state.tick < 0) {

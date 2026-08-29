@@ -14,5 +14,6 @@ await promisify(execFile)('pg_restore', ['--list', backupPath])
 const store = await PostgresHostedRunStore.connect(databaseUrl)
 try {
   await store.initialize()
-  console.info('Hosted PostgreSQL schema is current and connection verification succeeded.')
+  const migratedSnapshots = await store.migrateStoredSnapshots()
+  console.info(`Hosted PostgreSQL schema is current; ${migratedSnapshots} authenticated snapshot(s) migrated with durable source backups.`)
 } finally { await store.close() }

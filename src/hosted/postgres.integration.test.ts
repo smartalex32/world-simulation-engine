@@ -7,7 +7,9 @@ import { HostedSimulationJobManager } from './jobs'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../contentPacks'
 import { encodePayload } from './postgres'
 import { SharedWorldService, type SharedWorldServiceState } from './sharedWorlds'
-import { HOSTED_JOB_VERSION, type HostedSimulationJob } from './types'
+import { HOSTED_JOB_VERSION, type HostedRunRecord, type HostedSimulationJob } from './types'
+import historicalSnapshot from '../simulation/serialization/fixtures/engine-0.45.0-schema-44-settlement.json'
+import { SimulationEngine } from '../simulation/engine/engine'
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const testIfDatabase = databaseUrl ? describe : describe.skip
@@ -18,7 +20,7 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
   beforeEach(async () => {
     const store = await storePromise
     await store.initialize()
-    await store.pool.query('TRUNCATE hosted_outbox_events, hosted_shared_mutations, hosted_world_audits, hosted_world_leases, hosted_world_runs, hosted_world_access, hosted_world_revisions, hosted_worlds, hosted_api_tokens, hosted_sessions, hosted_accounts, hosted_event_stream_state, hosted_shared_world_state, hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_run_mutations, hosted_runs RESTART IDENTITY CASCADE')
+    await store.pool.query('TRUNCATE hosted_snapshot_migration_backups, hosted_outbox_events, hosted_shared_mutations, hosted_world_audits, hosted_world_leases, hosted_world_runs, hosted_world_access, hosted_world_revisions, hosted_worlds, hosted_api_tokens, hosted_sessions, hosted_accounts, hosted_event_stream_state, hosted_shared_world_state, hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_run_mutations, hosted_runs RESTART IDENTITY CASCADE')
     await store.pool.query("UPDATE hosted_shared_state_meta SET revision=0 WHERE state_key='default'")
   })
 
@@ -100,6 +102,78 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
     await store.saveSharedWorldService(shared)
     expect((await store.loadSharedWorldService()).getWorld('world-1', 'owner')).toMatchObject({ currentRevision: 1, name: 'Shared world' })
   })
+
+  it('backs up, verifies, and atomically replaces a hosted historical snapshot through the guarded migration path', async () => {
+    const store = await storePromise
+    const record = historicalHostedRecord('legacy-snapshot-run')
+    await store.save(record)
+
+    expect(await store.migrateStoredSnapshots()).toBe(1)
+    expect(await store.migrateStoredSnapshots()).toBe(0)
+    const restored = await store.load(record.runId)
+    expect(restored?.snapshot).toMatchObject({ schemaVersion: 45, engineVersion: '0.46.0', migrationProvenance: { sourceSchemaVersion: 44, sourceEngineVersion: '0.45.0', sourceDigest: historicalSnapshot.digest } })
+    const backup = await store.pool.query<{ source_schema_version: number; source_engine_version: string; source_digest: string }>('SELECT source_schema_version, source_engine_version, source_digest FROM hosted_snapshot_migration_backups WHERE run_id = $1', [record.runId])
+    expect(backup.rows).toEqual([{ source_schema_version: 44, source_engine_version: '0.45.0', source_digest: historicalSnapshot.digest }])
+  })
+
+  it('reconciles a pending hosted job digest with its migrated snapshot in the same transaction', async () => {
+    const store = await storePromise
+    const record = historicalHostedRecord('legacy-pending-job'); const snapshot = record.snapshot
+    await store.save(record)
+    const now = '2026-01-01T00:00:00.000Z'
+    const job: HostedSimulationJob = { version: HOSTED_JOB_VERSION, recordRevision: 1, jobId: 'legacy-pending', runId: record.runId, ownerId: 'owner', status: 'running', queueOrder: 1, startTick: 0, totalTicks: 24, advancedTicks: 0, committedTick: 0, committedDigest: snapshot.digest, quantumTicks: 24, checkpointIntervalTicks: 24, lastCheckpointTick: 0, pendingQuantum: { expectedTick: 0, expectedDigest: snapshot.digest, ticks: 24 }, createdAt: now, updatedAt: now }
+    await store.saveJob(job, 0)
+
+    await expect(store.migrateStoredSnapshots()).resolves.toBe(1)
+    const migrated = await store.load(record.runId)
+    const reconciled = await store.loadJob(record.runId, job.jobId)
+    expect(reconciled).toMatchObject({ recordRevision: 2, committedTick: 0, committedDigest: migrated?.snapshot.digest, pendingQuantum: { expectedTick: 0, expectedDigest: migrated?.snapshot.digest } })
+    await expect(store.saveJob({ ...job, recordRevision: 2, status: 'failed' }, 1)).rejects.toThrow('job state conflict')
+  })
+
+  it('validates already-current hosted snapshots during the guarded migration', async () => {
+    const store = await storePromise
+    const snapshot = await SimulationEngine.create('current-corruption').snapshot()
+    const record = { protocolVersion: 1 as const, runId: 'current-corruption', ownerId: 'owner', savedAt: '2026-01-01T00:00:00.000Z', snapshot: { ...snapshot, workerContinuation: { version: 1 as const, ticksPerBatch: 1, batch: { remaining: 0, advanced: 0 } } } }
+    record.snapshot.state.tick += 1
+    await store.save(record)
+
+    await expect(store.migrateStoredSnapshots()).rejects.toThrow('Snapshot digest does not match its contents')
+    await expect(store.assertReady()).rejects.toThrow('Snapshot digest does not match its contents')
+    expect((await store.load(record.runId))?.snapshot.state.tick).toBe(1)
+  })
+
+  it('validates current snapshots against their stored custom content pack', async () => {
+    const store = await storePromise
+    const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK); pack.manifest.id = 'setting.migration-custom'
+    await store.putPack(pack)
+    const creation = { ...defaultWorldCreationRequest('custom-pack-snapshot', 8, 8), initialPopulationCount: 1 }
+    const snapshot = await SimulationEngine.create(creation, 8, 8, pack).snapshot()
+    await store.save({ protocolVersion: 1, runId: 'custom-pack-snapshot', ownerId: 'owner', savedAt: '2026-01-01T00:00:00.000Z', snapshot: { ...snapshot, workerContinuation: { version: 1, ticksPerBatch: 1, batch: { remaining: 0, advanced: 0 } } } })
+
+    await expect(store.migrateStoredSnapshots()).resolves.toBe(0)
+    await expect(store.assertReady()).resolves.toBeUndefined()
+  })
+
+  it('retains append-only backup generations for sequential snapshot migrations of one run', async () => {
+    const store = await storePromise
+    const insert = 'INSERT INTO hosted_snapshot_migration_backups(run_id, source_schema_version, source_engine_version, source_digest, target_schema_version, target_engine_version, target_digest, source_payload, source_payload_sha256, source_payload_encoding) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)'
+    await store.pool.query(insert, ['rolling-run', 44, '0.45.0', 'a'.repeat(64), 45, '0.46.0', 'b'.repeat(64), Buffer.from('first'), 'c'.repeat(64), 'gzip-json-v1'])
+    await store.pool.query(insert, ['rolling-run', 45, '0.46.0', 'b'.repeat(64), 46, '0.47.0', 'd'.repeat(64), Buffer.from('second'), 'e'.repeat(64), 'gzip-json-v1'])
+    expect((await store.pool.query<{ count: number }>('SELECT count(*)::int AS count FROM hosted_snapshot_migration_backups WHERE run_id = $1', ['rolling-run'])).rows[0]?.count).toBe(2)
+  })
+
+  it('rolls a hosted snapshot migration back when an active job does not name the source state', async () => {
+    const store = await storePromise
+    const record = historicalHostedRecord('legacy-incompatible-job'); const snapshot = record.snapshot
+    await store.save(record)
+    const now = '2026-01-01T00:00:00.000Z'
+    await store.saveJob({ version: HOSTED_JOB_VERSION, recordRevision: 1, jobId: 'legacy-incompatible', runId: record.runId, ownerId: 'owner', status: 'running', queueOrder: 1, startTick: 0, totalTicks: 24, advancedTicks: 0, committedTick: 1, committedDigest: '0'.repeat(64), quantumTicks: 24, checkpointIntervalTicks: 24, lastCheckpointTick: 0, createdAt: now, updatedAt: now }, 0)
+
+    await expect(store.migrateStoredSnapshots()).rejects.toThrow('Active hosted job committed state is incompatible')
+    expect((await store.load(record.runId))?.snapshot.schemaVersion).toBe(44)
+    expect((await store.pool.query<{ count: number }>('SELECT count(*)::int AS count FROM hosted_snapshot_migration_backups WHERE run_id = $1', [record.runId])).rows[0]?.count).toBe(0)
+  })
   it('rolls back candidate state and telemetry when a transaction write fails', async () => {
     const store = await storePromise; const bootstrap = { runId: 'fault-run', ownerId: 'owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('fault-seed') }; const service = await HostedRunService.open(bootstrap, store); const before = await service.observe('secret')
     await store.pool.query("CREATE FUNCTION reject_hosted_telemetry() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected telemetry failure'; END $$")
@@ -162,6 +236,11 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
   }, 30_000)
 })
 
+function historicalHostedRecord(runId: string): HostedRunRecord {
+  const snapshot = structuredClone(historicalSnapshot) as unknown as HostedRunRecord['snapshot']
+  return { protocolVersion: 1, runId, ownerId: 'owner', savedAt: '2026-01-01T00:00:00.000Z', snapshot: { ...snapshot, workerContinuation: { version: 1, ticksPerBatch: 1, batch: { remaining: 0, advanced: 0 } } } }
+}
+
 async function writeLegacySharedBlobs(store: PostgresHostedRunStore, state: SharedWorldServiceState): Promise<void> {
   const groups: readonly [string, readonly unknown[], (value: any) => string][] = [
     ['hosted_accounts', state.accounts, (value) => value.id], ['hosted_sessions', state.sessions, (value) => value.id], ['hosted_api_tokens', state.tokens, (value) => value.id],
@@ -172,7 +251,7 @@ async function writeLegacySharedBlobs(store: PostgresHostedRunStore, state: Shar
 }
 
 async function installLegacySchema(store: PostgresHostedRunStore, version: 2 | 3 | 4 | 5 | 8 | 9): Promise<void> {
-  await store.pool.query(`DROP TABLE IF EXISTS hosted_shared_state_meta, hosted_outbox_events, hosted_shared_mutations, hosted_world_audits, hosted_world_leases, hosted_world_runs, hosted_world_access, hosted_world_revisions, hosted_worlds, hosted_api_tokens, hosted_sessions, hosted_accounts,
+  await store.pool.query(`DROP TABLE IF EXISTS hosted_snapshot_migration_backups, hosted_shared_state_meta, hosted_outbox_events, hosted_shared_mutations, hosted_world_audits, hosted_world_leases, hosted_world_runs, hosted_world_access, hosted_world_revisions, hosted_worlds, hosted_api_tokens, hosted_sessions, hosted_accounts,
     hosted_shared_mutations_v9_backup, hosted_world_audits_v9_backup, hosted_world_leases_v9_backup, hosted_world_runs_v9_backup, hosted_world_access_v9_backup, hosted_world_revisions_v9_backup, hosted_worlds_v9_backup, hosted_api_tokens_v9_backup, hosted_sessions_v9_backup, hosted_accounts_v9_backup,
     hosted_run_mutations, hosted_event_stream_state, hosted_shared_world_state, hosted_content_packs, hosted_telemetry_batches, hosted_jobs, hosted_runs, world_simulation_schema_migrations CASCADE`)
   await store.pool.query('CREATE TABLE world_simulation_schema_migrations (version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())')

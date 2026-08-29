@@ -1,16 +1,16 @@
 import { createHash } from 'node:crypto'
 import { gunzipSync, gzipSync } from 'node:zlib'
 import { Pool, type PoolClient } from 'pg'
-import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
-import { canonicalStringify } from '../simulation/serialization/snapshot'
+import { SNAPSHOT_SCHEMA_VERSION, type SimulationEvent, type SnapshotEnvelope, type StatisticSample } from '../simulation/domain/types'
+import { canonicalStringify, validateSnapshot } from '../simulation/serialization/snapshot'
 import { compareStableText } from '../shared/stableOrder'
-import { exportContentPack, importContentPack, type ContentPack, type ContentPackCatalog } from '../contentPacks'
+import { DEFAULT_PREINDUSTRIAL_PACK, exportContentPack, importContentPack, type ContentPack, type ContentPackCatalog } from '../contentPacks'
 import { HOSTED_JOB_VERSION, validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedRunMutation, type HostedRunMutationResult, type HostedRunMutationStore, type HostedRunRecord, type HostedRunStore, type HostedSimulationJob, type HostedTelemetryStore } from './types'
 import { SharedWorldService, type SharedOutboxEvent, type SharedWorldCommitRequest, type SharedWorldCommitResult, type SharedWorldMutationStore, type SharedWorldServiceState } from './sharedWorlds'
 import { HostedEventStream, type HostedEventStreamState } from './eventStream'
 
 /** Current hosted database generation; older generations advance through explicit steps. */
-export const DATABASE_MIGRATION_VERSION = 10
+export const DATABASE_MIGRATION_VERSION = 11
 
 /**
  * PostgreSQL durable store. Payload bytes are canonical JSON compressed with
@@ -37,6 +37,12 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
       throw new Error('Hosted PostgreSQL schema is not initialized; create and verify a backup, then run pnpm host:migrate')
     }
     if ((result.rows[0]?.version ?? 0) !== DATABASE_MIGRATION_VERSION) throw new Error('Hosted PostgreSQL schema is not current; run pnpm host:migrate after verifying a backup')
+    const snapshots = await this.pool.query<StoredPayload>('SELECT snapshot_payload AS payload, snapshot_sha256 AS sha, snapshot_encoding AS encoding FROM hosted_runs')
+    for (const row of snapshots.rows) {
+      const record = validateHostedRunRecord(decodeStoredPayload(row))
+      if (record.snapshot.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) throw new Error('Hosted snapshots require guarded migration; verify a backup, then run pnpm host:migrate')
+      await this.validateStoredSnapshot(this.pool, record.snapshot)
+    }
   }
 
   async initialize(): Promise<void> {
@@ -143,6 +149,16 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
         if (sharedStateFingerprint(restored.state) !== sharedStateFingerprint(legacyShared)) throw new Error('Hosted shared-world migration verification failed')
         await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (10)')
       }
+      if (version < 11) {
+        await client.query(`CREATE TABLE IF NOT EXISTS hosted_snapshot_migration_backups (
+          run_id text NOT NULL, source_schema_version integer NOT NULL, source_engine_version text NOT NULL, source_digest text NOT NULL,
+          target_schema_version integer NOT NULL, target_engine_version text NOT NULL, target_digest text NOT NULL,
+          source_payload bytea NOT NULL, source_payload_sha256 text NOT NULL, source_payload_encoding text NOT NULL,
+          migrated_at timestamptz NOT NULL DEFAULT now(),
+          PRIMARY KEY (run_id, source_schema_version, source_digest, target_schema_version)
+        )`)
+        await client.query('INSERT INTO world_simulation_schema_migrations(version) VALUES (11)')
+      }
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
@@ -169,6 +185,69 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
       }
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
+  }
+
+  /**
+   * Called only by the guarded host:migrate command after its external backup
+   * has been verified. Original authenticated envelopes are retained in the
+   * database before their migrated replacements become visible.
+   */
+  async migrateStoredSnapshots(): Promise<number> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const rows = await client.query<StoredPayload & { run_id: string }>('SELECT run_id, snapshot_payload AS payload, snapshot_sha256 AS sha, snapshot_encoding AS encoding FROM hosted_runs ORDER BY run_id ASC FOR UPDATE')
+      let migratedCount = 0
+      for (const row of rows.rows) {
+        const record = validateHostedRunRecord(decodeStoredPayload(row))
+        const migrated = await this.validateStoredSnapshot(client, record.snapshot)
+        if (record.snapshot.schemaVersion === SNAPSHOT_SCHEMA_VERSION) continue
+        const jobs = await client.query<StoredPayload & { run_id: string; job_id: string }>('SELECT run_id, job_id, payload, payload_sha256 AS sha, payload_encoding AS encoding FROM hosted_jobs WHERE run_id = $1 ORDER BY job_id ASC FOR UPDATE', [record.runId])
+        const existingBackup = await client.query<{ source_payload_sha256: string }>('SELECT source_payload_sha256 FROM hosted_snapshot_migration_backups WHERE run_id = $1 AND source_schema_version = $2 AND source_digest = $3 AND target_schema_version = $4', [record.runId, record.snapshot.schemaVersion, record.snapshot.digest, migrated.schemaVersion])
+        if (existingBackup.rows[0] && existingBackup.rows[0].source_payload_sha256 !== row.sha) throw new Error('Hosted snapshot migration backup does not match the source artifact')
+        if (!existingBackup.rows[0]) await client.query(`INSERT INTO hosted_snapshot_migration_backups(run_id, source_schema_version, source_engine_version, source_digest, target_schema_version, target_engine_version, target_digest, source_payload, source_payload_sha256, source_payload_encoding)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [record.runId, record.snapshot.schemaVersion, record.snapshot.engineVersion, record.snapshot.digest, migrated.schemaVersion, migrated.engineVersion, migrated.digest, row.payload, row.sha, row.encoding])
+        const next = validateHostedRunRecord({ ...record, snapshot: { ...record.snapshot, ...migrated } })
+        await this.saveRun(client, next, encodePayload(next))
+        for (const jobRow of jobs.rows) await this.reconcileMigratedSnapshotJob(client, jobRow, record, next)
+        migratedCount += 1
+      }
+      await client.query('COMMIT')
+      return migratedCount
+    } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
+  }
+
+  /** Job state names the durable run digest explicitly, so snapshot upgrades
+   * must reconcile only references to the exact source state in the same lock. */
+  private async reconcileMigratedSnapshotJob(client: PoolClient, row: StoredPayload & { run_id: string; job_id: string }, source: HostedRunRecord, target: HostedRunRecord): Promise<void> {
+    const job = validateHostedJob(decodeStoredPayload(row))
+    const sourceTick = source.snapshot.state.tick
+    const sourceDigest = source.snapshot.digest
+    const active = job.status === 'queued' || job.status === 'running' || job.status === 'cancelling'
+    if (active && (job.committedTick !== sourceTick || job.committedDigest !== sourceDigest)) throw new Error('Active hosted job committed state is incompatible with the snapshot migration source')
+    let next = job
+    if (active || job.committedTick === sourceTick) {
+      if (job.committedDigest !== sourceDigest) throw new Error('Hosted job committed digest is incompatible with the snapshot migration source')
+      next = { ...next, committedDigest: target.snapshot.digest }
+    }
+    if (job.pendingQuantum) {
+      if (job.pendingQuantum.expectedTick !== sourceTick || job.pendingQuantum.expectedDigest !== sourceDigest) throw new Error('Hosted job pending quantum is incompatible with the snapshot migration source')
+      next = { ...next, pendingQuantum: { ...job.pendingQuantum, expectedDigest: target.snapshot.digest } }
+    }
+    if (canonicalStringify(next) === canonicalStringify(job)) return
+    next = { ...next, recordRevision: job.recordRevision + 1 }
+    await this.saveJobWithClient(client, validateHostedJob(next), job.recordRevision)
+  }
+
+  private async validateStoredSnapshot(client: Pool | PoolClient, snapshot: SnapshotEnvelope): Promise<SnapshotEnvelope> {
+    const config = snapshot.state?.config
+    const packId = config?.contentPackId
+    const packVersion = config?.contentPackVersion
+    if (typeof packId !== 'string' || typeof packVersion !== 'string') throw new Error('Hosted snapshot content pack reference is invalid')
+    if (packId === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && packVersion === DEFAULT_PREINDUSTRIAL_PACK.manifest.version) return validateSnapshot(snapshot)
+    const stored = await client.query<StoredPayload>('SELECT payload,payload_sha256 AS sha,payload_encoding AS encoding FROM hosted_content_packs WHERE pack_id=$1 AND pack_version=$2', [packId, packVersion])
+    if (!stored.rows[0]) throw new Error(`Hosted snapshot content pack is unavailable: ${packId}@${packVersion}`)
+    return validateSnapshot(snapshot, importContentPack(JSON.stringify(decodeStoredPayload(stored.rows[0]))))
   }
 
   /** Locks the durable row before checking the candidate's exact parent state.

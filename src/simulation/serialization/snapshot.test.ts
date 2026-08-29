@@ -3,6 +3,11 @@ import { SimulationEngine } from '../engine/engine'
 import { ENGINE_VERSION, KNOWLEDGE_MODEL_VERSION, SNAPSHOT_SCHEMA_VERSION } from '../domain/types'
 import { defaultWorldCreationRequest } from '../domain/worldCreation'
 import { createSnapshot, canonicalStringify, stateDigest, validateSnapshot } from './snapshot'
+import historicalSnapshot from './fixtures/engine-0.45.0-schema-44.json'
+
+function historicalFixture(): unknown {
+  return structuredClone(historicalSnapshot)
+}
 
 describe('canonical serialization', () => {
   it('sorts object keys recursively without reordering arrays', () => {
@@ -30,19 +35,33 @@ describe('canonical serialization', () => {
     ]))
   })
 
-  it('upgrades each supported prior snapshot schema without changing canonical state', async () => {
-    const current = await SimulationEngine.create('schema-rolling-migration').snapshot()
-    for (const schemaVersion of [30, 31, 32, 33, 34]) {
-      const legacy = { ...structuredClone(current), schemaVersion }
-      await expect(validateSnapshot(legacy)).resolves.toEqual(current)
-    }
+  it('restores the authenticated historical fixture with the migrated envelope evidence intact', async () => {
+    const restored = await validateSnapshot(historicalFixture())
+
+    expect(restored).toMatchObject({
+      schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+      engineVersion: ENGINE_VERSION,
+      migrationProvenance: expect.objectContaining({ sourceSchemaVersion: 44, sourceEngineVersion: '0.45.0', targetSchemaVersion: SNAPSHOT_SCHEMA_VERSION }),
+    })
+    expect(restored.digest).toBe(await stateDigest(restored.state))
+  })
+
+  it('retains authenticated migration provenance across restore, advancement, and a later restore', async () => {
+    const migrated = await validateSnapshot(historicalFixture())
+    const engine = await SimulationEngine.restore(migrated)
+    engine.advance(1)
+    const advanced = await engine.snapshot()
+
+    expect(advanced).toMatchObject({ migrationProvenance: migrated.migrationProvenance })
+    expect(advanced.digest).not.toBe(migrated.digest)
+    await expect(SimulationEngine.restore(advanced)).resolves.toBeInstanceOf(SimulationEngine)
   })
 
   it('repairs schema-44 creation input contaminated by runtime settlement state', async () => {
     const creation = defaultWorldCreationRequest('schema-44-settlement-repair')
     creation.settlements = [{ id: 'settlement-one', name: 'One', anchorCellId: '8,8' }]
     const current = await SimulationEngine.create(creation).snapshot()
-    const legacy = structuredClone(current) as any
+    const legacy = structuredClone(current)
     legacy.schemaVersion = 44
     legacy.engineVersion = '0.45.0'
     legacy.state.config.worldCreation.settlements = structuredClone(legacy.state.world.settlements)
@@ -125,7 +144,7 @@ describe('canonical serialization', () => {
   })
 
   it('rejects malformed development accumulators and unrelated exposure sources', async () => {
-    const base = await SimulationEngine.create('schema-7-development-rejection').snapshot()
+    const base = await SimulationEngine.create('development-state-rejection').snapshot()
 
     const missingAccumulator = structuredClone(base.state)
     const firstPerson = missingAccumulator.people[0]
