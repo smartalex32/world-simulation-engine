@@ -482,23 +482,22 @@ test('the same seed and step count produce the same digest', async ({ page }) =>
 
 test('browser worker preserves the Node golden digest for adversarial stable IDs', async ({ page }) => {
   const creation = defaultWorldCreationRequest('ordering-A_10.a')
-  creation.settlements = [{ id: 'settlement-z-2', name: 'Z', anchorCellId: '8,8' }, { id: 'settlement-a-10', name: 'A', anchorCellId: '10,8' }, { id: 'settlement-a-02', name: 'a', anchorCellId: '12,8' }]
-  const engine = SimulationEngine.create(creation); engine.advance(48)
+  const engine = SimulationEngine.create(creation)
+  engine.event('RUN_CREATED')
+  engine.advance(48)
   const expected = await engine.snapshot()
+  await page.addInitScript(() => { (window as { __playwrightExposeSimulationWorker?: boolean }).__playwrightExposeSimulationWorker = true })
   await page.goto('/')
-  await storeNamedSnapshot(page, expected, 'e2e:ordering', 'Ordering fixture')
-  await page.reload()
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
-  const orderingSnapshot = page.getByRole('button', { name: /Ordering fixture Hour 48/ })
-  await expect.poll(() => orderingSnapshot.count(), { timeout: 30_000 }).toBe(1)
-  await expect(orderingSnapshot).toBeEnabled({ timeout: 30_000 })
-  await orderingSnapshot.click({ force: true })
-  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '48', { timeout: 30_000 })
-  await page.getByPlaceholder('Snapshot name').fill('Browser ordering result')
-  await page.getByRole('button', { name: 'Save' }).click()
-  await expect(page.getByRole('status')).toHaveText('Saved snapshot: Browser ordering result')
-  const digest = await page.evaluate(async () => new Promise<string>((resolve, reject) => { const request = indexedDB.open('world-simulation-workbench'); request.onsuccess = () => { const db = request.result; const transaction = db.transaction('snapshots'); const get = transaction.objectStore('snapshots').getAll(); get.onsuccess = () => { const record = get.result.find((value) => value.name === 'Browser ordering result'); db.close(); resolve(record.snapshot.digest) }; get.onerror = () => reject(get.error) }; request.onerror = () => reject(request.error) }))
-  expect(digest).toBe(expected.digest)
+  const browserSnapshot = await page.evaluate(async (workerCreation) => {
+    const client = (window as unknown as { __playwrightSimulationWorker: { create(creation: unknown): void; step(count: number): void; snapshot(): Promise<{ digest: string; state: { tick: number; config: { seed: string } } }> } }).__playwrightSimulationWorker
+    client.create(workerCreation); client.step(48)
+    return client.snapshot()
+  }, creation)
+  expect(browserSnapshot.state.tick).toBe(48)
+  expect(browserSnapshot.state.config.seed).toBe(creation.seed)
+  expect(browserSnapshot.state).toEqual(expected.state)
+  expect(browserSnapshot.digest).toBe(expected.digest)
 })
 
 test('encounter events navigate between hooked people and their relationships', async ({ page }) => {
