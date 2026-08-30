@@ -33,7 +33,7 @@ import { validateCommunitySimulationState } from '../community/invariants'
 import { COHORT_MODEL_VERSION } from '../cohorts/model'
 import { migrateSnapshotSchema } from './migrations'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
-import { createContentPackRuntime, type ContentPack } from '../../contentPacks'
+import { createContentPackRuntime, resolveContentPack, type ContentPack, type ResolvedContentPack } from '../../contentPacks'
 
 export { canonicalStringify, stateDigest } from './digest'
 
@@ -49,18 +49,26 @@ export async function createSnapshot(state: SimulationState): Promise<SnapshotEn
 /** A caller supplies the exact immutable pack selected for a non-default run.
  * Snapshot payloads carry only its stable reference so content is never silently
  * embedded, reinterpreted, or changed by a later pack edit. */
-export async function validateSnapshot(value: unknown, contentPack: ContentPack = DEFAULT_PREINDUSTRIAL_PACK): Promise<SnapshotEnvelope> {
+export async function validateSnapshot(value: unknown, contentPack: ContentPack | ResolvedContentPack = DEFAULT_PREINDUSTRIAL_PACK): Promise<SnapshotEnvelope> {
   const snapshot = await migrateSnapshotSchema(value, SNAPSHOT_SCHEMA_VERSION) as Partial<SnapshotEnvelope>
   if (snapshot.engineVersion !== ENGINE_VERSION) throw new Error(`Unsupported engine version: ${String(snapshot.engineVersion)}`)
   if (!snapshot.state || typeof snapshot.digest !== 'string') throw new Error('Snapshot is missing state or digest')
   if (snapshot.state.config?.baseTickHours !== 1 || !Number.isSafeInteger(snapshot.state.tick) || snapshot.state.tick < 0) {
     throw new Error('Snapshot contains an invalid clock')
   }
-  const runtime = createContentPackRuntime(contentPack)
+  const resolvedPack = resolveContentPack(contentPack)
+  const runtime = createContentPackRuntime(resolvedPack.pack)
   if (snapshot.state.config.contentPackModelVersion !== CONTENT_PACK_MODEL_VERSION
     || snapshot.state.config.contentPackId !== runtime.pack.manifest.id
     || snapshot.state.config.contentPackVersion !== runtime.pack.manifest.version) {
     throw new Error('Unsupported content pack configuration')
+  }
+  const expectedDependencies = canonicalStringify(resolvedPack.dependencies)
+  const snapshotDependencies = snapshot.state.config.contentPackDependencies
+  if (snapshot.state.config.contentPackChecksum !== undefined) {
+    if (snapshot.state.config.contentPackChecksum !== resolvedPack.checksum || canonicalStringify(snapshotDependencies) !== expectedDependencies) throw new Error('Snapshot content-pack graph checksum does not match the resolved pack')
+  } else if (runtime.pack.manifest.id !== DEFAULT_PREINDUSTRIAL_PACK.manifest.id || runtime.pack.manifest.version !== DEFAULT_PREINDUSTRIAL_PACK.manifest.version) {
+    throw new Error('Snapshot content-pack graph checksum is missing for a non-default pack')
   }
   if (snapshot.state.config.variableRegistryVersion !== VARIABLE_REGISTRY_VERSION) {
     throw new Error(`Unsupported variable registry version: ${String(snapshot.state.config.variableRegistryVersion)}`)

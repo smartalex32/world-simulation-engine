@@ -1,12 +1,12 @@
 import type { MapProjectionRequest, ProjectionInvalidation, WorkbenchProjection } from '../projection'
 import type { DraftViewportProjection, DraftViewportRequest, SimulationEvent, SnapshotEnvelope, StatisticSample, Terrain, WorldCreationDraft, WorldDraftPreview, WorldDraftRecord } from '../simulation/domain/types'
 import type { WorkerContinuationState } from './frameScheduler'
-import type { ContentPack } from '../contentPacks'
+import type { ContentPack, ResolvedContentPack } from '../contentPacks'
 
 export type WorkbenchSnapshotEnvelope = SnapshotEnvelope & { workerContinuation?: WorkerContinuationState }
 
 export type SimulationCommand =
-  | { type: 'CREATE_RUN'; requestId: string; creation: WorldCreationDraft; contentPack?: ContentPack }
+  | { type: 'CREATE_RUN'; requestId: string; creation: WorldCreationDraft; contentPack?: ContentPack | ResolvedContentPack }
   | { type: 'CREATE_DRAFT'; requestId: string; draftId: string; draft: WorldCreationDraft }
   | { type: 'HYDRATE_DRAFT'; requestId: string; draft: WorldDraftRecord }
   | { type: 'UPDATE_DRAFT'; requestId: string; draftId: string; draft: WorldCreationDraft; expectedRevision?: number }
@@ -19,9 +19,9 @@ export type SimulationCommand =
   | { type: 'RESET_DRAFT'; requestId: string; draftId: string; expectedRevision?: number }
   | { type: 'REQUEST_DRAFT_PREVIEW'; requestId: string; draftId: string }
   | { type: 'REQUEST_DRAFT_VIEWPORT'; requestId: string; draftId: string; viewport: DraftViewportRequest }
-  | { type: 'COMMIT_DRAFT'; requestId: string; draftId: string; expectedRevision?: number; contentPack?: ContentPack }
+  | { type: 'COMMIT_DRAFT'; requestId: string; draftId: string; expectedRevision?: number; contentPack?: ContentPack | ResolvedContentPack }
   | { type: 'DISCARD_DRAFT'; requestId: string; draftId: string }
-  | { type: 'LOAD_RUN'; requestId: string; snapshot: WorkbenchSnapshotEnvelope; contentPack?: ContentPack }
+  | { type: 'LOAD_RUN'; requestId: string; snapshot: WorkbenchSnapshotEnvelope; contentPack?: ContentPack | ResolvedContentPack }
   | { type: 'STEP'; requestId: string; count?: number }
   | { type: 'MATERIALIZE_COHORT'; requestId: string; cohortId: string; populationCount: number }
   | { type: 'DEMATERIALIZE_PEOPLE'; requestId: string; personIds: string[] }

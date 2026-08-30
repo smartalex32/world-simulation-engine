@@ -4,7 +4,7 @@ import { validateWorldDraftRecord } from '../simulation/domain/worldDraft'
 import { validateSnapshot } from '../simulation/serialization/snapshot'
 import { validateWorkerContinuation } from '../worker/frameScheduler'
 import type { WorkbenchSnapshotEnvelope } from '../worker/protocol'
-import { exportContentPack, validateContentPack, type ContentPack } from '../contentPacks'
+import { DEFAULT_PREINDUSTRIAL_PACK, exportContentPack, createContentPackResolver, validateContentPack, type ContentPack, type ResolvedContentPack } from '../contentPacks'
 import { compareStableText } from '../shared/stableOrder'
 
 const DATABASE_NAME = 'world-simulation-workbench'
@@ -39,9 +39,11 @@ type StoredStatistic = StatisticSample & { storageKey: string }
 
 export interface ExportBundle {
   format: 'world-simulation-bundle'
-  bundleVersion: 1
+  bundleVersion: 2
   exportedAt: string
   snapshot: WorkbenchSnapshotEnvelope
+  /** Immutable artifacts required to resolve the snapshot's reference-only graph. */
+  contentPacks: readonly ContentPack[]
   events: SimulationEvent[]
   statistics: StatisticSample[]
 }
@@ -145,6 +147,7 @@ export class WorkbenchDatabase {
   /** Packs are authored data, separate from a run's immutable selected pack reference. */
   async saveContentPack(pack: ContentPack): Promise<StoredContentPack> {
     const validated = validateContentPack(pack).pack
+    assertContentPackVersionImmutable(validated)
     const saved: StoredContentPack = { id: validated.manifest.id, version: validated.manifest.version, savedAt: new Date().toISOString(), pack: validated }
     const database = await this.open()
     const transaction = database.transaction('contentPacks', 'readwrite')
@@ -166,6 +169,18 @@ export class WorkbenchDatabase {
   async deleteContentPack(id: string, version: string): Promise<void> {
     const database = await this.open(); const transaction = database.transaction('contentPacks', 'readwrite')
     transaction.objectStore('contentPacks').delete([id, version]); await transactionDone(transaction)
+  }
+
+  /** Resolves the exact graph referenced by a saved snapshot before it crosses
+   * the worker boundary.  The default pack is built in; every other artifact
+   * must already be present in the local immutable catalog. */
+  async resolveSnapshotContentPack(snapshot: WorkbenchSnapshotEnvelope): Promise<ResolvedContentPack> {
+    const config = snapshot.state?.config
+    if (!config || typeof config.contentPackId !== 'string' || typeof config.contentPackVersion !== 'string') throw new Error('Snapshot content-pack reference is invalid')
+    const resolver = createContentPackResolver([DEFAULT_PREINDUSTRIAL_PACK, ...(await this.listContentPacks()).map((entry) => entry.pack)])
+    const resolved = resolver.resolve(config.contentPackId, config.contentPackVersion)
+    await validateSnapshot(snapshot, resolved)
+    return resolved
   }
 
   async listRuns(): Promise<RunRecord[]> {
@@ -227,13 +242,15 @@ export class WorkbenchDatabase {
 
   async exportBundle(snapshot: WorkbenchSnapshotEnvelope): Promise<ExportBundle> {
     const database = await this.open()
+    const resolved = await this.resolveSnapshotContentPack(snapshot)
     const events = await request<StoredEvent[]>(database.transaction('events').objectStore('events').index('runId').getAll(snapshot.state.runId))
     const statistics = await request<StoredStatistic[]>(database.transaction('statistics').objectStore('statistics').index('runId').getAll(snapshot.state.runId))
     return {
       format: 'world-simulation-bundle',
-      bundleVersion: 1,
+      bundleVersion: 2,
       exportedAt: new Date().toISOString(),
       snapshot,
+      contentPacks: resolved.packs,
       events: events.map(({ storageKey: _, ...event }) => event),
       statistics: statistics.map(({ storageKey: _, ...sample }) => sample),
     }
@@ -242,8 +259,12 @@ export class WorkbenchDatabase {
   async importBundle(value: unknown): Promise<SavedSnapshot> {
     if (!value || typeof value !== 'object') throw new Error('Import is not an object')
     const bundle = value as Partial<ExportBundle>
-    if (bundle.format !== 'world-simulation-bundle' || bundle.bundleVersion !== 1 || !bundle.snapshot) throw new Error('Unsupported import bundle')
-    const validated = await validateSnapshot(bundle.snapshot)
+    if (bundle.format !== 'world-simulation-bundle' || bundle.bundleVersion !== 2 || !bundle.snapshot || !Array.isArray(bundle.contentPacks)) throw new Error('Unsupported import bundle')
+    const config = (bundle.snapshot as WorkbenchSnapshotEnvelope).state?.config
+    if (!config || typeof config.contentPackId !== 'string' || typeof config.contentPackVersion !== 'string') throw new Error('Imported snapshot content-pack reference is invalid')
+    const artifacts = bundle.contentPacks.map((pack) => validateContentPack(pack).pack)
+    const resolved = createContentPackResolver([DEFAULT_PREINDUSTRIAL_PACK, ...artifacts]).resolve(config.contentPackId, config.contentPackVersion)
+    const validated = await validateSnapshot(bundle.snapshot, resolved)
     const workerContinuation = validateWorkerContinuation((bundle.snapshot as WorkbenchSnapshotEnvelope).workerContinuation)
     const snapshot: WorkbenchSnapshotEnvelope = workerContinuation ? { ...validated, workerContinuation } : validated
     const events = validateImportedEvents(snapshot.state.runId, bundle.events)
@@ -261,7 +282,17 @@ export class WorkbenchDatabase {
       createdAt: now,
       snapshot,
     }
-    const transaction = database.transaction(['runs', 'snapshots', 'events', 'statistics'], 'readwrite')
+    const transaction = database.transaction(['runs', 'snapshots', 'events', 'statistics', 'contentPacks'], 'readwrite')
+    const packStore = transaction.objectStore('contentPacks')
+    for (const pack of resolved.packs) {
+      if (pack.manifest.id === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && pack.manifest.version === DEFAULT_PREINDUSTRIAL_PACK.manifest.version) continue
+      const existing = await request<StoredContentPack | undefined>(packStore.get([pack.manifest.id, pack.manifest.version]))
+      if (existing && exportContentPack(existing.pack) !== exportContentPack(pack)) {
+        transaction.abort()
+        throw new Error(`Content pack version is immutable: ${pack.manifest.id}@${pack.manifest.version}`)
+      }
+      packStore.put({ id: pack.manifest.id, version: pack.manifest.version, savedAt: now, pack } satisfies StoredContentPack)
+    }
     const runs = transaction.objectStore('runs')
     const previous = await request<RunRecord | undefined>(runs.get(snapshot.state.runId))
     runs.put({ runId: snapshot.state.runId, seed: snapshot.state.config.seed, tick: snapshot.state.tick, engineVersion: snapshot.engineVersion, createdAt: previous?.createdAt ?? now, updatedAt: now } satisfies RunRecord)
@@ -307,6 +338,14 @@ export class WorkbenchDatabase {
       })
     }
     return this.databasePromise
+  }
+}
+
+/** The built-in pack is an immutable catalog entry even before IndexedDB has
+ * materialized a row for it. */
+export function assertContentPackVersionImmutable(pack: ContentPack): void {
+  if (pack.manifest.id === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && pack.manifest.version === DEFAULT_PREINDUSTRIAL_PACK.manifest.version && exportContentPack(pack) !== exportContentPack(DEFAULT_PREINDUSTRIAL_PACK)) {
+    throw new Error(`Content pack version is immutable: ${pack.manifest.id}@${pack.manifest.version}`)
   }
 }
 

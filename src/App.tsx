@@ -18,8 +18,8 @@ import { mergeWorkbenchProjection } from './ui/projectionFrame'
 import type { ContributionView, VariableDefinitionView } from './ui/personVariables'
 import { SimulationWorkerClient } from './worker/client'
 import type { SimulationResponse } from './worker/protocol'
-import { DEFAULT_PREINDUSTRIAL_PACK, diffContentPacks, exportContentPack, importContentPack } from './contentPacks'
-import type { ContentPack } from './contentPacks'
+import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver, diffContentPacks, exportContentPack, importContentPack } from './contentPacks'
+import type { ContentPack, ResolvedContentPack } from './contentPacks'
 
 const SPEEDS = [
   { value: 1, label: '1 hour / batch' },
@@ -91,6 +91,8 @@ export default function App() {
   const [contentPacks, setContentPacks] = useState<StoredContentPack[]>([])
   const [contentPackJson, setContentPackJson] = useState(() => exportContentPack(DEFAULT_PREINDUSTRIAL_PACK))
   const [selectedContentPackKey, setSelectedContentPackKey] = useState(`${DEFAULT_PREINDUSTRIAL_PACK.manifest.id}@${DEFAULT_PREINDUSTRIAL_PACK.manifest.version}`)
+  const contentPackSelectionRef = useRef<{ packs: StoredContentPack[]; selectedKey: string }>({ packs: [], selectedKey: `${DEFAULT_PREINDUSTRIAL_PACK.manifest.id}@${DEFAULT_PREINDUSTRIAL_PACK.manifest.version}` })
+  contentPackSelectionRef.current = { packs: contentPacks, selectedKey: selectedContentPackKey }
   const contentPackDifference = useMemo(() => {
     try { return diffContentPacks(selectedContentPack(), importContentPack(contentPackJson)) } catch { return undefined }
   }, [contentPackJson, contentPacks, selectedContentPackKey])
@@ -128,7 +130,15 @@ export default function App() {
   function selectedContentPack(): ContentPack {
     const defaultKey = `${DEFAULT_PREINDUSTRIAL_PACK.manifest.id}@${DEFAULT_PREINDUSTRIAL_PACK.manifest.version}`
     if (selectedContentPackKey === defaultKey) return DEFAULT_PREINDUSTRIAL_PACK
-    return contentPacks.find((entry) => `${entry.id}@${entry.version}` === selectedContentPackKey)?.pack ?? DEFAULT_PREINDUSTRIAL_PACK
+    const selected = contentPacks.find((entry) => `${entry.id}@${entry.version}` === selectedContentPackKey)?.pack
+    if (!selected) throw new Error(`Selected content pack is unavailable: ${selectedContentPackKey}`)
+    return selected
+  }
+  function selectedResolvedContentPack(): ResolvedContentPack {
+    const current = contentPackSelectionRef.current
+    const [id, version] = current.selectedKey.split('@')
+    if (!id || !version) throw new Error('Selected content-pack reference is invalid')
+    return createContentPackResolver([DEFAULT_PREINDUSTRIAL_PACK, ...current.packs.map((entry) => entry.pack)]).resolve(id, version)
   }
 
   useEffect(() => {
@@ -145,7 +155,7 @@ export default function App() {
     })
     async function handleResponse(response: SimulationResponse) {
       if (response.type === 'READY') {
-        client.create(seed, selectedContentPack())
+        client.create(seed, selectedResolvedContentPack())
       } else if (response.type === 'FRAME') {
         const previousProjection = projectionRef.current
         const startedNewProjection = previousProjection !== undefined && previousProjection.projectionEpoch !== response.projection.projectionEpoch
@@ -246,7 +256,7 @@ export default function App() {
             if (response.action === 'updated' && commitAfterDraftUpdateRef.current && commitAfterDraftSignatureRef.current === worldSetupSignature(acceptedSetup)) {
               commitAfterDraftUpdateRef.current = false
               commitAfterDraftSignatureRef.current = undefined
-              client.commitDraft(WORLD_SETUP_DRAFT_ID, undefined, selectedContentPack())
+              client.commitDraft(WORLD_SETUP_DRAFT_ID, undefined, selectedResolvedContentPack())
             } else {
               const pendingUpdate = pendingDraftUpdate.current
               // Keep the worker draft convergent with the latest form state,
@@ -381,7 +391,7 @@ export default function App() {
     try {
       const value: unknown = JSON.parse(await file.text())
       const saved = await database.importBundle(value)
-      client.load(saved.snapshot)
+      client.load(saved.snapshot, await database.resolveSnapshotContentPack(saved.snapshot))
       setSeed(saved.snapshot.state.config.seed)
       const setup = worldSetupFromCreation(saved.snapshot.state.config.worldCreation)
       worldSetupRef.current = setup
@@ -545,7 +555,7 @@ export default function App() {
     const currentDraft = worldDraftRef.current
     if (!currentDraft) return
     setDraftOperationBusy(true)
-    client.commitDraft(WORLD_SETUP_DRAFT_ID, undefined, selectedContentPack())
+    client.commitDraft(WORLD_SETUP_DRAFT_ID, undefined, selectedResolvedContentPack())
   }
 
   function inspectPerson(personId: string) {
@@ -715,7 +725,7 @@ export default function App() {
           <div className="snapshot-list">
             {snapshots.slice(0, 5).map((saved) => (
               <div key={saved.key} className="snapshot-row">
-                <button disabled={status === 'starting'} onClick={() => { client.load(saved.snapshot); setSeed(saved.snapshot.state.config.seed) }}><strong>{saved.name}</strong><span>Hour {saved.snapshot.state.tick}</span></button>
+                <button disabled={status === 'starting'} onClick={() => { void database.resolveSnapshotContentPack(saved.snapshot).then((pack) => { client.load(saved.snapshot, pack); setSeed(saved.snapshot.state.config.seed) }).catch((reason) => setError(`Snapshot load failed: ${messageOf(reason)}`)) }}><strong>{saved.name}</strong><span>Hour {saved.snapshot.state.tick}</span></button>
                 {saved.kind === 'named' && <button className="delete" title="Delete snapshot" onClick={() => void database.deleteSnapshot(saved.key).then(() => refreshSnapshots())}>×</button>}
               </div>
             ))}
