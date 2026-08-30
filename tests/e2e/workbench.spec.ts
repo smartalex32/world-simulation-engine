@@ -668,12 +668,12 @@ test('inspects persisted experience and deterministic development at the 720-hou
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const developmentSnapshot = page.getByRole('button', { name: /Development fixture Hour 720/ })
   // Snapshot-list hydration and the replacement worker both trigger React
-  // renders after reload. Wait for the persisted control itself, then use a
-  // direct click so Playwright does not mistake that harmless re-render for an
-  // unstable target.
+  // renders after reload. Wait for the persisted control and retain normal
+  // Playwright actionability checks so a button replacement during the click
+  // is retried instead of silently losing the load command.
   await expect.poll(() => developmentSnapshot.count(), { timeout: 30_000 }).toBe(1)
   await expect(developmentSnapshot).toBeEnabled({ timeout: 30_000 })
-  await developmentSnapshot.click({ force: true })
+  await developmentSnapshot.click()
   // Loading is worker-owned. Synchronize on the restored authoritative tick
   // before asserting the human-formatted calendar text, which renders in a
   // subsequent React paint on slower Firefox CI workers.
