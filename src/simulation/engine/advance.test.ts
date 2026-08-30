@@ -74,6 +74,17 @@ describe('projection-free engine advance', () => {
     expect((await engine.snapshot()).digest).toBe(before.digest)
   })
 
+  it('preserves complete telemetry and diagnostics when a batch is split', async () => {
+    const whole = SimulationEngine.create('advance-telemetry-equivalence')
+    const split = SimulationEngine.create('advance-telemetry-equivalence')
+    const wholeResult = whole.advance(72, { clockEventHours: false })
+    const splitResults = [split.advance(24, { clockEventHours: false }), split.advance(24, { clockEventHours: false }), split.advance(24, { clockEventHours: false })]
+    expect(splitResults.flatMap((result) => result.events)).toEqual(wholeResult.events)
+    expect(splitResults.flatMap((result) => result.statistics)).toEqual(wholeResult.statistics)
+    expect(Object.fromEntries(Object.entries(wholeResult.diagnostics.phaseCounts))).toEqual(Object.fromEntries(Object.entries(splitResults.reduce<Record<string, number>>((total, result) => { for (const [id, count] of Object.entries(result.diagnostics.phaseCounts)) total[id] = (total[id] ?? 0) + count; return total }, {}))))
+    expect(await split.snapshot()).toEqual(await whole.snapshot())
+  })
+
   it.each([24, 720, 8760])('restores identically at the %i-hour cadence boundary', async (boundary) => {
     const uninterrupted = SimulationEngine.create(`phase-boundary-${boundary}`)
     const interrupted = SimulationEngine.create(`phase-boundary-${boundary}`)
