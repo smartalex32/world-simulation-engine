@@ -62,6 +62,7 @@ describe('authoritative population fidelity transitions', () => {
     const before = count(initial)
     const materialized = engine.materializeCohort('cohort:distant', 12)
     expect(materialized.changeSet.categories).toEqual(expect.arrayContaining(['people', 'locations']))
+    expect(materialized.changeSet.cellIds.length).toBeGreaterThan(0)
     const materializedSource = engine.project()
     const addedHouseholds = materializedSource.households.length - initial.households.length
     expect(count(materializedSource)).toBe(before + addedHouseholds)
@@ -70,6 +71,7 @@ describe('authoritative population fidelity transitions', () => {
     const ids = restored.project().populationFidelity.transitions[0]?.personIds ?? []
     const dematerialized = restored.dematerializePeople(ids)
     expect(dematerialized.changeSet.categories).toEqual(expect.arrayContaining(['people', 'locations']))
+    expect(dematerialized.changeSet.cellIds.length).toBeGreaterThan(0)
     expect(count(restored.project())).toBe(before)
   })
 })

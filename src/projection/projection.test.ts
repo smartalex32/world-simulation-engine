@@ -144,7 +144,7 @@ describe('bounded workbench projection', () => {
     const staticCacheCount = builder.cacheCardinality().staticRegions
     household.homeCellId = destination.id
     home.cellId = destination.id
-    const after = builder.buildMap(source, request({ minQ: destination.q, maxQ: destination.q, minR: destination.r, maxR: destination.r }, 12))
+    const after = builder.buildMap(source, request({ minQ: destination.q, maxQ: destination.q, minR: destination.r, maxR: destination.r }, 12), { categories: [], cellIds: [] })
     expect(before.householdMarkers.some((marker) => marker.q === destination.q && marker.r === destination.r)).toBe(false)
     expect(after.householdMarkers.reduce((sum, marker) => sum + marker.count, 0)).toBeGreaterThan(0)
     expect(after.activityMarkers.reduce((sum, marker) => sum + marker.count, 0)).toBeGreaterThan(0)

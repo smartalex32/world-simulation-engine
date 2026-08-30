@@ -174,9 +174,12 @@ export class WorkbenchProjectionBuilder {
   buildMap(source: WorldProjection, request: MapProjectionRequest, invalidation?: ProjectionInvalidation): MapProjection {
     validateRequest(request)
     // Callers without a change set (new/restore/direct builder use) rebuild
-    // safely. Incremental callers update only the affected cache family.
+    // safely. Incremental hints scope cache families that can tolerate it.
     if (invalidation?.categories.includes('topology')) this.refreshTopology(source)
-    if (!invalidation || invalidation.categories.length > 0) this.refreshDynamicIndexes(source, invalidation?.categories)
+    // Household and activity locations are the correctness boundary: rebuild
+    // them for every retained-builder projection even when a caller reports no
+    // changes. Other dynamic cache families can safely use explicit hints.
+    this.refreshDynamicIndexes(source, invalidation?.categories)
     const bounds = clampViewportBounds(request.bounds, this.grid.width, this.grid.height)
     const size = selectRegionSize(bounds, request.projectedHexRadius)
     const exact = size === 1
@@ -239,11 +242,12 @@ export class WorkbenchProjectionBuilder {
     if (!categories || changed.has('communities') || changed.has('topology')) {
       this.communityIdByCellId.clear(); for (const community of source.communities) for (const cellId of community.catchment.cellIds) this.communityIdByCellId.set(cellId, community.catchment.id)
     }
-    if (!categories || changed.has('locations') || changed.has('topology')) {
-      const activityEntries = source.activityLocations.map(({ id, cellId }) => ({ id, cellId })); const householdEntries = source.households.map(({ id, homeCellId }) => ({ id, cellId: homeCellId }))
-      this.activityEntriesByChunk = buildLocationChunkIndex(activityEntries, this.cellById); this.householdEntriesByChunk = buildLocationChunkIndex(householdEntries, this.cellById)
-      this.activityCellById = new Map(activityEntries.map(({ id, cellId }) => [id, cellId])); this.householdCellById = new Map(householdEntries.map(({ id, cellId }) => [id, cellId]))
-    }
+    const activityEntries = source.activityLocations.map(({ id, cellId }) => ({ id, cellId }))
+    const householdEntries = source.households.map(({ id, homeCellId }) => ({ id, cellId: homeCellId }))
+    this.activityEntriesByChunk = buildLocationChunkIndex(activityEntries, this.cellById)
+    this.householdEntriesByChunk = buildLocationChunkIndex(householdEntries, this.cellById)
+    this.activityCellById = new Map(activityEntries.map(({ id, cellId }) => [id, cellId]))
+    this.householdCellById = new Map(householdEntries.map(({ id, cellId }) => [id, cellId]))
     if (!categories || changed.has('people') || changed.has('topology')) {
       const population = countPeopleByCell(source.people.filter((person) => person.lifeStatus !== 'dead')); for (const [cellId, count] of cohortPopulationByCell(source.cohorts)) population.set(cellId, (population.get(cellId) ?? 0) + count); this.populationByCellId = population
     }
