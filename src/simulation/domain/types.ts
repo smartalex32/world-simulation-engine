@@ -1060,3 +1060,7 @@ export interface WorldProjection {
   communityFeedbackDefinitions: readonly CommunityFeedbackEdgeDefinition[]
   digest?: string
 }
+
+/** Noncanonical description of authoritative data that changed during a command. */
+export type AuthoritativeChangeCategory = 'people' | 'locations' | 'relationships' | 'communities' | 'topology'
+export interface AuthoritativeChangeSet { readonly categories: readonly AuthoritativeChangeCategory[]; readonly cellIds: readonly string[] }

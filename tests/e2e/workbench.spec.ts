@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { DEFAULT_PREINDUSTRIAL_PACK, type ContentPack } from '../../src/contentPacks'
+import { WorkbenchProjectionBuilder } from '../../src/projection/buildMapProjection'
 import { createCommonsActivity, createHouseholdHomeActivity } from '../../src/simulation/activities/model'
 import { scheduleForAge } from '../../src/simulation/activities/config'
 import { createCommunityState, createDailyCommunityCounters, createTwoCatchmentGeography } from '../../src/simulation/community'
@@ -515,6 +516,68 @@ test('browser worker preserves the Node golden digest for adversarial stable IDs
   expect(browserSnapshot.state.config.seed).toBe(creation.seed)
   expect(browserSnapshot.state).toEqual(expected.state)
   expect(browserSnapshot.digest).toBe(expected.digest)
+})
+
+test('browser worker applies the same fidelity invalidations as the shared projection path', async ({ page }) => {
+  const seed = 'projection-fidelity-parity'
+  const cells = SimulationEngine.create(seed, 16, 12).project().world.grid.cells.filter((cell) => cell.movementCost > 0 && cell.habitability >= 500).map((cell) => cell.id)
+  const creation = {
+    seed, name: 'Projection fidelity parity', width: 16, height: 12, initialPopulationCount: 20,
+    populationZones: [
+      { id: 'detailed', name: 'Detailed', cellIds: cells.slice(0, 1), populationCount: 20 },
+      { id: 'distant', name: 'Distant', cellIds: cells.slice(1, 5), populationCount: 0, cohortPopulationCount: 60 },
+    ],
+    settlements: [],
+  }
+  const expectedEngine = SimulationEngine.create(creation)
+  const expectedBuilder = new WorkbenchProjectionBuilder(expectedEngine.project())
+  const viewport = { revision: 0, bounds: { minQ: 0, maxQ: 15, minR: 0, maxR: 11 }, projectedHexRadius: 0, overlay: 'terrain' as const }
+  const expectedMaterialization = expectedEngine.materializeCohort('cohort:distant', 12)
+  const expectedMaterializedProjection = expectedBuilder.build(expectedEngine.project(), viewport, undefined, 1, expectedMaterialization.changeSet)
+  const expectedPersonIds = expectedEngine.project().populationFidelity.transitions.find((transition) => transition.kind === 'materialized')?.personIds ?? []
+  const expectedDematerialization = expectedEngine.dematerializePeople(expectedPersonIds)
+  const expectedDematerializedProjection = expectedBuilder.build(expectedEngine.project(), viewport, undefined, 1, expectedDematerialization.changeSet)
+
+  await page.addInitScript(() => { (window as { __playwrightExposeSimulationWorker?: boolean }).__playwrightExposeSimulationWorker = true })
+  await page.goto('/')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  const browser = await page.evaluate(async (workerCreation) => {
+    type Marker = { count: number }
+    type Frame = { type: 'FRAME'; requestId?: string; projection: { map: { activityMarkers: Marker[]; householdMarkers: Marker[]; populationMarkers: Marker[] }; summary: unknown }; projectionInvalidation: { categories: string[]; cellIds: string[] } }
+    type Response = Frame | { type: string }
+    type Client = {
+      create(creation: unknown): string
+      materializeCohort(cohortId: string, populationCount: number): string
+      dematerializePeople(personIds: string[]): string
+      snapshot(): Promise<{ state: { populationFidelity: { transitions: { kind: string; personIds: string[] }[] } } }>
+      subscribe(listener: (response: Response) => void): () => void
+    }
+    const client = (window as unknown as { __playwrightSimulationWorker: Client }).__playwrightSimulationWorker
+    const frameFor = (send: () => string) => new Promise<Frame>((resolve) => {
+      let unsubscribe: () => void = () => {}
+      let expectedRequestId = ''
+      unsubscribe = client.subscribe((response) => { if (response.type === 'FRAME' && 'projection' in response && response.requestId === expectedRequestId) { unsubscribe(); resolve(response) } })
+      expectedRequestId = send()
+    })
+    await frameFor(() => client.create(workerCreation))
+    const materialized = await frameFor(() => client.materializeCohort('cohort:distant', 12))
+    const snapshot = await client.snapshot()
+    const personIds = snapshot.state.populationFidelity.transitions.find((transition) => transition.kind === 'materialized')?.personIds ?? []
+    const dematerialized = await frameFor(() => client.dematerializePeople(personIds))
+    return { materialized, dematerialized }
+  }, creation)
+
+  const markerCounts = (map: { activityMarkers: { count: number }[]; householdMarkers: { count: number }[]; populationMarkers: { count: number }[] }) => ({
+    activities: map.activityMarkers.reduce((sum, marker) => sum + marker.count, 0),
+    households: map.householdMarkers.reduce((sum, marker) => sum + marker.count, 0),
+    population: map.populationMarkers.reduce((sum, marker) => sum + marker.count, 0),
+  })
+  expect(browser.materialized.projectionInvalidation).toEqual(expectedMaterialization.changeSet)
+  expect(markerCounts(browser.materialized.projection.map)).toEqual(markerCounts(expectedMaterializedProjection.map))
+  expect(browser.materialized.projection.summary).toEqual(expectedMaterializedProjection.summary)
+  expect(browser.dematerialized.projectionInvalidation).toEqual(expectedDematerialization.changeSet)
+  expect(markerCounts(browser.dematerialized.projection.map)).toEqual(markerCounts(expectedDematerializedProjection.map))
+  expect(browser.dematerialized.projection.summary).toEqual(expectedDematerializedProjection.summary)
 })
 
 test('encounter events navigate between hooked people and their relationships', async ({ page }) => {

@@ -131,6 +131,35 @@ describe('bounded workbench projection', () => {
     expect(JSON.stringify(source)).toBe(before)
     expect(builder.cacheCardinality()).toEqual({ staticRegions: expect.any(Number), activityChunks: expect.any(Number), householdChunks: expect.any(Number), routes: 0 })
   })
+
+  it('refreshes retained dynamic indexes while retaining immutable terrain caches', () => {
+    const source = SimulationEngine.create('projection-dynamic-indexes').project()
+    const builder = new WorkbenchProjectionBuilder(source)
+    const household = source.households[0]
+    if (!household) throw new Error('Projection fixture needs a household')
+    const home = source.activityLocations.find((location) => location.id === household.homeActivityLocationId)
+    const destination = source.world.grid.cells.find((cell) => cell.movementCost > 0 && cell.id !== household.homeCellId)
+    if (!home || !destination) throw new Error('Projection fixture needs a distinct passable destination')
+    const before = builder.buildMap(source, request({ minQ: 0, maxQ: source.world.grid.width - 1, minR: 0, maxR: source.world.grid.height - 1 }, 0.1))
+    const staticCacheCount = builder.cacheCardinality().staticRegions
+    household.homeCellId = destination.id
+    home.cellId = destination.id
+    const after = builder.buildMap(source, request({ minQ: destination.q, maxQ: destination.q, minR: destination.r, maxR: destination.r }, 12), { categories: [], cellIds: [] })
+    expect(before.householdMarkers.some((marker) => marker.q === destination.q && marker.r === destination.r)).toBe(false)
+    expect(after.householdMarkers.reduce((sum, marker) => sum + marker.count, 0)).toBeGreaterThan(0)
+    expect(after.activityMarkers.reduce((sum, marker) => sum + marker.count, 0)).toBeGreaterThan(0)
+    expect(builder.cacheCardinality().staticRegions).toBe(staticCacheCount)
+  })
+
+  it('rebuilds terrain-derived caches when topology is invalidated', () => {
+    const source = SimulationEngine.create('projection-topology').project()
+    const builder = new WorkbenchProjectionBuilder(source)
+    const changed = structuredClone(source)
+    changed.world.grid = { width: 1, height: 1, cells: [changed.world.grid.cells[0]!] }
+    const map = builder.buildMap(changed, request({ minQ: 0, maxQ: 0, minR: 0, maxR: 0 }, 12), { categories: ['topology'], cellIds: [] })
+    expect(map.exactCells).toHaveLength(1)
+    expect(map.exactCells[0]?.id).toBe(changed.world.grid.cells[0]?.id)
+  })
 })
 
 function request(bounds: MapProjectionRequest['bounds'], projectedHexRadius: number, overlay: MapProjectionRequest['overlay'] = 'terrain'): MapProjectionRequest {

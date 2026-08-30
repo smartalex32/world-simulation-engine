@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
+import { SimulationEngine } from '../simulation/engine/engine'
 import { MemoryHostedRunStore } from './store'
 import { HostedRunService } from './runService'
 
@@ -91,7 +92,53 @@ describe('hosted single-node run service', () => {
     await expect(alreadyQueued).rejects.toThrow('unreconciled')
   })
 
+  it('keeps retained hosted projections current across fidelity transitions', async () => {
+    const store = new MemoryHostedRunStore()
+    const creation = fidelityCreation('hosted-projection-fidelity')
+    const service = await HostedRunService.open({ runId: 'hosted-projection-fidelity', ownerId: 'owner', ownerToken: 'secret', creation }, store)
+    const initial = await service.execute('secret', { type: 'REQUEST_SNAPSHOT', requestId: 'initial' })
+    const initialHouseholds = projectedHouseholdCount(initial)
+
+    const materialized = await service.execute('secret', { type: 'MATERIALIZE_COHORT', requestId: 'materialize', cohortId: 'cohort:distant', populationCount: 12 })
+    const materializedFrame = materialized.responses.find((response) => response.type === 'FRAME')
+    expect(materializedFrame?.type).toBe('FRAME')
+    if (materializedFrame?.type !== 'FRAME') throw new Error('Expected materialized hosted frame')
+    expect(materializedFrame.projectionInvalidation.categories).toEqual(expect.arrayContaining(['people', 'locations']))
+    expect(materializedFrame.projectionInvalidation.cellIds.length).toBeGreaterThan(0)
+    expect(projectedHouseholdCount(materialized)).toBeGreaterThan(initialHouseholds)
+
+    const snapshotResult = await service.execute('secret', { type: 'REQUEST_SNAPSHOT', requestId: 'materialized-snapshot' })
+    const snapshot = snapshotResult.responses.find((response) => response.type === 'SNAPSHOT')
+    if (snapshot?.type !== 'SNAPSHOT') throw new Error('Expected materialized hosted snapshot')
+    const personIds = snapshot.snapshot.state.populationFidelity.transitions.find((transition) => transition.kind === 'materialized')?.personIds ?? []
+    const dematerialized = await service.execute('secret', { type: 'DEMATERIALIZE_PEOPLE', requestId: 'dematerialize', personIds })
+    const dematerializedFrame = dematerialized.responses.find((response) => response.type === 'FRAME')
+    expect(dematerializedFrame?.type).toBe('FRAME')
+    if (dematerializedFrame?.type !== 'FRAME') throw new Error('Expected dematerialized hosted frame')
+    expect(dematerializedFrame.projectionInvalidation.categories).toEqual(expect.arrayContaining(['people', 'locations']))
+    expect(dematerializedFrame.projectionInvalidation.cellIds.length).toBeGreaterThan(0)
+    expect(projectedHouseholdCount(dematerialized)).toBe(initialHouseholds)
+  })
+
 })
+
+function fidelityCreation(seed: string) {
+  const cells = SimulationEngine.create(seed, 16, 12).project().world.grid.cells.filter((cell) => cell.movementCost > 0 && cell.habitability >= 500).map((cell) => cell.id)
+  return {
+    seed, name: 'Hosted projection fidelity', width: 16, height: 12, initialPopulationCount: 20,
+    populationZones: [
+      { id: 'detailed', name: 'Detailed', cellIds: cells.slice(0, 1), populationCount: 20 },
+      { id: 'distant', name: 'Distant', cellIds: cells.slice(1, 5), populationCount: 0, cohortPopulationCount: 60 },
+    ],
+    settlements: [],
+  }
+}
+
+function projectedHouseholdCount(result: Awaited<ReturnType<HostedRunService['execute']>>): number {
+  const frame = result.responses.find((response) => response.type === 'FRAME')
+  if (frame?.type !== 'FRAME') throw new Error('Expected hosted frame')
+  return frame.projection.map.householdMarkers.reduce((sum, marker) => sum + marker.count, 0)
+}
 
 class FailingMutationStore extends MemoryHostedRunStore {
   fail = false

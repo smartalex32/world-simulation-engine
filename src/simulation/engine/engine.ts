@@ -25,6 +25,7 @@ import {
   type SimulationEvent,
   type SimulationState,
   type ActionName,
+  type AuthoritativeChangeSet,
   type ParentCuriosityModelingExperience,
   type SnapshotEnvelope,
   type StatisticSample,
@@ -94,7 +95,7 @@ import { discoverLocalTerrain, initialKnowledge, transmitKnowledge } from '../kn
 import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION_STREAM, relocationTrace } from '../households/relocation'
 import { advanceCohortFictionalInfections, applyAnnualCohortInfectionMortality, emptyHealthExposure, FICTIONAL_PATHOGEN_STREAM, healthStressMortalityRiskPermille, progressFictionalInfections, resolveDailyHealthStress, transmitFictionalPathogens } from '../health/model'
 import { attemptPracticalExperiment, INNOVATION_STREAM } from '../innovation/model'
-import { COHORT_MODEL_VERSION, advanceCohortsAnnual, advanceCohortsDaily, createInitialCohorts } from '../cohorts/model'
+import { COHORT_MODEL_VERSION, advanceCohortsAnnual, advanceCohortsDaily, cohortPopulationByCell, createInitialCohorts } from '../cohorts/model'
 import { materializeCohortPeople, materializationStreamName } from '../cohorts/materialization'
 import { applyCohortMaterialization, planCohortMaterialization } from '../cohorts/transitions'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
@@ -138,7 +139,11 @@ export interface StepResult {
 export interface AdvanceResult {
   events: SimulationEvent[]
   statistics: StatisticSample[]
+  /** Noncanonical cache hints; authoritative execution never reads these. */
+  changeSet: AuthoritativeChangeSet
 }
+
+export interface FidelityCommandResult { event: SimulationEvent; changeSet: AuthoritativeChangeSet }
 
 export interface AdvanceOptions {
   /** False defers the batch clock event so a worker may yield without changing event sequencing. */
@@ -300,8 +305,11 @@ export class SimulationEngine {
       throw new RangeError('Clock event hours must be a positive safe integer')
     }
     const events: SimulationEvent[] = []
+    const changeCategories = new Set<AuthoritativeChangeSet['categories'][number]>()
+    const changedCellIds = new Set<string>()
     let eventWriteIndex = 0
     const pushEvent = (event: SimulationEvent) => {
+      collectEventChanges(event, changeCategories, changedCellIds)
       if (events.length < 500) events.push(event)
       else {
         events[eventWriteIndex] = event
@@ -437,6 +445,9 @@ export class SimulationEngine {
           pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
         }
         for (const trace of migrateCohortsBetweenSettlements(this.state.cohorts, this.state.world.settlements, this.state.world.grid.cells, this.state.tick)) {
+          changeCategories.add('people')
+          changedCellIds.add(trace.sourceCellId)
+          changedCellIds.add(trace.destinationCellId)
           pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { kind: 'cohort-migration', sourceSettlementId: trace.sourceSettlementId, destinationSettlementId: trace.destinationSettlementId, populationCount: trace.populationCount, reason: trace.reason }))
         }
         // Cohort allocations changed after the first reconciliation, so the
@@ -446,8 +457,15 @@ export class SimulationEngine {
         }
       }
       if (this.state.tick % 8760 === 0) {
+        const populationBefore = cohortPopulationByCell(this.state.cohorts)
         this.resolveAnnualLifeCycle(pushEvent); advanceCohortsAnnual(this.state.cohorts)
         for (const trace of applyAnnualCohortInfectionMortality(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, mortalityCount: trace.mortalityCount }))
+        const populationAfter = cohortPopulationByCell(this.state.cohorts)
+        let cohortPopulationChanged = false
+        for (const cellId of new Set([...populationBefore.keys(), ...populationAfter.keys()])) {
+          if ((populationBefore.get(cellId) ?? 0) !== (populationAfter.get(cellId) ?? 0)) { changedCellIds.add(cellId); cohortPopulationChanged = true }
+        }
+        if (cohortPopulationChanged) changeCategories.add('people')
       }
       if (this.state.tick % 24 === 0) {
         decayGoods(this.state.households, this.contentPackRuntime.pack.economy.goods)
@@ -485,7 +503,7 @@ export class SimulationEngine {
       events.splice(0, events.length, ...ordered)
     }
     this.assertInvariants()
-    return { events, statistics }
+    return { events, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds) }
   }
 
   /** Formula evaluation is deliberately owned by the engine: declared streams
@@ -510,7 +528,7 @@ export class SimulationEngine {
 
   /** Explicit fidelity command. It is independent of the viewport and consumes
    * no ambient timing; retained evidence makes the resulting people auditable. */
-  materializeCohort(cohortId: string, requestedPopulationCount: number): SimulationEvent {
+  materializeCohort(cohortId: string, requestedPopulationCount: number): FidelityCommandResult {
     const cohort = this.state.cohorts.find((candidate) => candidate.id === cohortId)
     if (!cohort) throw new Error(`Unknown cohort: ${cohortId}`)
     const plan = planCohortMaterialization(cohort, requestedPopulationCount)
@@ -536,7 +554,11 @@ export class SimulationEngine {
     this.state.populationFidelity.nextTransitionSequence += 1
     this.livingPersonCache = undefined
     this.assertInvariants()
-    return this.event('COHORT_MATERIALIZED', { cohortId, transitionId, populationCount: generated.people.length, residualPopulationCount: plan.residualPopulationCount })
+    return this.fidelityEvent('COHORT_MATERIALIZED', { cohortId, transitionId, populationCount: generated.people.length, residualPopulationCount: plan.residualPopulationCount }, [
+      ...generated.people.map((person) => person.locationCellId),
+      ...generated.households.map((household) => household.homeCellId),
+      ...generated.activityLocations.map((location) => location.cellId),
+    ])
   }
 
   /** Protection is authoritative conversion policy, never a UI-only hook. */
@@ -548,7 +570,7 @@ export class SimulationEngine {
     this.assertInvariants()
   }
 
-  dematerializePeople(personIds: readonly string[]): SimulationEvent {
+  dematerializePeople(personIds: readonly string[]): FidelityCommandResult {
     const selected = [...new Set(personIds)].sort(compareIds)
     if (selected.length === 0) throw new RangeError('Dematerialization requires at least one person')
     const protectedIds = new Set(this.state.populationFidelity.protectedPersonIds)
@@ -584,7 +606,7 @@ export class SimulationEngine {
     this.state.populationFidelity.transitions.push({ version: 1, id: transitionId, tick: this.state.tick, kind: 'dematerialized', cohortId, personIds: selected, protectedPersonIds: [...protectedIds].sort(compareIds), populationCount: selected.length, rngStream: 'cohort.dematerialization.none' })
     this.livingPersonCache = undefined
     this.assertInvariants()
-    return this.event('PEOPLE_DEMATERIALIZED', { cohortId, transitionId, populationCount: selected.length, residualPopulationCount: populationCount })
+    return this.fidelityEvent('PEOPLE_DEMATERIALIZED', { cohortId, transitionId, populationCount: selected.length, residualPopulationCount: populationCount }, selectedPeople.flatMap((person) => person ? [person.locationCellId, person.homeCellId] : []))
   }
 
   project(digest?: string): WorldProjection {
@@ -634,6 +656,11 @@ export class SimulationEngine {
       version: 1,
       payload,
     }
+  }
+
+  private fidelityEvent(type: 'COHORT_MATERIALIZED' | 'PEOPLE_DEMATERIALIZED', payload: SimulationEvent['payload'], cellIds: readonly string[]): FidelityCommandResult {
+    const event = this.event(type, payload)
+    return { event, changeSet: changeSetFromEvents([event], [], cellIds) }
   }
 
   /** Non-authoritative instrumentation for scale benchmarks and diagnostics. */
@@ -1766,5 +1793,24 @@ function serializeRuntimeCommunityCounters(runtime: RuntimeCommunityCounters): C
       foodAmountBeforeRegeneration: runtime.foodAmountBeforeRegeneration,
       foodCapacity: runtime.foodCapacity,
     },
+  }
+}
+
+function changeSetFromEvents(events: readonly SimulationEvent[], categoryHints: ReadonlySet<AuthoritativeChangeSet['categories'][number]> | readonly AuthoritativeChangeSet['categories'][number][] = [], cellIdHints: ReadonlySet<string> | readonly string[] = []): AuthoritativeChangeSet {
+  const cellIds = new Set(cellIdHints)
+  const categories = new Set<AuthoritativeChangeSet['categories'][number]>(categoryHints)
+  for (const event of events) {
+    collectEventChanges(event, categories, cellIds)
+  }
+  return { categories: [...categories].sort(), cellIds: [...cellIds].sort(compareIds) }
+}
+
+function collectEventChanges(event: SimulationEvent, categories: Set<AuthoritativeChangeSet['categories'][number]>, cellIds: Set<string>): void {
+  if (event.type === 'HOUSEHOLD_RELOCATED' || event.type === 'PERSON_MOVED' || event.type === 'PERSON_STARTED_TRAVEL' || event.type === 'PERSON_MOVED_HOUSEHOLD' || event.type === 'COHORT_MATERIALIZED' || event.type === 'PEOPLE_DEMATERIALIZED' || event.type === 'PERSON_BORN' || event.type === 'PERSON_DIED') { categories.add('people'); categories.add('locations') }
+  if (event.type === 'RELATIONSHIP_FORMED' || event.type === 'PARTNERSHIP_FORMED' || event.type === 'PERSON_DIED' || event.type === 'PERSON_BORN') categories.add('relationships')
+  if (event.type === 'COMMUNITY_MEASURES_UPDATED' || event.type === 'COMMUNITY_CONTENTION_RESOLVED' || event.type === 'SETTLEMENT_SCALE_CHANGED' || event.type === 'INFRASTRUCTURE_UPDATED') categories.add('communities')
+  if (event.type === 'HOUSEHOLD_RELOCATED') {
+    if (typeof event.payload.sourceCellId === 'string') cellIds.add(event.payload.sourceCellId)
+    if (typeof event.payload.destinationCellId === 'string') cellIds.add(event.payload.destinationCellId)
   }
 }
