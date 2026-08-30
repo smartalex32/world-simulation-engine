@@ -709,6 +709,15 @@ The base simulation cadence is one hour per tick.
 
 Higher-level systems derive their cadence from simulation time.
 
+`SimulationEngine` remains the sole public authoritative façade. Its tick work
+is executed through a fixed, statically ordered phase tuple: clock/lifecycle,
+needs, journeys, activities/school, decisions/actions, encounters/markets,
+exposure/environment/health, monthly processing, annual processing, then daily
+processing/statistics. The manifest declares each phase's cadence and named RNG
+stream ownership. It is not an extension point: content packs, UI timing, and
+worker scheduling cannot reorder phases. Projection invalidation hints are
+returned explicitly from `advance`, and never feed back into authoritative work.
+
 Examples include:
 
 * Hourly needs and activities

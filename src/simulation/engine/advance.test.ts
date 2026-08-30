@@ -1,7 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { SimulationEngine } from './engine'
+import { SimulationEngine, TICK_PHASE_MANIFEST } from './engine'
 
 describe('projection-free engine advance', () => {
+  it('declares the immutable canonical phase order, cadence, and RNG ownership', () => {
+    expect(TICK_PHASE_MANIFEST.map((phase) => [phase.id, phase.cadence])).toEqual([
+      ['clock-and-lifecycle', 'hourly'],
+      ['needs', 'hourly'],
+      ['journeys', 'hourly'],
+      ['activities-and-school', 'hourly'],
+      ['decisions-and-actions', 'hourly'],
+      ['encounters-and-markets', 'hourly'],
+      ['exposure-environment-and-health', 'hourly'],
+      ['monthly-processing', 'monthly'],
+      ['annual-processing', 'annual'],
+      ['daily-processing-and-statistics', 'daily'],
+    ])
+    expect(TICK_PHASE_MANIFEST.find((phase) => phase.id === 'decisions-and-actions')?.rngStreams).toContain('actions')
+    expect(TICK_PHASE_MANIFEST.find((phase) => phase.id === 'encounters-and-markets')?.rngStreams).toContain('encounters')
+  })
+
   it('matches step state, telemetry, and digest at the same tick', async () => {
     const stepped = SimulationEngine.create('advance-equivalence')
     const advanced = SimulationEngine.create('advance-equivalence')
