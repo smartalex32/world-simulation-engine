@@ -4,7 +4,7 @@ import { Pool, type PoolClient } from 'pg'
 import { SNAPSHOT_SCHEMA_VERSION, type SimulationEvent, type SnapshotEnvelope, type StatisticSample } from '../simulation/domain/types'
 import { canonicalStringify, validateSnapshot } from '../simulation/serialization/snapshot'
 import { compareStableText } from '../shared/stableOrder'
-import { DEFAULT_PREINDUSTRIAL_PACK, exportContentPack, importContentPack, type ContentPack, type ContentPackCatalog } from '../contentPacks'
+import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver, exportContentPack, importContentPack, type ContentPack, type ContentPackCatalog } from '../contentPacks'
 import { HOSTED_JOB_VERSION, validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedRunMutation, type HostedRunMutationResult, type HostedRunMutationStore, type HostedRunRecord, type HostedRunStore, type HostedSimulationJob, type HostedTelemetryStore } from './types'
 import { SharedWorldService, type SharedOutboxEvent, type SharedWorldCommitRequest, type SharedWorldCommitResult, type SharedWorldMutationStore, type SharedWorldServiceState } from './sharedWorlds'
 import { HostedEventStream, type HostedEventStreamState } from './eventStream'
@@ -244,10 +244,26 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
     const packId = config?.contentPackId
     const packVersion = config?.contentPackVersion
     if (typeof packId !== 'string' || typeof packVersion !== 'string') throw new Error('Hosted snapshot content pack reference is invalid')
-    if (packId === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && packVersion === DEFAULT_PREINDUSTRIAL_PACK.manifest.version) return validateSnapshot(snapshot)
-    const stored = await client.query<StoredPayload>('SELECT payload,payload_sha256 AS sha,payload_encoding AS encoding FROM hosted_content_packs WHERE pack_id=$1 AND pack_version=$2', [packId, packVersion])
-    if (!stored.rows[0]) throw new Error(`Hosted snapshot content pack is unavailable: ${packId}@${packVersion}`)
-    return validateSnapshot(snapshot, importContentPack(JSON.stringify(decodeStoredPayload(stored.rows[0]))))
+    const packs: ContentPack[] = [DEFAULT_PREINDUSTRIAL_PACK]
+    const visited = new Set<string>()
+    const load = async (id: string, version: string): Promise<void> => {
+      const key = `${id}@${version}`
+      if (visited.has(key)) return
+      visited.add(key)
+      const pack = id === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && version === DEFAULT_PREINDUSTRIAL_PACK.manifest.version
+        ? DEFAULT_PREINDUSTRIAL_PACK
+        : await this.loadPackWithClient(client, id, version)
+      if (!pack) throw new Error(`Hosted snapshot content pack is unavailable: ${key}`)
+      if (!packs.some((candidate) => candidate.manifest.id === pack.manifest.id && candidate.manifest.version === pack.manifest.version)) packs.push(pack)
+      for (const dependency of pack.manifest.dependencies) await load(dependency.id, dependency.version)
+    }
+    await load(packId, packVersion)
+    return validateSnapshot(snapshot, createContentPackResolver(packs).resolve(packId, packVersion))
+  }
+
+  private async loadPackWithClient(client: Pool | PoolClient, id: string, version: string): Promise<ContentPack | undefined> {
+    const stored = await client.query<StoredPayload>('SELECT payload,payload_sha256 AS sha,payload_encoding AS encoding FROM hosted_content_packs WHERE pack_id=$1 AND pack_version=$2', [id, version])
+    return stored.rows[0] ? importContentPack(JSON.stringify(decodeStoredPayload(stored.rows[0]))) : undefined
   }
 
   /** Locks the durable row before checking the candidate's exact parent state.

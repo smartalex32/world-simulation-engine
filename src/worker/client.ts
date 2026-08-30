@@ -2,7 +2,7 @@ import type { MapProjectionRequest } from '../projection'
 import type { DraftViewportRequest, Terrain, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
 import { requestId, type SimulationCommand, type SimulationResponse, type WorkbenchSnapshotEnvelope } from './protocol'
-import type { ContentPack } from '../contentPacks'
+import type { ContentPack, ResolvedContentPack } from '../contentPacks'
 
 type Listener = (response: SimulationResponse) => void
 
@@ -50,7 +50,7 @@ export class SimulationWorkerClient {
     return () => this.listeners.delete(listener)
   }
 
-  create(creation: WorldCreationDraft | string, contentPack?: ContentPack): string { const id = requestId(); this.send({ type: 'CREATE_RUN', requestId: id, creation: typeof creation === 'string' ? defaultWorldCreationRequest(creation) : creation, contentPack }); return id }
+  create(creation: WorldCreationDraft | string, contentPack?: ContentPack | ResolvedContentPack): string { const id = requestId(); this.send({ type: 'CREATE_RUN', requestId: id, creation: typeof creation === 'string' ? defaultWorldCreationRequest(creation) : creation, contentPack }); return id }
   createDraft(draftId: string, draft: WorldCreationDraft): void { this.send({ type: 'CREATE_DRAFT', requestId: requestId(), draftId, draft }) }
   hydrateDraft(draft: WorldDraftRecord): void { this.send({ type: 'HYDRATE_DRAFT', requestId: requestId(), draft }) }
   updateDraft(draftId: string, draft: WorldCreationDraft, expectedRevision?: number): void { this.send({ type: 'UPDATE_DRAFT', requestId: requestId(), draftId, draft, expectedRevision }) }
@@ -63,9 +63,9 @@ export class SimulationWorkerClient {
   resetDraft(draftId: string, expectedRevision?: number): void { this.send({ type: 'RESET_DRAFT', requestId: requestId(), draftId, expectedRevision }) }
   previewDraft(draftId: string): void { this.send({ type: 'REQUEST_DRAFT_PREVIEW', requestId: requestId(), draftId }) }
   requestDraftViewport(draftId: string, viewport: DraftViewportRequest): void { this.send({ type: 'REQUEST_DRAFT_VIEWPORT', requestId: requestId(), draftId, viewport }) }
-  commitDraft(draftId: string, expectedRevision?: number, contentPack?: ContentPack): void { this.send({ type: 'COMMIT_DRAFT', requestId: requestId(), draftId, expectedRevision, contentPack }) }
+  commitDraft(draftId: string, expectedRevision?: number, contentPack?: ContentPack | ResolvedContentPack): void { this.send({ type: 'COMMIT_DRAFT', requestId: requestId(), draftId, expectedRevision, contentPack }) }
   discardDraft(draftId: string): void { this.send({ type: 'DISCARD_DRAFT', requestId: requestId(), draftId }) }
-  load(snapshot: WorkbenchSnapshotEnvelope, contentPack?: ContentPack): void { this.send({ type: 'LOAD_RUN', requestId: requestId(), snapshot, contentPack }) }
+  load(snapshot: WorkbenchSnapshotEnvelope, contentPack?: ContentPack | ResolvedContentPack): void { this.send({ type: 'LOAD_RUN', requestId: requestId(), snapshot, contentPack }) }
   step(count = 1): void { this.send({ type: 'STEP', requestId: requestId(), count }) }
   materializeCohort(cohortId: string, populationCount: number): string { const id = requestId(); this.send({ type: 'MATERIALIZE_COHORT', requestId: id, cohortId, populationCount }); return id }
   dematerializePeople(personIds: string[]): string { const id = requestId(); this.send({ type: 'DEMATERIALIZE_PEOPLE', requestId: id, personIds }); return id }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ContentPackClient, DEFAULT_PREINDUSTRIAL_PACK, MemoryContentPackCatalog, createContentPackRegistry, createContentPackRuntime, createPackVariableValues, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack, validatePackVariableValues } from '.'
+import { ContentPackClient, DEFAULT_PREINDUSTRIAL_PACK, MemoryContentPackCatalog, createContentPackRegistry, createContentPackResolver, createContentPackRuntime, createPackVariableValues, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack, validatePackVariableValues } from '.'
 import { SimulationEngine } from '../simulation/engine/engine'
 
 describe('content packs', () => {
@@ -21,6 +21,25 @@ describe('content packs', () => {
     expect(diffContentPacks(foundation, extension).map((item) => item.path)).toContain('manifest.id')
     const changed = { ...foundation, personVariables: foundation.personVariables.map((definition) => definition.id === 'person.trait.curiosity' ? { ...definition, defaultValue: 600 } : definition) }
     expect(diffContentPacks(foundation, changed)).toContainEqual(expect.objectContaining({ path: 'personVariables[person.trait.curiosity].defaultValue', before: 500, after: 600 }))
+  })
+  it('retains a canonical resolved graph and rejects ambiguous, cyclic, or altered versions', async () => {
+    const base = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    base.manifest = { ...base.manifest, id: 'setting.graph.base', version: '1.0.0', name: 'Graph base' }
+    const extension = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    extension.manifest = { ...extension.manifest, id: 'setting.graph.extension', version: '1.0.0', name: 'Graph extension', dependencies: [{ id: base.manifest.id, version: base.manifest.version }] }
+    const resolved = createContentPackResolver([extension, base]).resolve(extension.manifest.id, extension.manifest.version)
+    expect(resolved.packs.map((pack) => pack.manifest.id)).toEqual([base.manifest.id, extension.manifest.id])
+    expect(resolved.checksum).toMatch(/^[0-9a-f]{32}$/)
+    const engine = SimulationEngine.create('content-pack-graph', 8, 8, resolved)
+    engine.advance(4)
+    const snapshot = await engine.snapshot()
+    expect((await SimulationEngine.restore(snapshot, resolved).then((restored) => restored.snapshot())).digest).toBe(snapshot.digest)
+    const altered = structuredClone(base); altered.personVariables = altered.personVariables.map((entry) => entry.id === 'person.trait.curiosity' ? { ...entry, defaultValue: 501 } : entry)
+    const alteredResolved = createContentPackResolver([extension, altered]).resolve(extension.manifest.id, extension.manifest.version)
+    await expect(SimulationEngine.restore(snapshot, alteredResolved)).rejects.toThrow('checksum')
+    expect(() => createContentPackRegistry([base, { ...base, manifest: { ...base.manifest, version: '2.0.0' } }]).get(base.manifest.id)).toThrow('Ambiguous')
+    const cycle = structuredClone(base); cycle.manifest = { ...cycle.manifest, dependencies: [{ id: extension.manifest.id, version: extension.manifest.version }] }
+    expect(() => createContentPackResolver([extension, cycle]).resolve(extension.manifest.id, extension.manifest.version)).toThrow('cycle')
   })
   it('rejects unsafe pack structure and evaluates named deterministic chance', () => {
     expect(() => validateContentPack({ ...DEFAULT_PREINDUSTRIAL_PACK, manifest: { ...DEFAULT_PREINDUSTRIAL_PACK.manifest, id: 'Bad ID' } })).toThrow('Invalid content pack')

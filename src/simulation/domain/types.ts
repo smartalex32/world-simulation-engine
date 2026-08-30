@@ -837,6 +837,9 @@ export interface RunConfiguration {
   baseTickHours: number
   contentPackId: string
   contentPackVersion: string
+  /** Canonical resolved graph fingerprint; ordinary snapshots retain references only. */
+  contentPackChecksum?: string
+  contentPackDependencies?: readonly { id: string; version: string; checksum: string }[]
   contentPackModelVersion: number
   variableRegistryVersion: number
   influenceRegistryVersion: number

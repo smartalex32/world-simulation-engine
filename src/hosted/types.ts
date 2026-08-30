@@ -2,6 +2,7 @@ import type { SimulationEvent, StatisticSample, WorldCreationDraft } from '../si
 import type { WorkbenchProjection } from '../projection'
 import type { SimulationCommand, SimulationResponse, WorkbenchSnapshotEnvelope } from '../worker/protocol'
 import type { SharedWorldCommitRequest, SharedWorldCommitResult } from './sharedWorlds'
+import type { ResolvedContentPack } from '../contentPacks'
 
 /** Versioned, owner-authorized wire contract for the initial single-node host. */
 export const HOSTED_PROTOCOL_VERSION = 1
@@ -53,6 +54,8 @@ export interface HostedRunBootstrap {
   ownerId: string
   ownerToken: string
   creation: WorldCreationDraft
+  /** Resolved at admission; retained for reset and durable restoration. */
+  contentPack?: ResolvedContentPack
 }
 
 /** Browser/server clients never send raw state—only this constrained command set. */

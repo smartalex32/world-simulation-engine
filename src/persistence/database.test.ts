@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { statisticStorageKey, validateImportedEvents, validateImportedStatistics } from './database'
+import { assertContentPackVersionImmutable, statisticStorageKey, validateImportedEvents, validateImportedStatistics } from './database'
 import { createWorldDraftRecord } from '../simulation/domain/worldDraft'
 import type { StatisticSample } from '../simulation/domain/types'
+import { DEFAULT_PREINDUSTRIAL_PACK } from '../contentPacks'
 
 describe('statistic storage identity', () => {
   it('keeps world and each community scope collision-free', () => {
@@ -24,6 +25,15 @@ describe('world draft persistence contract', () => {
     })
     expect(draft).toMatchObject({ version: 3, draftId: 'draft-storage', revision: 0, undoStack: [], redoStack: [] })
     expect('runId' in draft).toBe(false)
+  })
+})
+
+describe('content-pack persistence contract', () => {
+  it('treats the built-in default as immutable before a local catalog row exists', () => {
+    const altered = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    altered.manifest = { ...altered.manifest, name: 'Counterfeit default' }
+    expect(() => assertContentPackVersionImmutable(altered)).toThrow('immutable')
+    expect(() => assertContentPackVersionImmutable(DEFAULT_PREINDUSTRIAL_PACK)).not.toThrow()
   })
 })
 

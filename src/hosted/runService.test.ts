@@ -3,6 +3,7 @@ import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
 import { SimulationEngine } from '../simulation/engine/engine'
 import { MemoryHostedRunStore } from './store'
 import { HostedRunService } from './runService'
+import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver, exportContentPack, importContentPack, type ContentPack } from '../contentPacks'
 
 describe('hosted single-node run service', () => {
   it('serializes owner commands, persists snapshots, and restores the same authoritative result', async () => {
@@ -38,6 +39,27 @@ describe('hosted single-node run service', () => {
       service.execute('secret', { type: 'STEP', requestId: 'step-2', count: 1 }),
     ])
     expect(results.map((result) => result.observedTick)).toEqual([1, 2])
+  })
+
+  it('keeps the resolved custom pack across hosted reset and durable restart', async () => {
+    const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    pack.manifest = { ...pack.manifest, id: 'setting.hosted.custom', version: '1.0.0', name: 'Hosted custom' }
+    pack.personVariables = [...pack.personVariables, { id: 'person.trait.hosted', label: 'Hosted', layer: 'trait', category: 'temperament', unit: 'permille', order: 99, minimum: 0, maximum: 1000, defaultValue: 500, initializationMinimum: 0, initializationMaximum: 1000, enabled: true }]
+    const contentPack = createContentPackResolver([pack]).resolve(pack.manifest.id, pack.manifest.version)
+    const store = new CatalogHostedStore([pack]); const bootstrap = { runId: 'hosted-custom-pack', ownerId: 'owner', ownerToken: 'secret', creation: defaultWorldCreationRequest('hosted-custom-pack'), contentPack }
+    const service = await HostedRunService.open(bootstrap, store)
+    const before = await service.observe('secret')
+    await service.advanceJob('secret', before, 3)
+    const advanced = await service.observe('secret')
+    await service.execute('secret', { type: 'RESET', requestId: 'reset' })
+    const reset = await service.execute('secret', { type: 'REQUEST_SNAPSHOT', requestId: 'snapshot' })
+    const snapshot = reset.responses.find((response) => response.type === 'SNAPSHOT')
+    expect(snapshot?.type).toBe('SNAPSHOT')
+    if (snapshot?.type !== 'SNAPSHOT') throw new Error('Expected snapshot')
+    expect(snapshot.snapshot.state.config.contentPackChecksum).toBe(contentPack.checksum)
+    const restarted = { ...bootstrap, contentPack: undefined }
+    expect((await HostedRunService.open(restarted, store).then((reopened) => reopened.observe('secret'))).digest).toBe(snapshot.snapshot.digest)
+    expect(advanced.tick).toBe(3)
   })
 
   it('does not advance the live engine when candidate persistence fails', async () => {
@@ -161,4 +183,10 @@ class PoisoningMutationStore extends MemoryHostedRunStore {
   poison = false
   override async load(runId: string) { if (this.poison) throw new Error('injected reload failure'); return super.load(runId) }
   override async commitRunMutation(...args: Parameters<MemoryHostedRunStore['commitRunMutation']>) { if (this.poison) throw new Error('injected persistence failure'); return super.commitRunMutation(...args) }
+}
+
+class CatalogHostedStore extends MemoryHostedRunStore {
+  private readonly packs = new Map<string, ContentPack>()
+  constructor(initial: readonly ContentPack[]) { super(); for (const pack of initial) this.packs.set(`${pack.manifest.id}@${pack.manifest.version}`, importContentPack(exportContentPack(pack))) }
+  async getPack(id: string, version: string): Promise<ContentPack | undefined> { const pack = this.packs.get(`${id}@${version}`); return pack && importContentPack(exportContentPack(pack)) }
 }

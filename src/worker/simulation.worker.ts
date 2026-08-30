@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import { SimulationEngine } from '../simulation/engine/engine'
-import { DEFAULT_PREINDUSTRIAL_PACK, type ContentPack } from '../contentPacks'
+import { DEFAULT_PREINDUSTRIAL_PACK, resolveContentPack, type ContentPack, type ResolvedContentPack } from '../contentPacks'
 import { NO_PROJECTION_INVALIDATION, WorkbenchProjectionBuilder, mergeProjectionInvalidations, projectionInvalidationFromChangeSet, type MapProjectionRequest, type ProjectionInvalidation } from '../projection'
 import type { SimulationEvent, StatisticSample, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
@@ -16,6 +16,7 @@ let viewportRequest: MapProjectionRequest | undefined
 let projectionEpoch = 0
 let pendingProjectionInvalidation: ProjectionInvalidation = NO_PROJECTION_INVALIDATION
 let initialCreation: WorldCreationDraft = defaultWorldCreationRequest('valley-001')
+let activeContentPack: ResolvedContentPack = resolveContentPack(DEFAULT_PREINDUSTRIAL_PACK)
 let activeDraft: WorldDraftRecord | undefined
 let playing = false
 let ticksPerBatch = 24
@@ -32,9 +33,12 @@ function respond(response: SimulationResponse): void {
   worker.postMessage(response)
 }
 
-async function create(creation: WorldCreationDraft, requestId?: string, contentPack: ContentPack = DEFAULT_PREINDUSTRIAL_PACK): Promise<void> {
+async function create(creation: WorldCreationDraft, requestId?: string, contentPack: ContentPack | ResolvedContentPack = activeContentPack): Promise<void> {
+  const resolvedPack = resolveContentPack(contentPack)
+  const candidate = SimulationEngine.create(creation, 32, 24, resolvedPack)
   initialCreation = creation
-  engine = SimulationEngine.create(initialCreation, 32, 24, contentPack)
+  activeContentPack = resolvedPack
+  engine = candidate
   installProjectionBuilder()
   const snapshot = await engine.snapshot()
   clearPendingTelemetry()
@@ -260,7 +264,10 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
         }
         case 'LOAD_RUN': {
           playing = false
-          engine = await SimulationEngine.restore(command.snapshot, command.contentPack)
+          const resolvedPack = resolveContentPack(command.contentPack ?? DEFAULT_PREINDUSTRIAL_PACK)
+          const candidate = await SimulationEngine.restore(command.snapshot, resolvedPack)
+          activeContentPack = resolvedPack
+          engine = candidate
           initialCreation = command.snapshot.state.config.worldCreation
           installProjectionBuilder()
           restoreWorkerContinuation(command.snapshot.workerContinuation)
@@ -348,7 +355,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           break
         case 'RESET':
           playing = false
-          await create(initialCreation, command.requestId)
+          await create(initialCreation, command.requestId, activeContentPack)
           break
         case 'DISPOSE':
           playing = false

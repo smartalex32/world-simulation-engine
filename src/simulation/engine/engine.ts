@@ -68,7 +68,7 @@ import { createSnapshot, validateSnapshot } from '../serialization/snapshot'
 import { generateValley } from '../spatial/worldGenerator'
 import { PERSON_VARIABLE_DEFINITIONS, PERSON_VARIABLE_ID } from '../variables/registry'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
-import { createContentPackRuntime, evaluateExpression, type ContentPack, type ContentPackRuntime } from '../../contentPacks'
+import { createContentPackRuntime, evaluateExpression, resolveContentPack, type ContentPack, type ContentPackRuntime, type ResolvedContentPack } from '../../contentPacks'
 import { adjustPersonVariable, createDefaultPersonVariableValues, getPersonVariable, setPersonVariable, validatePersonVariableValues } from '../variables/storage'
 import { validateEconomyState, validateHouseholdActivityState, validateInfrastructureState } from './invariants'
 import {
@@ -190,7 +190,7 @@ export class SimulationEngine {
     this.parentIdsByChildId = new Map([...parentIdsByChildId.entries()].sort(([first], [second]) => compareIds(first, second)))
   }
 
-  static create(seedOrDraft: string | WorldCreationDraft, width = 32, height = 24, contentPack: ContentPack = DEFAULT_PREINDUSTRIAL_PACK): SimulationEngine {
+  static create(seedOrDraft: string | WorldCreationDraft, width = 32, height = 24, contentPack: ContentPack | ResolvedContentPack = DEFAULT_PREINDUSTRIAL_PACK): SimulationEngine {
     const draft = typeof seedOrDraft === 'string' ? defaultWorldCreationRequest(seedOrDraft, width, height) : seedOrDraft
     validateWorldCreationDraftLimits(draft)
     // Terrain generation is pure for a seed, so resolve presets before starting the authoritative RNG provider.
@@ -199,7 +199,8 @@ export class SimulationEngine {
     const creationKey = JSON.stringify(creation)
     const { world, random } = generateValley(creation.seed, creation.width, creation.height, { name: creation.name, hexRadiusMeters: creation.hexRadiusMeters, settlements: creation.settlements, roads: creation.roads, terrainBase: creation.terrainBase, terrainOverrides: creation.terrainOverrides, elevationOverrides: creation.elevationOverrides, resourceCapacityOverrides: creation.resourceCapacityOverrides, idSuffix: creationKey })
     const preserveLegacyHomePlacement = typeof seedOrDraft === 'string' || (draft.populationZones.length === 0 && draft.initialPopulationCount === 200)
-    const runtime = createContentPackRuntime(contentPack)
+    const resolvedPack = resolveContentPack(contentPack)
+    const runtime = createContentPackRuntime(resolvedPack.pack)
     const generatedPopulation = generatePopulation(world.grid.cells, creation.populationZones, random, preserveLegacyHomePlacement, runtime.variables)
     const initialPathogen = [...runtime.pack.pathogens].sort((a, b) => compareStableText(a.id, b.id))[0]
     const initialPerson = [...generatedPopulation.people].sort((a, b) => compareIds(a.id, b.id))[0]
@@ -239,6 +240,8 @@ export class SimulationEngine {
         baseTickHours: BASE_TICK_HOURS,
         contentPackId: runtime.pack.manifest.id,
         contentPackVersion: runtime.pack.manifest.version,
+        contentPackChecksum: resolvedPack.checksum,
+        contentPackDependencies: resolvedPack.dependencies,
         contentPackModelVersion: CONTENT_PACK_MODEL_VERSION,
         variableRegistryVersion: VARIABLE_REGISTRY_VERSION,
         influenceRegistryVersion: INFLUENCE_REGISTRY_VERSION,
@@ -287,10 +290,11 @@ export class SimulationEngine {
     }, random, runtime)
   }
 
-  static async restore(snapshotValue: unknown, contentPack: ContentPack = DEFAULT_PREINDUSTRIAL_PACK): Promise<SimulationEngine> {
-    const snapshot = await validateSnapshot(snapshotValue, contentPack)
+  static async restore(snapshotValue: unknown, contentPack: ContentPack | ResolvedContentPack = DEFAULT_PREINDUSTRIAL_PACK): Promise<SimulationEngine> {
+    const resolvedPack = resolveContentPack(contentPack)
+    const snapshot = await validateSnapshot(snapshotValue, resolvedPack)
     const state = structuredClone(snapshot.state)
-    return new SimulationEngine(state, new RandomProvider(state.config.seed, state.randomStreams), createContentPackRuntime(contentPack), snapshot.migrationProvenance)
+    return new SimulationEngine(state, new RandomProvider(state.config.seed, state.randomStreams), createContentPackRuntime(resolvedPack.pack), snapshot.migrationProvenance)
   }
 
   step(count = 1): StepResult {
