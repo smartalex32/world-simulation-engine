@@ -103,7 +103,7 @@ import { migrateCohortsBetweenSettlements, reconcileSettlementRegions, settlemen
 import { allocateInfrastructureMaintenance, createInfrastructureAssets, maintainInfrastructure } from '../infrastructure/model'
 import { infrastructureAccessAcrossCells, infrastructureAccessAtCell } from '../infrastructure/access'
 import { compareStableText } from '../../shared/stableOrder'
-import { runStaticTickPipeline, SIMULATION_TICK_PHASES, TICK_PHASE_MANIFEST, type SimulationPhaseOperations, type SimulationTickContext } from './phasePipeline'
+import { runSimulationTickPipeline, TICK_PHASE_MANIFEST, type SimulationPhaseOperations, type SimulationTickContext } from './phasePipeline'
 export { TICK_PHASE_MANIFEST } from './phasePipeline'
 
 interface RuntimeCommunityCounters {
@@ -144,7 +144,7 @@ export interface AdvanceResult {
   /** Noncanonical cache hints; authoritative execution never reads these. */
   changeSet: AuthoritativeChangeSet
   /** Noncanonical measurements scoped to this advance call. */
-  diagnostics: { livingPersonIndexBuilds: number }
+  diagnostics: { livingPersonIndexBuilds: number; phaseIds: string[] }
 }
 
 export interface FidelityCommandResult { event: SimulationEvent; changeSet: AuthoritativeChangeSet }
@@ -315,6 +315,7 @@ export class SimulationEngine {
     }
     const events: SimulationEvent[] = []
     const livingPersonIndexBuildsBefore = this.livingPersonIndexBuilds
+    const phaseIds: string[] = []
     const changeCategories = new Set<AuthoritativeChangeSet['categories'][number]>()
     const changedCellIds = new Set<string>()
     let eventWriteIndex = 0
@@ -327,7 +328,7 @@ export class SimulationEngine {
     }
     const statistics: StatisticSample[] = []
     for (let index = 0; index < count; index += 1) {
-      this.runTickPipeline({ pushEvent, statistics, changeCategories, changedCellIds, invalidate: (categories, cellIds = []) => { for (const category of categories) changeCategories.add(category); for (const cellId of cellIds) changedCellIds.add(cellId) } })
+      this.runTickPipeline({ pushEvent, statistics, changeCategories, changedCellIds, phaseIds, invalidate: (categories, cellIds = []) => { for (const category of categories) changeCategories.add(category); for (const cellId of cellIds) changedCellIds.add(cellId) } })
     }
     // Disputes are indexed during encounter resolution.  Materialize the stable serialized
     // collection once per requested advance batch instead of rebuilding it for every encounter.
@@ -343,12 +344,23 @@ export class SimulationEngine {
       events.splice(0, events.length, ...ordered)
     }
     this.assertInvariants()
-    return { events, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds), diagnostics: { livingPersonIndexBuilds: this.livingPersonIndexBuilds - livingPersonIndexBuildsBefore } }
+    return { events, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds), diagnostics: { livingPersonIndexBuilds: this.livingPersonIndexBuilds - livingPersonIndexBuildsBefore, phaseIds } }
   }
 
   private runTickPipeline(runtime: EngineTickRuntime): void {
-    const context: SimulationTickContext = { tick: this.state.tick + 1, emit: () => {}, scratch: {}, operations: this.phaseOperations(runtime) }
-    runStaticTickPipeline(SIMULATION_TICK_PHASES, context)
+    const context: SimulationTickContext = {
+      tick: this.state.tick + 1,
+      phaseTrace: runtime.phaseIds,
+      state: this.state,
+      random: this.random,
+      content: this.contentPackRuntime,
+      emit: runtime.pushEvent,
+      record: (sample) => runtime.statistics.push(sample),
+      invalidate: runtime.invalidate,
+      scratch: {},
+      operations: this.phaseOperations(runtime),
+    }
+    runSimulationTickPipeline(context)
   }
 
   private phaseOperations(runtime: EngineTickRuntime): SimulationPhaseOperations {
@@ -357,7 +369,7 @@ export class SimulationEngine {
       needs: () => { this.runNeeds(); runtime.invalidate(['people']) },
       journeys: () => { this.runJourneys(runtime.pushEvent); runtime.invalidate(['people', 'locations']) },
       activitiesAndSchool: () => { this.runActivitiesAndSchool(runtime.pushEvent); runtime.invalidate(['people', 'locations']) },
-      decisionsAndActions: (context) => { context.scratch.decisions = this.runDecisionsAndActions(runtime.pushEvent); runtime.invalidate(['people', 'locations']) },
+      decisionsAndActions: (context) => { const result = this.runDecisionsAndActions(runtime.pushEvent); context.scratch.decisions = result.decisions; context.scratch.postActionActivityOccupancy = result.occupancy; runtime.invalidate(['people', 'locations']) },
       encountersAndMarkets: (context) => { this.runEncountersAndMarkets(runtime.pushEvent, context.scratch); runtime.invalidate(['relationships', 'communities']) },
       exposureEnvironmentAndHealth: (context) => { this.runExposureEnvironmentAndHealth(runtime.pushEvent, context.scratch); runtime.invalidate(['people', 'communities']) },
       monthlyProcessing: () => { this.runMonthlyProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds); runtime.invalidate(['people', 'locations', 'communities']) },
@@ -432,11 +444,10 @@ export class SimulationEngine {
     return { decisions, occupancy: this.buildActivityOccupancy() }
   }
 
-  private runEncountersAndMarkets(pushEvent: (event: SimulationEvent) => void, scratch: { decisions?: unknown; postActionActivityOccupancy?: unknown }): void {
-    const decisionResult = scratch.decisions as ReturnType<SimulationEngine['runDecisionsAndActions']> | undefined
-    if (!decisionResult) throw new Error('Encounter phase requires decision phase output')
-    const occupancy = decisionResult.occupancy
-    const socializerIds = new Set(decisionResult.decisions.filter(({ decision }) => decision.action === 'socialize').map(({ person }) => person.id))
+  private runEncountersAndMarkets(pushEvent: (event: SimulationEvent) => void, scratch: SimulationTickContext['scratch']): void {
+    if (!scratch.decisions || !scratch.postActionActivityOccupancy) throw new Error('Encounter phase requires decision phase output')
+    const occupancy = scratch.postActionActivityOccupancy
+    const socializerIds = new Set(scratch.decisions.filter(({ decision }) => decision.action === 'socialize').map(({ person }) => person.id))
     const encounters = resolveEncounters({ peopleById: this.personById, occupantsByActivityLocation: occupancy, activityLocationsById: this.activityLocationById, socializerIds, relationshipsById: this.relationshipById }, this.random.stream('encounters'))
     for (const encounter of encounters) {
       const formed = this.applyEncounter(encounter, pushEvent)
@@ -448,13 +459,12 @@ export class SimulationEngine {
     this.resolveMarketExchanges(occupancy, pushEvent)
   }
 
-  private runExposureEnvironmentAndHealth(pushEvent: (event: SimulationEvent) => void, scratch: { decisions?: unknown; postActionActivityOccupancy?: unknown }): void {
-    const decisionResult = scratch.decisions as ReturnType<SimulationEngine['runDecisionsAndActions']> | undefined
-    if (!decisionResult) throw new Error('Exposure phase requires decision phase output')
+  private runExposureEnvironmentAndHealth(pushEvent: (event: SimulationEvent) => void, scratch: SimulationTickContext['scratch']): void {
+    if (!scratch.postActionActivityOccupancy) throw new Error('Exposure phase requires decision phase output')
     this.recordActivityPersonHours()
     this.recordEnvironmentalExposure()
-    this.recordHealthExposure(decisionResult.occupancy)
-    for (const trace of transmitFictionalPathogens({ peopleById: this.personById, occupantsByActivity: decisionResult.occupancy, pathogens: this.contentPackRuntime.pack.pathogens, tick: this.state.tick, nextPermille: () => this.random.stream(FICTIONAL_PATHOGEN_STREAM).nextInt(1000) })) {
+    this.recordHealthExposure(scratch.postActionActivityOccupancy)
+    for (const trace of transmitFictionalPathogens({ peopleById: this.personById, occupantsByActivity: scratch.postActionActivityOccupancy, pathogens: this.contentPackRuntime.pack.pathogens, tick: this.state.tick, nextPermille: () => this.random.stream(FICTIONAL_PATHOGEN_STREAM).nextInt(1000) })) {
       pushEvent(this.event('FICTIONAL_INFECTION_ACQUIRED', { personId: this.state.people.find((person) => person.lastInfectionTrace === trace)?.id ?? null, pathogenId: trace.pathogenId, sourcePersonId: trace.sourcePersonId ?? null, probabilityPermille: trace.probabilityPermille ?? 0, randomRollPermille: trace.randomRollPermille ?? 0 }))
     }
     this.recordCommunityPersonHours()
@@ -1807,6 +1817,7 @@ interface EngineTickRuntime {
   readonly statistics: StatisticSample[]
   readonly changeCategories: Set<AuthoritativeChangeSet['categories'][number]>
   readonly changedCellIds: Set<string>
+  readonly phaseIds: string[]
   readonly invalidate: (categories: readonly AuthoritativeChangeSet['categories'][number][], cellIds?: readonly string[]) => void
 }
 

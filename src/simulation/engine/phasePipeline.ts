@@ -16,6 +16,8 @@ export interface TickPhaseManifestEntry {
 
 export interface TickPhaseContext {
   readonly tick: number
+  /** Noncanonical diagnostic trace; it never participates in state mutation. */
+  readonly phaseTrace?: string[]
 }
 
 export interface DeterministicTickPhase<Context extends TickPhaseContext> extends TickPhaseManifestEntry {
@@ -33,7 +35,7 @@ export const runStaticTickPipeline = <Context extends TickPhaseContext>(
   phases: readonly DeterministicTickPhase<Context>[],
   context: Context,
 ): void => {
-  for (const phase of phases) if (cadenceMatches(context.tick, phase.cadence)) phase.run(context)
+  for (const phase of phases) if (cadenceMatches(context.tick, phase.cadence)) { context.phaseTrace?.push(phase.id); phase.run(context) }
 }
 
 /** The engine-specific pipeline is assembled from this immutable definition;
@@ -45,12 +47,17 @@ export const phaseManifest = <Context extends TickPhaseContext>(phases: readonly
  * the authoritative façade out of phase handlers and makes cross-phase data
  * explicit and per-tick. */
 export interface SimulationTickScratch {
-  decisions?: unknown
-  postActionActivityOccupancy?: unknown
+  decisions?: readonly { person: PersonState; decision: ActionDecision }[]
+  postActionActivityOccupancy?: ReadonlyMap<string, readonly string[]>
 }
 
 export interface SimulationTickContext extends TickPhaseContext {
-  readonly emit: () => void
+  readonly state: SimulationState
+  readonly random: RandomProvider
+  readonly content: ContentPackRuntime
+  readonly emit: (event: SimulationEvent) => void
+  readonly record: (sample: StatisticSample) => void
+  readonly invalidate: (categories: readonly AuthoritativeChangeSet['categories'][number][], cellIds?: readonly string[]) => void
   readonly operations: SimulationPhaseOperations
   readonly scratch: SimulationTickScratch
 }
@@ -72,17 +79,23 @@ const lifecycleMortality = 'life-cycle.mortality'
 const lifecycleAnnual = ['life-cycle.partnership', 'life-cycle.birth', 'life-cycle.inheritance'] as const
 
 /** This one tuple is both the executable contract and its public diagnostic. */
-export const SIMULATION_TICK_PHASES: readonly DeterministicTickPhase<SimulationTickContext>[] = [
-  { id: 'clock-and-lifecycle', cadence: 'hourly', rngStreams: [lifecycleMortality], run: (context) => context.operations.clockAndLifecycle(context) },
+const SIMULATION_TICK_PHASES = Object.freeze([
+  Object.freeze({ id: 'clock-and-lifecycle', cadence: 'hourly' as const, rngStreams: Object.freeze([lifecycleMortality]), run: (context: SimulationTickContext) => context.operations.clockAndLifecycle(context) }),
   { id: 'needs', cadence: 'hourly', rngStreams: [], run: (context) => context.operations.needs(context) },
   { id: 'journeys', cadence: 'hourly', rngStreams: [], run: (context) => context.operations.journeys(context) },
-  { id: 'activities-and-school', cadence: 'hourly', rngStreams: ['school-attendance'], run: (context) => context.operations.activitiesAndSchool(context) },
-  { id: 'decisions-and-actions', cadence: 'hourly', rngStreams: ['actions', 'innovation', 'content-pack.<pack>.<stream>'], run: (context) => context.operations.decisionsAndActions(context) },
+  { id: 'activities-and-school', cadence: 'hourly', rngStreams: ['organization.school.attendance'], run: (context) => context.operations.activitiesAndSchool(context) },
+  { id: 'decisions-and-actions', cadence: 'hourly', rngStreams: ['actions', 'innovation.practical-experiment', 'content-pack.<pack>.<stream>'], run: (context) => context.operations.decisionsAndActions(context) },
   { id: 'encounters-and-markets', cadence: 'hourly', rngStreams: ['encounters'], run: (context) => context.operations.encountersAndMarkets(context) },
-  { id: 'exposure-environment-and-health', cadence: 'hourly', rngStreams: ['fictional-pathogen'], run: (context) => context.operations.exposureEnvironmentAndHealth(context) },
-  { id: 'monthly-processing', cadence: 'monthly', rngStreams: ['household-relocation'], run: (context) => context.operations.monthlyProcessing(context) },
+  { id: 'exposure-environment-and-health', cadence: 'hourly', rngStreams: ['health.fictional-pathogen'], run: (context) => context.operations.exposureEnvironmentAndHealth(context) },
+  { id: 'monthly-processing', cadence: 'monthly', rngStreams: ['household.relocation'], run: (context) => context.operations.monthlyProcessing(context) },
   { id: 'annual-processing', cadence: 'annual', rngStreams: lifecycleAnnual, run: (context) => context.operations.annualProcessing(context) },
   { id: 'daily-processing-and-statistics', cadence: 'daily', rngStreams: [], run: (context) => context.operations.dailyProcessing(context) },
-]
+]) as readonly DeterministicTickPhase<SimulationTickContext>[]
 
-export const TICK_PHASE_MANIFEST = phaseManifest(SIMULATION_TICK_PHASES)
+/** The only executable entry point; consumers never receive the phase tuple. */
+export const runSimulationTickPipeline = (context: SimulationTickContext): void => runStaticTickPipeline(SIMULATION_TICK_PHASES, context)
+
+export const TICK_PHASE_MANIFEST = Object.freeze(phaseManifest(SIMULATION_TICK_PHASES).map((phase) => Object.freeze({ ...phase, rngStreams: Object.freeze([...phase.rngStreams]) })))
+import type { ActionDecision, AuthoritativeChangeSet, PersonState, SimulationEvent, SimulationState, StatisticSample } from '../domain/types'
+import type { ContentPackRuntime } from '../../contentPacks'
+import type { RandomProvider } from '../rng/pcg32'
