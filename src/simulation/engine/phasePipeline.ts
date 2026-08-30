@@ -1,3 +1,7 @@
+import type { ContentPackRuntime } from '../../contentPacks'
+import type { ActionDecision, AuthoritativeChangeSet, PersonState, SimulationEvent, SimulationState, StatisticSample } from '../domain/types'
+import type { RandomProvider } from '../rng/pcg32'
+
 /**
  * The authoritative tick order is deliberately data, not a plugin registry.
  *
@@ -31,7 +35,7 @@ const cadenceMatches = (tick: number, cadence: TickPhaseCadence): boolean =>
     || (cadence === 'annual' && tick % 8760 === 0)
 
 /** Executes an already-created immutable tuple in declaration order. */
-export const runStaticTickPipeline = <Context extends TickPhaseContext>(
+const runStaticTickPipeline = <Context extends TickPhaseContext>(
   phases: readonly DeterministicTickPhase<Context>[],
   context: Context,
 ): void => {
@@ -40,7 +44,7 @@ export const runStaticTickPipeline = <Context extends TickPhaseContext>(
 
 /** The engine-specific pipeline is assembled from this immutable definition;
  * the exported manifest is derived from the exact tuple that executes. */
-export const phaseManifest = <Context extends TickPhaseContext>(phases: readonly DeterministicTickPhase<Context>[]): readonly TickPhaseManifestEntry[] =>
+const phaseManifest = <Context extends TickPhaseContext>(phases: readonly DeterministicTickPhase<Context>[]): readonly TickPhaseManifestEntry[] =>
   phases.map(({ id, cadence, rngStreams }) => ({ id, cadence, rngStreams }))
 
 /** Capability-only boundary used by the engine's fixed phase tuple.  It keeps
@@ -77,25 +81,24 @@ export interface SimulationPhaseOperations {
 
 const lifecycleMortality = 'life-cycle.mortality'
 const lifecycleAnnual = ['life-cycle.partnership', 'life-cycle.birth', 'life-cycle.inheritance'] as const
+const defineSimulationPhase = (phase: DeterministicTickPhase<SimulationTickContext>): DeterministicTickPhase<SimulationTickContext> =>
+  Object.freeze({ ...phase, rngStreams: Object.freeze([...phase.rngStreams]) })
 
 /** This one tuple is both the executable contract and its public diagnostic. */
 const SIMULATION_TICK_PHASES = Object.freeze([
-  Object.freeze({ id: 'clock-and-lifecycle', cadence: 'hourly' as const, rngStreams: Object.freeze([lifecycleMortality]), run: (context: SimulationTickContext) => context.operations.clockAndLifecycle(context) }),
-  { id: 'needs', cadence: 'hourly', rngStreams: [], run: (context) => context.operations.needs(context) },
-  { id: 'journeys', cadence: 'hourly', rngStreams: [], run: (context) => context.operations.journeys(context) },
-  { id: 'activities-and-school', cadence: 'hourly', rngStreams: ['organization.school.attendance'], run: (context) => context.operations.activitiesAndSchool(context) },
-  { id: 'decisions-and-actions', cadence: 'hourly', rngStreams: ['actions', 'innovation.practical-experiment', 'content-pack.<pack>.<stream>'], run: (context) => context.operations.decisionsAndActions(context) },
-  { id: 'encounters-and-markets', cadence: 'hourly', rngStreams: ['encounters'], run: (context) => context.operations.encountersAndMarkets(context) },
-  { id: 'exposure-environment-and-health', cadence: 'hourly', rngStreams: ['health.fictional-pathogen'], run: (context) => context.operations.exposureEnvironmentAndHealth(context) },
-  { id: 'monthly-processing', cadence: 'monthly', rngStreams: ['household.relocation'], run: (context) => context.operations.monthlyProcessing(context) },
-  { id: 'annual-processing', cadence: 'annual', rngStreams: lifecycleAnnual, run: (context) => context.operations.annualProcessing(context) },
-  { id: 'daily-processing-and-statistics', cadence: 'daily', rngStreams: [], run: (context) => context.operations.dailyProcessing(context) },
+  defineSimulationPhase({ id: 'clock-and-lifecycle', cadence: 'hourly', rngStreams: [lifecycleMortality], run: (context) => context.operations.clockAndLifecycle(context) }),
+  defineSimulationPhase({ id: 'needs', cadence: 'hourly', rngStreams: [], run: (context) => context.operations.needs(context) }),
+  defineSimulationPhase({ id: 'journeys', cadence: 'hourly', rngStreams: [], run: (context) => context.operations.journeys(context) }),
+  defineSimulationPhase({ id: 'activities-and-school', cadence: 'hourly', rngStreams: ['organization.school.attendance'], run: (context) => context.operations.activitiesAndSchool(context) }),
+  defineSimulationPhase({ id: 'decisions-and-actions', cadence: 'hourly', rngStreams: ['actions', 'innovation.practical-experiment', 'content-pack.<pack>.<stream>'], run: (context) => context.operations.decisionsAndActions(context) }),
+  defineSimulationPhase({ id: 'encounters-and-markets', cadence: 'hourly', rngStreams: ['encounters'], run: (context) => context.operations.encountersAndMarkets(context) }),
+  defineSimulationPhase({ id: 'exposure-environment-and-health', cadence: 'hourly', rngStreams: ['health.fictional-pathogen'], run: (context) => context.operations.exposureEnvironmentAndHealth(context) }),
+  defineSimulationPhase({ id: 'monthly-processing', cadence: 'monthly', rngStreams: ['household.relocation'], run: (context) => context.operations.monthlyProcessing(context) }),
+  defineSimulationPhase({ id: 'annual-processing', cadence: 'annual', rngStreams: lifecycleAnnual, run: (context) => context.operations.annualProcessing(context) }),
+  defineSimulationPhase({ id: 'daily-processing-and-statistics', cadence: 'daily', rngStreams: [], run: (context) => context.operations.dailyProcessing(context) }),
 ]) as readonly DeterministicTickPhase<SimulationTickContext>[]
 
 /** The only executable entry point; consumers never receive the phase tuple. */
 export const runSimulationTickPipeline = (context: SimulationTickContext): void => runStaticTickPipeline(SIMULATION_TICK_PHASES, context)
 
 export const TICK_PHASE_MANIFEST = Object.freeze(phaseManifest(SIMULATION_TICK_PHASES).map((phase) => Object.freeze({ ...phase, rngStreams: Object.freeze([...phase.rngStreams]) })))
-import type { ActionDecision, AuthoritativeChangeSet, PersonState, SimulationEvent, SimulationState, StatisticSample } from '../domain/types'
-import type { ContentPackRuntime } from '../../contentPacks'
-import type { RandomProvider } from '../rng/pcg32'
