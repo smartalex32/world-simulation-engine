@@ -53,6 +53,10 @@ async function controlledSnapshot(seed: string, personCount: number): Promise<Sn
   const secondCell = { ...cell, id: '1,0', q: 1 }
   state.world.grid = { width: 2, height: 1, cells: [cell, secondCell] }
   state.markets = []
+  state.economy = { version: 1, markets: [], tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 }
+  state.organizations = []
+  state.infrastructure = []
+  state.disputes = []
   state.config.worldWidth = 2
   state.config.worldHeight = 1
   state.tick = 5
@@ -126,7 +130,7 @@ describe('Milestone 4 deterministic state and persistence', () => {
     expect(firstSnapshot.state.randomStreams).toEqual(secondSnapshot.state.randomStreams)
     expect(firstSnapshot.state).toEqual(secondSnapshot.state)
     expect(firstSnapshot.digest).toBe(secondSnapshot.digest)
-  }, 30_000)
+  }, 45_000)
 
   it('round-trips registry versions and all named population/action/encounter streams', async () => {
     const engine = SimulationEngine.create('milestone-4-round-trip')

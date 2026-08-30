@@ -8,6 +8,7 @@ import type { PersonState } from '../../src/simulation/domain/types'
 import { defaultWorldCreationRequest } from '../../src/simulation/domain/worldCreation'
 import { SimulationEngine } from '../../src/simulation/engine/engine'
 import { createParentCuriosityExposureAccumulator } from '../../src/simulation/exposure/model'
+import { createLocalGovernance } from '../../src/simulation/governance/model'
 import { createSnapshot } from '../../src/simulation/serialization/snapshot'
 import { axialToPixel } from '../../src/simulation/spatial/hex'
 import { PERSON_VARIABLE_ID } from '../../src/simulation/variables/registry'
@@ -860,6 +861,10 @@ async function controlledDevelopmentEngine(): Promise<SimulationEngine> {
   const awayCell = { ...second, id: '1,0', q: 1, r: 0, resourceCapacity: 0, foodAmount: 0, foodRegenerationPerDay: 0 }
   state.world.grid = { width: 2, height: 1, cells: [homeCell, awayCell] }
   state.markets = []
+  state.economy = { version: 1, markets: [], tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 }
+  state.organizations = []
+  state.infrastructure = []
+  state.disputes = []
   state.config.worldWidth = 2
   state.config.worldHeight = 1
   const catchments = createTwoCatchmentGeography({ cells: state.world.grid.cells, width: state.world.grid.width, height: state.world.grid.height })
@@ -907,6 +912,7 @@ async function controlledDevelopmentEngine(): Promise<SimulationEngine> {
   state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
   state.dailyActivityCounters = { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 }
   state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0, broaderDevelopmentExperiences: 0, broaderDevelopmentChanges: 0 }
+  state.governance = createLocalGovernance(state.communities, state.people)
   return SimulationEngine.restore(await createSnapshot(state))
 }
 

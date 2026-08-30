@@ -75,7 +75,7 @@ export async function validateSnapshot(value: unknown, contentPack: ContentPack 
   if (snapshot.state.config.householdModelVersion !== HOUSEHOLD_MODEL_VERSION) {
     throw new Error(`Unsupported household model version: ${String(snapshot.state.config.householdModelVersion)}`)
   }
-  if (snapshot.state.config.infrastructureModelVersion !== INFRASTRUCTURE_MODEL_VERSION || !Array.isArray(snapshot.state.infrastructure)) {
+  if (snapshot.state.config.infrastructureModelVersion !== INFRASTRUCTURE_MODEL_VERSION) {
     throw new Error('Unsupported infrastructure configuration')
   }
   if (snapshot.state.config.activityRegistryVersion !== ACTIVITY_REGISTRY_VERSION) {
@@ -108,6 +108,7 @@ export async function validateSnapshot(value: unknown, contentPack: ContentPack 
   if (snapshot.state.config.worldGeneratorVersion !== WORLD_GENERATOR_VERSION) {
     throw new Error(`Unsupported world generator version: ${String(snapshot.state.config.worldGeneratorVersion)}`)
   }
+  validateCanonicalSimulationState(snapshot.state, runtime)
   if (snapshot.state.config.worldWidth !== snapshot.state.world.grid.width || snapshot.state.config.worldHeight !== snapshot.state.world.grid.height) {
     throw new Error('Snapshot world dimensions do not match configuration')
   }
@@ -120,7 +121,6 @@ export async function validateSnapshot(value: unknown, contentPack: ContentPack 
   if (snapshot.state.world.name !== normalizedCreation.name || canonicalStringify(authoredSettlements) !== canonicalStringify(normalizedCreation.settlements) || canonicalStringify(snapshot.state.world.roads ?? []) !== canonicalStringify(normalizedCreation.roads ?? [])) {
     throw new Error('Snapshot world does not match creation request')
   }
-  validateCanonicalSimulationState(snapshot.state, runtime)
   const actual = await stateDigest(snapshot.state)
   if (actual !== snapshot.digest) throw new Error('Snapshot digest does not match its contents')
   return snapshot as SnapshotEnvelope
