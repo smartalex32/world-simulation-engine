@@ -103,7 +103,8 @@ import { migrateCohortsBetweenSettlements, reconcileSettlementRegions, settlemen
 import { allocateInfrastructureMaintenance, createInfrastructureAssets, maintainInfrastructure } from '../infrastructure/model'
 import { infrastructureAccessAcrossCells, infrastructureAccessAtCell } from '../infrastructure/access'
 import { compareStableText } from '../../shared/stableOrder'
-import { runStaticTickPipeline, type DeterministicTickPhase, type TickPhaseManifestEntry } from './phasePipeline'
+import { runStaticTickPipeline, SIMULATION_TICK_PHASES, TICK_PHASE_MANIFEST, type SimulationPhaseOperations, type SimulationTickContext } from './phasePipeline'
+export { TICK_PHASE_MANIFEST } from './phasePipeline'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -142,6 +143,8 @@ export interface AdvanceResult {
   statistics: StatisticSample[]
   /** Noncanonical cache hints; authoritative execution never reads these. */
   changeSet: AuthoritativeChangeSet
+  /** Noncanonical measurements scoped to this advance call. */
+  diagnostics: { livingPersonIndexBuilds: number }
 }
 
 export interface FidelityCommandResult { event: SimulationEvent; changeSet: AuthoritativeChangeSet }
@@ -152,22 +155,6 @@ export interface AdvanceOptions {
 }
 
 /** Canonical, non-extensible order for every authoritative tick. */
-const TICK_PHASE_DEFINITIONS = [
-  { id: 'clock-and-lifecycle', cadence: 'hourly', rngStreams: [LIFE_CYCLE_STREAM.mortality] },
-  { id: 'needs', cadence: 'hourly', rngStreams: [] },
-  { id: 'journeys', cadence: 'hourly', rngStreams: [] },
-  { id: 'activities-and-school', cadence: 'hourly', rngStreams: [SCHOOL_ATTENDANCE_STREAM] },
-  { id: 'decisions-and-actions', cadence: 'hourly', rngStreams: ['actions', INNOVATION_STREAM, 'content-pack.<pack>.<stream>'] },
-  { id: 'encounters-and-markets', cadence: 'hourly', rngStreams: ['encounters'] },
-  { id: 'exposure-environment-and-health', cadence: 'hourly', rngStreams: [FICTIONAL_PATHOGEN_STREAM] },
-  { id: 'monthly-processing', cadence: 'monthly', rngStreams: [HOUSEHOLD_RELOCATION_STREAM] },
-  { id: 'annual-processing', cadence: 'annual', rngStreams: [LIFE_CYCLE_STREAM.partnership, LIFE_CYCLE_STREAM.birth, LIFE_CYCLE_STREAM.inheritance] },
-  { id: 'daily-processing-and-statistics', cadence: 'daily', rngStreams: [] },
-] as const satisfies readonly TickPhaseManifestEntry[]
-
-/** Public diagnostic view, derived from the same fixed tuple used at runtime. */
-export const TICK_PHASE_MANIFEST = TICK_PHASE_DEFINITIONS
-
 export class SimulationEngine {
   private random: RandomProvider
   private readonly cellById: Map<string, SimulationState['world']['grid']['cells'][number]>
@@ -327,6 +314,7 @@ export class SimulationEngine {
       throw new RangeError('Clock event hours must be a positive safe integer')
     }
     const events: SimulationEvent[] = []
+    const livingPersonIndexBuildsBefore = this.livingPersonIndexBuilds
     const changeCategories = new Set<AuthoritativeChangeSet['categories'][number]>()
     const changedCellIds = new Set<string>()
     let eventWriteIndex = 0
@@ -339,8 +327,7 @@ export class SimulationEngine {
     }
     const statistics: StatisticSample[] = []
     for (let index = 0; index < count; index += 1) {
-      this.state.tick += 1
-      this.runTickPipeline({ engine: this, pushEvent, statistics, changeCategories, changedCellIds, invalidate: (categories, cellIds = []) => { for (const category of categories) changeCategories.add(category); for (const cellId of cellIds) changedCellIds.add(cellId) } })
+      this.runTickPipeline({ pushEvent, statistics, changeCategories, changedCellIds, invalidate: (categories, cellIds = []) => { for (const category of categories) changeCategories.add(category); for (const cellId of cellIds) changedCellIds.add(cellId) } })
     }
     // Disputes are indexed during encounter resolution.  Materialize the stable serialized
     // collection once per requested advance batch instead of rebuilding it for every encounter.
@@ -356,25 +343,28 @@ export class SimulationEngine {
       events.splice(0, events.length, ...ordered)
     }
     this.assertInvariants()
-    return { events, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds) }
+    return { events, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds), diagnostics: { livingPersonIndexBuilds: this.livingPersonIndexBuilds - livingPersonIndexBuildsBefore } }
   }
 
-  private runTickPipeline(context: EngineTickPhaseContext): void {
-    runStaticTickPipeline(SimulationEngine.tickPhases, { ...context, tick: this.state.tick })
+  private runTickPipeline(runtime: EngineTickRuntime): void {
+    const context: SimulationTickContext = { tick: this.state.tick + 1, emit: () => {}, scratch: {}, operations: this.phaseOperations(runtime) }
+    runStaticTickPipeline(SIMULATION_TICK_PHASES, context)
   }
 
-  private static readonly tickPhases: readonly DeterministicTickPhase<EngineTickPhaseContext & { tick: number }>[] = [
-    { ...TICK_PHASE_MANIFEST[0], run: ({ engine, pushEvent, invalidate }) => { engine.runClockAndLifecycle(pushEvent); invalidate(['people', 'relationships']) } },
-    { ...TICK_PHASE_MANIFEST[1], run: ({ engine, invalidate }) => { engine.runNeeds(); invalidate(['people']) } },
-    { ...TICK_PHASE_MANIFEST[2], run: ({ engine, pushEvent, invalidate }) => { engine.runJourneys(pushEvent); invalidate(['people', 'locations']) } },
-    { ...TICK_PHASE_MANIFEST[3], run: ({ engine, pushEvent, invalidate }) => { engine.runActivitiesAndSchool(pushEvent); invalidate(['people', 'locations']) } },
-    { ...TICK_PHASE_MANIFEST[4], run: ({ engine, pushEvent, invalidate }) => { engine.runDecisionsAndActions(pushEvent); invalidate(['people', 'locations']) } },
-    { ...TICK_PHASE_MANIFEST[5], run: ({ engine, pushEvent, invalidate }) => { engine.runEncountersAndMarkets(pushEvent); invalidate(['relationships', 'communities']) } },
-    { ...TICK_PHASE_MANIFEST[6], run: ({ engine, pushEvent, invalidate }) => { engine.runExposureEnvironmentAndHealth(pushEvent); invalidate(['people', 'communities']) } },
-    { ...TICK_PHASE_MANIFEST[7], run: ({ engine, pushEvent, changeCategories, changedCellIds, invalidate }) => { engine.runMonthlyProcessing(pushEvent, changeCategories, changedCellIds); invalidate(['people', 'locations', 'communities']) } },
-    { ...TICK_PHASE_MANIFEST[8], run: ({ engine, pushEvent, changeCategories, changedCellIds, invalidate }) => { engine.runAnnualProcessing(pushEvent, changeCategories, changedCellIds); invalidate(['people', 'relationships']) } },
-    { ...TICK_PHASE_MANIFEST[9], run: ({ engine, pushEvent, statistics, invalidate }) => { engine.runDailyProcessing(pushEvent, statistics); invalidate(['people', 'communities']) } },
-  ]
+  private phaseOperations(runtime: EngineTickRuntime): SimulationPhaseOperations {
+    return {
+      clockAndLifecycle: () => { this.state.tick += 1; this.runClockAndLifecycle(runtime.pushEvent); runtime.invalidate(['people', 'relationships']) },
+      needs: () => { this.runNeeds(); runtime.invalidate(['people']) },
+      journeys: () => { this.runJourneys(runtime.pushEvent); runtime.invalidate(['people', 'locations']) },
+      activitiesAndSchool: () => { this.runActivitiesAndSchool(runtime.pushEvent); runtime.invalidate(['people', 'locations']) },
+      decisionsAndActions: (context) => { context.scratch.decisions = this.runDecisionsAndActions(runtime.pushEvent); runtime.invalidate(['people', 'locations']) },
+      encountersAndMarkets: (context) => { this.runEncountersAndMarkets(runtime.pushEvent, context.scratch); runtime.invalidate(['relationships', 'communities']) },
+      exposureEnvironmentAndHealth: (context) => { this.runExposureEnvironmentAndHealth(runtime.pushEvent, context.scratch); runtime.invalidate(['people', 'communities']) },
+      monthlyProcessing: () => { this.runMonthlyProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds); runtime.invalidate(['people', 'locations', 'communities']) },
+      annualProcessing: () => { this.runAnnualProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds); runtime.invalidate(['people', 'relationships']) },
+      dailyProcessing: () => { this.runDailyProcessing(runtime.pushEvent, runtime.statistics); runtime.invalidate(['people', 'communities']) },
+    }
+  }
 
   private runClockAndLifecycle(pushEvent: (event: SimulationEvent) => void): void {
     this.livingPersonCache = undefined
@@ -408,16 +398,14 @@ export class SimulationEngine {
     this.resolveSchoolAttendance(pushEvent)
   }
 
-  private decisions: { person: SimulationState['people'][number]; decision: ReturnType<typeof chooseAction> }[] = []
-  private postActionActivityOccupancy = new Map<string, readonly string[]>()
 
-  private runDecisionsAndActions(pushEvent: (event: SimulationEvent) => void): void {
+  private runDecisionsAndActions(pushEvent: (event: SimulationEvent) => void): { decisions: { person: SimulationState['people'][number]; decision: ReturnType<typeof chooseAction> }[]; occupancy: ReadonlyMap<string, readonly string[]> } {
     const occupantsByCell = this.buildOccupancy(true)
     const occupantsByActivityLocation = this.buildActivityOccupancy()
     const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: this.roadCellIds, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById, influenceRegistry: this.contentPackRuntime.influences, variableRegistry: this.contentPackRuntime.variables, baseWeightFor: (action, person) => this.packActionBaseWeight(action, person.variables) }
     const actionRng = this.random.stream('actions')
-    this.decisions = this.livingPeople().filter((person) => !person.journey && person.schoolAttendance === undefined).map((person) => ({ person, decision: chooseAction(person, context, actionRng) }))
-    for (const { person, decision } of this.decisions) {
+    const decisions = this.livingPeople().filter((person) => !person.journey && person.schoolAttendance === undefined).map((person) => ({ person, decision: chooseAction(person, context, actionRng) }))
+    for (const { person, decision } of decisions) {
       const outcome = resolveAction(person, decision, context)
       if (outcome.arrived) this.recordTravel(outcome.travelCost)
       this.state.dailySpatialCounters.foodConsumed += outcome.foodConsumed
@@ -441,12 +429,15 @@ export class SimulationEngine {
       pushEvent(this.actionEvent(person.id, decision, outcome))
     }
     this.resolveActivities(pushEvent)
-    this.postActionActivityOccupancy = this.buildActivityOccupancy()
+    return { decisions, occupancy: this.buildActivityOccupancy() }
   }
 
-  private runEncountersAndMarkets(pushEvent: (event: SimulationEvent) => void): void {
-    const socializerIds = new Set(this.decisions.filter(({ decision }) => decision.action === 'socialize').map(({ person }) => person.id))
-    const encounters = resolveEncounters({ peopleById: this.personById, occupantsByActivityLocation: this.postActionActivityOccupancy, activityLocationsById: this.activityLocationById, socializerIds, relationshipsById: this.relationshipById }, this.random.stream('encounters'))
+  private runEncountersAndMarkets(pushEvent: (event: SimulationEvent) => void, scratch: { decisions?: unknown; postActionActivityOccupancy?: unknown }): void {
+    const decisionResult = scratch.decisions as ReturnType<SimulationEngine['runDecisionsAndActions']> | undefined
+    if (!decisionResult) throw new Error('Encounter phase requires decision phase output')
+    const occupancy = decisionResult.occupancy
+    const socializerIds = new Set(decisionResult.decisions.filter(({ decision }) => decision.action === 'socialize').map(({ person }) => person.id))
+    const encounters = resolveEncounters({ peopleById: this.personById, occupantsByActivityLocation: occupancy, activityLocationsById: this.activityLocationById, socializerIds, relationshipsById: this.relationshipById }, this.random.stream('encounters'))
     for (const encounter of encounters) {
       const formed = this.applyEncounter(encounter, pushEvent)
       this.recordCommunityEncounter(encounter)
@@ -454,14 +445,16 @@ export class SimulationEngine {
       pushEvent(this.encounterEvent(encounter))
     }
     if (encounters.length > 0) this.state.relationships = [...this.relationshipById.values()].sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
-    this.resolveMarketExchanges(this.postActionActivityOccupancy, pushEvent)
+    this.resolveMarketExchanges(occupancy, pushEvent)
   }
 
-  private runExposureEnvironmentAndHealth(pushEvent: (event: SimulationEvent) => void): void {
+  private runExposureEnvironmentAndHealth(pushEvent: (event: SimulationEvent) => void, scratch: { decisions?: unknown; postActionActivityOccupancy?: unknown }): void {
+    const decisionResult = scratch.decisions as ReturnType<SimulationEngine['runDecisionsAndActions']> | undefined
+    if (!decisionResult) throw new Error('Exposure phase requires decision phase output')
     this.recordActivityPersonHours()
     this.recordEnvironmentalExposure()
-    this.recordHealthExposure(this.postActionActivityOccupancy)
-    for (const trace of transmitFictionalPathogens({ peopleById: this.personById, occupantsByActivity: this.postActionActivityOccupancy, pathogens: this.contentPackRuntime.pack.pathogens, tick: this.state.tick, nextPermille: () => this.random.stream(FICTIONAL_PATHOGEN_STREAM).nextInt(1000) })) {
+    this.recordHealthExposure(decisionResult.occupancy)
+    for (const trace of transmitFictionalPathogens({ peopleById: this.personById, occupantsByActivity: decisionResult.occupancy, pathogens: this.contentPackRuntime.pack.pathogens, tick: this.state.tick, nextPermille: () => this.random.stream(FICTIONAL_PATHOGEN_STREAM).nextInt(1000) })) {
       pushEvent(this.event('FICTIONAL_INFECTION_ACQUIRED', { personId: this.state.people.find((person) => person.lastInfectionTrace === trace)?.id ?? null, pathogenId: trace.pathogenId, sourcePersonId: trace.sourcePersonId ?? null, probabilityPermille: trace.probabilityPermille ?? 0, randomRollPermille: trace.randomRollPermille ?? 0 }))
     }
     this.recordCommunityPersonHours()
@@ -1809,8 +1802,7 @@ function serializeRuntimeCommunityCounters(runtime: RuntimeCommunityCounters): C
   }
 }
 
-interface EngineTickPhaseContext {
-  readonly engine: SimulationEngine
+interface EngineTickRuntime {
   readonly pushEvent: (event: SimulationEvent) => void
   readonly statistics: StatisticSample[]
   readonly changeCategories: Set<AuthoritativeChangeSet['categories'][number]>
