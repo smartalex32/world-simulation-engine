@@ -66,6 +66,9 @@ export class WorkbenchDatabase {
   private databasePromise?: Promise<IDBDatabase>
 
   async saveSnapshot(snapshot: WorkbenchSnapshotEnvelope, kind: 'autosave' | 'named' | 'checkpoint', name?: string): Promise<SavedSnapshot> {
+    // Persistence accepts only a canonical state whose referenced pack resolves
+    // locally; envelope/digest validation remains serialization-owned.
+    await this.resolveSnapshotContentPack(snapshot)
     const database = await this.open()
     const now = new Date().toISOString()
     const key = kind === 'autosave' ? `${snapshot.state.runId}:autosave` : kind === 'checkpoint' ? `${snapshot.state.runId}:checkpoint:${snapshot.state.tick}` : `${snapshot.state.runId}:named:${crypto.randomUUID()}`
