@@ -29,12 +29,10 @@ describe('projection-free engine advance', () => {
 
   it('records execution from the same static tuple at hourly and daily cadence', () => {
     const hourly = SimulationEngine.create('phase-trace-hourly').advance(1, { clockEventHours: false })
-    expect(hourly.diagnostics.phaseIds).toEqual(TICK_PHASE_MANIFEST.slice(0, 7).map((phase) => phase.id))
+    expect(hourly.diagnostics.phaseCounts).toEqual(Object.fromEntries(TICK_PHASE_MANIFEST.slice(0, 7).map((phase) => [phase.id, 1])))
     const daily = SimulationEngine.create('phase-trace-daily').advance(24, { clockEventHours: false })
-    expect(daily.diagnostics.phaseIds.slice(-8)).toEqual([
-      ...TICK_PHASE_MANIFEST.slice(0, 7).map((phase) => phase.id),
-      'daily-processing-and-statistics',
-    ])
+    expect(daily.diagnostics.phaseCounts).toMatchObject(Object.fromEntries(TICK_PHASE_MANIFEST.slice(0, 7).map((phase) => [phase.id, 24])))
+    expect(daily.diagnostics.phaseCounts['daily-processing-and-statistics']).toBe(1)
   })
 
   it('matches step state, telemetry, and digest at the same tick', async () => {

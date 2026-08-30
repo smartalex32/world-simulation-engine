@@ -144,7 +144,7 @@ export interface AdvanceResult {
   /** Noncanonical cache hints; authoritative execution never reads these. */
   changeSet: AuthoritativeChangeSet
   /** Noncanonical measurements scoped to this advance call. */
-  diagnostics: { livingPersonIndexBuilds: number; phaseIds: string[] }
+  diagnostics: { livingPersonIndexBuilds: number; phaseCounts: Record<string, number> }
 }
 
 export interface FidelityCommandResult { event: SimulationEvent; changeSet: AuthoritativeChangeSet }
@@ -315,7 +315,7 @@ export class SimulationEngine {
     }
     const events: SimulationEvent[] = []
     const livingPersonIndexBuildsBefore = this.livingPersonIndexBuilds
-    const phaseIds: string[] = []
+    const phaseCounts: Record<string, number> = {}
     const changeCategories = new Set<AuthoritativeChangeSet['categories'][number]>()
     const changedCellIds = new Set<string>()
     let eventWriteIndex = 0
@@ -328,7 +328,7 @@ export class SimulationEngine {
     }
     const statistics: StatisticSample[] = []
     for (let index = 0; index < count; index += 1) {
-      this.runTickPipeline({ pushEvent, statistics, changeCategories, changedCellIds, phaseIds, invalidate: (categories, cellIds = []) => { for (const category of categories) changeCategories.add(category); for (const cellId of cellIds) changedCellIds.add(cellId) } })
+      this.runTickPipeline({ pushEvent, statistics, changeCategories, changedCellIds, phaseCounts, invalidate: (categories, cellIds = []) => { for (const category of categories) changeCategories.add(category); for (const cellId of cellIds) changedCellIds.add(cellId) } })
     }
     // Disputes are indexed during encounter resolution.  Materialize the stable serialized
     // collection once per requested advance batch instead of rebuilding it for every encounter.
@@ -344,13 +344,13 @@ export class SimulationEngine {
       events.splice(0, events.length, ...ordered)
     }
     this.assertInvariants()
-    return { events, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds), diagnostics: { livingPersonIndexBuilds: this.livingPersonIndexBuilds - livingPersonIndexBuildsBefore, phaseIds } }
+    return { events, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds), diagnostics: { livingPersonIndexBuilds: this.livingPersonIndexBuilds - livingPersonIndexBuildsBefore, phaseCounts } }
   }
 
   private runTickPipeline(runtime: EngineTickRuntime): void {
     const context: SimulationTickContext = {
       tick: this.state.tick + 1,
-      phaseTrace: runtime.phaseIds,
+      phaseCounts: runtime.phaseCounts,
       state: this.state,
       random: this.random,
       content: this.contentPackRuntime,
@@ -1817,7 +1817,7 @@ interface EngineTickRuntime {
   readonly statistics: StatisticSample[]
   readonly changeCategories: Set<AuthoritativeChangeSet['categories'][number]>
   readonly changedCellIds: Set<string>
-  readonly phaseIds: string[]
+  readonly phaseCounts: Record<string, number>
   readonly invalidate: (categories: readonly AuthoritativeChangeSet['categories'][number][], cellIds?: readonly string[]) => void
 }
 
