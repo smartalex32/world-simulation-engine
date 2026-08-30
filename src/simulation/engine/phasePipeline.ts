@@ -35,3 +35,8 @@ export const runStaticTickPipeline = <Context extends TickPhaseContext>(
 ): void => {
   for (const phase of phases) if (cadenceMatches(context.tick, phase.cadence)) phase.run(context)
 }
+
+/** The engine-specific pipeline is assembled from this immutable definition;
+ * the exported manifest is derived from the exact tuple that executes. */
+export const phaseManifest = <Context extends TickPhaseContext>(phases: readonly DeterministicTickPhase<Context>[]): readonly TickPhaseManifestEntry[] =>
+  phases.map(({ id, cadence, rngStreams }) => ({ id, cadence, rngStreams }))

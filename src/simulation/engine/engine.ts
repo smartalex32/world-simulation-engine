@@ -152,8 +152,8 @@ export interface AdvanceOptions {
 }
 
 /** Canonical, non-extensible order for every authoritative tick. */
-export const TICK_PHASE_MANIFEST = [
-  { id: 'clock-and-lifecycle', cadence: 'hourly', rngStreams: Object.values(LIFE_CYCLE_STREAM) },
+const TICK_PHASE_DEFINITIONS = [
+  { id: 'clock-and-lifecycle', cadence: 'hourly', rngStreams: [LIFE_CYCLE_STREAM.mortality] },
   { id: 'needs', cadence: 'hourly', rngStreams: [] },
   { id: 'journeys', cadence: 'hourly', rngStreams: [] },
   { id: 'activities-and-school', cadence: 'hourly', rngStreams: [SCHOOL_ATTENDANCE_STREAM] },
@@ -161,9 +161,12 @@ export const TICK_PHASE_MANIFEST = [
   { id: 'encounters-and-markets', cadence: 'hourly', rngStreams: ['encounters'] },
   { id: 'exposure-environment-and-health', cadence: 'hourly', rngStreams: [FICTIONAL_PATHOGEN_STREAM] },
   { id: 'monthly-processing', cadence: 'monthly', rngStreams: [HOUSEHOLD_RELOCATION_STREAM] },
-  { id: 'annual-processing', cadence: 'annual', rngStreams: Object.values(LIFE_CYCLE_STREAM) },
+  { id: 'annual-processing', cadence: 'annual', rngStreams: [LIFE_CYCLE_STREAM.partnership, LIFE_CYCLE_STREAM.birth, LIFE_CYCLE_STREAM.inheritance] },
   { id: 'daily-processing-and-statistics', cadence: 'daily', rngStreams: [] },
 ] as const satisfies readonly TickPhaseManifestEntry[]
+
+/** Public diagnostic view, derived from the same fixed tuple used at runtime. */
+export const TICK_PHASE_MANIFEST = TICK_PHASE_DEFINITIONS
 
 export class SimulationEngine {
   private random: RandomProvider
@@ -328,7 +331,6 @@ export class SimulationEngine {
     const changedCellIds = new Set<string>()
     let eventWriteIndex = 0
     const pushEvent = (event: SimulationEvent) => {
-      collectEventChanges(event, changeCategories, changedCellIds)
       if (events.length < 500) events.push(event)
       else {
         events[eventWriteIndex] = event
@@ -338,7 +340,7 @@ export class SimulationEngine {
     const statistics: StatisticSample[] = []
     for (let index = 0; index < count; index += 1) {
       this.state.tick += 1
-      this.runTickPipeline({ engine: this, pushEvent, statistics, changeCategories, changedCellIds })
+      this.runTickPipeline({ engine: this, pushEvent, statistics, changeCategories, changedCellIds, invalidate: (categories, cellIds = []) => { for (const category of categories) changeCategories.add(category); for (const cellId of cellIds) changedCellIds.add(cellId) } })
     }
     // Disputes are indexed during encounter resolution.  Materialize the stable serialized
     // collection once per requested advance batch instead of rebuilding it for every encounter.
@@ -362,16 +364,16 @@ export class SimulationEngine {
   }
 
   private static readonly tickPhases: readonly DeterministicTickPhase<EngineTickPhaseContext & { tick: number }>[] = [
-    { ...TICK_PHASE_MANIFEST[0], run: ({ engine, pushEvent }) => engine.runClockAndLifecycle(pushEvent) },
-    { ...TICK_PHASE_MANIFEST[1], run: ({ engine }) => engine.runNeeds() },
-    { ...TICK_PHASE_MANIFEST[2], run: ({ engine, pushEvent }) => engine.runJourneys(pushEvent) },
-    { ...TICK_PHASE_MANIFEST[3], run: ({ engine, pushEvent }) => engine.runActivitiesAndSchool(pushEvent) },
-    { ...TICK_PHASE_MANIFEST[4], run: ({ engine, pushEvent }) => engine.runDecisionsAndActions(pushEvent) },
-    { ...TICK_PHASE_MANIFEST[5], run: ({ engine, pushEvent }) => engine.runEncountersAndMarkets(pushEvent) },
-    { ...TICK_PHASE_MANIFEST[6], run: ({ engine, pushEvent }) => engine.runExposureEnvironmentAndHealth(pushEvent) },
-    { ...TICK_PHASE_MANIFEST[7], run: ({ engine, pushEvent, changeCategories, changedCellIds }) => engine.runMonthlyProcessing(pushEvent, changeCategories, changedCellIds) },
-    { ...TICK_PHASE_MANIFEST[8], run: ({ engine, pushEvent, changeCategories, changedCellIds }) => engine.runAnnualProcessing(pushEvent, changeCategories, changedCellIds) },
-    { ...TICK_PHASE_MANIFEST[9], run: ({ engine, pushEvent, statistics }) => engine.runDailyProcessing(pushEvent, statistics) },
+    { ...TICK_PHASE_MANIFEST[0], run: ({ engine, pushEvent, invalidate }) => { engine.runClockAndLifecycle(pushEvent); invalidate(['people', 'relationships']) } },
+    { ...TICK_PHASE_MANIFEST[1], run: ({ engine, invalidate }) => { engine.runNeeds(); invalidate(['people']) } },
+    { ...TICK_PHASE_MANIFEST[2], run: ({ engine, pushEvent, invalidate }) => { engine.runJourneys(pushEvent); invalidate(['people', 'locations']) } },
+    { ...TICK_PHASE_MANIFEST[3], run: ({ engine, pushEvent, invalidate }) => { engine.runActivitiesAndSchool(pushEvent); invalidate(['people', 'locations']) } },
+    { ...TICK_PHASE_MANIFEST[4], run: ({ engine, pushEvent, invalidate }) => { engine.runDecisionsAndActions(pushEvent); invalidate(['people', 'locations']) } },
+    { ...TICK_PHASE_MANIFEST[5], run: ({ engine, pushEvent, invalidate }) => { engine.runEncountersAndMarkets(pushEvent); invalidate(['relationships', 'communities']) } },
+    { ...TICK_PHASE_MANIFEST[6], run: ({ engine, pushEvent, invalidate }) => { engine.runExposureEnvironmentAndHealth(pushEvent); invalidate(['people', 'communities']) } },
+    { ...TICK_PHASE_MANIFEST[7], run: ({ engine, pushEvent, changeCategories, changedCellIds, invalidate }) => { engine.runMonthlyProcessing(pushEvent, changeCategories, changedCellIds); invalidate(['people', 'locations', 'communities']) } },
+    { ...TICK_PHASE_MANIFEST[8], run: ({ engine, pushEvent, changeCategories, changedCellIds, invalidate }) => { engine.runAnnualProcessing(pushEvent, changeCategories, changedCellIds); invalidate(['people', 'relationships']) } },
+    { ...TICK_PHASE_MANIFEST[9], run: ({ engine, pushEvent, statistics, invalidate }) => { engine.runDailyProcessing(pushEvent, statistics); invalidate(['people', 'communities']) } },
   ]
 
   private runClockAndLifecycle(pushEvent: (event: SimulationEvent) => void): void {
@@ -1813,6 +1815,7 @@ interface EngineTickPhaseContext {
   readonly statistics: StatisticSample[]
   readonly changeCategories: Set<AuthoritativeChangeSet['categories'][number]>
   readonly changedCellIds: Set<string>
+  readonly invalidate: (categories: readonly AuthoritativeChangeSet['categories'][number][], cellIds?: readonly string[]) => void
 }
 
 function changeSetFromEvents(events: readonly SimulationEvent[], categoryHints: ReadonlySet<AuthoritativeChangeSet['categories'][number]> | readonly AuthoritativeChangeSet['categories'][number][] = [], cellIdHints: ReadonlySet<string> | readonly string[] = []): AuthoritativeChangeSet {
