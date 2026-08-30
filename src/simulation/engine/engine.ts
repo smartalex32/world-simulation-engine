@@ -366,11 +366,11 @@ export class SimulationEngine {
   private phaseOperations(runtime: EngineTickRuntime): SimulationPhaseOperations {
     return {
       clockAndLifecycle: () => { this.state.tick += 1; this.runClockAndLifecycle(runtime.pushEvent); runtime.invalidate(['people', 'relationships']) },
-      needs: () => { this.runNeeds(); runtime.invalidate(['people']) },
-      journeys: () => { this.runJourneys(runtime.pushEvent); runtime.invalidate(['people', 'locations']) },
-      activitiesAndSchool: () => { this.runActivitiesAndSchool(runtime.pushEvent); runtime.invalidate(['people', 'locations']) },
-      decisionsAndActions: (context) => { const result = this.runDecisionsAndActions(runtime.pushEvent); context.scratch.decisions = result.decisions; context.scratch.postActionActivityOccupancy = result.occupancy; runtime.invalidate(['people', 'locations']) },
-      encountersAndMarkets: (context) => { this.runEncountersAndMarkets(runtime.pushEvent, context.scratch); runtime.invalidate(['relationships', 'communities']) },
+      needs: () => { if (this.livingPeople().length > 0) { this.runNeeds(); runtime.invalidate(['people']) } },
+      journeys: () => { const cellIds = this.runJourneys(runtime.pushEvent); if (cellIds.length > 0) runtime.invalidate(['people', 'locations'], cellIds) },
+      activitiesAndSchool: () => { this.runActivitiesAndSchool(runtime.pushEvent); if (this.livingPeople().length > 0) runtime.invalidate(['people']) },
+      decisionsAndActions: (context) => { const result = this.runDecisionsAndActions(runtime.pushEvent); context.scratch.decisions = result.decisions; context.scratch.postActionActivityOccupancy = result.occupancy; if (result.decisions.length > 0) runtime.invalidate(['people']); if (result.changedCellIds.length > 0) runtime.invalidate(['locations'], result.changedCellIds) },
+      encountersAndMarkets: (context) => { const encounters = this.runEncountersAndMarkets(runtime.pushEvent, context.scratch); if (encounters > 0) runtime.invalidate(['relationships', 'communities']) },
       exposureEnvironmentAndHealth: (context) => { this.runExposureEnvironmentAndHealth(runtime.pushEvent, context.scratch); runtime.invalidate(['people', 'communities']) },
       monthlyProcessing: () => { this.runMonthlyProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds); runtime.invalidate(['people', 'locations', 'communities']) },
       annualProcessing: () => { this.runAnnualProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds); runtime.invalidate(['people', 'relationships']) },
@@ -391,11 +391,13 @@ export class SimulationEngine {
     }
   }
 
-  private runJourneys(pushEvent: (event: SimulationEvent) => void): void {
+  private runJourneys(pushEvent: (event: SimulationEvent) => void): string[] {
+    const changedCellIds: string[] = []
     for (const person of this.livingPeople()) {
       const journey = advanceJourney(person, HOURLY_TRAVEL_BUDGET)
       if (!journey?.arrived) continue
       this.recordTravel(journey.travelCost)
+      changedCellIds.push(journey.fromCellId, journey.targetCellId)
       if (journey.kind === 'explore') {
         this.recordCommunityExplorationArrival(journey.targetCellId)
         this.recordActivityDevelopment(person)
@@ -403,6 +405,7 @@ export class SimulationEngine {
       }
       pushEvent(this.journeyEvent(person.id, journey))
     }
+    return changedCellIds
   }
 
   private runActivitiesAndSchool(pushEvent: (event: SimulationEvent) => void): void {
@@ -411,15 +414,17 @@ export class SimulationEngine {
   }
 
 
-  private runDecisionsAndActions(pushEvent: (event: SimulationEvent) => void): { decisions: { person: SimulationState['people'][number]; decision: ReturnType<typeof chooseAction> }[]; occupancy: ReadonlyMap<string, readonly string[]> } {
+  private runDecisionsAndActions(pushEvent: (event: SimulationEvent) => void): { decisions: { person: SimulationState['people'][number]; decision: ReturnType<typeof chooseAction> }[]; occupancy: ReadonlyMap<string, readonly string[]>; changedCellIds: string[] } {
     const occupantsByCell = this.buildOccupancy(true)
     const occupantsByActivityLocation = this.buildActivityOccupancy()
     const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: this.roadCellIds, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById, influenceRegistry: this.contentPackRuntime.influences, variableRegistry: this.contentPackRuntime.variables, baseWeightFor: (action, person) => this.packActionBaseWeight(action, person.variables) }
     const actionRng = this.random.stream('actions')
     const decisions = this.livingPeople().filter((person) => !person.journey && person.schoolAttendance === undefined).map((person) => ({ person, decision: chooseAction(person, context, actionRng) }))
+    const changedCellIds: string[] = []
     for (const { person, decision } of decisions) {
       const outcome = resolveAction(person, decision, context)
       if (outcome.arrived) this.recordTravel(outcome.travelCost)
+      if (outcome.arrived) changedCellIds.push(outcome.fromCellId, outcome.targetCellId ?? outcome.fromCellId)
       this.state.dailySpatialCounters.foodConsumed += outcome.foodConsumed
       this.economicCounters().foodConsumedFromHouseholds += outcome.foodConsumed
       this.economicCounters().foodProduced += outcome.foodProduced
@@ -441,10 +446,10 @@ export class SimulationEngine {
       pushEvent(this.actionEvent(person.id, decision, outcome))
     }
     this.resolveActivities(pushEvent)
-    return { decisions, occupancy: this.buildActivityOccupancy() }
+    return { decisions, occupancy: this.buildActivityOccupancy(), changedCellIds }
   }
 
-  private runEncountersAndMarkets(pushEvent: (event: SimulationEvent) => void, scratch: SimulationTickContext['scratch']): void {
+  private runEncountersAndMarkets(pushEvent: (event: SimulationEvent) => void, scratch: SimulationTickContext['scratch']): number {
     if (!scratch.decisions || !scratch.postActionActivityOccupancy) throw new Error('Encounter phase requires decision phase output')
     const occupancy = scratch.postActionActivityOccupancy
     const socializerIds = new Set(scratch.decisions.filter(({ decision }) => decision.action === 'socialize').map(({ person }) => person.id))
@@ -457,6 +462,7 @@ export class SimulationEngine {
     }
     if (encounters.length > 0) this.state.relationships = [...this.relationshipById.values()].sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
     this.resolveMarketExchanges(occupancy, pushEvent)
+    return encounters.length
   }
 
   private runExposureEnvironmentAndHealth(pushEvent: (event: SimulationEvent) => void, scratch: SimulationTickContext['scratch']): void {
