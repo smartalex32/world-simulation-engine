@@ -18,6 +18,7 @@ import { getPersonVariable, setPersonVariable } from '../variables/storage'
 import { PERSON_VARIABLE_IDS } from '../variables/types'
 import { compareStableText } from '../../shared/stableOrder'
 import { createCommunityState, createDailyCommunityCounters, createTwoCatchmentGeography } from '../community'
+import { createLocalGovernance } from '../governance/model'
 
 function expectAllVariablesBounded(projection: WorldProjection): void {
   for (const person of projection.people) {
@@ -100,6 +101,7 @@ async function controlledSnapshot(seed: string, personCount: number): Promise<Sn
       ? { ...createDailyCommunityCounters(), windowStartTick: 1, windowEndTick: 24, exposedPersonIds, exposedPersonHours: personCount * state.tick, curiosityPersonHourSum }
       : { ...createDailyCommunityCounters(), windowStartTick: 1, windowEndTick: 24 },
   }))
+  state.governance = createLocalGovernance(state.communities, state.people)
   return createSnapshot(state)
 }
 
