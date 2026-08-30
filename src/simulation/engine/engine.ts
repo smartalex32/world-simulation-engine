@@ -103,6 +103,8 @@ import { migrateCohortsBetweenSettlements, reconcileSettlementRegions, settlemen
 import { allocateInfrastructureMaintenance, createInfrastructureAssets, maintainInfrastructure } from '../infrastructure/model'
 import { infrastructureAccessAcrossCells, infrastructureAccessAtCell } from '../infrastructure/access'
 import { compareStableText } from '../../shared/stableOrder'
+import { runSimulationTickPipeline, TICK_PHASE_MANIFEST, type SimulationPhaseOperations, type SimulationTickContext } from './phasePipeline'
+export { TICK_PHASE_MANIFEST } from './phasePipeline'
 
 interface RuntimeCommunityCounters {
   communityId: string
@@ -141,6 +143,8 @@ export interface AdvanceResult {
   statistics: StatisticSample[]
   /** Noncanonical cache hints; authoritative execution never reads these. */
   changeSet: AuthoritativeChangeSet
+  /** Noncanonical measurements scoped to this advance call. */
+  diagnostics: { livingPersonIndexBuilds: number; phaseCounts: Record<string, number> }
 }
 
 export interface FidelityCommandResult { event: SimulationEvent; changeSet: AuthoritativeChangeSet }
@@ -150,6 +154,7 @@ export interface AdvanceOptions {
   clockEventHours?: number | false
 }
 
+/** Canonical, non-extensible order for every authoritative tick. */
 export class SimulationEngine {
   private random: RandomProvider
   private readonly cellById: Map<string, SimulationState['world']['grid']['cells'][number]>
@@ -311,11 +316,12 @@ export class SimulationEngine {
       throw new RangeError('Clock event hours must be a positive safe integer')
     }
     const events: SimulationEvent[] = []
+    const livingPersonIndexBuildsBefore = this.livingPersonIndexBuilds
+    const phaseCounts: Record<string, number> = {}
     const changeCategories = new Set<AuthoritativeChangeSet['categories'][number]>()
     const changedCellIds = new Set<string>()
     let eventWriteIndex = 0
     const pushEvent = (event: SimulationEvent) => {
-      collectEventChanges(event, changeCategories, changedCellIds)
       if (events.length < 500) events.push(event)
       else {
         events[eventWriteIndex] = event
@@ -324,176 +330,7 @@ export class SimulationEngine {
     }
     const statistics: StatisticSample[] = []
     for (let index = 0; index < count; index += 1) {
-      this.state.tick += 1
-      this.livingPersonCache = undefined
-      if (this.advanceAges(pushEvent)) this.livingPersonCache = undefined
-      for (const person of this.livingPeople()) {
-        adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, HOURLY_HUNGER_INCREASE, this.contentPackRuntime.variables)
-        adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, HOURLY_FATIGUE_INCREASE, this.contentPackRuntime.variables)
-        adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.socialConnection, HOURLY_SOCIAL_NEED_INCREASE, this.contentPackRuntime.variables)
-      }
-
-      for (const person of this.livingPeople()) {
-        const journey = advanceJourney(person, HOURLY_TRAVEL_BUDGET)
-        if (journey?.arrived) {
-          this.recordTravel(journey.travelCost)
-          if (journey.kind === 'explore') {
-            this.recordCommunityExplorationArrival(journey.targetCellId)
-            this.recordActivityDevelopment(person)
-            this.recordKnowledgeDiscovery(person, pushEvent)
-          }
-          pushEvent(this.journeyEvent(person.id, journey))
-        }
-      }
-
-      this.resolveActivities(pushEvent)
-      this.resolveSchoolAttendance(pushEvent)
-
-      const occupantsByCell = this.buildOccupancy(true)
-      const occupantsByActivityLocation = this.buildActivityOccupancy()
-      const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: this.roadCellIds, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById, influenceRegistry: this.contentPackRuntime.influences, variableRegistry: this.contentPackRuntime.variables, baseWeightFor: (action, person) => this.packActionBaseWeight(action, person.variables) }
-      const actionRng = this.random.stream('actions')
-      const decisions = this.livingPeople()
-        .filter((person) => !person.journey && person.schoolAttendance === undefined)
-        .map((person) => ({ person, decision: chooseAction(person, context, actionRng) }))
-      for (const { person, decision } of decisions) {
-        const outcome = resolveAction(person, decision, context)
-        if (outcome.arrived) this.recordTravel(outcome.travelCost)
-        this.state.dailySpatialCounters.foodConsumed += outcome.foodConsumed
-        this.economicCounters().foodConsumedFromHouseholds += outcome.foodConsumed
-        this.economicCounters().foodProduced += outcome.foodProduced
-        this.economicCounters().agriculturalFoodProduced += outcome.agriculturalFoodProduced
-        if (decision.action === 'work') {
-          const household = this.householdById.get(person.householdId)
-          const eligible = household?.inventory !== undefined
-            && household.inventory.tools > 0
-            && (person.knowledge?.['knowledge.foraging'] ?? 0) >= 500
-            && !person.techniques?.some((candidate) => candidate.id === 'technique.foraging.efficient-harvest')
-          const technique = eligible && household?.inventory
-            ? attemptPracticalExperiment(person, household.inventory, this.state.tick, this.random.stream(INNOVATION_STREAM))
-            : undefined
-          if (technique) pushEvent(this.event('PERSON_KNOWLEDGE_DISCOVERED', { personId: person.id, techniqueId: technique.id, knowledgePermille: technique.knowledgePermille, toolCost: technique.toolCost, successRollPermille: technique.successRollPermille }))
-        }
-        if (decision.action === 'work') this.economicCounters().productiveHours += 1
-        if (outcome.failedMeal) this.state.dailySpatialCounters.failedMeals += 1
-        this.recordCommunityAction(decision.action, outcome)
-        if (decision.action === 'explore' && outcome.arrived) {
-          this.recordActivityDevelopment(person)
-          this.recordKnowledgeDiscovery(person, pushEvent)
-        }
-        if (decision.action === 'explore' && outcome.arrived && decision.targetCellId) this.recordCommunityExplorationArrival(decision.targetCellId)
-        pushEvent(this.actionEvent(person.id, decision, outcome))
-      }
-      this.resolveActivities(pushEvent)
-      const postActionActivityOccupancy = this.buildActivityOccupancy()
-      const socializerIds = new Set(decisions
-        .filter(({ decision }) => decision.action === 'socialize')
-        .map(({ person }) => person.id))
-      const encounters = resolveEncounters({
-        peopleById: this.personById,
-        occupantsByActivityLocation: postActionActivityOccupancy,
-        activityLocationsById: this.activityLocationById,
-        socializerIds,
-        relationshipsById: this.relationshipById,
-      }, this.random.stream('encounters'))
-      for (const encounter of encounters) {
-        const formed = this.applyEncounter(encounter, pushEvent)
-        this.recordCommunityEncounter(encounter)
-        if (formed) pushEvent(this.relationshipFormedEvent(encounter))
-        pushEvent(this.encounterEvent(encounter))
-      }
-      if (encounters.length > 0) {
-        this.state.relationships = [...this.relationshipById.values()].sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
-      }
-      this.resolveMarketExchanges(postActionActivityOccupancy, pushEvent)
-      this.recordActivityPersonHours()
-      this.recordEnvironmentalExposure()
-      this.recordHealthExposure(postActionActivityOccupancy)
-      for (const trace of transmitFictionalPathogens({ peopleById: this.personById, occupantsByActivity: postActionActivityOccupancy, pathogens: this.contentPackRuntime.pack.pathogens, tick: this.state.tick, nextPermille: () => this.random.stream(FICTIONAL_PATHOGEN_STREAM).nextInt(1000) })) {
-        pushEvent(this.event('FICTIONAL_INFECTION_ACQUIRED', { personId: this.state.people.find((person) => person.lastInfectionTrace === trace)?.id ?? null, pathogenId: trace.pathogenId, sourcePersonId: trace.sourcePersonId ?? null, probabilityPermille: trace.probabilityPermille ?? 0, randomRollPermille: trace.randomRollPermille ?? 0 }))
-      }
-      this.recordCommunityPersonHours()
-      this.recordCommunityDevelopmentExposure()
-      this.accumulateDevelopmentExposure()
-      if (this.state.tick % 720 === 0) {
-        for (const production of produceMonthlyGoods({ economy: this.state.economy, households: this.state.households, peopleById: this.personById, recipes: this.contentPackRuntime.pack.economy.recipes, tick: this.state.tick })) {
-          pushEvent(this.event('PERSON_WORKED', { householdId: production.householdId, recipeId: production.recipeId, laborHours: production.laborHours, outputUnits: Object.values(production.outputs).reduce((sum, value) => sum + value, 0) }))
-        }
-        for (const trade of clearMarkets({ economy: this.state.economy, households: this.state.households, markets: this.state.markets, cellsById: this.cellById, tick: this.state.tick })) {
-          this.economicCounters().exchangeCount += 1
-          pushEvent(this.event('HOUSEHOLDS_EXCHANGED_TOOLS', { marketId: trade.marketId, sellerHouseholdId: trade.sellerHouseholdId, buyerHouseholdId: trade.buyerHouseholdId, goodId: trade.goodId, quantity: trade.quantity, unitPriceUnits: trade.unitPriceUnits, transportCostUnits: trade.transportCostUnits, taxUnits: trade.taxUnits }))
-        }
-        for (const wage of distributeMarketWages({ economy: this.state.economy, households: this.state.households, peopleById: this.personById, tick: this.state.tick })) {
-          pushEvent(this.event('PERSON_WORKED', { householdId: wage.householdId, marketId: wage.marketId, wageUnits: wage.wageUnits, workerCount: wage.workerCount }))
-        }
-        for (const allocation of allocateInfrastructureMaintenance(this.state.infrastructure, this.state.households, this.state.world.settlements)) {
-          pushEvent(this.event('INFRASTRUCTURE_UPDATED', { assetId: allocation.assetId, householdId: allocation.householdId, kind: 'maintenance-funded', units: allocation.units }))
-        }
-        for (const asset of maintainInfrastructure(this.state.infrastructure, this.state.tick)) {
-          const trace = asset.lastTrace
-          if (trace) pushEvent(this.event('INFRASTRUCTURE_UPDATED', { assetId: asset.id, kind: trace.kind, capacity: trace.capacity, conditionPermille: asset.conditionPermille, disruptionPermille: asset.disruptionPermille, reason: trace.reason }))
-        }
-        this.processDevelopment(pushEvent)
-        this.processBroaderDevelopment(pushEvent)
-        this.resolveMonthlyHouseholdRelocations(pushEvent)
-        for (const transition of updateSettlementScales({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, people: this.state.people })) {
-          pushEvent(this.event('SETTLEMENT_SCALE_CHANGED', {
-            settlementId: transition.settlementId,
-            previousScale: transition.previousScale,
-            nextScale: transition.nextScale,
-            population: transition.evidence.population,
-            densityPerHomeCell: Math.round(transition.evidence.densityPerHomeCell * 1000),
-            resourceUnitsPerResident: Math.round(transition.evidence.resourceUnitsPerResident * 1000),
-            accessPermille: transition.evidence.accessPermille,
-          }))
-        }
-        for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, cohorts: this.state.cohorts, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], infrastructure: this.state.infrastructure, tick: this.state.tick })) {
-          pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
-        }
-        for (const trace of migrateCohortsBetweenSettlements(this.state.cohorts, this.state.world.settlements, this.state.world.grid.cells, this.state.tick)) {
-          changeCategories.add('people')
-          changedCellIds.add(trace.sourceCellId)
-          changedCellIds.add(trace.destinationCellId)
-          pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { kind: 'cohort-migration', sourceSettlementId: trace.sourceSettlementId, destinationSettlementId: trace.destinationSettlementId, populationCount: trace.populationCount, reason: trace.reason }))
-        }
-        // Cohort allocations changed after the first reconciliation, so the
-        // serialized regional ledger must describe the same authoritative tick.
-        for (const transition of reconcileSettlementRegions({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, cohorts: this.state.cohorts, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], infrastructure: this.state.infrastructure, tick: this.state.tick })) {
-          pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
-        }
-      }
-      if (this.state.tick % 8760 === 0) {
-        const populationBefore = cohortPopulationByCell(this.state.cohorts)
-        this.resolveAnnualLifeCycle(pushEvent); advanceCohortsAnnual(this.state.cohorts)
-        for (const trace of applyAnnualCohortInfectionMortality(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, mortalityCount: trace.mortalityCount }))
-        const populationAfter = cohortPopulationByCell(this.state.cohorts)
-        let cohortPopulationChanged = false
-        for (const cellId of new Set([...populationBefore.keys(), ...populationAfter.keys()])) {
-          if ((populationBefore.get(cellId) ?? 0) !== (populationAfter.get(cellId) ?? 0)) { changedCellIds.add(cellId); cohortPopulationChanged = true }
-        }
-        if (cohortPopulationChanged) changeCategories.add('people')
-      }
-      if (this.state.tick % 24 === 0) {
-        decayGoods(this.state.households, this.contentPackRuntime.pack.economy.goods)
-        this.resolveDailyHealthStress(pushEvent)
-        for (const trace of advanceCohortFictionalInfections(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, susceptibleCount: trace.susceptibleCount, newIncubatingCount: trace.newIncubatingCount, becameInfectiousCount: trace.becameInfectiousCount, recoveredCount: trace.recoveredCount }))
-        this.resolveDailyFoodSharing(pushEvent)
-        this.aggregateCommunities(pushEvent)
-        for (const governance of this.state.governance) { const community = this.state.communities.find((value) => value.catchment.id === governance.communityId); if (community) updateLegitimacy(governance, community, this.state.tick, infrastructureAccessAcrossCells(this.state.infrastructure, community.catchment.cellIds).servicePermille) }
-        for (const contention of resolveCommunityContentions(this.disputeById.values(), new Map(this.state.governance.map((governance) => [governance.communityId, governance.legitimacy])))) pushEvent(this.event('COMMUNITY_CONTENTION_RESOLVED', { ...contention }))
-        this.regenerateFood()
-        advanceCohortsDaily(this.state.cohorts, this.state.world.grid.cells)
-        statistics.push(...this.sampleDailyStatistics())
-        this.decayRelationshipFrequencies()
-        this.state.dailySpatialCounters = { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 }
-        this.state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
-        this.state.dailyActivityCounters = { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 }
-        this.state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0, broaderDevelopmentExperiences: 0, broaderDevelopmentChanges: 0 }
-        this.state.dailyLifeCycleCounters = { births: 0, deaths: 0, partnershipsFormed: 0, householdMoves: 0, lifeStageTransitions: 0 }
-        this.state.dailyEconomicCounters = { productiveHours: 0, foodProduced: 0, agriculturalFoodProduced: 0, foodConsumedFromHouseholds: 0, foodShared: 0, exchangeCount: 0 }
-        this.state.dailyEnvironmentalCounters = { foodRegenerated: 0 }
-        this.resetCommunityCounters(this.state.tick + 1)
-      }
+      this.runTickPipeline({ pushEvent, statistics, changeCategories, changedCellIds, phaseCounts, invalidate: (categories, cellIds = []) => { for (const category of categories) changeCategories.add(category); for (const cellId of cellIds) changedCellIds.add(cellId) } })
     }
     // Disputes are indexed during encounter resolution.  Materialize the stable serialized
     // collection once per requested advance batch instead of rebuilding it for every encounter.
@@ -509,7 +346,188 @@ export class SimulationEngine {
       events.splice(0, events.length, ...ordered)
     }
     this.assertInvariants()
-    return { events, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds) }
+    return { events, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds), diagnostics: { livingPersonIndexBuilds: this.livingPersonIndexBuilds - livingPersonIndexBuildsBefore, phaseCounts } }
+  }
+
+  private runTickPipeline(runtime: EngineTickRuntime): void {
+    const context: SimulationTickContext = {
+      tick: this.state.tick + 1,
+      phaseCounts: runtime.phaseCounts,
+      state: this.state,
+      random: this.random,
+      content: this.contentPackRuntime,
+      emit: runtime.pushEvent,
+      record: (sample) => runtime.statistics.push(sample),
+      invalidate: runtime.invalidate,
+      scratch: {},
+      operations: this.phaseOperations(runtime),
+    }
+    runSimulationTickPipeline(context)
+  }
+
+  private phaseOperations(runtime: EngineTickRuntime): SimulationPhaseOperations {
+    return {
+      clockAndLifecycle: () => { this.state.tick += 1; this.runClockAndLifecycle(runtime.pushEvent); runtime.invalidate(['people', 'relationships']) },
+      needs: () => { if (this.livingPeople().length > 0) { this.runNeeds(); runtime.invalidate(['people']) } },
+      journeys: () => { const cellIds = this.runJourneys(runtime.pushEvent); if (cellIds.length > 0) runtime.invalidate(['people', 'locations'], cellIds) },
+      activitiesAndSchool: () => { this.runActivitiesAndSchool(runtime.pushEvent); if (this.livingPeople().length > 0) runtime.invalidate(['people']) },
+      decisionsAndActions: (context) => { const result = this.runDecisionsAndActions(runtime.pushEvent); context.scratch.decisions = result.decisions; context.scratch.postActionActivityOccupancy = result.occupancy; if (result.decisions.length > 0) runtime.invalidate(['people']); if (result.changedCellIds.length > 0) runtime.invalidate(['locations'], result.changedCellIds) },
+      encountersAndMarkets: (context) => { const encounters = this.runEncountersAndMarkets(runtime.pushEvent, context.scratch); if (encounters > 0) runtime.invalidate(['relationships', 'communities']) },
+      exposureEnvironmentAndHealth: (context) => { this.runExposureEnvironmentAndHealth(runtime.pushEvent, context.scratch); runtime.invalidate(['people', 'communities']) },
+      monthlyProcessing: () => { this.runMonthlyProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds); runtime.invalidate(['people', 'locations', 'communities']) },
+      annualProcessing: () => { this.runAnnualProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds); runtime.invalidate(['people', 'relationships']) },
+      dailyProcessing: () => { this.runDailyProcessing(runtime.pushEvent, runtime.statistics); runtime.invalidate(['people', 'communities']) },
+    }
+  }
+
+  private runClockAndLifecycle(pushEvent: (event: SimulationEvent) => void): void {
+    this.livingPersonCache = undefined
+    if (this.advanceAges(pushEvent)) this.livingPersonCache = undefined
+  }
+
+  private runNeeds(): void {
+    for (const person of this.livingPeople()) {
+      adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.hunger, HOURLY_HUNGER_INCREASE, this.contentPackRuntime.variables)
+      adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.fatigue, HOURLY_FATIGUE_INCREASE, this.contentPackRuntime.variables)
+      adjustPersonVariable(person.variables, PERSON_VARIABLE_ID.socialConnection, HOURLY_SOCIAL_NEED_INCREASE, this.contentPackRuntime.variables)
+    }
+  }
+
+  private runJourneys(pushEvent: (event: SimulationEvent) => void): string[] {
+    const changedCellIds: string[] = []
+    for (const person of this.livingPeople()) {
+      const journey = advanceJourney(person, HOURLY_TRAVEL_BUDGET)
+      if (!journey?.arrived) continue
+      this.recordTravel(journey.travelCost)
+      changedCellIds.push(journey.fromCellId, journey.targetCellId)
+      if (journey.kind === 'explore') {
+        this.recordCommunityExplorationArrival(journey.targetCellId)
+        this.recordActivityDevelopment(person)
+        this.recordKnowledgeDiscovery(person, pushEvent)
+      }
+      pushEvent(this.journeyEvent(person.id, journey))
+    }
+    return changedCellIds
+  }
+
+  private runActivitiesAndSchool(pushEvent: (event: SimulationEvent) => void): void {
+    this.resolveActivities(pushEvent)
+    this.resolveSchoolAttendance(pushEvent)
+  }
+
+
+  private runDecisionsAndActions(pushEvent: (event: SimulationEvent) => void): { decisions: { person: SimulationState['people'][number]; decision: ReturnType<typeof chooseAction> }[]; occupancy: ReadonlyMap<string, readonly string[]>; changedCellIds: string[] } {
+    const occupantsByCell = this.buildOccupancy(true)
+    const occupantsByActivityLocation = this.buildActivityOccupancy()
+    const context: ActionContext = { tick: this.state.tick, movementCostMultiplierPermille: seasonAtTick(this.state.tick).movementCostMultiplierPermille, roadCellIds: this.roadCellIds, cellById: this.cellById, occupantsByCell, occupantsByActivityLocation, communityByCellId: this.communityByCellId, householdById: this.householdById, influenceRegistry: this.contentPackRuntime.influences, variableRegistry: this.contentPackRuntime.variables, baseWeightFor: (action, person) => this.packActionBaseWeight(action, person.variables) }
+    const actionRng = this.random.stream('actions')
+    const decisions = this.livingPeople().filter((person) => !person.journey && person.schoolAttendance === undefined).map((person) => ({ person, decision: chooseAction(person, context, actionRng) }))
+    const changedCellIds: string[] = []
+    for (const { person, decision } of decisions) {
+      const outcome = resolveAction(person, decision, context)
+      if (outcome.arrived) this.recordTravel(outcome.travelCost)
+      if (outcome.arrived) changedCellIds.push(outcome.fromCellId, outcome.targetCellId ?? outcome.fromCellId)
+      this.state.dailySpatialCounters.foodConsumed += outcome.foodConsumed
+      this.economicCounters().foodConsumedFromHouseholds += outcome.foodConsumed
+      this.economicCounters().foodProduced += outcome.foodProduced
+      this.economicCounters().agriculturalFoodProduced += outcome.agriculturalFoodProduced
+      if (decision.action === 'work') {
+        const household = this.householdById.get(person.householdId)
+        const eligible = household?.inventory !== undefined && household.inventory.tools > 0 && (person.knowledge?.['knowledge.foraging'] ?? 0) >= 500 && !person.techniques?.some((candidate) => candidate.id === 'technique.foraging.efficient-harvest')
+        const technique = eligible && household?.inventory ? attemptPracticalExperiment(person, household.inventory, this.state.tick, this.random.stream(INNOVATION_STREAM)) : undefined
+        if (technique) pushEvent(this.event('PERSON_KNOWLEDGE_DISCOVERED', { personId: person.id, techniqueId: technique.id, knowledgePermille: technique.knowledgePermille, toolCost: technique.toolCost, successRollPermille: technique.successRollPermille }))
+        this.economicCounters().productiveHours += 1
+      }
+      if (outcome.failedMeal) this.state.dailySpatialCounters.failedMeals += 1
+      this.recordCommunityAction(decision.action, outcome)
+      if (decision.action === 'explore' && outcome.arrived) {
+        this.recordActivityDevelopment(person)
+        this.recordKnowledgeDiscovery(person, pushEvent)
+        if (decision.targetCellId) this.recordCommunityExplorationArrival(decision.targetCellId)
+      }
+      pushEvent(this.actionEvent(person.id, decision, outcome))
+    }
+    this.resolveActivities(pushEvent)
+    return { decisions, occupancy: this.buildActivityOccupancy(), changedCellIds }
+  }
+
+  private runEncountersAndMarkets(pushEvent: (event: SimulationEvent) => void, scratch: SimulationTickContext['scratch']): number {
+    if (!scratch.decisions || !scratch.postActionActivityOccupancy) throw new Error('Encounter phase requires decision phase output')
+    const occupancy = scratch.postActionActivityOccupancy
+    const socializerIds = new Set(scratch.decisions.filter(({ decision }) => decision.action === 'socialize').map(({ person }) => person.id))
+    const encounters = resolveEncounters({ peopleById: this.personById, occupantsByActivityLocation: occupancy, activityLocationsById: this.activityLocationById, socializerIds, relationshipsById: this.relationshipById }, this.random.stream('encounters'))
+    for (const encounter of encounters) {
+      const formed = this.applyEncounter(encounter, pushEvent)
+      this.recordCommunityEncounter(encounter)
+      if (formed) pushEvent(this.relationshipFormedEvent(encounter))
+      pushEvent(this.encounterEvent(encounter))
+    }
+    if (encounters.length > 0) this.state.relationships = [...this.relationshipById.values()].sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
+    this.resolveMarketExchanges(occupancy, pushEvent)
+    return encounters.length
+  }
+
+  private runExposureEnvironmentAndHealth(pushEvent: (event: SimulationEvent) => void, scratch: SimulationTickContext['scratch']): void {
+    if (!scratch.postActionActivityOccupancy) throw new Error('Exposure phase requires decision phase output')
+    this.recordActivityPersonHours()
+    this.recordEnvironmentalExposure()
+    this.recordHealthExposure(scratch.postActionActivityOccupancy)
+    for (const trace of transmitFictionalPathogens({ peopleById: this.personById, occupantsByActivity: scratch.postActionActivityOccupancy, pathogens: this.contentPackRuntime.pack.pathogens, tick: this.state.tick, nextPermille: () => this.random.stream(FICTIONAL_PATHOGEN_STREAM).nextInt(1000) })) {
+      pushEvent(this.event('FICTIONAL_INFECTION_ACQUIRED', { personId: this.state.people.find((person) => person.lastInfectionTrace === trace)?.id ?? null, pathogenId: trace.pathogenId, sourcePersonId: trace.sourcePersonId ?? null, probabilityPermille: trace.probabilityPermille ?? 0, randomRollPermille: trace.randomRollPermille ?? 0 }))
+    }
+    this.recordCommunityPersonHours()
+    this.recordCommunityDevelopmentExposure()
+    this.accumulateDevelopmentExposure()
+  }
+
+  private runMonthlyProcessing(pushEvent: (event: SimulationEvent) => void, changeCategories: Set<AuthoritativeChangeSet['categories'][number]>, changedCellIds: Set<string>): void {
+    for (const production of produceMonthlyGoods({ economy: this.state.economy, households: this.state.households, peopleById: this.personById, recipes: this.contentPackRuntime.pack.economy.recipes, tick: this.state.tick })) pushEvent(this.event('PERSON_WORKED', { householdId: production.householdId, recipeId: production.recipeId, laborHours: production.laborHours, outputUnits: Object.values(production.outputs).reduce((sum, value) => sum + value, 0) }))
+    for (const trade of clearMarkets({ economy: this.state.economy, households: this.state.households, markets: this.state.markets, cellsById: this.cellById, tick: this.state.tick })) { this.economicCounters().exchangeCount += 1; pushEvent(this.event('HOUSEHOLDS_EXCHANGED_TOOLS', { marketId: trade.marketId, sellerHouseholdId: trade.sellerHouseholdId, buyerHouseholdId: trade.buyerHouseholdId, goodId: trade.goodId, quantity: trade.quantity, unitPriceUnits: trade.unitPriceUnits, transportCostUnits: trade.transportCostUnits, taxUnits: trade.taxUnits })) }
+    for (const wage of distributeMarketWages({ economy: this.state.economy, households: this.state.households, peopleById: this.personById, tick: this.state.tick })) pushEvent(this.event('PERSON_WORKED', { householdId: wage.householdId, marketId: wage.marketId, wageUnits: wage.wageUnits, workerCount: wage.workerCount }))
+    for (const allocation of allocateInfrastructureMaintenance(this.state.infrastructure, this.state.households, this.state.world.settlements)) pushEvent(this.event('INFRASTRUCTURE_UPDATED', { assetId: allocation.assetId, householdId: allocation.householdId, kind: 'maintenance-funded', units: allocation.units }))
+    for (const asset of maintainInfrastructure(this.state.infrastructure, this.state.tick)) { const trace = asset.lastTrace; if (trace) pushEvent(this.event('INFRASTRUCTURE_UPDATED', { assetId: asset.id, kind: trace.kind, capacity: trace.capacity, conditionPermille: asset.conditionPermille, disruptionPermille: asset.disruptionPermille, reason: trace.reason })) }
+    this.processDevelopment(pushEvent)
+    this.processBroaderDevelopment(pushEvent)
+    this.resolveMonthlyHouseholdRelocations(pushEvent)
+    for (const transition of updateSettlementScales({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, people: this.state.people })) pushEvent(this.event('SETTLEMENT_SCALE_CHANGED', { settlementId: transition.settlementId, previousScale: transition.previousScale, nextScale: transition.nextScale, population: transition.evidence.population, densityPerHomeCell: Math.round(transition.evidence.densityPerHomeCell * 1000), resourceUnitsPerResident: Math.round(transition.evidence.resourceUnitsPerResident * 1000), accessPermille: transition.evidence.accessPermille }))
+    const reconciliationInput = () => ({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, cohorts: this.state.cohorts, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], infrastructure: this.state.infrastructure, tick: this.state.tick })
+    for (const transition of reconcileSettlementRegions(reconciliationInput())) pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
+    for (const trace of migrateCohortsBetweenSettlements(this.state.cohorts, this.state.world.settlements, this.state.world.grid.cells, this.state.tick)) { changeCategories.add('people'); changedCellIds.add(trace.sourceCellId); changedCellIds.add(trace.destinationCellId); pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { kind: 'cohort-migration', sourceSettlementId: trace.sourceSettlementId, destinationSettlementId: trace.destinationSettlementId, populationCount: trace.populationCount, reason: trace.reason })) }
+    // The regional ledger must describe cohort allocations after migration.
+    for (const transition of reconcileSettlementRegions(reconciliationInput())) pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
+  }
+
+  private runAnnualProcessing(pushEvent: (event: SimulationEvent) => void, changeCategories: Set<AuthoritativeChangeSet['categories'][number]>, changedCellIds: Set<string>): void {
+    const populationBefore = cohortPopulationByCell(this.state.cohorts)
+    this.resolveAnnualLifeCycle(pushEvent)
+    advanceCohortsAnnual(this.state.cohorts)
+    for (const trace of applyAnnualCohortInfectionMortality(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, mortalityCount: trace.mortalityCount }))
+    const populationAfter = cohortPopulationByCell(this.state.cohorts)
+    let cohortPopulationChanged = false
+    for (const cellId of new Set([...populationBefore.keys(), ...populationAfter.keys()])) if ((populationBefore.get(cellId) ?? 0) !== (populationAfter.get(cellId) ?? 0)) { changedCellIds.add(cellId); cohortPopulationChanged = true }
+    if (cohortPopulationChanged) changeCategories.add('people')
+  }
+
+  private runDailyProcessing(pushEvent: (event: SimulationEvent) => void, statistics: StatisticSample[]): void {
+    decayGoods(this.state.households, this.contentPackRuntime.pack.economy.goods)
+    this.resolveDailyHealthStress(pushEvent)
+    for (const trace of advanceCohortFictionalInfections(this.state.cohorts, this.contentPackRuntime.pack.pathogens, this.state.tick)) pushEvent(this.event('COHORT_OUTBREAK_UPDATED', { pathogenId: trace.pathogenId, susceptibleCount: trace.susceptibleCount, newIncubatingCount: trace.newIncubatingCount, becameInfectiousCount: trace.becameInfectiousCount, recoveredCount: trace.recoveredCount }))
+    this.resolveDailyFoodSharing(pushEvent)
+    this.aggregateCommunities(pushEvent)
+    for (const governance of this.state.governance) { const community = this.state.communities.find((value) => value.catchment.id === governance.communityId); if (community) updateLegitimacy(governance, community, this.state.tick, infrastructureAccessAcrossCells(this.state.infrastructure, community.catchment.cellIds).servicePermille) }
+    for (const contention of resolveCommunityContentions(this.disputeById.values(), new Map(this.state.governance.map((governance) => [governance.communityId, governance.legitimacy])))) pushEvent(this.event('COMMUNITY_CONTENTION_RESOLVED', { ...contention }))
+    this.regenerateFood()
+    advanceCohortsDaily(this.state.cohorts, this.state.world.grid.cells)
+    statistics.push(...this.sampleDailyStatistics())
+    this.decayRelationshipFrequencies()
+    this.state.dailySpatialCounters = { travelCost: 0, completedMoves: 0, foodConsumed: 0, failedMeals: 0 }
+    this.state.dailySocialCounters = { encounters: 0, positiveEncounters: 0, neutralEncounters: 0, tenseEncounters: 0, relationshipsFormed: 0 }
+    this.state.dailyActivityCounters = { homePersonHours: 0, commonsPersonHours: 0, travelPersonHours: 0 }
+    this.state.dailyDevelopmentCounters = { parentChildCoExposureSourceHours: 0, developmentExperiences: 0, developmentChanges: 0, absoluteCuriosityChange: 0, broaderDevelopmentExperiences: 0, broaderDevelopmentChanges: 0 }
+    this.state.dailyLifeCycleCounters = { births: 0, deaths: 0, partnershipsFormed: 0, householdMoves: 0, lifeStageTransitions: 0 }
+    this.state.dailyEconomicCounters = { productiveHours: 0, foodProduced: 0, agriculturalFoodProduced: 0, foodConsumedFromHouseholds: 0, foodShared: 0, exchangeCount: 0 }
+    this.state.dailyEnvironmentalCounters = { foodRegenerated: 0 }
+    this.resetCommunityCounters(this.state.tick + 1)
   }
 
   /** Formula evaluation is deliberately owned by the engine: declared streams
@@ -1750,6 +1768,15 @@ function serializeRuntimeCommunityCounters(runtime: RuntimeCommunityCounters): C
       foodCapacity: runtime.foodCapacity,
     },
   }
+}
+
+interface EngineTickRuntime {
+  readonly pushEvent: (event: SimulationEvent) => void
+  readonly statistics: StatisticSample[]
+  readonly changeCategories: Set<AuthoritativeChangeSet['categories'][number]>
+  readonly changedCellIds: Set<string>
+  readonly phaseCounts: Record<string, number>
+  readonly invalidate: (categories: readonly AuthoritativeChangeSet['categories'][number][], cellIds?: readonly string[]) => void
 }
 
 function changeSetFromEvents(events: readonly SimulationEvent[], categoryHints: ReadonlySet<AuthoritativeChangeSet['categories'][number]> | readonly AuthoritativeChangeSet['categories'][number][] = [], cellIdHints: ReadonlySet<string> | readonly string[] = []): AuthoritativeChangeSet {
