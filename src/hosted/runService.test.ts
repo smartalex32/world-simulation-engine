@@ -13,6 +13,7 @@ describe('hosted single-node run service', () => {
 
     const stepped = await first.execute('secret', { type: 'STEP', requestId: 'step-1', count: 24 })
     expect(stepped.observedTick).toBe(24)
+    expect(stepped.responses).toContainEqual({ type: 'ACK', requestId: 'step-1', command: 'STEP' })
     expect(stepped.responses.find((response) => response.type === 'FRAME')).toBeDefined()
     const snapshotResult = await first.execute('secret', { type: 'REQUEST_SNAPSHOT', requestId: 'snapshot-1' })
     const snapshot = snapshotResult.responses.find((response) => response.type === 'SNAPSHOT')

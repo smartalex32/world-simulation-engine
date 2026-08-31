@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import { SimulationEngine } from '../simulation/engine/engine'
+import { SimulationApplicationService } from '../runtime/simulationApplicationService'
 import { DEFAULT_PREINDUSTRIAL_PACK, resolveContentPack, type ContentPack, type ResolvedContentPack } from '../contentPacks'
 import { NO_PROJECTION_INVALIDATION, WorkbenchProjectionBuilder, mergeProjectionInvalidations, projectionInvalidationFromChangeSet, type MapProjectionRequest, type ProjectionInvalidation } from '../projection'
 import type { SimulationEvent, StatisticSample, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
@@ -26,6 +27,7 @@ let lastFrameAt = 0
 let processingSinceFrame = 0
 const batchScheduler = new SimulationBatchScheduler()
 const telemetry = new TelemetryBuffer()
+const application = new SimulationApplicationService()
 const FRAME_INTERVAL_MS = 100
 let commandQueue: Promise<void> = Promise.resolve()
 
@@ -282,8 +284,8 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           finalizePartialBatch()
           batchScheduler.reset()
           const started = performance.now()
-          const result = engine.advance(command.count ?? 1)
-          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, projectionInvalidationFromChangeSet(result.changeSet))
+          const result = application.execute(engine, command)
+          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
           const snapshot = await engine.snapshot()
           telemetry.append(result.events, result.statistics)
           processingSinceFrame += performance.now() - started
@@ -294,10 +296,10 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
         case 'MATERIALIZE_COHORT': {
           if (!engine) throw new Error('No simulation run is loaded')
           playing = false
-          const result = engine.materializeCohort(command.cohortId, command.populationCount)
-          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, projectionInvalidationFromChangeSet(result.changeSet))
+          const result = application.execute(engine, command)
+          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
           const snapshot = await engine.snapshot()
-          telemetry.append([result.event], [])
+          telemetry.append(result.events, result.statistics)
           flushFrame(command.requestId, snapshot.digest)
           respond({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch })
           break
@@ -305,17 +307,17 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
         case 'DEMATERIALIZE_PEOPLE': {
           if (!engine) throw new Error('No simulation run is loaded')
           playing = false
-          const result = engine.dematerializePeople(command.personIds)
-          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, projectionInvalidationFromChangeSet(result.changeSet))
+          const result = application.execute(engine, command)
+          pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
           const snapshot = await engine.snapshot()
-          telemetry.append([result.event], [])
+          telemetry.append(result.events, result.statistics)
           flushFrame(command.requestId, snapshot.digest)
           respond({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch })
           break
         }
         case 'SET_PROTECTED_PEOPLE': {
           if (!engine) throw new Error('No simulation run is loaded')
-          engine.protectDetailedPeople(command.personIds)
+          application.execute(engine, command)
           const snapshot = await engine.snapshot()
           flushFrame(command.requestId, snapshot.digest)
           break
@@ -368,6 +370,9 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           worker.close()
           break
       }
+      // ACK is the common correlated completion boundary. Rich FRAME, DRAFT,
+      // and SNAPSHOT responses remain available for projections and payloads.
+      respond({ type: 'ACK', requestId: command.requestId, command: command.type })
     } catch (error) {
       reportError(error, command.requestId)
     }

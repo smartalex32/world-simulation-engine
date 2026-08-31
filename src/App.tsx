@@ -17,7 +17,7 @@ import type { DraftZoneViewportRequest } from './ui/DraftZoneMap'
 import { mergeWorkbenchProjection } from './ui/projectionFrame'
 import type { ContributionView, VariableDefinitionView } from './ui/personVariables'
 import { SimulationWorkerClient } from './worker/client'
-import type { SimulationResponse } from './worker/protocol'
+import type { SimulationResponse } from './runtime/contracts'
 import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver, diffContentPacks, exportContentPack, importContentPack } from './contentPacks'
 import type { ContentPack, ResolvedContentPack } from './contentPacks'
 

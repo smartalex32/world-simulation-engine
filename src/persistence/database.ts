@@ -3,7 +3,7 @@ import { summarizeCheckpoint, type HistoricalCheckpoint } from '../history/check
 import { validateWorldDraftRecord } from '../simulation/domain/worldDraft'
 import { validateSnapshot } from '../simulation/serialization/snapshot'
 import { validateWorkerContinuation } from '../worker/frameScheduler'
-import type { WorkbenchSnapshotEnvelope } from '../worker/protocol'
+import type { WorkbenchSnapshotEnvelope } from '../runtime/contracts'
 import { DEFAULT_PREINDUSTRIAL_PACK, exportContentPack, createContentPackResolver, validateContentPack, type ContentPack, type ResolvedContentPack } from '../contentPacks'
 import { compareStableText } from '../shared/stableOrder'
 

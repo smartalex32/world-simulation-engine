@@ -286,8 +286,12 @@ See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferre
 ## Optional hosted single-node runtime
 
 The browser-hosted workbench remains the default. The hosted runtime now uses
-PostgreSQL as its system of record for one owner-controlled run. It reuses typed worker
-command/response shapes, serializes authoritative commands on the host, writes
+PostgreSQL as its system of record for one owner-controlled run. Browser and hosted
+adapters share runtime-owned command/response contracts and the same engine-command
+application service; adapters retain only scheduling or durable-authority concerns.
+Every completed command emits a request-correlated acknowledgement (with correlated
+errors), while frames, snapshots, and draft responses retain their typed payloads.
+The host serializes authoritative commands, writes
 compressed, checksummed canonical snapshots and telemetry batches through
 PostgreSQL transactions, rejects competing mutations with a locked tick/digest
 compare-and-swap, and replaces live engine state only after commit. Start PostgreSQL with
