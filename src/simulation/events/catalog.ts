@@ -79,6 +79,8 @@ export interface EventCatalogEntry<T extends SimulationEventType = SimulationEve
   sampleEveryHours?: number
   /** Initial evidence window retained before periodic sampling begins. */
   initialSampleHours?: number
+  /** Public payload schema generated from the same required-field contract as decode(). */
+  payloadSchema: Readonly<Record<string, unknown>>
   decode(value: unknown): SimulationEventPayload<T>
 }
 
@@ -95,7 +97,19 @@ function codec<T extends SimulationEventType>(type: T, alternatives: readonly Re
 function entry<T extends SimulationEventType>(type: T, retention: EventRetentionClass, alternatives: readonly RequiredFields[] = [{}], batchLimit?: number): EventCatalogEntry<T> {
   const sampleEveryHours = retention === 'bounded' ? 24 : retention === 'sampled' ? 168 : undefined
   const initialSampleHours = retention === 'bounded' ? 24 : retention === 'sampled' ? 1 : undefined
-  return { version: 1, retention, ...(batchLimit === undefined ? {} : { batchLimit }), ...(sampleEveryHours === undefined ? {} : { sampleEveryHours, initialSampleHours }), decode: codec(type, alternatives) }
+  return { version: 1, retention, ...(batchLimit === undefined ? {} : { batchLimit }), ...(sampleEveryHours === undefined ? {} : { sampleEveryHours, initialSampleHours }), payloadSchema: eventPayloadSchema(alternatives), decode: codec(type, alternatives) }
+}
+
+const primitiveSchema = { oneOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }, { type: 'null' }] } as const
+
+function eventPayloadSchema(alternatives: readonly RequiredFields[]): Readonly<Record<string, unknown>> {
+  const variants = alternatives.map((fields) => ({
+    type: 'object',
+    properties: Object.fromEntries(Object.entries(fields).map(([name, kind]) => [name, { type: kind }])),
+    required: Object.keys(fields),
+    additionalProperties: primitiveSchema,
+  }))
+  return Object.freeze(variants.length === 1 ? variants[0]! : { oneOf: variants })
 }
 
 const person = { personId: 'string' } as const

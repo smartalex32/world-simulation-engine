@@ -8,6 +8,7 @@ import { compareStableText } from '../shared/stableOrder'
 import { EMPTY_TELEMETRY_WATERMARK, type TelemetryWatermark, type WorkbenchCheckpointEnvelope, type WorkbenchSnapshotEnvelope } from '../runtime/contracts'
 import { decodeEventPayload, EVENT_CATALOG, type SimulationEventType } from '../simulation/events/catalog'
 import { mergeRetention, validateRetentionReport, type EventRetentionReport, type EventSequenceRange } from '../simulation/events/retention'
+import { decodeStatisticSample } from '../simulation/events/statisticContract'
 
 const DATABASE_NAME = 'world-simulation-workbench'
 const DATABASE_VERSION = 4
@@ -312,12 +313,13 @@ export class WorkbenchDatabase {
     const decoder = new TextDecoder()
     const reader = stream.getReader()
     let buffer = ''
-    let manifest: NdjsonManifest | undefined
-    const events: SimulationEvent[] = []
-    const statistics: StatisticSample[] = []
+    let manifest: Record<string, unknown> | undefined
+    const events: unknown[] = []
+    const statistics: unknown[] = []
     const consume = (line: string) => {
       if (!line.trim()) return
-      const record = JSON.parse(line) as NdjsonRecord
+      const record: unknown = JSON.parse(line)
+      if (!isRecord(record) || typeof record.record !== 'string') throw new Error('Import contains an invalid NDJSON record')
       if (record.record === 'manifest') {
         if (manifest) throw new Error('Import contains multiple manifests')
         manifest = record
@@ -456,23 +458,24 @@ export function validateImportedEvents(runId: string, value: unknown): Simulatio
 }
 
 export function validateWorkbenchCheckpoint(value: unknown): WorkbenchCheckpointEnvelope {
-  if (!isRecord(value) || value.version !== 1 || typeof value.checkpointId !== 'string' || value.checkpointId.length === 0 || !isRecord(value.snapshot)
+  if (!isRecord(value) || value.version !== 1 || typeof value.checkpointId !== 'string' || value.checkpointId.length === 0 || !isWorkbenchSnapshotEnvelopeShape(value.snapshot)
     || !validWatermark(value.committed) || !validWatermark(value.through) || !Array.isArray(value.events) || !Array.isArray(value.statistics)) throw new Error('Workbench checkpoint is invalid')
-  const checkpoint = value as unknown as WorkbenchCheckpointEnvelope
-  const runId = checkpoint.snapshot.state?.runId
-  if (typeof runId !== 'string' || checkpoint.through.eventSequence !== checkpoint.snapshot.state.nextEventSequence - 1
-    || checkpoint.through.statisticTick !== checkpoint.snapshot.state.tick || !watermarkCovers(checkpoint.through, checkpoint.committed)) throw new Error('Workbench checkpoint watermark is invalid')
-  const events = validateImportedEvents(runId, checkpoint.events).sort((a, b) => a.sequence - b.sequence)
-  const statistics = validateImportedStatistics(runId, checkpoint.statistics)
-  if (events.some((event, index) => event.sequence <= checkpoint.committed.eventSequence || event.sequence > checkpoint.through.eventSequence || index > 0 && event.sequence === events[index - 1]!.sequence)
-    || statistics.some((sample) => sample.tick <= checkpoint.committed.statisticTick || sample.tick > checkpoint.through.statisticTick)) throw new Error('Workbench checkpoint telemetry is outside its watermark')
-  const eventRetention = validateRetentionReport(checkpoint.eventRetention)
-  const firstProducedSequence = eventRetention.firstProducedSequence ?? checkpoint.through.eventSequence + 1
-  if (firstProducedSequence < checkpoint.committed.eventSequence + 1
-    || eventRetention.lastProducedSequence !== undefined && eventRetention.lastProducedSequence !== checkpoint.through.eventSequence) throw new Error('Workbench checkpoint retention does not match its watermark')
-  const unexplained = unexplainedRanges(firstProducedSequence, checkpoint.through.eventSequence, events.map((event) => event.sequence), eventRetention.droppedSequenceRanges)
+  const committed = value.committed
+  const through = value.through
+  const runId = value.snapshot.state.runId
+  if (through.eventSequence !== value.snapshot.state.nextEventSequence - 1
+    || through.statisticTick !== value.snapshot.state.tick || !watermarkCovers(through, committed)) throw new Error('Workbench checkpoint watermark is invalid')
+  const events = validateImportedEvents(runId, value.events).sort((a, b) => a.sequence - b.sequence)
+  const statistics = validateImportedStatistics(runId, value.statistics)
+  if (events.some((event, index) => event.sequence <= committed.eventSequence || event.sequence > through.eventSequence || index > 0 && event.sequence === events[index - 1]!.sequence)
+    || statistics.some((sample) => sample.tick <= committed.statisticTick || sample.tick > through.statisticTick)) throw new Error('Workbench checkpoint telemetry is outside its watermark')
+  const eventRetention = validateRetentionReport(value.eventRetention)
+  const firstProducedSequence = eventRetention.firstProducedSequence ?? through.eventSequence + 1
+  if (firstProducedSequence < committed.eventSequence + 1
+    || eventRetention.lastProducedSequence !== undefined && eventRetention.lastProducedSequence !== through.eventSequence) throw new Error('Workbench checkpoint retention does not match its watermark')
+  const unexplained = unexplainedRanges(firstProducedSequence, through.eventSequence, events.map((event) => event.sequence), eventRetention.droppedSequenceRanges)
   if (unexplained.length > 0) throw new Error(`Workbench checkpoint telemetry has an unexplained sequence gap at ${unexplained[0]!.first}`)
-  return { ...structuredClone(checkpoint), events, statistics, eventRetention }
+  return { version: 1, checkpointId: value.checkpointId, snapshot: structuredClone(value.snapshot), committed: { ...committed }, through: { ...through }, events, statistics, eventRetention }
 }
 
 export function validateTelemetryCommit(value: unknown): TelemetryCommitMetadata {
@@ -495,19 +498,15 @@ function validateImportedTelemetryPrefix(snapshot: WorkbenchSnapshotEnvelope, ev
 export function validateImportedStatistics(runId: string, value: unknown): StatisticSample[] {
   if (value === undefined) return []
   if (!Array.isArray(value)) throw new Error('Import statistics must be an array')
-  return value.map((sample) => {
-    if (!isRecord(sample) || sample.runId !== runId || !nonNegativeSafeInteger(sample.tick) || sample.metricVersion !== 1
-      || typeof sample.metricId !== 'string' || sample.metricId.length === 0 || typeof sample.value !== 'number' || !Number.isFinite(sample.value)
-      || (sample.scope !== 'world' && sample.scope !== 'community')
-      || (sample.scope === 'world' && sample.scopeId !== undefined)
-      || (sample.scope === 'community' && (typeof sample.scopeId !== 'string' || sample.scopeId.length === 0))) {
-      throw new Error('Import contains an invalid statistic')
-    }
-    return sample as unknown as StatisticSample
-  })
+  try { return value.map((sample) => decodeStatisticSample(sample, runId)) }
+  catch { throw new Error('Import contains an invalid statistic') }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
+function isWorkbenchSnapshotEnvelopeShape(value: unknown): value is WorkbenchSnapshotEnvelope {
+  if (!isRecord(value) || typeof value.digest !== 'string' || !isRecord(value.state)) return false
+  return typeof value.state.runId === 'string' && nonNegativeSafeInteger(value.state.tick) && nonNegativeSafeInteger(value.state.nextEventSequence)
+}
 function nonNegativeSafeInteger(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 }
 async function inspectTelemetryIntegrity(database: IDBDatabase, runId: string, commit?: TelemetryCommitMetadata): Promise<TelemetryIntegrity> {
   if (!commit) return { status: 'uncheckpointed', committed: EMPTY_TELEMETRY_WATERMARK, unexplainedSequenceGaps: [], droppedByType: {} }

@@ -1,8 +1,9 @@
 import { createSessionToken, hashPassword, hashSessionToken, requireRole, verifyPassword, type DraftAuditEntry, type DraftLease, type HostedAccount, type HostedSession, type WorldAccess, type WorldRole } from './collaboration'
 import { createHash } from 'node:crypto'
-import { canonicalStringify } from '../simulation/serialization/snapshot'
+import { canonicalStringify } from '../shared/canonicalJson'
 import { compareStableText } from '../shared/stableOrder'
 import type { HostedRunRecord } from './types'
+import { schema } from '../shared/schema'
 
 export interface SharedWorld { id: string; name: string; ownerAccountId: string; currentRevision: number; createdAt: string; updatedAt: string }
 export interface SharedWorldDraftRevision { worldId: string; revision: number; parentRevision?: number; canonicalDigest: string; authorAccountId: string; payload: unknown; createdAt: string }
@@ -37,6 +38,25 @@ export interface SharedWorldMutationStore {
   outboxAfter(lastEventId?: number): Promise<readonly SharedOutboxEvent[]>
 }
 
+const idCodec = schema.string({ minLength: 1, pattern: '^[a-zA-Z0-9_-]+$' })
+const textCodec = schema.string({ minLength: 1 })
+const revisionCodec = schema.number({ integer: true, minimum: 1 })
+const accountCodec = schema.object({ id: idCodec, email: textCodec, passwordHash: textCodec, createdAt: textCodec })
+const sessionCodec = schema.object({ id: textCodec, accountId: idCodec, tokenHash: textCodec, expiresAt: textCodec, createdAt: textCodec })
+const worldCodec = schema.object({ id: idCodec, name: textCodec, ownerAccountId: idCodec, currentRevision: revisionCodec, createdAt: textCodec, updatedAt: textCodec })
+const accessCodec = schema.object({ worldId: idCodec, accountId: idCodec, role: schema.enum(['owner', 'editor', 'viewer']) })
+const revisionRecordCodec = schema.object({ worldId: idCodec, revision: revisionCodec, parentRevision: schema.optional(revisionCodec), canonicalDigest: textCodec, authorAccountId: idCodec, payload: schema.unknown(), createdAt: textCodec })
+const leaseCodec = schema.object({ worldId: idCodec, leaseId: textCodec, holderAccountId: idCodec, revision: revisionCodec, expiresAt: textCodec })
+const auditCodec = schema.object({ id: textCodec, worldId: idCodec, actorAccountId: idCodec, action: textCodec, revision: revisionCodec, createdAt: textCodec })
+const tokenCodec = schema.object({ id: idCodec, accountId: idCodec, tokenHash: textCodec, scopes: schema.array(textCodec, { minItems: 1 }), createdAt: textCodec, expiresAt: schema.optional(textCodec) })
+const runCodec = schema.object({ worldId: idCodec, revision: revisionCodec, runId: idCodec, ownerAccountId: idCodec, createdAt: textCodec })
+
+export const SHARED_WORLD_SERVICE_STATE_CODEC = schema.object({
+  version: schema.literal(1), accounts: schema.array(accountCodec), sessions: schema.array(sessionCodec), worlds: schema.array(worldCodec),
+  access: schema.array(accessCodec), revisions: schema.array(revisionRecordCodec), leases: schema.array(leaseCodec), audits: schema.array(auditCodec),
+  tokens: schema.array(tokenCodec), mutations: schema.array(schema.object({ key: textCodec, revision: revisionRecordCodec })), runs: schema.optional(schema.array(runCodec)),
+})
+
 /** Noncanonical collaboration authority.  Canonical simulation state remains in
  * the run store; revisions, users, leases, and audit timestamps are operational metadata. */
 export class SharedWorldService {
@@ -53,8 +73,10 @@ export class SharedWorldService {
   private readonly runs = new Map<string, SharedWorldRun>()
   private storageRevisionValue = 0
 
-  static restore(value: SharedWorldServiceState, storageRevision = 0): SharedWorldService {
-    if (!value || value.version !== 1 || !Array.isArray(value.accounts) || !Array.isArray(value.sessions) || !Array.isArray(value.worlds) || !Array.isArray(value.access) || !Array.isArray(value.revisions) || !Array.isArray(value.leases) || !Array.isArray(value.audits) || !Array.isArray(value.tokens) || !Array.isArray(value.mutations)) throw new Error('Shared world persisted state is invalid')
+  static restore(input: unknown, storageRevision = 0): SharedWorldService {
+    let value: SharedWorldServiceState
+    try { value = SHARED_WORLD_SERVICE_STATE_CODEC.decode(input, 'sharedWorldState') }
+    catch { throw new Error('Shared world persisted state is invalid') }
     const service = new SharedWorldService()
     for (const account of value.accounts) { if (!validId(account.id) || !validEmail(account.email) || typeof account.passwordHash !== 'string' || typeof account.createdAt !== 'string') throw new Error('Shared world account state is invalid'); service.accounts.set(account.id, structuredClone(account)); service.accountsByEmail.set(account.email, account.id) }
     for (const session of value.sessions) { if (!validId(session.accountId) || typeof session.id !== 'string' || typeof session.tokenHash !== 'string' || typeof session.createdAt !== 'string' || typeof session.expiresAt !== 'string') throw new Error('Shared world session state is invalid'); service.sessions.set(session.id, structuredClone(session)) }

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { SharedWorldService } from './sharedWorlds'
+import { SHARED_WORLD_SERVICE_STATE_CODEC, SharedWorldService } from './sharedWorlds'
 
 describe('shared worlds', () => {
+  it('publishes the same schema used to restore persisted shared-world state', () => {
+    expect(SHARED_WORLD_SERVICE_STATE_CODEC.decode(new SharedWorldService().snapshotState())).toEqual(new SharedWorldService().snapshotState())
+    expect(SHARED_WORLD_SERVICE_STATE_CODEC.schema).toBeDefined()
+  })
   it('enforces membership, a renewable single-editor lease, immutable revisions, and audit evidence', async () => {
     const service = new SharedWorldService(); const now = '2026-01-01T00:00:00.000Z'
     await service.createAccount('owner', 'owner@example.test', 'correct-horse-battery', now); await service.createAccount('editor', 'editor@example.test', 'correct-horse-battery', now); await service.createAccount('viewer', 'viewer@example.test', 'correct-horse-battery', now)

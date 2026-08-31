@@ -1,8 +1,19 @@
-import { canonicalStringify } from '../simulation/serialization/snapshot'
+import { canonicalStringify } from '../shared/canonicalJson'
+import { schema } from '../shared/schema'
 import { PERSON_VARIABLE_IDS } from '../simulation/variables/types'
 import type { ContentPack, ContentPackDiagnostic, DeterministicCondition, DeterministicExpression, EconomyGoodDefinition, EconomyRecipeDefinition, FictionalPathogenDefinition, ValidatedContentPack } from './types'
 
 export const CONTENT_PACK_SCHEMA_VERSION = 1
+
+export const CONTENT_PACK_CODEC = schema.custom<ContentPack>({
+  $id: 'world-simulation/content-pack', type: 'object',
+  required: ['manifest', 'personVariables', 'influences', 'formulas', 'pathogens', 'economy'],
+  properties: {
+    manifest: { type: 'object', required: ['format', 'schemaVersion', 'id', 'version', 'name', 'dependencies'] },
+    personVariables: { type: 'array' }, influences: { type: 'array' }, formulas: { type: 'object' },
+    pathogens: { type: 'array' }, economy: { type: 'object', required: ['goods', 'recipes'] },
+  },
+}, (value) => validateContentPack(value).pack)
 
 /** Parse, validate, and canonicalize imported pack data before it becomes selectable. */
 export function validateContentPack(value: unknown): ValidatedContentPack {
@@ -58,7 +69,8 @@ export function migrateContentPack(value: unknown): ContentPack {
   }
   migrated.pathogens ??= []
   migrated.economy ??= { goods: [], recipes: [] }
-  return migrated as unknown as ContentPack
+  if (!isContentPackCandidate(migrated)) throw invalid('pack', 'Content pack collections are invalid')
+  return migrated
 }
 
 function validateEconomyGood(good: EconomyGoodDefinition, path: string, diagnostics: ContentPackDiagnostic[]): void {
@@ -113,6 +125,11 @@ function validateCondition(condition: DeterministicCondition, path: string, diag
 }
 function validateUnique<T>(items: readonly T[] | undefined, path: string, key: (item: T) => string, diagnostics: ContentPackDiagnostic[]): void { if (!Array.isArray(items)) { diagnostics.push({ path, message: 'Must be an array' }); return }; const seen = new Set<string>(); for (const [index, item] of items.entries()) { const id = key(item); if (seen.has(id)) diagnostics.push({ path: `${path}[${index}]`, message: `Duplicate ID: ${id}` }); seen.add(id) } }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
+function isContentPackCandidate(value: unknown): value is ContentPack {
+  if (!isRecord(value) || !isRecord(value.manifest) || !Array.isArray(value.personVariables) || !Array.isArray(value.influences)
+    || !Array.isArray(value.pathogens) || !isRecord(value.economy) || !Array.isArray(value.economy.goods) || !Array.isArray(value.economy.recipes)) return false
+  return value.formulas === undefined || isRecord(value.formulas)
+}
 function stableId(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*$/.test(value) }
 function version(value: unknown): value is string { return typeof value === 'string' && /^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(value) }
 function positiveInteger(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) > 0 }

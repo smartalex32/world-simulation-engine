@@ -1,14 +1,16 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import type { MapProjectionRequest } from '../projection'
 import type { HostedRunCommand } from './types'
-import { HostedSimulationJobManager, type HostedJobRequest } from './jobs'
+import { HostedSimulationJobManager } from './jobs'
 import { HostedRunService } from './runService'
 import { importContentPack, type ContentPackCatalog } from '../contentPacks'
 import { HostedEventStream } from './eventStream'
 import { SharedWorldService, type SharedOutboxEventInput, type SharedWorldMutationStore } from './sharedWorlds'
 import { SharedRunCoordinator } from './sharedRuns'
 import type { HostedRunRecord } from './types'
-import { canonicalStringify } from '../simulation/serialization/snapshot'
+import { canonicalStringify } from '../shared/canonicalJson'
+import { decodeApiRequest, openApiDocument } from './apiContract'
+import { decodeHostedRunCommand } from '../runtime/hostedCommandContract'
+import { decodeHostedJobRequest } from './jobContract'
 
 export interface HostedHttpServerOptions {
   runId: string
@@ -31,58 +33,9 @@ export function createHostedHttpServer(options: HostedHttpServerOptions): Server
   return createServer(async (request, response) => {
     try {
       const pathname = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`).pathname
-      if (request.method === 'GET' && pathname === '/api/v1/openapi.json') return sendJson(response, 200, openApiDocument())
-      if (request.method === 'GET' && pathname === '/api/v1/events') {
-        const accountId = requiredShared(options).authenticateToken(bearerToken(request), 'worlds:read')
-        void accountId
-        const lastEventId = parseLastEventId(request.headers['last-event-id'])
-        if (options.sharedStore) return writeSse(response, await options.sharedStore.outboxAfter(lastEventId ?? 0))
-        return requiredEvents(options).writeSse(response, lastEventId)
-      }
-      if (request.method === 'POST' && pathname === '/api/v1/accounts') {
-        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const now = new Date().toISOString()
-        const account = await mutateShared(options, async (service) => ({ value: await service.createAccount(requiredText(body.id), requiredText(body.email), requiredText(body.password), now) }))
-        return sendJson(response, 201, { id: account.id, email: account.email, createdAt: account.createdAt })
-      }
-      if (request.method === 'POST' && pathname === '/api/v1/sessions') {
-        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const now = new Date().toISOString()
-        const session = await mutateShared(options, async (service) => ({ value: await service.createSession(requiredText(body.email), requiredText(body.password), now) }))
-        return sendJson(response, 201, { token: session.token, expiresAt: session.session.expiresAt })
-      }
-      if (request.method === 'POST' && pathname === '/api/v1/tokens') { const body = requiredRecord(await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); const issued = await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); return { value: service.issueToken(requiredText(body.id), accountId, requiredScopes(body.scopes), now) } }); return sendJson(response, 201, { token: issued.token, record: publicToken(issued.record) }) }
-      if (request.method === 'GET' && pathname === '/api/v1/tokens') { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listTokens(accountId)) }
-      const tokenMatch = /^\/api\/v1\/tokens\/([a-zA-Z0-9_-]+)$/.exec(pathname)
-      if (request.method === 'DELETE' && tokenMatch) { const bearer = bearerToken(request); await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); service.revokeToken(tokenMatch[1]!, accountId); return { value: undefined } }); return sendJson(response, 204, undefined) }
-      if (request.method === 'POST' && pathname === '/api/v1/worlds') {
-        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); const id = requiredText(body.id)
-        const world = await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); const created = service.createWorld(id, requiredText(body.name), accountId, body.draft ?? {}, now); return { value: created, event: { key: `world:${id}:created`, topic: 'world', payload: { id: created.id, revision: created.currentRevision }, occurredAt: created.updatedAt } } })
-        return sendJson(response, 201, world)
-      }
-      const worldMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)$/.exec(pathname)
-      if (request.method === 'GET' && worldMatch) { const accountId = requiredShared(options).authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, requiredShared(options).getWorld(worldMatch[1]!, accountId)) }
-      const membersMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/members$/.exec(pathname)
-      if (request.method === 'GET' && membersMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listMembers(membersMatch[1]!, accountId)) }
-      if (request.method === 'PUT' && membersMatch) { const body = requiredRecord(await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); const member = await mutateShared(options, (service) => { const actorId = service.authenticateToken(bearer, 'worlds:write'); return { value: service.addMember(membersMatch[1]!, actorId, requiredText(body.accountId), requiredWorldRole(body.role), now) } }); return sendJson(response, 200, member) }
-      const leaseMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/lease$/.exec(pathname)
-      if (request.method === 'POST' && leaseMatch) { const bearer = bearerToken(request); const body = requiredRecord(await readJson(request, maximumRequestBytes)); const now = new Date().toISOString(); const lease = await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); return { value: typeof body.leaseId === 'string' ? service.renewLease(leaseMatch[1]!, accountId, body.leaseId, requiredInteger(body.expectedRevision), now) : service.acquireLease(leaseMatch[1]!, accountId, now) } }); return sendJson(response, 200, lease) }
-      const revisionsMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/revisions$/.exec(pathname)
-      if (request.method === 'GET' && revisionsMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listRevisions(revisionsMatch[1]!, accountId)) }
-      if (request.method === 'POST' && revisionsMatch) { const body = requiredRecord(await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const clientMutationId = requiredText(body.clientMutationId); const now = new Date().toISOString(); const revision = await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); const saved = service.saveRevision(revisionsMatch[1]!, accountId, requiredText(body.leaseId), requiredInteger(body.expectedRevision), clientMutationId, body.payload, now); return { value: saved, event: { key: `revision:${saved.worldId}:${accountId}:${clientMutationId}`, topic: 'draft.revised', payload: { worldId: saved.worldId, revision: saved.revision }, occurredAt: saved.createdAt } } }); return sendJson(response, 201, revision) }
-      const auditsMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/audits$/.exec(pathname)
-      if (request.method === 'GET' && auditsMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listAudits(auditsMatch[1]!, accountId)) }
-      const runsMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/runs$/.exec(pathname)
-      if (request.method === 'GET' && runsMatch) { const service = requiredShared(options); const accountId = service.authenticateToken(bearerToken(request), 'worlds:read'); return sendJson(response, 200, service.listRuns(runsMatch[1]!, accountId)) }
-      if (request.method === 'POST' && runsMatch) {
-        const body = requiredRecord(await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); const runId = requiredText(body.runId); const coordinator = requiredSharedRuns(options)
-        const run = await mutateShared(options, async (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); const committed = service.commitRun(runsMatch[1]!, accountId, requiredInteger(body.revision), runId, now); const initialRun = await coordinator.prepare(committed.run.runId, committed.run.ownerAccountId, committed.draft, now); return { value: committed.run, initialRun, event: { key: `run:${runId}:committed`, topic: 'run.committed', payload: committed.run, occurredAt: committed.run.createdAt } } })
-        return sendJson(response, 201, run)
-      }
-      const sharedRunMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/runs\/([a-zA-Z0-9_-]+)\/(projection|commands)$/.exec(pathname)
-      if (sharedRunMatch) {
-        const bearer = bearerToken(request)
-        if (request.method === 'GET' && sharedRunMatch[3] === 'projection') { const service = requiredShared(options); const accountId = service.authenticateToken(bearer, 'worlds:read'); const run = service.getRun(sharedRunMatch[1]!, sharedRunMatch[2]!, accountId); return sendJson(response, 200, await requiredSharedRuns(options).projection(run.runId, run.ownerAccountId, service.draftForRun(run))) }
-        if (request.method === 'POST' && sharedRunMatch[3] === 'commands') { const command = validateHostedCommand(await readJson(request, maximumRequestBytes)); const result = await executeSharedRunCommand(options, sharedRunMatch[1]!, sharedRunMatch[2]!, bearer, command, new Date().toISOString()); return sendJson(response, 200, result) }
-      }
+      if (await handleMetadataRoutes(request, response, pathname, options)) return
+      if (await handleIdentityRoutes(request, response, pathname, options, maximumRequestBytes)) return
+      if (await handleWorldRoutes(request, response, pathname, options, maximumRequestBytes)) return
       if (request.method === 'GET' && pathname === '/health') return sendJson(response, 200, { status: 'ok', runId: options.runId })
       const token = bearerToken(request)
       if (request.method === 'GET' && pathname === '/content-packs') { authorizeToken(token, options.ownerToken); return sendJson(response, 200, await requiredContentPacks(options).listPacks()) }
@@ -93,12 +46,12 @@ export function createHostedHttpServer(options: HostedHttpServerOptions): Server
       }
       if (request.method === 'GET' && pathname === `/runs/${options.runId}/projection`) return sendJson(response, 200, await options.service.view(token))
       if (request.method === 'POST' && pathname === `/runs/${options.runId}/commands`) {
-        const command = validateHostedCommand(await readJson(request, maximumRequestBytes))
+        const command = decodeHostedRunCommand(await readJson(request, maximumRequestBytes))
         authorizeToken(token, options.ownerToken)
         return sendJson(response, 200, await options.jobs.executeDirect(command))
       }
       if (request.method === 'GET' && pathname === `/runs/${options.runId}/jobs`) { authorizeToken(token, options.ownerToken); return sendJson(response, 200, await options.jobs.list()) }
-      if (request.method === 'POST' && pathname === `/runs/${options.runId}/jobs`) { authorizeToken(token, options.ownerToken); return sendJson(response, 202, await options.jobs.start(validateJobRequest(await readJson(request, maximumRequestBytes)))) }
+      if (request.method === 'POST' && pathname === `/runs/${options.runId}/jobs`) { authorizeToken(token, options.ownerToken); return sendJson(response, 202, await options.jobs.start(decodeHostedJobRequest(await readJson(request, maximumRequestBytes)))) }
       const cancelMatch = new RegExp(`^/runs/${options.runId}/jobs/([a-zA-Z0-9_-]+)/cancel$`).exec(pathname)
       if (request.method === 'POST' && cancelMatch) { authorizeToken(token, options.ownerToken); return sendJson(response, 200, await options.jobs.cancel(cancelMatch[1]!)) }
       const jobMatch = new RegExp(`^/runs/${options.runId}/jobs/([a-zA-Z0-9_-]+)$`).exec(pathname)
@@ -114,6 +67,50 @@ export function createHostedHttpServer(options: HostedHttpServerOptions): Server
       return sendJson(response, failure.status, { error: failure.message })
     }
   })
+}
+
+async function handleMetadataRoutes(request: IncomingMessage, response: ServerResponse, pathname: string, options: HostedHttpServerOptions): Promise<boolean> {
+  if (request.method === 'GET' && pathname === '/api/v1/openapi.json') return respondJson(response, 200, openApiDocument())
+  if (request.method !== 'GET' || pathname !== '/api/v1/events') return false
+  requiredShared(options).authenticateToken(bearerToken(request), 'worlds:read')
+  const lastEventId = parseLastEventId(request.headers['last-event-id'])
+  if (options.sharedStore) writeSse(response, await options.sharedStore.outboxAfter(lastEventId ?? 0)); else requiredEvents(options).writeSse(response, lastEventId)
+  return true
+}
+
+async function handleIdentityRoutes(request: IncomingMessage, response: ServerResponse, pathname: string, options: HostedHttpServerOptions, maximumRequestBytes: number): Promise<boolean> {
+  if (request.method === 'POST' && pathname === '/api/v1/accounts') { const body = decodeApiRequest('createAccount', await readJson(request, maximumRequestBytes)); const account = await mutateShared(options, async (service) => ({ value: await service.createAccount(body.id, body.email, body.password, new Date().toISOString()) })); return respondJson(response, 201, { id: account.id, email: account.email, createdAt: account.createdAt }) }
+  if (request.method === 'POST' && pathname === '/api/v1/sessions') { const body = decodeApiRequest('createSession', await readJson(request, maximumRequestBytes)); const session = await mutateShared(options, async (service) => ({ value: await service.createSession(body.email, body.password, new Date().toISOString()) })); return respondJson(response, 201, { token: session.token, expiresAt: session.session.expiresAt }) }
+  if (request.method === 'POST' && pathname === '/api/v1/tokens') { const body = decodeApiRequest('issueToken', await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const issued = await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); return { value: service.issueToken(body.id, accountId, [...new Set(body.scopes)].sort(), new Date().toISOString()) } }); return respondJson(response, 201, { token: issued.token, record: publicToken(issued.record) }) }
+  if (request.method === 'GET' && pathname === '/api/v1/tokens') { const service = requiredShared(options); return respondJson(response, 200, service.listTokens(service.authenticateToken(bearerToken(request), 'worlds:read'))) }
+  const tokenMatch = /^\/api\/v1\/tokens\/([a-zA-Z0-9_-]+)$/.exec(pathname)
+  if (request.method === 'DELETE' && tokenMatch) { const bearer = bearerToken(request); await mutateShared(options, (service) => { service.revokeToken(tokenMatch[1]!, service.authenticateToken(bearer, 'worlds:write')); return { value: undefined } }); return respondJson(response, 204, undefined) }
+  return false
+}
+
+async function handleWorldRoutes(request: IncomingMessage, response: ServerResponse, pathname: string, options: HostedHttpServerOptions, maximumRequestBytes: number): Promise<boolean> {
+  if (request.method === 'POST' && pathname === '/api/v1/worlds') { const body = decodeApiRequest('createWorld', await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); const world = await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); const created = service.createWorld(body.id, body.name, accountId, body.draft ?? {}, now); return { value: created, event: { key: `world:${body.id}:created`, topic: 'world', payload: { id: created.id, revision: created.currentRevision }, occurredAt: created.updatedAt } } }); return respondJson(response, 201, world) }
+  const worldMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)$/.exec(pathname)
+  if (request.method === 'GET' && worldMatch) { const service = requiredShared(options); return respondJson(response, 200, service.getWorld(worldMatch[1]!, service.authenticateToken(bearerToken(request), 'worlds:read'))) }
+  const membersMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/members$/.exec(pathname)
+  if (request.method === 'GET' && membersMatch) { const service = requiredShared(options); return respondJson(response, 200, service.listMembers(membersMatch[1]!, service.authenticateToken(bearerToken(request), 'worlds:read'))) }
+  if (request.method === 'PUT' && membersMatch) { const body = decodeApiRequest('setMember', await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); return respondJson(response, 200, await mutateShared(options, (service) => ({ value: service.addMember(membersMatch[1]!, service.authenticateToken(bearer, 'worlds:write'), body.accountId, body.role, now) }))) }
+  const leaseMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/lease$/.exec(pathname)
+  if (request.method === 'POST' && leaseMatch) { const body = decodeApiRequest('acquireLease', await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); return respondJson(response, 200, await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); return { value: body.leaseId ? service.renewLease(leaseMatch[1]!, accountId, body.leaseId, body.expectedRevision ?? failExpectedRevision(), now) : service.acquireLease(leaseMatch[1]!, accountId, now) } })) }
+  const revisionsMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/revisions$/.exec(pathname)
+  if (request.method === 'GET' && revisionsMatch) { const service = requiredShared(options); return respondJson(response, 200, service.listRevisions(revisionsMatch[1]!, service.authenticateToken(bearerToken(request), 'worlds:read'))) }
+  if (request.method === 'POST' && revisionsMatch) { const body = decodeApiRequest('saveRevision', await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); const saved = await mutateShared(options, (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); const revision = service.saveRevision(revisionsMatch[1]!, accountId, body.leaseId, body.expectedRevision, body.clientMutationId, body.payload, now); return { value: revision, event: { key: `revision:${revision.worldId}:${accountId}:${body.clientMutationId}`, topic: 'draft.revised', payload: { worldId: revision.worldId, revision: revision.revision }, occurredAt: revision.createdAt } } }); return respondJson(response, 201, saved) }
+  const auditsMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/audits$/.exec(pathname)
+  if (request.method === 'GET' && auditsMatch) { const service = requiredShared(options); return respondJson(response, 200, service.listAudits(auditsMatch[1]!, service.authenticateToken(bearerToken(request), 'worlds:read'))) }
+  const runsMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/runs$/.exec(pathname)
+  if (request.method === 'GET' && runsMatch) { const service = requiredShared(options); return respondJson(response, 200, service.listRuns(runsMatch[1]!, service.authenticateToken(bearerToken(request), 'worlds:read'))) }
+  if (request.method === 'POST' && runsMatch) { const body = decodeApiRequest('commitRun', await readJson(request, maximumRequestBytes)); const bearer = bearerToken(request); const now = new Date().toISOString(); const coordinator = requiredSharedRuns(options); const run = await mutateShared(options, async (service) => { const accountId = service.authenticateToken(bearer, 'worlds:write'); const committed = service.commitRun(runsMatch[1]!, accountId, body.revision, body.runId, now); const initialRun = await coordinator.prepare(committed.run.runId, committed.run.ownerAccountId, committed.draft, now); return { value: committed.run, initialRun, event: { key: `run:${body.runId}:committed`, topic: 'run.committed', payload: committed.run, occurredAt: committed.run.createdAt } } }); return respondJson(response, 201, run) }
+  const sharedRunMatch = /^\/api\/v1\/worlds\/([a-zA-Z0-9_-]+)\/runs\/([a-zA-Z0-9_-]+)\/(projection|commands)$/.exec(pathname)
+  if (!sharedRunMatch) return false
+  const bearer = bearerToken(request)
+  if (request.method === 'GET' && sharedRunMatch[3] === 'projection') { const service = requiredShared(options); const run = service.getRun(sharedRunMatch[1]!, sharedRunMatch[2]!, service.authenticateToken(bearer, 'worlds:read')); return respondJson(response, 200, await requiredSharedRuns(options).projection(run.runId, run.ownerAccountId, service.draftForRun(run))) }
+  if (request.method === 'POST' && sharedRunMatch[3] === 'commands') { const command = decodeApiRequest('runCommand', await readJson(request, maximumRequestBytes)); return respondJson(response, 200, await executeSharedRunCommand(options, sharedRunMatch[1]!, sharedRunMatch[2]!, bearer, command, new Date().toISOString())) }
+  return false
 }
 function requiredContentPacks(options: HostedHttpServerOptions): ContentPackCatalog { if (!options.contentPacks) throw new HostedHttpError(404, 'Content packs are not configured'); return options.contentPacks }
 function requiredShared(options: HostedHttpServerOptions): SharedWorldService { if (!options.sharedWorlds) throw new HostedHttpError(404, 'Shared worlds are not configured'); return options.sharedWorlds }
@@ -212,83 +209,18 @@ async function readJson(request: IncomingMessage, maximumRequestBytes: number): 
     if (bytes > maximumRequestBytes) throw new HostedHttpError(413, `Hosted request body exceeds ${maximumRequestBytes} bytes`)
     chunks.push(buffer)
   }
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown }
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) }
   catch { throw new HostedHttpError(400, 'Hosted request body must be valid JSON') }
 }
 
-function validateHostedCommand(value: unknown): HostedRunCommand {
-  if (!isRecord(value) || typeof value.type !== 'string' || typeof value.requestId !== 'string') throw new Error('Hosted command is invalid')
-  switch (value.type) {
-    case 'STEP':
-      if (value.count !== undefined && (!isSafeInteger(value.count) || value.count < 1)) throw new Error('Hosted step count is invalid')
-      return value.count === undefined ? { type: 'STEP', requestId: value.requestId } : { type: 'STEP', requestId: value.requestId, count: value.count }
-    case 'PAUSE': return { type: 'PAUSE', requestId: value.requestId }
-    case 'SET_SPEED':
-      if (!isSafeInteger(value.ticksPerBatch)) throw new Error('Hosted speed is invalid')
-      return { type: 'SET_SPEED', requestId: value.requestId, ticksPerBatch: value.ticksPerBatch }
-    case 'REQUEST_SNAPSHOT': return { type: 'REQUEST_SNAPSHOT', requestId: value.requestId }
-    case 'RESET': return { type: 'RESET', requestId: value.requestId }
-    case 'MATERIALIZE_COHORT':
-      if (typeof value.cohortId !== 'string' || !value.cohortId || !isSafeInteger(value.populationCount) || value.populationCount < 1) throw new Error('Hosted cohort materialization command is invalid')
-      return { type: 'MATERIALIZE_COHORT', requestId: value.requestId, cohortId: value.cohortId, populationCount: value.populationCount }
-    case 'DEMATERIALIZE_PEOPLE':
-      if (!Array.isArray(value.personIds) || value.personIds.some((id) => typeof id !== 'string' || !id)) throw new Error('Hosted people dematerialization command is invalid')
-      return { type: 'DEMATERIALIZE_PEOPLE', requestId: value.requestId, personIds: [...value.personIds] }
-    case 'SET_PROTECTED_PEOPLE':
-      if (!Array.isArray(value.personIds) || value.personIds.some((id) => typeof id !== 'string' || !id)) throw new Error('Hosted protected people command is invalid')
-      return { type: 'SET_PROTECTED_PEOPLE', requestId: value.requestId, personIds: [...value.personIds] }
-    case 'SET_VIEWPORT': return { type: 'SET_VIEWPORT', requestId: value.requestId, viewport: parseViewport(value.viewport) }
-    default: throw new Error(`Unsupported hosted command: ${value.type}`)
-  }
-}
-
-function validateJobRequest(value: unknown): HostedJobRequest {
-  if (!isRecord(value) || typeof value.jobId !== 'string' || !isSafeInteger(value.totalTicks)) throw new Error('Hosted job is invalid')
-  if (value.quantumTicks !== undefined && !isSafeInteger(value.quantumTicks)) throw new Error('Hosted job quantum is invalid')
-  if (value.checkpointIntervalTicks !== undefined && !isSafeInteger(value.checkpointIntervalTicks)) throw new Error('Hosted job checkpoint interval is invalid')
-  return {
-    jobId: value.jobId,
-    totalTicks: value.totalTicks,
-    ...(value.quantumTicks === undefined ? {} : { quantumTicks: value.quantumTicks }),
-    ...(value.checkpointIntervalTicks === undefined ? {} : { checkpointIntervalTicks: value.checkpointIntervalTicks }),
-  }
-}
-
-function parseViewport(value: unknown): MapProjectionRequest {
-  if (!isRecord(value) || !isSafeInteger(value.revision) || value.revision < 0 || !isRecord(value.bounds)
-    || !isSafeInteger(value.bounds.minQ) || !isSafeInteger(value.bounds.maxQ) || !isSafeInteger(value.bounds.minR) || !isSafeInteger(value.bounds.maxR)
-    || value.bounds.minQ > value.bounds.maxQ || value.bounds.minR > value.bounds.maxR
-    || typeof value.projectedHexRadius !== 'number' || !Number.isFinite(value.projectedHexRadius) || value.projectedHexRadius < 0
-    || !isProjectionOverlay(value.overlay)) throw new Error('Hosted viewport command is invalid')
-  const viewport: MapProjectionRequest = {
-    revision: value.revision,
-    bounds: { minQ: value.bounds.minQ, maxQ: value.bounds.maxQ, minR: value.bounds.minR, maxR: value.bounds.maxR },
-    projectedHexRadius: value.projectedHexRadius,
-    overlay: value.overlay,
-  }
-  if (typeof value.communityMeasureId === 'string') viewport.communityMeasureId = value.communityMeasureId as MapProjectionRequest['communityMeasureId']
-  if (typeof value.focusCellId === 'string') viewport.focusCellId = value.focusCellId
-  if (typeof value.hookedPersonId === 'string') viewport.hookedPersonId = value.hookedPersonId
-  return viewport
-}
-
-function isProjectionOverlay(value: unknown): value is MapProjectionRequest['overlay'] {
-  return value === 'terrain' || value === 'elevation' || value === 'habitability' || value === 'movement' || value === 'food' || value === 'population' || value === 'community'
-}
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
-function requiredRecord(value: unknown): Record<string, unknown> { if (!isRecord(value)) throw new Error('Hosted request is invalid'); return value }
-function requiredText(value: unknown): string { if (typeof value !== 'string' || !value.trim()) throw new Error('Hosted request is invalid'); return value }
-function requiredInteger(value: unknown): number { if (!isSafeInteger(value) || value < 0) throw new Error('Hosted request is invalid'); return value }
-function requiredWorldRole(value: unknown): 'editor' | 'viewer' { if (value !== 'editor' && value !== 'viewer') throw new Error('Hosted request is invalid'); return value }
-function requiredScopes(value: unknown): readonly string[] { if (!Array.isArray(value) || value.length === 0 || value.some((scope) => scope !== 'worlds:read' && scope !== 'worlds:write')) throw new Error('Hosted request is invalid'); return [...new Set(value)].sort() as readonly string[] }
 function publicToken({ tokenHash: _, ...token }: { id: string; accountId: string; tokenHash: string; scopes: readonly string[]; createdAt: string; expiresAt?: string }): Omit<typeof token, 'tokenHash'> { return token }
-function isSafeInteger(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) }
+function failExpectedRevision(): never { throw new Error('Hosted lease expected revision is invalid') }
 function sendJson(response: ServerResponse, status: number, payload: unknown): void {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   response.end(JSON.stringify(payload))
 }
+function respondJson(response: ServerResponse, status: number, payload: unknown): true { sendJson(response, status, payload); return true }
 class HostedHttpError extends Error { constructor(readonly status: number, message: string) { super(message) } }
-function openApiDocument(): object { return { openapi: '3.1.0', info: { title: 'World Simulation Engine API', version: 'v1' }, paths: { '/api/v1/accounts': { post: { summary: 'Create an account' } }, '/api/v1/sessions': { post: { summary: 'Create an expiring bearer session' } }, '/api/v1/tokens': { get: { summary: 'List scoped API tokens' }, post: { summary: 'Issue a scoped API token' } }, '/api/v1/tokens/{tokenId}': { delete: { summary: 'Revoke an API token' } }, '/api/v1/worlds': { post: { summary: 'Create a shared world with its immutable first draft revision' } }, '/api/v1/worlds/{worldId}': { get: { summary: 'Read an authorized shared world' } }, '/api/v1/worlds/{worldId}/members': { get: { summary: 'List world roles' }, put: { summary: 'Set an owner-authorized editor or viewer role' } }, '/api/v1/worlds/{worldId}/lease': { post: { summary: 'Acquire or renew a single-writer draft lease' } }, '/api/v1/worlds/{worldId}/revisions': { get: { summary: 'List immutable draft revisions' }, post: { summary: 'Save an idempotent lease-authorized draft revision' } }, '/api/v1/worlds/{worldId}/runs': { get: { summary: 'List authorized run history' }, post: { summary: 'Commit one immutable draft revision into a server-owned run' } }, '/api/v1/worlds/{worldId}/runs/{runId}/projection': { get: { summary: 'Read a role-authorized projection' } }, '/api/v1/worlds/{worldId}/runs/{runId}/commands': { post: { summary: 'Owner-authorized server run command' } }, '/api/v1/worlds/{worldId}/audits': { get: { summary: 'List noncanonical collaboration audit records' } }, '/api/v1/events': { get: { summary: 'Resume ordered server-sent operational events using Last-Event-ID' } } } } }
 function httpFailure(error: unknown): HostedHttpError {
   if (error instanceof HostedHttpError) return error
   const message = error instanceof Error ? error.message : ''

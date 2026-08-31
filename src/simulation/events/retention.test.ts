@@ -9,6 +9,7 @@ describe('typed event retention', () => {
     expect(entries.length).toBeGreaterThan(40)
     for (const [, definition] of entries) {
       expect(definition.version).toBe(1)
+      expect(definition.payloadSchema).toBeDefined()
       expect(['durable', 'bounded', 'sampled']).toContain(definition.retention)
       expect(definition.decode).toBeTypeOf('function')
       if (definition.retention !== 'durable') {
