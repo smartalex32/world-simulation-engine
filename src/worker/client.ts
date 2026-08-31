@@ -1,7 +1,7 @@
 import type { MapProjectionRequest } from '../projection'
 import type { DraftViewportRequest, Terrain, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
-import { requestId, type CommandAcknowledgement, type SimulationCommand, type SimulationResponse, type WorkbenchSnapshotEnvelope } from './protocol'
+import { requestId, type CommandAcknowledgement, type SimulationCommand, type SimulationResponse, type TelemetryWatermark, type WorkbenchCheckpointEnvelope, type WorkbenchSnapshotEnvelope } from './protocol'
 import type { ContentPack, ResolvedContentPack } from '../contentPacks'
 
 type Listener = (response: SimulationResponse) => void
@@ -11,6 +11,7 @@ export class SimulationWorkerClient {
   private readonly worker = new Worker(new URL('./simulation.worker.ts', import.meta.url), { type: 'module' })
   private readonly listeners = new Set<Listener>()
   private readonly pendingSnapshots = new Map<string, { resolve: (snapshot: WorkbenchSnapshotEnvelope) => void; reject: (error: Error) => void }>()
+  private readonly pendingCheckpoints = new Map<string, { resolve: (checkpoint: WorkbenchCheckpointEnvelope) => void; reject: (error: Error) => void }>()
   private readonly pendingCommands = new Map<string, { resolve: (ack: CommandAck) => void; reject: (error: Error) => void }>()
   private ready = false
 
@@ -28,6 +29,10 @@ export class SimulationWorkerClient {
           pending.resolve(response.snapshot)
         }
       }
+      if (response.type === 'CHECKPOINT') {
+        const pending = this.pendingCheckpoints.get(response.requestId)
+        if (pending) { this.pendingCheckpoints.delete(response.requestId); pending.resolve(response.checkpoint) }
+      }
       if (response.type === 'ACK') {
         const pending = this.pendingCommands.get(response.requestId)
         if (pending) { this.pendingCommands.delete(response.requestId); pending.resolve(response) }
@@ -40,6 +45,8 @@ export class SimulationWorkerClient {
         }
         const command = this.pendingCommands.get(response.requestId)
         if (command) { this.pendingCommands.delete(response.requestId); command.reject(new Error(response.message)) }
+        const checkpoint = this.pendingCheckpoints.get(response.requestId)
+        if (checkpoint) { this.pendingCheckpoints.delete(response.requestId); checkpoint.reject(new Error(response.message)) }
       }
       for (const listener of this.listeners) listener(response)
     })
@@ -103,6 +110,23 @@ export class SimulationWorkerClient {
     })
   }
 
+  checkpoint(committed: TelemetryWatermark): Promise<WorkbenchCheckpointEnvelope> {
+    const id = requestId()
+    return new Promise((resolve, reject) => {
+      const timeout = globalThis.setTimeout(() => {
+        const pending = this.pendingCheckpoints.get(id)
+        if (!pending) return
+        this.pendingCheckpoints.delete(id)
+        pending.reject(new Error('Simulation worker checkpoint request timed out'))
+      }, 15_000)
+      this.pendingCheckpoints.set(id, {
+        resolve: (checkpoint) => { globalThis.clearTimeout(timeout); resolve(checkpoint) },
+        reject: (error) => { globalThis.clearTimeout(timeout); reject(error) },
+      })
+      this.send({ type: 'REQUEST_CHECKPOINT', requestId: id, committed })
+    })
+  }
+
   /** Sends any runtime command with an explicit correlated completion. Legacy
    * convenience methods retain their fire-and-forget behavior for UI flows
    * that already consume richer FRAME/DRAFT responses. */
@@ -141,6 +165,8 @@ export class SimulationWorkerClient {
   private rejectPending(error: Error): void {
     for (const pending of this.pendingSnapshots.values()) pending.reject(error)
     this.pendingSnapshots.clear()
+    for (const pending of this.pendingCheckpoints.values()) pending.reject(error)
+    this.pendingCheckpoints.clear()
     for (const pending of this.pendingCommands.values()) pending.reject(error)
     this.pendingCommands.clear()
   }

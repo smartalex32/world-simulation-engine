@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { assertContentPackVersionImmutable, statisticStorageKey, validateImportedEvents, validateImportedStatistics } from './database'
+import { assertContentPackVersionImmutable, statisticStorageKey, validateImportedEvents, validateImportedStatistics, validateWorkbenchCheckpoint } from './database'
 import { createWorldDraftRecord } from '../simulation/domain/worldDraft'
 import type { StatisticSample } from '../simulation/domain/types'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../contentPacks'
+import { SimulationEngine } from '../simulation/engine/engine'
+import { completeRetention } from '../simulation/events/retention'
 
 describe('statistic storage identity', () => {
   it('keeps world and each community scope collision-free', () => {
@@ -39,12 +41,37 @@ describe('content-pack persistence contract', () => {
 
 describe('imported telemetry validation', () => {
   it('rejects evidence that belongs to another run before an import transaction starts', () => {
-    expect(() => validateImportedEvents('run-a', [{ id: 'event-a', runId: 'run-b', tick: 1, type: 'CLOCK_ADVANCED', version: 1, payload: {} }])).toThrow('invalid event')
+    expect(() => validateImportedEvents('run-a', [{ id: 'event-a', runId: 'run-b', tick: 1, sequence: 0, type: 'CLOCK_ADVANCED', version: 1, payload: { hours: 1, currentTick: 1 } }])).toThrow('invalid event')
     expect(() => validateImportedStatistics('run-a', [{ runId: 'run-b', tick: 1, metricVersion: 1, metricId: 'population.count', scope: 'world', value: 10 }])).toThrow('invalid statistic')
   })
 
   it('accepts structurally valid evidence bound to the imported run', () => {
-    expect(validateImportedEvents('run-a', [{ id: 'event-a', runId: 'run-a', tick: 1, type: 'CLOCK_ADVANCED', version: 1, payload: { hours: 1 } }])).toHaveLength(1)
+    expect(validateImportedEvents('run-a', [{ id: 'event-a', runId: 'run-a', tick: 1, sequence: 0, type: 'CLOCK_ADVANCED', version: 1, payload: { hours: 1, currentTick: 1 } }])).toHaveLength(1)
     expect(validateImportedStatistics('run-a', [{ runId: 'run-a', tick: 1, metricVersion: 1, metricId: 'population.count', scope: 'world', value: 10 }])).toHaveLength(1)
+  })
+
+  it('uses the shared event catalog to reject malformed typed payloads', () => {
+    expect(() => validateImportedEvents('run-a', [{ id: 'event-a', runId: 'run-a', tick: 1, sequence: 0, type: 'CLOCK_ADVANCED', version: 1, payload: { hours: 'one', currentTick: 1 } }])).toThrow('CLOCK_ADVANCED payload')
+    expect(() => validateImportedEvents('run-a', [{ id: 'event-a', runId: 'run-a', tick: 1, sequence: 0, type: 'UNKNOWN_EVENT', version: 1, payload: {} }])).toThrow('invalid event')
+  })
+})
+
+describe('transactional checkpoint validation', () => {
+  it('binds the snapshot to a complete retained-or-declared-dropped telemetry prefix', async () => {
+    const engine = SimulationEngine.create('checkpoint-envelope')
+    const event = engine.event('CLOCK_ADVANCED', { hours: 1, currentTick: 0 })
+    const snapshot = await engine.snapshot()
+    const checkpoint = {
+      version: 1 as const,
+      checkpointId: 'checkpoint-1',
+      snapshot,
+      committed: { eventSequence: event.sequence - 1, statisticTick: -1 },
+      through: { eventSequence: event.sequence, statisticTick: 0 },
+      events: [event],
+      statistics: [],
+      eventRetention: completeRetention([event]),
+    }
+    expect(validateWorkbenchCheckpoint(checkpoint)).toMatchObject({ checkpointId: 'checkpoint-1', through: { eventSequence: event.sequence } })
+    expect(() => validateWorkbenchCheckpoint({ ...checkpoint, events: [] })).toThrow('unexplained sequence gap')
   })
 })

@@ -23,6 +23,8 @@ import {
   WORLD_GENERATOR_VERSION,
   type WorldCreationDraft,
   type SimulationEvent,
+  type SimulationEventPayload,
+  type SimulationEventType,
   type SimulationState,
   type ActionName,
   type AuthoritativeChangeSet,
@@ -104,6 +106,7 @@ import { allocateInfrastructureMaintenance, createInfrastructureAssets, maintain
 import { infrastructureAccessAcrossCells, infrastructureAccessAtCell } from '../infrastructure/access'
 import { compareStableText } from '../../shared/stableOrder'
 import { runSimulationTickPipeline, TICK_PHASE_MANIFEST, type SimulationPhaseOperations, type SimulationTickContext } from './phasePipeline'
+import { EventSink, type EventRetentionReport } from '../events/retention'
 export { TICK_PHASE_MANIFEST } from './phasePipeline'
 
 interface RuntimeCommunityCounters {
@@ -135,11 +138,13 @@ interface RuntimeCommunityCounters {
 export interface StepResult {
   projection: WorldProjection
   events: SimulationEvent[]
+  eventRetention: EventRetentionReport
   statistics: StatisticSample[]
 }
 
 export interface AdvanceResult {
   events: SimulationEvent[]
+  eventRetention: EventRetentionReport
   statistics: StatisticSample[]
   /** Noncanonical cache hints; authoritative execution never reads these. */
   changeSet: AuthoritativeChangeSet
@@ -315,19 +320,12 @@ export class SimulationEngine {
     if (options.clockEventHours !== undefined && options.clockEventHours !== false && (!Number.isSafeInteger(options.clockEventHours) || options.clockEventHours < 1)) {
       throw new RangeError('Clock event hours must be a positive safe integer')
     }
-    const events: SimulationEvent[] = []
+    const eventSink = new EventSink()
     const livingPersonIndexBuildsBefore = this.livingPersonIndexBuilds
     const phaseCounts: Record<string, number> = {}
     const changeCategories = new Set<AuthoritativeChangeSet['categories'][number]>()
     const changedCellIds = new Set<string>()
-    let eventWriteIndex = 0
-    const pushEvent = (event: SimulationEvent) => {
-      if (events.length < 500) events.push(event)
-      else {
-        events[eventWriteIndex] = event
-        eventWriteIndex = (eventWriteIndex + 1) % 500
-      }
-    }
+    const pushEvent = (event: SimulationEvent) => eventSink.emit(event)
     const statistics: StatisticSample[] = []
     for (let index = 0; index < count; index += 1) {
       this.runTickPipeline({ pushEvent, statistics, changeCategories, changedCellIds, phaseCounts, invalidate: (categories, cellIds = []) => { for (const category of categories) changeCategories.add(category); for (const cellId of cellIds) changedCellIds.add(cellId) } })
@@ -341,12 +339,9 @@ export class SimulationEngine {
       const clockHours = options.clockEventHours ?? count
       pushEvent(this.event('CLOCK_ADVANCED', { hours: clockHours, currentTick: this.state.tick }))
     }
-    if (events.length === 500 && eventWriteIndex > 0) {
-      const ordered = [...events.slice(eventWriteIndex), ...events.slice(0, eventWriteIndex)]
-      events.splice(0, events.length, ...ordered)
-    }
+    const eventBatch = eventSink.batch()
     this.assertInvariants()
-    return { events, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds), diagnostics: { livingPersonIndexBuilds: this.livingPersonIndexBuilds - livingPersonIndexBuildsBefore, phaseCounts } }
+    return { events: eventBatch.events, eventRetention: eventBatch.retention, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds), diagnostics: { livingPersonIndexBuilds: this.livingPersonIndexBuilds - livingPersonIndexBuildsBefore, phaseCounts } }
   }
 
   private runTickPipeline(runtime: EngineTickRuntime): void {
@@ -670,20 +665,21 @@ export class SimulationEngine {
     return this.migrationProvenance === undefined ? snapshot : { ...snapshot, migrationProvenance: structuredClone(this.migrationProvenance) }
   }
 
-  event(type: SimulationEvent['type'], payload: SimulationEvent['payload'] = {}): SimulationEvent {
+  event<T extends SimulationEventType>(type: T, payload: SimulationEventPayload<T>): SimulationEvent<T> {
     const sequence = this.state.nextEventSequence
     this.state.nextEventSequence += 1
     return {
       id: `${this.state.runId}:${this.state.tick}:${sequence}`,
       runId: this.state.runId,
       tick: this.state.tick,
+      sequence,
       type,
       version: 1,
       payload,
     }
   }
 
-  private fidelityEvent(type: 'COHORT_MATERIALIZED' | 'PEOPLE_DEMATERIALIZED', payload: SimulationEvent['payload'], cellIds: readonly string[]): FidelityCommandResult {
+  private fidelityEvent<T extends 'COHORT_MATERIALIZED' | 'PEOPLE_DEMATERIALIZED'>(type: T, payload: SimulationEventPayload<T>, cellIds: readonly string[]): FidelityCommandResult {
     const event = this.event(type, payload)
     return { event, changeSet: changeSetFromEvents([event], [], cellIds) }
   }
@@ -912,7 +908,7 @@ export class SimulationEngine {
     counters: DailyCommunityCounters,
   ): SimulationEvent {
     const traceById = new Map(traces.map((trace) => [trace.variableId, trace]))
-    const payload: SimulationEvent['payload'] = {
+    const payload: SimulationEventPayload<'COMMUNITY_MEASURES_UPDATED'> = {
       communityId: current.catchment.id,
       communityName: current.catchment.displayName,
       windowStartTick: counters.windowStartTick,

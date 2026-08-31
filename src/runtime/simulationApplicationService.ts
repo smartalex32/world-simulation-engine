@@ -2,10 +2,12 @@ import { projectionInvalidationFromChangeSet, type ProjectionInvalidation } from
 import type { AuthoritativeChangeSet, SimulationEvent, StatisticSample } from '../simulation/domain/types'
 import { SimulationEngine } from '../simulation/engine/engine'
 import type { EngineCommand } from './contracts'
+import { completeRetention, type EventRetentionReport } from '../simulation/events/retention'
 
 export interface EngineCommandExecution {
   events: SimulationEvent[]
   statistics: StatisticSample[]
+  eventRetention: EventRetentionReport
   changeSet: AuthoritativeChangeSet
   projectionInvalidation: ProjectionInvalidation
 }
@@ -23,7 +25,7 @@ export class SimulationApplicationService {
       const count = command.count ?? 1
       if (!Number.isSafeInteger(count) || count < 1) throw new Error('Simulation step count must be a positive safe integer')
       const result = engine.advance(count)
-      return this.result(result.events, result.statistics, result.changeSet)
+      return this.result(result.events, result.statistics, result.changeSet, result.eventRetention)
     }
     if (command.type === 'MATERIALIZE_COHORT') {
       const result = engine.materializeCohort(command.cohortId, command.populationCount)
@@ -40,8 +42,8 @@ export class SimulationApplicationService {
     return assertNever(command)
   }
 
-  private result(events: SimulationEvent[], statistics: StatisticSample[], changeSet: AuthoritativeChangeSet): EngineCommandExecution {
-    return { events, statistics, changeSet, projectionInvalidation: projectionInvalidationFromChangeSet(changeSet) }
+  private result(events: SimulationEvent[], statistics: StatisticSample[], changeSet: AuthoritativeChangeSet, eventRetention: EventRetentionReport = completeRetention(events)): EngineCommandExecution {
+    return { events, statistics, eventRetention, changeSet, projectionInvalidation: projectionInvalidationFromChangeSet(changeSet) }
   }
 }
 

@@ -7,8 +7,9 @@ import { NO_PROJECTION_INVALIDATION, WorkbenchProjectionBuilder, mergeProjection
 import type { SimulationEvent, StatisticSample, WorldCreationDraft, WorldDraftRecord } from '../simulation/domain/types'
 import { defaultWorldCreationRequest } from '../simulation/domain/worldCreation'
 import { createWorldDraftRecord, paintWorldDraftElevation, paintWorldDraftResources, paintWorldDraftTerrain, previewWorldDraft, projectWorldDraftViewport, redoWorldDraftRecord, resetWorldDraftRecord, undoWorldDraftRecord, updateWorldDraftRecord, updateWorldDraftZoneCells, validateWorldDraftRecord } from '../simulation/domain/worldDraft'
-import type { SimulationCommand, SimulationResponse, WorkbenchSnapshotEnvelope } from './protocol'
-import { MAX_TICKS_PER_WORKER_TURN, SimulationBatchScheduler, TelemetryBuffer, validateWorkerContinuation, type WorkerContinuationState } from './frameScheduler'
+import type { SimulationCommand, SimulationResponse, WorkbenchCheckpointEnvelope, WorkbenchSnapshotEnvelope } from './protocol'
+import { CheckpointTelemetryBuffer, MAX_TICKS_PER_WORKER_TURN, SimulationBatchScheduler, TelemetryBuffer, validateWorkerContinuation, type WorkerContinuationState } from './frameScheduler'
+import { completeRetention, type EventRetentionReport } from '../simulation/events/retention'
 
 const worker = self as DedicatedWorkerGlobalScope
 let engine: SimulationEngine | undefined
@@ -27,6 +28,7 @@ let lastFrameAt = 0
 let processingSinceFrame = 0
 const batchScheduler = new SimulationBatchScheduler()
 const telemetry = new TelemetryBuffer()
+const checkpointTelemetry = new CheckpointTelemetryBuffer()
 const application = new SimulationApplicationService()
 const FRAME_INTERVAL_MS = 100
 let commandQueue: Promise<void> = Promise.resolve()
@@ -44,8 +46,34 @@ async function create(creation: WorldCreationDraft, requestId?: string, contentP
   installProjectionBuilder()
   const snapshot = await engine.snapshot()
   clearPendingTelemetry()
-  sendFrame(requestId, snapshot.digest, [engine.event('RUN_CREATED', { seed: snapshot.state.config.seed, width: snapshot.state.config.worldWidth, height: snapshot.state.config.worldHeight, population: snapshot.state.people.length, worldName: snapshot.state.world.name })], [], 0)
+  const created = engine.event('RUN_CREATED', { seed: snapshot.state.config.seed, width: snapshot.state.config.worldWidth, height: snapshot.state.config.worldHeight, population: snapshot.state.people.length, worldName: snapshot.state.world.name })
+  checkpointTelemetry.append([created], [])
+  sendFrame(requestId, snapshot.digest, [created], [], 0)
   respond({ type: 'STATUS', requestId, status: 'paused', ticksPerBatch })
+}
+
+async function sendCheckpoint(requestId: string, committed: WorkbenchCheckpointEnvelope['committed']): Promise<void> {
+  if (!engine) throw new Error('No simulation run is loaded')
+  if (!validWatermark(committed.eventSequence) || !validWatermark(committed.statisticTick)) throw new Error('Committed telemetry watermark is invalid')
+  snapshotting = true
+  try {
+    const snapshot: WorkbenchSnapshotEnvelope = { ...await engine.snapshot(), workerContinuation: workerContinuation() }
+    const delta = checkpointTelemetry.since(committed.eventSequence, committed.statisticTick)
+    const checkpoint: WorkbenchCheckpointEnvelope = {
+      version: 1,
+      checkpointId: requestId,
+      snapshot,
+      committed,
+      through: { eventSequence: snapshot.state.nextEventSequence - 1, statisticTick: snapshot.state.tick },
+      events: delta.events,
+      statistics: delta.statistics,
+      eventRetention: delta.eventRetention,
+    }
+    respond({ type: 'CHECKPOINT', requestId, checkpoint })
+  } finally {
+    snapshotting = false
+    scheduleLoop()
+  }
 }
 
 async function sendSnapshot(requestId: string): Promise<void> {
@@ -78,7 +106,8 @@ function runLoop(): void {
     const result = engine.advance(quantum.ticks, { clockEventHours: quantum.clockEventHours })
     pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, projectionInvalidationFromChangeSet(result.changeSet))
     processingSinceFrame += performance.now() - started
-    telemetry.append(result.events, result.statistics)
+    telemetry.append(result.events, result.statistics, result.eventRetention)
+    checkpointTelemetry.append(result.events, result.statistics, result.eventRetention)
     const now = performance.now()
     if (now - lastFrameAt >= FRAME_INTERVAL_MS || telemetry.shouldFlush()) {
       lastFrameAt = now
@@ -118,14 +147,14 @@ function defaultViewportRequest(width: number, height: number): MapProjectionReq
   return { revision: 0, bounds: { minQ: 0, maxQ: width - 1, minR: 0, maxR: height - 1 }, projectedHexRadius: 0, overlay: 'terrain' }
 }
 
-function sendFrame(requestId?: string, digest?: string, events?: SimulationEvent[], statistics?: StatisticSample[], processingMs = processingSinceFrame): void {
+function sendFrame(requestId?: string, digest?: string, events?: SimulationEvent[], statistics?: StatisticSample[], processingMs = processingSinceFrame, eventRetention?: EventRetentionReport): void {
   if (!engine || !projectionBuilder || !viewportRequest) throw new Error('No simulation projection is available')
   const drainsTelemetry = events === undefined || statistics === undefined
-  const drained = drainsTelemetry ? telemetry.drain() : { events, statistics }
+  const drained = drainsTelemetry ? telemetry.drain() : { events, statistics, eventRetention: eventRetention ?? completeRetention(events) }
   const invalidation = pendingProjectionInvalidation
   pendingProjectionInvalidation = NO_PROJECTION_INVALIDATION
   const projection = projectionBuilder.build(engine.project(), viewportRequest, digest, projectionEpoch, invalidation)
-  respond({ type: 'FRAME', requestId, projection, events: drained.events, statistics: drained.statistics, processingMs, projectionInvalidation: invalidation })
+  respond({ type: 'FRAME', requestId, projection, events: drained.events, statistics: drained.statistics, eventRetention: drained.eventRetention, processingMs, projectionInvalidation: invalidation })
   if (drainsTelemetry) processingSinceFrame = 0
 }
 
@@ -135,12 +164,13 @@ function flushFrame(requestId?: string, digest?: string): void {
 
 function clearPendingTelemetry(): void {
   telemetry.clear()
+  checkpointTelemetry.clear()
   processingSinceFrame = 0
 }
 
 function finalizePartialBatch(): void {
   const hours = batchScheduler.finalizePartial()
-  if (engine && hours) telemetry.append([engine.completeAdvanceBatch(hours)], [])
+  if (engine && hours) { const event = engine.completeAdvanceBatch(hours); telemetry.append([event], []); checkpointTelemetry.append([event], []) }
 }
 
 function reportError(error: unknown, requestId?: string): void {
@@ -274,7 +304,9 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           installProjectionBuilder()
           restoreWorkerContinuation(command.snapshot.workerContinuation)
           clearPendingTelemetry()
-          sendFrame(command.requestId, command.snapshot.digest, [engine.event('RUN_LOADED')], [], 0)
+          const loaded = engine.event('RUN_LOADED', {})
+          checkpointTelemetry.append([loaded], [])
+          sendFrame(command.requestId, command.snapshot.digest, [loaded], [], 0)
           respond({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch })
           break
         }
@@ -287,7 +319,8 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           const result = application.execute(command, { engine })
           pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
           const snapshot = await engine.snapshot()
-          telemetry.append(result.events, result.statistics)
+          telemetry.append(result.events, result.statistics, result.eventRetention)
+          checkpointTelemetry.append(result.events, result.statistics, result.eventRetention)
           processingSinceFrame += performance.now() - started
           flushFrame(command.requestId, snapshot.digest)
           respond({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch })
@@ -299,7 +332,8 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           const result = application.execute(command, { engine })
           pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
           const snapshot = await engine.snapshot()
-          telemetry.append(result.events, result.statistics)
+          telemetry.append(result.events, result.statistics, result.eventRetention)
+          checkpointTelemetry.append(result.events, result.statistics, result.eventRetention)
           flushFrame(command.requestId, snapshot.digest)
           respond({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch })
           break
@@ -310,7 +344,8 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           const result = application.execute(command, { engine })
           pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
           const snapshot = await engine.snapshot()
-          telemetry.append(result.events, result.statistics)
+          telemetry.append(result.events, result.statistics, result.eventRetention)
+          checkpointTelemetry.append(result.events, result.statistics, result.eventRetention)
           flushFrame(command.requestId, snapshot.digest)
           respond({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch })
           break
@@ -336,7 +371,9 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           batchScheduler.reset()
           if (engine) {
             const snapshot = await engine.snapshot()
-            telemetry.append([engine.event('RUN_PAUSED')], [])
+            const event = engine.event('RUN_PAUSED', {})
+            telemetry.append([event], [])
+            checkpointTelemetry.append([event], [])
             flushFrame(command.requestId, snapshot.digest)
           }
           respond({ type: 'STATUS', requestId: command.requestId, status: 'paused', ticksPerBatch })
@@ -354,6 +391,9 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           break
         case 'REQUEST_SNAPSHOT':
           await sendSnapshot(command.requestId)
+          break
+        case 'REQUEST_CHECKPOINT':
+          await sendCheckpoint(command.requestId, command.committed)
           break
         case 'RESET':
           playing = false
@@ -378,6 +418,8 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
     }
   })
 })
+
+function validWatermark(value: number): boolean { return Number.isSafeInteger(value) && value >= -1 }
 
 respond({ type: 'READY' })
 

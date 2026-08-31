@@ -16,7 +16,7 @@ import { HistoryPanel } from './ui/HistoryPanel'
 import type { DraftZoneViewportRequest } from './ui/DraftZoneMap'
 import type { ContributionView, VariableDefinitionView } from './ui/personVariables'
 import { SimulationWorkerClient } from './worker/client'
-import type { SimulationResponse } from './runtime/contracts'
+import { EMPTY_TELEMETRY_WATERMARK, type SimulationResponse, type TelemetryWatermark } from './runtime/contracts'
 import { useSimulationSession } from './ui/controllers/useSimulationSession'
 import { useDraftController } from './ui/controllers/useDraftController'
 import { usePersistenceController } from './ui/controllers/usePersistenceController'
@@ -92,6 +92,7 @@ export default function App() {
   const pausedAutosaveTimer = useRef<number | undefined>(undefined)
   const lastAutosavedTick = useRef(-1)
   const lastCheckpointTick = useRef(-1)
+  const committedTelemetry = useRef<TelemetryWatermark>({ ...EMPTY_TELEMETRY_WATERMARK })
   const statusRef = useRef<typeof status>('starting')
   const importRef = useRef<HTMLInputElement>(null)
   const requestViewport = session.requestViewport
@@ -99,10 +100,6 @@ export default function App() {
   function setDraftOperationBusy(value: boolean) {
     draftBusyRef.current = value
     setDraftBusy(value)
-  }
-
-  function requestSnapshot() {
-    return persistenceController.requestSnapshot(() => client.snapshot())
   }
 
   function schedulePausedAutosave() {
@@ -151,7 +148,12 @@ export default function App() {
     })
     async function handleResponse(response: SimulationResponse) {
       if (response.type === 'FRAME') {
-        try { await database.appendTelemetry(response.events, response.statistics) } catch (reason) { setError(messageOf(reason)) }
+        // FRAME telemetry is presentation-only. Durable evidence is committed
+        // atomically with a worker checkpoint, never in a racing transaction.
+        if (response.events.some((event) => event.type === 'RUN_CREATED')) {
+          committedTelemetry.current = { ...EMPTY_TELEMETRY_WATERMARK }
+          try { await persistenceController.requestSnapshot(() => database.resetRunTelemetry(response.projection.runId)) } catch (reason) { setError(messageOf(reason)) }
+        }
       } else if (response.type === 'STATUS') {
         if (response.status === 'paused') schedulePausedAutosave()
       } else if (response.type === 'ERROR') {
@@ -265,17 +267,21 @@ export default function App() {
     const current = projectionRef.current
     if (!current || namedSavePendingRef.current || current.tick === lastAutosavedTick.current) return
     try {
-      const snapshot = await requestSnapshot()
-      // A user may start a named save while this queued worker snapshot is
-      // resolving. Do not make a lower-priority autosave write contend with
-      // that explicit save in IndexedDB; the named snapshot is the durable
-      // record the user asked for.
-      if (namedSavePendingRef.current) return
-      await database.saveSnapshot(snapshot, 'autosave')
-      if (snapshot.state.tick > 0 && snapshot.state.tick % 168 === 0 && snapshot.state.tick !== lastCheckpointTick.current) {
-        await database.saveSnapshot(snapshot, 'checkpoint')
-        lastCheckpointTick.current = snapshot.state.tick
-      }
+      const snapshot = await persistenceController.requestSnapshot(async () => {
+        // A user may start a named save while this autosave is queued. The
+        // complete worker-checkpoint/IndexedDB transaction remains one queued
+        // operation, so no later checkpoint can overtake its durable watermark.
+        if (namedSavePendingRef.current) return undefined
+        const checkpoint = await client.checkpoint(committedTelemetry.current)
+        await database.saveCheckpoint(checkpoint, 'autosave')
+        committedTelemetry.current = checkpoint.through
+        if (checkpoint.snapshot.state.tick > 0 && checkpoint.snapshot.state.tick % 168 === 0 && checkpoint.snapshot.state.tick !== lastCheckpointTick.current) {
+          await database.saveCheckpoint(checkpoint, 'checkpoint')
+          lastCheckpointTick.current = checkpoint.snapshot.state.tick
+        }
+        return checkpoint.snapshot
+      })
+      if (!snapshot) return
       lastAutosavedTick.current = snapshot.state.tick
       await refreshSnapshots(snapshot.state.runId)
     } catch (reason) {
@@ -311,8 +317,12 @@ export default function App() {
     setNamedSavePending(true)
     setLastNamedSave(undefined)
     try {
-      const snapshot = await requestSnapshot()
-      const saved = await database.saveSnapshot(snapshot, 'named', saveName)
+      const { saved, snapshot } = await persistenceController.requestSnapshot(async () => {
+        const checkpoint = await client.checkpoint(committedTelemetry.current)
+        const saved = await database.saveCheckpoint(checkpoint, 'named', saveName)
+        committedTelemetry.current = checkpoint.through
+        return { saved, snapshot: checkpoint.snapshot }
+      })
       setSaveName('')
       await refreshSnapshots(snapshot.state.runId)
       setLastNamedSave(saved.name)
@@ -325,13 +335,17 @@ export default function App() {
 
   async function exportRun() {
     try {
-      const snapshot = await requestSnapshot()
-      const bundle = await database.exportBundle(snapshot)
-      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
+      const snapshot = await persistenceController.requestSnapshot(async () => {
+        const checkpoint = await client.checkpoint(committedTelemetry.current)
+        await database.saveCheckpoint(checkpoint, 'autosave')
+        committedTelemetry.current = checkpoint.through
+        return checkpoint.snapshot
+      })
+      const blob = await new Response(await database.exportBundleNdjson(snapshot), { headers: { 'content-type': 'application/x-ndjson' } }).blob()
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `${snapshot.state.runId}-hour-${snapshot.state.tick}.world.json`
+      link.download = `${snapshot.state.runId}-hour-${snapshot.state.tick}.world.ndjson`
       link.click()
       URL.revokeObjectURL(url)
     } catch (reason) { setError(messageOf(reason)) }
@@ -340,8 +354,8 @@ export default function App() {
   async function importRun(file?: File) {
     if (!file) return
     try {
-      const value: unknown = JSON.parse(await file.text())
-      const saved = await database.importBundle(value)
+      const saved = file.name.endsWith('.ndjson') ? await database.importBundleNdjson(file.stream()) : await database.importBundle(JSON.parse(await file.text()))
+      committedTelemetry.current = saved.telemetry?.through ?? { ...EMPTY_TELEMETRY_WATERMARK }
       await client.load(saved.snapshot, await database.resolveSnapshotContentPack(saved.snapshot))
       setSeed(saved.snapshot.state.config.seed)
       session.setSeed(saved.snapshot.state.config.seed)
@@ -566,7 +580,7 @@ export default function App() {
         <div className="control-spacer" />
         <button className="secondary" onClick={() => importRef.current?.click()}>Import</button>
         <button className="secondary" onClick={() => void exportRun()}>Export</button>
-        <input ref={importRef} hidden type="file" accept="application/json,.json" onChange={(event) => void importRun(event.target.files?.[0])} />
+        <input ref={importRef} hidden type="file" accept="application/json,application/x-ndjson,.json,.ndjson" onChange={(event) => void importRun(event.target.files?.[0])} />
       </section>
 
       {(error ?? session.error) && <div className="error-banner"><strong>Workbench error</strong><span>{error ?? session.error}</span><button onClick={() => { setError(undefined); session.dismissError() }}>Dismiss</button></div>}
@@ -677,7 +691,7 @@ export default function App() {
           <div className="snapshot-list">
             {snapshots.slice(0, 5).map((saved) => (
               <div key={saved.key} className="snapshot-row">
-                <button disabled={status === 'starting'} onClick={() => { void database.resolveSnapshotContentPack(saved.snapshot).then((pack) => { client.load(saved.snapshot, pack); setSeed(saved.snapshot.state.config.seed) }).catch((reason) => setError(`Snapshot load failed: ${messageOf(reason)}`)) }}><strong>{saved.name}</strong><span>Hour {saved.snapshot.state.tick}</span></button>
+                <button disabled={status === 'starting'} onClick={() => { void database.resolveSnapshotContentPack(saved.snapshot).then((pack) => { committedTelemetry.current = saved.telemetry?.through ?? { ...EMPTY_TELEMETRY_WATERMARK }; client.load(saved.snapshot, pack); setSeed(saved.snapshot.state.config.seed) }).catch((reason) => setError(`Snapshot load failed: ${messageOf(reason)}`)) }}><strong>{saved.name}</strong><span>Hour {saved.snapshot.state.tick}</span></button>
                 {saved.kind === 'named' && <button className="delete" title="Delete snapshot" onClick={() => void database.deleteSnapshot(saved.key).then(() => refreshSnapshots())}>×</button>}
               </div>
             ))}
@@ -686,7 +700,7 @@ export default function App() {
       </section>
 
       {activeMode === 'history'
-        ? <HistoryPanel events={history?.events ?? []} statistics={history?.statistics ?? []} checkpoints={history?.checkpoints ?? []} selectedPersonId={selectedPersonId} onInspectPerson={inspectPerson} onRefresh={() => void refreshHistory()} loading={historyLoading} />
+        ? <HistoryPanel events={history?.events ?? []} statistics={history?.statistics ?? []} checkpoints={history?.checkpoints ?? []} telemetry={history?.telemetry} selectedPersonId={selectedPersonId} onInspectPerson={inspectPerson} onRefresh={() => void refreshHistory()} loading={historyLoading} />
         : <section className="event-panel panel">
         <PanelTitle title="Simulation events" subtitle="Meaningful state transitions; calculations are intentionally omitted" />
         <div className="event-table" role="log">

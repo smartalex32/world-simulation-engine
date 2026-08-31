@@ -8,6 +8,7 @@ import type { SimulationResponse, WorkbenchSnapshotEnvelope } from '../runtime/c
 import { SimulationApplicationService } from '../runtime/simulationApplicationService'
 import { HOSTED_PROTOCOL_VERSION, validateHostedRunRecord, type HostedCommandResult, type HostedRunBootstrap, type HostedRunCommand, type HostedRunMutationStore, type HostedRunRecord, type HostedRunStore, type HostedRunView, type HostedSimulationJob, type HostedTelemetryStore } from './types'
 import type { SharedWorldCommitRequest, SharedWorldCommitResult } from './sharedWorlds'
+import { completeRetention } from '../simulation/events/retention'
 
 export interface HostedRunObservation { tick: number; digest: string }
 export interface HostedTransactionalCommandResult { result: HostedCommandResult; outcome?: 'committed' | 'already-committed'; sharedWorld?: SharedWorldCommitResult }
@@ -45,7 +46,7 @@ export class HostedRunService {
   }
   private result(responses: SimulationResponse[], command: HostedRunCommand): HostedCommandResult { return { protocolVersion: HOSTED_PROTOCOL_VERSION, runId: this.bootstrap.runId, observedTick: this.engine.project().tick, responses: [...responses, { type: 'ACK', requestId: command.requestId, command: command.type }] } }
   private replaceEngine(engine: SimulationEngine, resetViewport = false, invalidation: ProjectionInvalidation = NO_PROJECTION_INVALIDATION): void { this.engine = engine; this.pendingProjectionInvalidation = invalidation; const source = engine.project(); if (resetViewport) { this.projectionBuilder = new WorkbenchProjectionBuilder(source); this.viewport = defaultViewport(source.world.grid.width, source.world.grid.height) } }
-  private frame(requestId?: string, events: SimulationEvent[] = [], statistics: StatisticSample[] = [], projectionInvalidation: ProjectionInvalidation = this.pendingProjectionInvalidation): Extract<SimulationResponse, { type: 'FRAME' }> { this.pendingProjectionInvalidation = NO_PROJECTION_INVALIDATION; return { type: 'FRAME', requestId, projection: this.projectionBuilder.build(this.engine.project(), this.viewport, undefined, 0, projectionInvalidation), events, statistics, processingMs: 0, projectionInvalidation } }
+  private frame(requestId?: string, events: SimulationEvent[] = [], statistics: StatisticSample[] = [], projectionInvalidation: ProjectionInvalidation = this.pendingProjectionInvalidation): Extract<SimulationResponse, { type: 'FRAME' }> { this.pendingProjectionInvalidation = NO_PROJECTION_INVALIDATION; return { type: 'FRAME', requestId, projection: this.projectionBuilder.build(this.engine.project(), this.viewport, undefined, 0, projectionInvalidation), events, statistics, eventRetention: completeRetention(events), processingMs: 0, projectionInvalidation } }
   private async snapshot(engine: SimulationEngine): Promise<WorkbenchSnapshotEnvelope> { return { ...await engine.snapshot(), workerContinuation: { version: 1, ticksPerBatch: 1, batch: { remaining: 0, advanced: 0 } } } }
   private record(snapshot: WorkbenchSnapshotEnvelope): HostedRunRecord { return { protocolVersion: HOSTED_PROTOCOL_VERSION, runId: this.bootstrap.runId, ownerId: this.bootstrap.ownerId, savedAt: new Date().toISOString(), snapshot } }
   private async persistInitial(): Promise<void> { const snapshot = await this.snapshot(this.engine); await this.persist(this.record(snapshot), [], []) }
