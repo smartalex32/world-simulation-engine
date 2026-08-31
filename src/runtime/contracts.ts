@@ -2,6 +2,7 @@ import type { MapProjectionRequest, ProjectionInvalidation, WorkbenchProjection 
 import type { DraftViewportProjection, DraftViewportRequest, SimulationEvent, SnapshotEnvelope, StatisticSample, Terrain, WorldCreationDraft, WorldDraftPreview, WorldDraftRecord } from '../simulation/domain/types'
 import type { ContentPack, ResolvedContentPack } from '../contentPacks'
 import type { EventRetentionReport } from '../simulation/events/retention'
+import type { HostedRunCommandContract } from './hostedCommandContract'
 
 /** Platform-neutral continuation metadata. It is deliberately excluded from
  * canonical engine state and may be ignored by hosted adapters. */
@@ -59,7 +60,7 @@ export type SimulationCommand =
   | { type: 'DISPOSE'; requestId: string }
 
 export type EngineCommand = Extract<SimulationCommand, { type: 'STEP' | 'MATERIALIZE_COHORT' | 'DEMATERIALIZE_PEOPLE' | 'SET_PROTECTED_PEOPLE' }>
-export type HostedRunCommand = Extract<SimulationCommand, { type: 'STEP' | 'MATERIALIZE_COHORT' | 'DEMATERIALIZE_PEOPLE' | 'SET_PROTECTED_PEOPLE' | 'PAUSE' | 'SET_SPEED' | 'SET_VIEWPORT' | 'REQUEST_SNAPSHOT' | 'RESET' }>
+export type HostedRunCommand = HostedRunCommandContract
 export type CommandAcknowledgement<C extends SimulationCommand = SimulationCommand> = { type: 'ACK'; requestId: C['requestId']; command: C['type'] }
 
 export type SimulationResponse =

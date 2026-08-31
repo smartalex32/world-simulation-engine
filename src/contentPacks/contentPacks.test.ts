@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ContentPackClient, DEFAULT_PREINDUSTRIAL_PACK, MemoryContentPackCatalog, createContentPackRegistry, createContentPackResolver, createContentPackRuntime, createPackVariableValues, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack, validatePackVariableValues } from '.'
+import { CONTENT_PACK_CODEC, ContentPackClient, DEFAULT_PREINDUSTRIAL_PACK, MemoryContentPackCatalog, createContentPackRegistry, createContentPackResolver, createContentPackRuntime, createPackVariableValues, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack, validatePackVariableValues } from '.'
 import { SimulationEngine } from '../simulation/engine/engine'
 
 describe('content packs', () => {
@@ -7,6 +7,7 @@ describe('content packs', () => {
     const restored = importContentPack(exportContentPack(DEFAULT_PREINDUSTRIAL_PACK))
     expect(restored).toEqual(DEFAULT_PREINDUSTRIAL_PACK)
     expect(validateContentPack(restored).canonicalJson).toBe(exportContentPack(DEFAULT_PREINDUSTRIAL_PACK))
+    expect(CONTENT_PACK_CODEC.schema).toMatchObject({ $id: 'world-simulation/content-pack' })
   })
   it('migrates the prior manifest shape before canonical validation', () => {
     const legacy = structuredClone(DEFAULT_PREINDUSTRIAL_PACK) as unknown as { manifest: Record<string, unknown> }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { SimulationEngine } from '../engine/engine'
 import { ENGINE_VERSION, KNOWLEDGE_MODEL_VERSION, SNAPSHOT_SCHEMA_VERSION } from '../domain/types'
 import { defaultWorldCreationRequest } from '../domain/worldCreation'
-import { createSnapshot, canonicalStringify, stateDigest, validateSnapshot } from './snapshot'
+import { SNAPSHOT_CODEC, createSnapshot, canonicalStringify, stateDigest, validateSnapshot } from './snapshot'
 import historicalSnapshot from './fixtures/engine-0.45.0-schema-44.json'
 
 function historicalFixture(): unknown {
@@ -21,6 +21,8 @@ describe('canonical serialization', () => {
     const validated = await validateSnapshot(structuredClone(snapshot))
 
     expect(validated).toEqual(snapshot)
+    expect(await SNAPSHOT_CODEC.decode(structuredClone(snapshot))).toEqual(snapshot)
+    expect(SNAPSHOT_CODEC.schema).toMatchObject({ $id: 'world-simulation/snapshot-envelope' })
     expect(validated.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION)
     expect(validated.engineVersion).toBe(ENGINE_VERSION)
     expect(validated.state.people[0]?.knowledge).toEqual(expect.objectContaining({ 'knowledge.foraging': expect.any(Number), 'knowledge.localTerrain': expect.any(Number) }))

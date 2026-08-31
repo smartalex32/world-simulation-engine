@@ -1,7 +1,7 @@
 import { NO_PROJECTION_INVALIDATION, WorkbenchProjectionBuilder, projectionInvalidationFromChangeSet, type MapProjectionRequest, type ProjectionInvalidation } from '../projection'
 import { SimulationEngine } from '../simulation/engine/engine'
 import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver, resolveContentPack, type ContentPack, type ContentPackCatalog, type ResolvedContentPack } from '../contentPacks'
-import { canonicalStringify } from '../simulation/serialization/snapshot'
+import { canonicalStringify } from '../shared/canonicalJson'
 import { createHash } from 'node:crypto'
 import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
 import type { SimulationResponse, WorkbenchSnapshotEnvelope } from '../runtime/contracts'

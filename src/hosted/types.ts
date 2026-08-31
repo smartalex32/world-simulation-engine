@@ -3,17 +3,24 @@ import type { WorkbenchProjection } from '../projection'
 import type { HostedRunCommand, SimulationResponse, WorkbenchSnapshotEnvelope } from '../runtime/contracts'
 import type { SharedWorldCommitRequest, SharedWorldCommitResult } from './sharedWorlds'
 import type { ResolvedContentPack } from '../contentPacks'
+import { schema, type Infer } from '../shared/schema'
 
 /** Versioned, owner-authorized wire contract for the initial single-node host. */
 export const HOSTED_PROTOCOL_VERSION = 1
 
-export interface HostedRunRecord {
-  protocolVersion: typeof HOSTED_PROTOCOL_VERSION
-  runId: string
-  ownerId: string
-  savedAt: string
-  snapshot: WorkbenchSnapshotEnvelope
-}
+const stableId = schema.string({ minLength: 1, pattern: '^[a-zA-Z0-9_-]+$' })
+const positiveInteger = schema.number({ integer: true, minimum: 1 })
+const nonNegativeInteger = schema.number({ integer: true, minimum: 0 })
+const snapshotCodec = schema.custom<WorkbenchSnapshotEnvelope>({ type: 'object', required: ['digest', 'state'] }, (value, path) => {
+  if (!isWorkbenchSnapshotEnvelope(value)) throw new Error(`${path} must be a snapshot envelope`)
+  return structuredClone(value)
+})
+
+export const HOSTED_RUN_RECORD_CODEC = schema.object({
+  protocolVersion: schema.literal(HOSTED_PROTOCOL_VERSION), runId: stableId, ownerId: stableId,
+  savedAt: schema.string({ minLength: 1 }), snapshot: snapshotCodec,
+})
+export type HostedRunRecord = Infer<typeof HOSTED_RUN_RECORD_CODEC>
 
 /** Durability is injected so tests do not require a filesystem or web server. */
 export interface HostedRunStore {
@@ -93,27 +100,19 @@ export interface HostedPendingQuantum {
   ticks: number
 }
 
-export interface HostedSimulationJob {
-  version: typeof HOSTED_JOB_VERSION
-  recordRevision: number
-  jobId: string
-  runId: string
-  ownerId: string
-  status: HostedJobStatus
-  queueOrder: number
-  startTick: number
-  totalTicks: number
-  advancedTicks: number
-  committedTick: number
-  committedDigest: string
-  pendingQuantum?: HostedPendingQuantum
-  failure?: HostedJobFailure
-  quantumTicks: number
-  checkpointIntervalTicks: number
-  lastCheckpointTick: number
-  createdAt: string
-  updatedAt: string
-}
+const pendingQuantumCodec = schema.object({ expectedTick: nonNegativeInteger, expectedDigest: schema.string({ minLength: 1 }), ticks: positiveInteger })
+const jobFailureCodec = schema.object({ code: schema.enum(['run-state-conflict', 'advance-failed', 'persistence-failed']), message: schema.string() })
+export const HOSTED_JOB_RECORD_CODEC = schema.object({
+  version: schema.literal(HOSTED_JOB_VERSION), recordRevision: positiveInteger,
+  jobId: stableId, runId: stableId, ownerId: stableId,
+  status: schema.enum(['queued', 'running', 'cancelling', 'cancelled', 'completed', 'failed']),
+  queueOrder: positiveInteger, startTick: nonNegativeInteger, totalTicks: positiveInteger,
+  advancedTicks: nonNegativeInteger, committedTick: nonNegativeInteger, committedDigest: schema.string({ minLength: 1 }),
+  pendingQuantum: schema.optional(pendingQuantumCodec), failure: schema.optional(jobFailureCodec),
+  quantumTicks: positiveInteger, checkpointIntervalTicks: positiveInteger, lastCheckpointTick: nonNegativeInteger,
+  createdAt: schema.string({ minLength: 1 }), updatedAt: schema.string({ minLength: 1 }),
+})
+export type HostedSimulationJob = Infer<typeof HOSTED_JOB_RECORD_CODEC>
 
 /** Job durability is deliberately separate from run snapshots. */
 export interface HostedJobStore {
@@ -124,37 +123,22 @@ export interface HostedJobStore {
 
 /** Validate host persistence at every trust boundary; do not cast parsed JSON into authority. */
 export function validateHostedRunRecord(value: unknown): HostedRunRecord {
-  if (!isRecord(value) || value.protocolVersion !== HOSTED_PROTOCOL_VERSION || !validId(value.runId) || !validId(value.ownerId)
-    || typeof value.savedAt !== 'string' || !isRecord(value.snapshot) || typeof value.snapshot.digest !== 'string'
-    || !isRecord(value.snapshot.state) || !nonNegativeInteger(value.snapshot.state.tick)) {
-    throw new Error('Hosted run record is invalid')
-  }
-  return value as unknown as HostedRunRecord
+  try { return HOSTED_RUN_RECORD_CODEC.decode(value, 'hostedRun') }
+  catch { throw new Error('Hosted run record is invalid') }
 }
 
 export function validateHostedJob(value: unknown): HostedSimulationJob {
-  if (!isRecord(value) || value.version !== HOSTED_JOB_VERSION || !validId(value.jobId) || !validId(value.runId) || !validId(value.ownerId)
-    || !positiveInteger(value.recordRevision)
-    || !isHostedJobStatus(value.status) || !positiveInteger(value.queueOrder) || !nonNegativeInteger(value.startTick)
-    || !positiveInteger(value.totalTicks) || !nonNegativeInteger(value.advancedTicks) || value.advancedTicks > value.totalTicks
-    || !nonNegativeInteger(value.committedTick) || typeof value.committedDigest !== 'string' || value.committedDigest.length === 0
-    || !positiveInteger(value.quantumTicks) || !positiveInteger(value.checkpointIntervalTicks)
-    || !nonNegativeInteger(value.lastCheckpointTick) || typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') {
-    throw new Error('Hosted job record is invalid')
-  }
-  if (value.pendingQuantum !== undefined && (!isRecord(value.pendingQuantum) || !nonNegativeInteger(value.pendingQuantum.expectedTick)
-    || typeof value.pendingQuantum.expectedDigest !== 'string' || value.pendingQuantum.expectedDigest.length === 0
-    || !positiveInteger(value.pendingQuantum.ticks))) throw new Error('Hosted job pending quantum is invalid')
-  if (value.failure !== undefined && (!isRecord(value.failure) || !isHostedJobFailureCode(value.failure.code) || typeof value.failure.message !== 'string')) {
-    throw new Error('Hosted job failure is invalid')
-  }
-  if (value.committedTick < value.startTick || value.lastCheckpointTick < value.startTick) throw new Error('Hosted job ticks are invalid')
-  return value as unknown as HostedSimulationJob
+  let job: HostedSimulationJob
+  try { job = HOSTED_JOB_RECORD_CODEC.decode(value, 'hostedJob') }
+  catch { throw new Error('Hosted job record is invalid') }
+  if (job.advancedTicks > job.totalTicks || job.committedTick < job.startTick || job.lastCheckpointTick < job.startTick) throw new Error('Hosted job ticks are invalid')
+  return job
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
-function validId(value: unknown): value is string { return typeof value === 'string' && /^[a-zA-Z0-9_-]+$/.test(value) }
-function nonNegativeInteger(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 }
-function positiveInteger(value: unknown): value is number { return nonNegativeInteger(value) && value > 0 }
-function isHostedJobStatus(value: unknown): value is HostedJobStatus { return value === 'queued' || value === 'running' || value === 'cancelling' || value === 'cancelled' || value === 'completed' || value === 'failed' }
-function isHostedJobFailureCode(value: unknown): value is HostedJobFailure['code'] { return value === 'run-state-conflict' || value === 'advance-failed' || value === 'persistence-failed' }
+function isWorkbenchSnapshotEnvelope(value: unknown): value is WorkbenchSnapshotEnvelope {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const snapshot = value as Record<string, unknown>
+  if (typeof snapshot.digest !== 'string' || typeof snapshot.state !== 'object' || snapshot.state === null || Array.isArray(snapshot.state)) return false
+  const state = snapshot.state as Record<string, unknown>
+  return typeof state.tick === 'number' && Number.isSafeInteger(state.tick) && state.tick >= 0
+}

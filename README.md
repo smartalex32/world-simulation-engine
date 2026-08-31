@@ -517,6 +517,29 @@ Rendering fidelity and simulation fidelity are independent.
 
 ---
 
+## Contract and codec ownership
+
+Authoritative domain contracts live with their owning subsystem under
+`src/simulation/*/types.ts`. `src/simulation/domain/types.ts` is a temporary,
+declaration-only compatibility facade; new imports should target the owning
+subsystem. Current engine and model versions are collected in
+`simulation/kernel/versionManifest.ts`.
+
+Environment-neutral JSON ordering and the schema codec primitives live in
+`src/shared`. Snapshot, content-pack, event, statistic, hosted-record, job, and
+public command boundaries validate unknown input before it becomes typed data.
+The `/api/v1` OpenAPI document is generated from the same route and command
+codecs used by the HTTP adapter, so runtime validation and published request
+schemas cannot drift independently. The hosted dispatcher delegates metadata,
+identity, and shared-world resources to named handlers while services retain
+transaction and authority ownership.
+
+`pnpm check:boundaries` enforces dependency direction in CI: simulation and
+shared contracts cannot import delivery adapters, content packs cannot import
+snapshot serialization, and UI code cannot import engine internals.
+
+---
+
 # Subsystem Ownership
 
 ## Simulation Domain

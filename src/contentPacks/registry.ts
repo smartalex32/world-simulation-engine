@@ -1,6 +1,6 @@
-import { canonicalStringify } from '../simulation/serialization/snapshot'
+import { canonicalStringify } from '../shared/canonicalJson'
 import type { ContentPack, ContentPackId } from './types'
-import { validateContentPack } from './validate'
+import { CONTENT_PACK_CODEC, validateContentPack } from './validate'
 import { compareStableText } from '../shared/stableOrder'
 
 export interface ContentPackRegistry {
@@ -124,4 +124,4 @@ function diffValue(before: unknown, after: unknown, path: string, differences: C
 }
 
 export function exportContentPack(pack: ContentPack): string { return validateContentPack(pack).canonicalJson }
-export function importContentPack(value: string): ContentPack { return validateContentPack(JSON.parse(value) as unknown).pack }
+export function importContentPack(value: string): ContentPack { return CONTENT_PACK_CODEC.decode(JSON.parse(value), 'contentPack') }

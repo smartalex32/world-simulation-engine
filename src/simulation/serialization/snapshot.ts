@@ -31,8 +31,19 @@ import { COHORT_MODEL_VERSION } from '../cohorts/model'
 import { migrateSnapshotSchema } from './migrations'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
 import { createContentPackRuntime, resolveContentPack, type ContentPack, type ResolvedContentPack } from '../../contentPacks'
+import { schema } from '../../shared/schema'
 
 export { canonicalStringify, stateDigest } from './digest'
+
+export const SNAPSHOT_CODEC = schema.asyncCustom<SnapshotEnvelope>({
+  $id: 'world-simulation/snapshot-envelope', type: 'object', additionalProperties: false,
+  required: ['schemaVersion', 'engineVersion', 'state', 'digest'],
+  properties: {
+    schemaVersion: { type: 'integer', minimum: 0 }, engineVersion: { type: 'string', minLength: 1 },
+    state: { type: 'object' }, digest: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+    migrationProvenance: { type: 'object' },
+  },
+}, (value) => validateSnapshot(value))
 
 export async function createSnapshot(state: SimulationState): Promise<SnapshotEnvelope> {
   return {

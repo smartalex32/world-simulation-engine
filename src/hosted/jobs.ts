@@ -1,12 +1,7 @@
 import { HOSTED_JOB_VERSION, type HostedCommandResult, type HostedJobFailure, type HostedJobStore, type HostedRunCommand, type HostedSimulationJob } from './types'
 import { HostedRunService, type HostedRunObservation } from './runService'
-
-export interface HostedJobRequest {
-  jobId: string
-  totalTicks: number
-  quantumTicks?: number
-  checkpointIntervalTicks?: number
-}
+import type { HostedJobRequest } from './jobContract'
+export type { HostedJobRequest } from './jobContract'
 
 /**
  * One durable FIFO queue owns advancement for a hosted run. Every quantum is

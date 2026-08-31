@@ -1,4 +1,4 @@
-import type { GeographicCell } from '../domain/types'
+import type { GeographicCell } from '../spatial/types'
 
 export const COMMUNITY_EMERGENT_IDS = Object.freeze([
   'community.emergent.socialTrust',

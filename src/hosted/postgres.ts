@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import { gunzipSync, gzipSync } from 'node:zlib'
 import { Pool, type PoolClient } from 'pg'
 import { SNAPSHOT_SCHEMA_VERSION, type SimulationEvent, type SnapshotEnvelope, type StatisticSample } from '../simulation/domain/types'
-import { canonicalStringify, validateSnapshot } from '../simulation/serialization/snapshot'
+import { validateSnapshot } from '../simulation/serialization/snapshot'
+import { canonicalStringify } from '../shared/canonicalJson'
 import { compareStableText } from '../shared/stableOrder'
 import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver, exportContentPack, importContentPack, type ContentPack, type ContentPackCatalog } from '../contentPacks'
 import { HOSTED_JOB_VERSION, validateHostedJob, validateHostedRunRecord, type HostedJobStore, type HostedRunMutation, type HostedRunMutationResult, type HostedRunMutationStore, type HostedRunRecord, type HostedRunStore, type HostedSimulationJob, type HostedTelemetryStore } from './types'
@@ -462,7 +463,7 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
     const normalized = { version: 1 as const, accounts, sessions, tokens, worlds, access, revisions, leases, audits, runs, mutations } as SharedWorldServiceState
     if (accounts.length || worlds.length || sessions.length || tokens.length) return SharedWorldService.restore(normalized).snapshotState()
     const legacy = await client.query<StoredPayload>("SELECT payload,payload_sha256 AS sha,payload_encoding AS encoding FROM hosted_shared_world_state WHERE state_key='default'")
-    return legacy.rows[0] ? SharedWorldService.restore(decodeStoredPayload(legacy.rows[0]) as SharedWorldServiceState).snapshotState() : new SharedWorldService().snapshotState()
+    return legacy.rows[0] ? SharedWorldService.restore(decodeStoredPayload(legacy.rows[0])).snapshotState() : new SharedWorldService().snapshotState()
   }
 
   private async loadNormalizedSharedState(client: Pool | PoolClient): Promise<{ state: SharedWorldServiceState; revision: number }> {
