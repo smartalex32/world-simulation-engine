@@ -58,20 +58,32 @@ export function useSimulationSession(client: SimulationSessionPort, initialSeed 
     return createSessionDisposer(client, unsubscribe)
   }, [client, command])
 
+  const setSeed = useCallback((seed: string) => { seedRef.current = seed }, [])
+  const clearTimeline = useCallback(() => dispatch({ type: 'clearTimeline' }), [])
+  const dismissError = useCallback(() => dispatch({ type: 'dismissError' }), [])
+  const step = useCallback((count = 1) => command(client.step(count)), [client, command])
+  const play = useCallback(() => command(client.play(state.speed)), [client, command, state.speed])
+  const pause = useCallback(() => command(client.pause()), [client, command])
+  const changeSpeed = useCallback((speed: number) => command(client.setSpeed(speed)), [client, command])
+  const requestViewport = useCallback((viewport: MapProjectionRequest) => command(client.setViewport(viewport)), [client, command])
+  const reset = useCallback(() => command(client.reset()), [client, command])
+  const materializeCohort = useCallback((cohortId: string, count: number) => command(client.materializeCohort(cohortId, count)), [client, command])
+  const dematerializePeople = useCallback((personIds: string[]) => command(client.dematerializePeople(personIds)), [client, command])
+
   return {
     ...state,
     selectedRunId: state.projection?.runId,
-    setSeed: (seed: string) => { seedRef.current = seed },
-    clearTimeline: () => dispatch({ type: 'clearTimeline' }),
-    dismissError: () => dispatch({ type: 'dismissError' }),
-    step: (count = 1) => command(client.step(count)),
-    play: () => command(client.play(state.speed)),
-    pause: () => command(client.pause()),
-    changeSpeed: (speed: number) => command(client.setSpeed(speed)),
-    requestViewport: (viewport: MapProjectionRequest) => command(client.setViewport(viewport)),
-    reset: () => command(client.reset()),
-    materializeCohort: (cohortId: string, count: number) => command(client.materializeCohort(cohortId, count)),
-    dematerializePeople: (personIds: string[]) => command(client.dematerializePeople(personIds)),
+    setSeed,
+    clearTimeline,
+    dismissError,
+    step,
+    play,
+    pause,
+    changeSpeed,
+    requestViewport,
+    reset,
+    materializeCohort,
+    dematerializePeople,
   }
 }
 

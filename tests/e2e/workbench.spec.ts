@@ -546,25 +546,39 @@ test('browser worker applies the same fidelity invalidations as the shared proje
     type Marker = { count: number }
     type Frame = { type: 'FRAME'; requestId?: string; projection: { map: { activityMarkers: Marker[]; householdMarkers: Marker[]; populationMarkers: Marker[] }; summary: unknown }; projectionInvalidation: { categories: string[]; cellIds: string[] } }
     type Response = Frame | { type: string }
+    type Ack = { requestId: string }
     type Client = {
-      create(creation: unknown): string
-      materializeCohort(cohortId: string, populationCount: number): string
-      dematerializePeople(personIds: string[]): string
+      create(creation: unknown): Promise<Ack>
+      materializeCohort(cohortId: string, populationCount: number): Promise<Ack>
+      dematerializePeople(personIds: string[]): Promise<Ack>
       snapshot(): Promise<{ state: { populationFidelity: { transitions: { kind: string; personIds: string[] }[] } } }>
       subscribe(listener: (response: Response) => void): () => void
     }
     const client = (window as unknown as { __playwrightSimulationWorker: Client }).__playwrightSimulationWorker
-    const frameFor = (send: () => string) => new Promise<Frame>((resolve) => {
+    const frameFor = (label: string, send: () => Promise<Ack>) => new Promise<Frame>((resolve, reject) => {
       let unsubscribe: () => void = () => {}
-      let expectedRequestId = ''
-      unsubscribe = client.subscribe((response) => { if (response.type === 'FRAME' && 'projection' in response && response.requestId === expectedRequestId) { unsubscribe(); resolve(response) } })
-      expectedRequestId = send()
+      let expectedRequestId: string | undefined
+      const frames = new Map<string, Frame>()
+      const received: string[] = []
+      const timeout = window.setTimeout(() => { unsubscribe(); reject(new Error(`${label} frame timed out for ${expectedRequestId}; received ${received.join(', ')}`)) }, 15_000)
+      const finish = (frame: Frame) => { window.clearTimeout(timeout); unsubscribe(); resolve(frame) }
+      unsubscribe = client.subscribe((response) => {
+        if (received.length < 20) received.push(`${response.type}:${'requestId' in response ? response.requestId ?? 'none' : 'none'}`)
+        if (response.type !== 'FRAME' || !('projection' in response) || !response.requestId) return
+        frames.set(response.requestId, response)
+        if (response.requestId === expectedRequestId) finish(response)
+      })
+      void send().then((ack) => {
+        expectedRequestId = ack.requestId
+        const frame = frames.get(ack.requestId)
+        if (frame) finish(frame)
+      }, (reason) => { window.clearTimeout(timeout); unsubscribe(); reject(reason) })
     })
-    await frameFor(() => client.create(workerCreation))
-    const materialized = await frameFor(() => client.materializeCohort('cohort:distant', 12))
+    await frameFor('create', () => client.create(workerCreation))
+    const materialized = await frameFor('materialize', () => client.materializeCohort('cohort:distant', 12))
     const snapshot = await client.snapshot()
     const personIds = snapshot.state.populationFidelity.transitions.find((transition) => transition.kind === 'materialized')?.personIds ?? []
-    const dematerialized = await frameFor(() => client.dematerializePeople(personIds))
+    const dematerialized = await frameFor('dematerialize', () => client.dematerializePeople(personIds))
     return { materialized, dematerialized }
   }, creation)
 

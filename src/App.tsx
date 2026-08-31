@@ -94,7 +94,7 @@ export default function App() {
   const lastCheckpointTick = useRef(-1)
   const statusRef = useRef<typeof status>('starting')
   const importRef = useRef<HTMLInputElement>(null)
-  const requestViewport = useCallback((request: import('./projection').MapProjectionRequest) => session.requestViewport(request), [session])
+  const requestViewport = session.requestViewport
 
   function setDraftOperationBusy(value: boolean) {
     draftBusyRef.current = value
