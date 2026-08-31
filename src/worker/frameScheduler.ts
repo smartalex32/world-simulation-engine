@@ -1,4 +1,5 @@
 import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
+import { completeRetention, mergeRetention, type EventRetentionReport } from '../simulation/events/retention'
 
 export const MAX_TICKS_PER_WORKER_TURN = 24
 export const TELEMETRY_EVENT_FLUSH_THRESHOLD = 1000
@@ -77,27 +78,62 @@ export function validateWorkerContinuation(value: unknown): WorkerContinuationSt
 export class TelemetryBuffer {
   private readonly events: SimulationEvent[] = []
   private readonly statistics: StatisticSample[] = []
+  private readonly retention: EventRetentionReport[] = []
 
-  append(events: readonly SimulationEvent[], statistics: readonly StatisticSample[]): void {
+  append(events: readonly SimulationEvent[], statistics: readonly StatisticSample[], retention: EventRetentionReport = completeRetention(events)): void {
     this.events.push(...events)
     this.statistics.push(...statistics)
+    this.retention.push(retention)
   }
 
   shouldFlush(): boolean {
     return this.events.length >= TELEMETRY_EVENT_FLUSH_THRESHOLD || this.statistics.length >= TELEMETRY_STATISTIC_FLUSH_THRESHOLD
   }
 
-  drain(): { events: SimulationEvent[]; statistics: StatisticSample[] } {
-    return { events: this.events.splice(0, this.events.length), statistics: this.statistics.splice(0, this.statistics.length) }
+  drain(): { events: SimulationEvent[]; statistics: StatisticSample[]; eventRetention: EventRetentionReport } {
+    return { events: this.events.splice(0, this.events.length), statistics: this.statistics.splice(0, this.statistics.length), eventRetention: mergeRetention(this.retention.splice(0, this.retention.length)) }
   }
 
   clear(): void {
     this.events.length = 0
     this.statistics.length = 0
+    this.retention.length = 0
   }
 
   counts(): Readonly<{ events: number; statistics: number }> {
     return { events: this.events.length, statistics: this.statistics.length }
+  }
+}
+
+/** Retry buffer for the transactional browser checkpoint boundary. A request
+ * acknowledges only the prior durable watermark; data is pruned on the next
+ * request, after IndexedDB has reported a successful commit. */
+export class CheckpointTelemetryBuffer {
+  private readonly events: SimulationEvent[] = []
+  private readonly statistics: StatisticSample[] = []
+  private readonly retention: EventRetentionReport[] = []
+
+  append(events: readonly SimulationEvent[], statistics: readonly StatisticSample[], retention: EventRetentionReport = completeRetention(events)): void {
+    this.events.push(...events)
+    this.statistics.push(...statistics)
+    this.retention.push(retention)
+  }
+
+  since(eventSequence: number, statisticTick: number): { events: SimulationEvent[]; statistics: StatisticSample[]; eventRetention: EventRetentionReport } {
+    this.prune(eventSequence, statisticTick)
+    return {
+      events: this.events.filter((event) => event.sequence > eventSequence),
+      statistics: this.statistics.filter((sample) => sample.tick > statisticTick),
+      eventRetention: mergeRetention(this.retention.filter((report) => (report.lastProducedSequence ?? -1) > eventSequence)),
+    }
+  }
+
+  clear(): void { this.events.length = 0; this.statistics.length = 0; this.retention.length = 0 }
+
+  private prune(eventSequence: number, statisticTick: number): void {
+    while (this.events[0] && this.events[0].sequence <= eventSequence) this.events.shift()
+    while (this.statistics[0] && this.statistics[0].tick <= statisticTick) this.statistics.shift()
+    while (this.retention[0] && (this.retention[0].lastProducedSequence ?? -1) <= eventSequence) this.retention.shift()
   }
 }
 

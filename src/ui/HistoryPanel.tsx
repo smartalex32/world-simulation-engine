@@ -3,18 +3,20 @@ import { populationCheckpointTimeline, regionalChangeSummary, settlementChangeSu
 import { buildChronicle } from '../history/chronicle'
 import { useState } from 'react'
 import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
+import type { TelemetryIntegrity } from '../persistence/database'
 
 interface HistoryPanelProps {
   events: readonly SimulationEvent[]
   statistics: readonly StatisticSample[]
   checkpoints: readonly HistoricalCheckpoint[]
+  telemetry?: TelemetryIntegrity
   selectedPersonId?: string
   onInspectPerson: (personId: string) => void
   onRefresh: () => void
   loading: boolean
 }
 
-export function HistoryPanel({ events, statistics, checkpoints, selectedPersonId, onInspectPerson, onRefresh, loading }: HistoryPanelProps) {
+export function HistoryPanel({ events, statistics, checkpoints, telemetry, selectedPersonId, onInspectPerson, onRefresh, loading }: HistoryPanelProps) {
   const [showChronicle, setShowChronicle] = useState(false)
   const timeline = selectedPersonId ? personTimeline(events, selectedPersonId, 24) : []
   const highlights = historicalHighlights(events, 12)
@@ -27,6 +29,8 @@ export function HistoryPanel({ events, statistics, checkpoints, selectedPersonId
       <div><span className="eyebrow">HISTORICAL INSPECTION</span><h2>Recorded evidence over time</h2><p>Events and sampled metrics are read from local run history; nothing is inferred.</p></div>
       <div className="history-actions"><button onClick={() => setShowChronicle((value) => !value)} aria-pressed={showChronicle}>{showChronicle ? 'Evidence view' : 'Chronicle view'}</button><button onClick={onRefresh} disabled={loading}>{loading ? 'Loading…' : 'Refresh history'}</button></div>
     </header>
+    {telemetry?.status === 'gapped' && <p className="error-banner" role="alert">Telemetry gap detected through sequence {telemetry.committed.eventSequence}: {telemetry.unexplainedSequenceGaps.map((range) => range.first === range.last ? range.first : `${range.first}–${range.last}`).join(', ')}</p>}
+    {telemetry?.status === 'uncheckpointed' && <p className="chronicle-note">This legacy run has no verified telemetry checkpoint watermark.</p>}
     <div className="history-grid">
       <section className="history-section">
         <h3>Population and social trends</h3>

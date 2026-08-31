@@ -3,7 +3,7 @@ import { buildChronicle } from './chronicle'
 import type { SimulationEvent } from '../simulation/domain/types'
 
 function event(type: SimulationEvent['type'], payload: SimulationEvent['payload']): SimulationEvent {
-  return { id: `event-${type}`, runId: 'run-chronicle', tick: 24, type, version: 1, payload }
+  return { id: `event-${type}`, runId: 'run-chronicle', tick: 24, sequence: 24, type, version: 1, payload }
 }
 
 describe('deterministic chronicle presentation', () => {

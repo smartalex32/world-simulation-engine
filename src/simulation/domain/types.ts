@@ -7,6 +7,8 @@ import type {
   CommunityVariableDefinition,
 } from '../community/types'
 import type { SettlementTemplateId } from '../spatial/settlementTemplates'
+import type { SimulationEventPayload, SimulationEventType } from '../events/catalog'
+export type { EventRetentionClass, SimulationEventPayload, SimulationEventPayloadMap, SimulationEventType } from '../events/catalog'
 
 // Stable text tie-breaks replace locale-dependent ordering. Snapshots from
 // earlier engines are rejected rather than resumed under changed semantics.
@@ -980,14 +982,15 @@ export interface SimulationState {
   randomStreams: RandomStreamSnapshot[]
 }
 
-export interface SimulationEvent {
+export interface SimulationEvent<T extends SimulationEventType = SimulationEventType> {
   id: string
   runId: string
   tick: number
-  type: 'RUN_CREATED' | 'RUN_STARTED' | 'RUN_PAUSED' | 'CLOCK_ADVANCED' | 'SNAPSHOT_SAVED' | 'RUN_LOADED' | 'COHORT_MATERIALIZED' | 'PEOPLE_DEMATERIALIZED' | 'INFRASTRUCTURE_UPDATED' | 'SETTLEMENT_REGIONAL_TRANSITION' | 'FICTIONAL_INFECTION_ACQUIRED' | 'FICTIONAL_INFECTION_PROGRESS' | 'COHORT_OUTBREAK_UPDATED' | 'PERSON_STARTED_TRAVEL' | 'PERSON_MOVED' | 'PERSON_ATE' | 'PERSON_FAILED_TO_EAT' | 'PERSON_WORKED' | 'HOUSEHOLDS_SHARED_FOOD' | 'HOUSEHOLDS_EXCHANGED_TOOLS' | 'HOUSEHOLD_RELOCATED' | 'SETTLEMENT_SCALE_CHANGED' | 'COMMUNITY_CONTENTION_RESOLVED' | 'PERSON_ATTENDED_SCHOOL' | 'PERSON_MISSED_SCHOOL' | 'PERSON_EXPLORED' | 'PERSON_RESTED' | 'PERSON_SOCIALIZED' | 'PERSON_ACTIVITY_CHANGED' | 'PERSON_AGED' | 'PERSON_LIFE_STAGE_CHANGED' | 'PERSON_DIED' | 'PARTNERSHIP_FORMED' | 'PERSON_MOVED_HOUSEHOLD' | 'PERSON_BORN' | 'PERSON_ENCOUNTERED' | 'RELATIONSHIP_FORMED' | 'PERSON_KNOWLEDGE_DISCOVERED' | 'PERSON_KNOWLEDGE_SHARED' | 'PERSON_EXPERIENCED_PARENT_MODELING' | 'PERSON_EXPERIENCED_PEER_MODELING' | 'PERSON_EXPERIENCED_ACTIVITY_PRACTICE' | 'PERSON_EXPERIENCED_COMMUNITY_EXPOSURE' | 'PERSON_VARIABLE_DEVELOPED' | 'COMMUNITY_MEASURES_UPDATED' | 'ERROR'
+  sequence: number
+  type: T
   version: 1
   cellId?: string
-  payload: Record<string, string | number | boolean | null>
+  payload: SimulationEventPayload<T>
 }
 
 export type WorldStatisticMetricId = 'world.cellCount' | 'world.habitableCells' | 'engine.simulatedDays' | 'population.count' | 'population.aliveCount' | 'population.averageHunger' | 'lifecycle.births' | 'lifecycle.deaths' | 'lifecycle.partnershipsFormed' | 'spatial.occupiedCells' | 'spatial.averageTravelCost' | 'resources.totalFood' | 'resources.foodRegenerated' | 'resources.foodConsumed' | 'resources.failedMeals' | 'economy.householdFood' | 'economy.productiveHours' | 'economy.foodProduced' | 'economy.agriculturalFoodProduced' | 'economy.foodShared' | 'economy.exchangeCount' | 'social.encounters' | 'social.encountersPer1000People' | 'social.relationshipCount' | 'social.networkDensityPermille' | 'social.averageFamiliarity' | 'social.positiveEncounters' | 'social.tenseEncounters' | 'activity.homePersonHours' | 'activity.commonsPersonHours' | 'activity.travelPersonHours' | 'household.parentChildCoExposureSourceHours' | 'development.experiences' | 'development.curiosityChanges' | 'development.absoluteCuriosityChange' | 'development.broaderExperiences' | 'development.broaderChanges'

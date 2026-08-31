@@ -158,7 +158,10 @@ describe('Milestone 6 independent validation', () => {
       && counters.encounteredRelationshipIds.length === 0
       && counters.exposedPersonHours === 0,
     )).toBe(true)
-    expect(result.events.length).toBeLessThanOrEqual(500)
+    const droppedEventCount = Object.values(result.eventRetention.droppedByType).reduce((sum, count) => sum + (count ?? 0), 0)
+    expect(droppedEventCount).toBeGreaterThan(0)
+    expect(result.eventRetention).toMatchObject({ firstProducedSequence: expect.any(Number), lastProducedSequence: expect.any(Number) })
+    expect(result.eventRetention.droppedByType.PERSON_RESTED).toBeGreaterThan(0)
     expect(relationshipCount).toBeLessThanOrEqual(snapshot.state.people.length * (snapshot.state.people.length - 1) / 2)
     expect(snapshot.state).not.toHaveProperty('events')
     expect(snapshot.state).not.toHaveProperty('statistics')

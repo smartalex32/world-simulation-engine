@@ -3,12 +3,14 @@ import { summarizeCheckpoint, type HistoricalCheckpoint } from '../history/check
 import { validateWorldDraftRecord } from '../simulation/domain/worldDraft'
 import { validateSnapshot } from '../simulation/serialization/snapshot'
 import { validateWorkerContinuation } from '../worker/frameScheduler'
-import type { WorkbenchSnapshotEnvelope } from '../runtime/contracts'
 import { DEFAULT_PREINDUSTRIAL_PACK, exportContentPack, createContentPackResolver, validateContentPack, type ContentPack, type ResolvedContentPack } from '../contentPacks'
 import { compareStableText } from '../shared/stableOrder'
+import { EMPTY_TELEMETRY_WATERMARK, type TelemetryWatermark, type WorkbenchCheckpointEnvelope, type WorkbenchSnapshotEnvelope } from '../runtime/contracts'
+import { decodeEventPayload, EVENT_CATALOG, type SimulationEventType } from '../simulation/events/catalog'
+import { mergeRetention, validateRetentionReport, type EventRetentionReport, type EventSequenceRange } from '../simulation/events/retention'
 
 const DATABASE_NAME = 'world-simulation-workbench'
-const DATABASE_VERSION = 3
+const DATABASE_VERSION = 4
 const MAX_TICK = Number.MAX_SAFE_INTEGER
 
 export const DEFAULT_HISTORY_EVENT_LIMIT = 200
@@ -22,6 +24,20 @@ export interface RunRecord {
   engineVersion: string
   createdAt: string
   updatedAt: string
+  telemetry?: TelemetryCommitMetadata
+}
+
+export interface TelemetryCommitMetadata {
+  version: 1
+  through: TelemetryWatermark
+  eventRetention: EventRetentionReport
+}
+
+export interface TelemetryIntegrity {
+  status: 'complete' | 'gapped' | 'uncheckpointed'
+  committed: TelemetryWatermark
+  unexplainedSequenceGaps: EventSequenceRange[]
+  droppedByType: EventRetentionReport['droppedByType']
 }
 
 export interface SavedSnapshot {
@@ -31,6 +47,7 @@ export interface SavedSnapshot {
   name: string
   createdAt: string
   snapshot: WorkbenchSnapshotEnvelope
+  telemetry?: TelemetryCommitMetadata
 }
 export interface StoredContentPack { id: string; version: string; savedAt: string; pack: ContentPack }
 
@@ -39,14 +56,18 @@ type StoredStatistic = StatisticSample & { storageKey: string }
 
 export interface ExportBundle {
   format: 'world-simulation-bundle'
-  bundleVersion: 2
+  bundleVersion: 3
   exportedAt: string
   snapshot: WorkbenchSnapshotEnvelope
   /** Immutable artifacts required to resolve the snapshot's reference-only graph. */
   contentPacks: readonly ContentPack[]
   events: SimulationEvent[]
   statistics: StatisticSample[]
+  telemetry: TelemetryCommitMetadata
 }
+
+type NdjsonManifest = Omit<ExportBundle, 'events' | 'statistics'> & { record: 'manifest' }
+type NdjsonRecord = NdjsonManifest | { record: 'event'; value: SimulationEvent } | { record: 'statistic'; value: StatisticSample }
 
 export interface RunHistoryQuery {
   /** Bounded newest-first event history. */
@@ -60,41 +81,56 @@ export interface RunHistory {
   events: SimulationEvent[]
   statistics: StatisticSample[]
   checkpoints: HistoricalCheckpoint[]
+  telemetry: TelemetryIntegrity
 }
 
 export class WorkbenchDatabase {
   private databasePromise?: Promise<IDBDatabase>
 
-  async saveSnapshot(snapshot: WorkbenchSnapshotEnvelope, kind: 'autosave' | 'named' | 'checkpoint', name?: string): Promise<SavedSnapshot> {
-    // Persistence accepts only a canonical state whose referenced pack resolves
-    // locally; envelope/digest validation remains serialization-owned.
-    await this.resolveSnapshotContentPack(snapshot)
+  /** Atomically commits a snapshot and the exact worker telemetry delta that
+   * reaches it. Event/statistic keys are deterministic, so repeating the same
+   * envelope after an uncertain failure is idempotent. */
+  async saveCheckpoint(checkpointValue: WorkbenchCheckpointEnvelope, kind: 'autosave' | 'named' | 'checkpoint', name?: string): Promise<SavedSnapshot> {
+    const checkpoint = validateWorkbenchCheckpoint(checkpointValue)
+    await this.resolveSnapshotContentPack(checkpoint.snapshot)
     const database = await this.open()
     const now = new Date().toISOString()
-    const key = kind === 'autosave' ? `${snapshot.state.runId}:autosave` : kind === 'checkpoint' ? `${snapshot.state.runId}:checkpoint:${snapshot.state.tick}` : `${snapshot.state.runId}:named:${crypto.randomUUID()}`
+    const transaction = database.transaction(['runs', 'snapshots', 'events', 'statistics'], 'readwrite')
+    const runs = transaction.objectStore('runs')
+    const previous = await request<RunRecord | undefined>(runs.get(checkpoint.snapshot.state.runId))
+    const durable = previous?.telemetry?.through ?? EMPTY_TELEMETRY_WATERMARK
+    const isRetry = sameWatermark(durable, checkpoint.through)
+    if (!isRetry && watermarkCovers(durable, checkpoint.through)) {
+      transaction.abort()
+      throw new Error(`Stale checkpoint telemetry: durable ${formatWatermark(durable)}, checkpoint reaches ${formatWatermark(checkpoint.through)}`)
+    }
+    if (!isRetry && !sameWatermark(durable, checkpoint.committed)) {
+      transaction.abort()
+      throw new Error(`Checkpoint telemetry conflict: durable ${formatWatermark(durable)}, worker expected ${formatWatermark(checkpoint.committed)}`)
+    }
+    const eventRetention = isRetry
+      ? previous!.telemetry!.eventRetention
+      : mergeRetention([previous?.telemetry?.eventRetention ?? emptyRetention(), checkpoint.eventRetention])
+    const telemetry: TelemetryCommitMetadata = { version: 1, through: isRetry ? durable : checkpoint.through, eventRetention }
+    const key = kind === 'autosave' ? `${checkpoint.snapshot.state.runId}:autosave`
+      : kind === 'checkpoint' ? `${checkpoint.snapshot.state.runId}:checkpoint:${checkpoint.snapshot.state.tick}`
+        : `${checkpoint.snapshot.state.runId}:named:${checkpoint.checkpointId}`
     const saved: SavedSnapshot = {
       key,
-      runId: snapshot.state.runId,
+      runId: checkpoint.snapshot.state.runId,
       kind,
-      name: kind === 'autosave' ? 'Autosave' : kind === 'checkpoint' ? `Checkpoint at hour ${snapshot.state.tick}` : (name?.trim() || `Snapshot at hour ${snapshot.state.tick}`),
+      name: kind === 'autosave' ? 'Autosave' : kind === 'checkpoint' ? `Checkpoint at hour ${checkpoint.snapshot.state.tick}` : (name?.trim() || `Snapshot at hour ${checkpoint.snapshot.state.tick}`),
       createdAt: now,
-      snapshot,
+      snapshot: checkpoint.snapshot,
+      telemetry,
     }
-    const transaction = database.transaction(['runs', 'snapshots'], 'readwrite')
-    const runs = transaction.objectStore('runs')
-    const previous = await request<RunRecord | undefined>(runs.get(snapshot.state.runId))
-    const run: RunRecord = {
-      runId: snapshot.state.runId,
-      seed: snapshot.state.config.seed,
-      tick: snapshot.state.tick,
-      engineVersion: snapshot.engineVersion,
-      createdAt: previous?.createdAt ?? now,
-      updatedAt: now,
-    }
-    runs.put(run)
+    for (const event of checkpoint.events) transaction.objectStore('events').put({ ...event, storageKey: event.id } satisfies StoredEvent)
+    for (const sample of checkpoint.statistics) transaction.objectStore('statistics').put({ ...sample, storageKey: statisticStorageKey(sample) } satisfies StoredStatistic)
+    const tick = Math.max(previous?.tick ?? 0, checkpoint.snapshot.state.tick)
+    runs.put({ runId: saved.runId, seed: checkpoint.snapshot.state.config.seed, tick, engineVersion: checkpoint.snapshot.engineVersion, createdAt: previous?.createdAt ?? now, updatedAt: now, telemetry } satisfies RunRecord)
     transaction.objectStore('snapshots').put(saved)
     await transactionDone(transaction)
-    if (kind === 'checkpoint') await this.trimCheckpoints(snapshot.state.runId)
+    if (kind === 'checkpoint') await this.trimCheckpoints(saved.runId)
     return saved
   }
 
@@ -104,17 +140,15 @@ export class WorkbenchDatabase {
     await Promise.all(checkpoints.slice(DEFAULT_CHECKPOINT_LIMIT).map((snapshot) => this.deleteSnapshot(snapshot.key)))
   }
 
-  async appendTelemetry(events: SimulationEvent[], statistics: StatisticSample[]): Promise<void> {
-    if (events.length === 0 && statistics.length === 0) return
+  /** Starts a new telemetry epoch for a freshly created authoritative run while
+   * preserving user-owned named snapshots. Serialized ahead of the first
+   * checkpoint by the persistence controller. */
+  async resetRunTelemetry(runId: string): Promise<void> {
     const database = await this.open()
-    const transaction = database.transaction(['events', 'statistics'], 'readwrite')
-    const eventStore = transaction.objectStore('events')
-    for (const event of events) eventStore.put({ ...event, storageKey: event.id } satisfies StoredEvent)
-    const statisticStore = transaction.objectStore('statistics')
-    for (const sample of statistics) {
-      const storageKey = statisticStorageKey(sample)
-      statisticStore.put({ ...sample, storageKey } satisfies StoredStatistic)
-    }
+    const transaction = database.transaction(['runs', 'events', 'statistics'], 'readwrite')
+    transaction.objectStore('runs').delete(runId)
+    deleteByIndex(transaction.objectStore('events').index('runId'), IDBKeyRange.only(runId))
+    deleteByIndex(transaction.objectStore('statistics').index('runId'), IDBKeyRange.only(runId))
     await transactionDone(transaction)
   }
 
@@ -205,6 +239,8 @@ export class WorkbenchDatabase {
    */
   async readHistory(runId: string, query: RunHistoryQuery): Promise<RunHistory> {
     const database = await this.open()
+    const run = await request<RunRecord | undefined>(database.transaction('runs').objectStore('runs').get(runId))
+    const committed = run?.telemetry?.through
     const eventLimit = boundedHistoryLimit(query.eventLimit, DEFAULT_HISTORY_EVENT_LIMIT)
     const sampleLimit = boundedHistoryLimit(query.sampleLimit, DEFAULT_HISTORY_SAMPLE_LIMIT)
     const eventTransaction = database.transaction('events')
@@ -224,7 +260,7 @@ export class WorkbenchDatabase {
         sampleLimit,
       )))).flat()
     return {
-      events: events.map(({ storageKey: _, ...event }) => event),
+      events: events.filter((event) => committed === undefined || event.sequence <= committed.eventSequence).map(({ storageKey: _, ...event }) => event),
       statistics: statistics
         .map(({ storageKey: _, ...sample }) => sample)
         .sort((first, second) => first.tick - second.tick || compareStableText(first.metricId, second.metricId)),
@@ -233,6 +269,7 @@ export class WorkbenchDatabase {
         .slice(0, DEFAULT_CHECKPOINT_LIMIT)
         .map((snapshot) => summarizeCheckpoint(snapshot.snapshot))
         .sort((first, second) => first.tick - second.tick),
+      telemetry: await inspectTelemetryIntegrity(database, runId, run?.telemetry),
     }
   }
 
@@ -243,26 +280,69 @@ export class WorkbenchDatabase {
     await transactionDone(transaction)
   }
 
-  async exportBundle(snapshot: WorkbenchSnapshotEnvelope): Promise<ExportBundle> {
+  /** Streams the primary browser export as versioned NDJSON. IndexedDB cursors
+   * feed the stream directly; no complete telemetry log is materialized. */
+  async exportBundleNdjson(snapshot: WorkbenchSnapshotEnvelope): Promise<ReadableStream<Uint8Array>> {
     const database = await this.open()
     const resolved = await this.resolveSnapshotContentPack(snapshot)
-    const events = await request<StoredEvent[]>(database.transaction('events').objectStore('events').index('runId').getAll(snapshot.state.runId))
-    const statistics = await request<StoredStatistic[]>(database.transaction('statistics').objectStore('statistics').index('runId').getAll(snapshot.state.runId))
-    return {
-      format: 'world-simulation-bundle',
-      bundleVersion: 2,
-      exportedAt: new Date().toISOString(),
-      snapshot,
-      contentPacks: resolved.packs,
-      events: events.map(({ storageKey: _, ...event }) => event),
-      statistics: statistics.map(({ storageKey: _, ...sample }) => sample),
+    const run = await request<RunRecord | undefined>(database.transaction('runs').objectStore('runs').get(snapshot.state.runId))
+    if (!run?.telemetry) throw new Error('Run has no committed telemetry checkpoint to export')
+    assertTelemetryComplete(await inspectTelemetryIntegrity(database, snapshot.state.runId, run.telemetry))
+    const manifest: NdjsonManifest = { record: 'manifest', format: 'world-simulation-bundle', bundleVersion: 3, exportedAt: new Date().toISOString(), snapshot, contentPacks: resolved.packs, telemetry: run.telemetry }
+    const encoder = new TextEncoder()
+    return new ReadableStream<Uint8Array>({
+      start: async (controller) => {
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(manifest)}\n`))
+          await streamCursor<StoredEvent>(database.transaction('events').objectStore('events').index('runSequence'), IDBKeyRange.bound([snapshot.state.runId, 0], [snapshot.state.runId, run.telemetry!.through.eventSequence]), (stored) => {
+            const { storageKey: _, ...value } = stored
+            controller.enqueue(encoder.encode(`${JSON.stringify({ record: 'event', value } satisfies NdjsonRecord)}\n`))
+          })
+          await streamCursor<StoredStatistic>(database.transaction('statistics').objectStore('statistics').index('runId'), IDBKeyRange.only(snapshot.state.runId), (stored) => {
+            const { storageKey: _, ...value } = stored
+            controller.enqueue(encoder.encode(`${JSON.stringify({ record: 'statistic', value } satisfies NdjsonRecord)}\n`))
+          })
+          controller.close()
+        } catch (error) { controller.error(error) }
+      },
+    })
+  }
+
+  async importBundleNdjson(stream: ReadableStream<Uint8Array>): Promise<SavedSnapshot> {
+    const decoder = new TextDecoder()
+    const reader = stream.getReader()
+    let buffer = ''
+    let manifest: NdjsonManifest | undefined
+    const events: SimulationEvent[] = []
+    const statistics: StatisticSample[] = []
+    const consume = (line: string) => {
+      if (!line.trim()) return
+      const record = JSON.parse(line) as NdjsonRecord
+      if (record.record === 'manifest') {
+        if (manifest) throw new Error('Import contains multiple manifests')
+        manifest = record
+      } else if (record.record === 'event') events.push(record.value)
+      else if (record.record === 'statistic') statistics.push(record.value)
+      else throw new Error('Import contains an unknown NDJSON record')
     }
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let newline = buffer.indexOf('\n')
+      while (newline >= 0) { consume(buffer.slice(0, newline)); buffer = buffer.slice(newline + 1); newline = buffer.indexOf('\n') }
+    }
+    buffer += decoder.decode()
+    consume(buffer)
+    if (!manifest) throw new Error('Import manifest is missing')
+    const { record: _, ...bundle } = manifest
+    return this.importBundle({ ...bundle, events, statistics })
   }
 
   async importBundle(value: unknown): Promise<SavedSnapshot> {
     if (!value || typeof value !== 'object') throw new Error('Import is not an object')
     const bundle = value as Partial<ExportBundle>
-    if (bundle.format !== 'world-simulation-bundle' || bundle.bundleVersion !== 2 || !bundle.snapshot || !Array.isArray(bundle.contentPacks)) throw new Error('Unsupported import bundle')
+    if (bundle.format !== 'world-simulation-bundle' || bundle.bundleVersion !== 3 || !bundle.snapshot || !Array.isArray(bundle.contentPacks) || !bundle.telemetry) throw new Error('Unsupported import bundle')
     const config = (bundle.snapshot as WorkbenchSnapshotEnvelope).state?.config
     if (!config || typeof config.contentPackId !== 'string' || typeof config.contentPackVersion !== 'string') throw new Error('Imported snapshot content-pack reference is invalid')
     const artifacts = bundle.contentPacks.map((pack) => validateContentPack(pack).pack)
@@ -270,8 +350,10 @@ export class WorkbenchDatabase {
     const validated = await validateSnapshot(bundle.snapshot, resolved)
     const workerContinuation = validateWorkerContinuation((bundle.snapshot as WorkbenchSnapshotEnvelope).workerContinuation)
     const snapshot: WorkbenchSnapshotEnvelope = workerContinuation ? { ...validated, workerContinuation } : validated
-    const events = validateImportedEvents(snapshot.state.runId, bundle.events)
+    const events = validateImportedEvents(snapshot.state.runId, bundle.events).sort((first, second) => first.sequence - second.sequence)
     const statistics = validateImportedStatistics(snapshot.state.runId, bundle.statistics)
+    const telemetry = validateTelemetryCommit(bundle.telemetry)
+    validateImportedTelemetryPrefix(snapshot, events, statistics, telemetry)
     // An imported snapshot without its retained evidence is misleading, and
     // retained evidence without its snapshot is orphaned. Validate first,
     // then commit the complete local bundle in one IndexedDB transaction.
@@ -284,6 +366,7 @@ export class WorkbenchDatabase {
       name: `Imported at hour ${snapshot.state.tick}`,
       createdAt: now,
       snapshot,
+      telemetry,
     }
     const transaction = database.transaction(['runs', 'snapshots', 'events', 'statistics', 'contentPacks'], 'readwrite')
     const packStore = transaction.objectStore('contentPacks')
@@ -298,7 +381,7 @@ export class WorkbenchDatabase {
     }
     const runs = transaction.objectStore('runs')
     const previous = await request<RunRecord | undefined>(runs.get(snapshot.state.runId))
-    runs.put({ runId: snapshot.state.runId, seed: snapshot.state.config.seed, tick: snapshot.state.tick, engineVersion: snapshot.engineVersion, createdAt: previous?.createdAt ?? now, updatedAt: now } satisfies RunRecord)
+    runs.put({ runId: snapshot.state.runId, seed: snapshot.state.config.seed, tick: snapshot.state.tick, engineVersion: snapshot.engineVersion, createdAt: previous?.createdAt ?? now, updatedAt: now, telemetry } satisfies RunRecord)
     transaction.objectStore('snapshots').put(saved)
     const eventStore = transaction.objectStore('events')
     for (const event of events) eventStore.put({ ...event, storageKey: event.id } satisfies StoredEvent)
@@ -326,6 +409,10 @@ export class WorkbenchDatabase {
             const events = database.createObjectStore('events', { keyPath: 'storageKey' })
             events.createIndex('runId', 'runId')
             events.createIndex('runTick', ['runId', 'tick'])
+            events.createIndex('runSequence', ['runId', 'sequence'], { unique: true })
+          } else {
+            const events = opening.transaction!.objectStore('events')
+            if (!events.indexNames.contains('runSequence')) events.createIndex('runSequence', ['runId', 'sequence'], { unique: true })
           }
           if (!database.objectStoreNames.contains('statistics')) {
             const statistics = database.createObjectStore('statistics', { keyPath: 'storageKey' })
@@ -359,12 +446,48 @@ export function validateImportedEvents(runId: string, value: unknown): Simulatio
   if (!Array.isArray(value)) throw new Error('Import events must be an array')
   return value.map((event) => {
     if (!isRecord(event) || typeof event.id !== 'string' || event.id.length === 0 || event.runId !== runId
-      || !nonNegativeSafeInteger(event.tick) || event.version !== 1 || typeof event.type !== 'string'
-      || !isPrimitiveRecord(event.payload) || (event.cellId !== undefined && typeof event.cellId !== 'string')) {
+      || !nonNegativeSafeInteger(event.tick) || !nonNegativeSafeInteger(event.sequence) || event.version !== 1 || typeof event.type !== 'string' || !Object.hasOwn(EVENT_CATALOG, event.type)
+      || (event.cellId !== undefined && typeof event.cellId !== 'string')) {
       throw new Error('Import contains an invalid event')
     }
-    return event as unknown as SimulationEvent
+    const type = event.type as SimulationEventType
+    return { ...event, type, version: 1, payload: decodeEventPayload(type, event.version, event.payload) } as SimulationEvent
   })
+}
+
+export function validateWorkbenchCheckpoint(value: unknown): WorkbenchCheckpointEnvelope {
+  if (!isRecord(value) || value.version !== 1 || typeof value.checkpointId !== 'string' || value.checkpointId.length === 0 || !isRecord(value.snapshot)
+    || !validWatermark(value.committed) || !validWatermark(value.through) || !Array.isArray(value.events) || !Array.isArray(value.statistics)) throw new Error('Workbench checkpoint is invalid')
+  const checkpoint = value as unknown as WorkbenchCheckpointEnvelope
+  const runId = checkpoint.snapshot.state?.runId
+  if (typeof runId !== 'string' || checkpoint.through.eventSequence !== checkpoint.snapshot.state.nextEventSequence - 1
+    || checkpoint.through.statisticTick !== checkpoint.snapshot.state.tick || !watermarkCovers(checkpoint.through, checkpoint.committed)) throw new Error('Workbench checkpoint watermark is invalid')
+  const events = validateImportedEvents(runId, checkpoint.events).sort((a, b) => a.sequence - b.sequence)
+  const statistics = validateImportedStatistics(runId, checkpoint.statistics)
+  if (events.some((event, index) => event.sequence <= checkpoint.committed.eventSequence || event.sequence > checkpoint.through.eventSequence || index > 0 && event.sequence === events[index - 1]!.sequence)
+    || statistics.some((sample) => sample.tick <= checkpoint.committed.statisticTick || sample.tick > checkpoint.through.statisticTick)) throw new Error('Workbench checkpoint telemetry is outside its watermark')
+  const eventRetention = validateRetentionReport(checkpoint.eventRetention)
+  const firstProducedSequence = eventRetention.firstProducedSequence ?? checkpoint.through.eventSequence + 1
+  if (firstProducedSequence < checkpoint.committed.eventSequence + 1
+    || eventRetention.lastProducedSequence !== undefined && eventRetention.lastProducedSequence !== checkpoint.through.eventSequence) throw new Error('Workbench checkpoint retention does not match its watermark')
+  const unexplained = unexplainedRanges(firstProducedSequence, checkpoint.through.eventSequence, events.map((event) => event.sequence), eventRetention.droppedSequenceRanges)
+  if (unexplained.length > 0) throw new Error(`Workbench checkpoint telemetry has an unexplained sequence gap at ${unexplained[0]!.first}`)
+  return { ...structuredClone(checkpoint), events, statistics, eventRetention }
+}
+
+export function validateTelemetryCommit(value: unknown): TelemetryCommitMetadata {
+  if (!isRecord(value) || value.version !== 1 || !validWatermark(value.through)) throw new Error('Telemetry commit metadata is invalid')
+  return { version: 1, through: { ...value.through }, eventRetention: validateRetentionReport(value.eventRetention) }
+}
+
+function validateImportedTelemetryPrefix(snapshot: WorkbenchSnapshotEnvelope, events: readonly SimulationEvent[], statistics: readonly StatisticSample[], telemetry: TelemetryCommitMetadata): void {
+  if (telemetry.through.eventSequence !== snapshot.state.nextEventSequence - 1 || telemetry.through.statisticTick !== snapshot.state.tick) throw new Error('Imported telemetry watermark does not match its snapshot')
+  const firstProducedSequence = telemetry.eventRetention.firstProducedSequence ?? telemetry.through.eventSequence + 1
+  if (telemetry.eventRetention.lastProducedSequence !== undefined && telemetry.eventRetention.lastProducedSequence !== telemetry.through.eventSequence
+    || events.some((event, index) => event.sequence < firstProducedSequence || event.sequence > telemetry.through.eventSequence || index > 0 && event.sequence === events[index - 1]!.sequence)
+    || statistics.some((sample) => sample.tick > telemetry.through.statisticTick)) throw new Error('Imported telemetry falls outside its committed prefix')
+  const unexplained = unexplainedRanges(firstProducedSequence, telemetry.through.eventSequence, events.map((event) => event.sequence), telemetry.eventRetention.droppedSequenceRanges)
+  if (unexplained.length > 0) throw new Error(`Imported telemetry has an unexplained sequence gap at ${unexplained[0]!.first}`)
 }
 
 /** Statistic metric identifiers remain forward-compatible, while their scope,
@@ -386,9 +509,37 @@ export function validateImportedStatistics(runId: string, value: unknown): Stati
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function nonNegativeSafeInteger(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 }
-function isPrimitiveRecord(value: unknown): value is Record<string, string | number | boolean | null> {
-  return isRecord(value) && Object.values(value).every((item) => item === null || typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean')
+async function inspectTelemetryIntegrity(database: IDBDatabase, runId: string, commit?: TelemetryCommitMetadata): Promise<TelemetryIntegrity> {
+  if (!commit) return { status: 'uncheckpointed', committed: EMPTY_TELEMETRY_WATERMARK, unexplainedSequenceGaps: [], droppedByType: {} }
+  const sequences = await cursorMap<StoredEvent, number>(database.transaction('events').objectStore('events').index('runSequence'), IDBKeyRange.bound([runId, 0], [runId, commit.through.eventSequence]), 'next', (value) => value.sequence)
+  const gaps = unexplainedRanges(commit.eventRetention.firstProducedSequence ?? commit.through.eventSequence + 1, commit.through.eventSequence, sequences, commit.eventRetention.droppedSequenceRanges)
+  return { status: gaps.length === 0 ? 'complete' : 'gapped', committed: commit.through, unexplainedSequenceGaps: gaps, droppedByType: commit.eventRetention.droppedByType }
 }
+
+function unexplainedRanges(first: number, last: number, retained: readonly number[], dropped: readonly EventSequenceRange[]): EventSequenceRange[] {
+  if (last < first) return []
+  const covered = [...retained.map((sequence) => ({ first: sequence, last: sequence })), ...dropped]
+    .filter((range) => range.last >= first && range.first <= last)
+    .map((range) => ({ first: Math.max(first, range.first), last: Math.min(last, range.last) }))
+    .sort((a, b) => a.first - b.first || a.last - b.last)
+  const gaps: EventSequenceRange[] = []
+  let next = first
+  for (const range of covered) {
+    if (range.first > next) gaps.push({ first: next, last: range.first - 1 })
+    next = Math.max(next, range.last + 1)
+  }
+
+  if (next <= last) gaps.push({ first: next, last })
+  return gaps
+}
+
+function emptyRetention(): EventRetentionReport { return { version: 1, droppedByType: {}, droppedSequenceRanges: [] } }
+function validWatermark(value: unknown): value is TelemetryWatermark { return isRecord(value) && safeWatermarkPart(value.eventSequence) && safeWatermarkPart(value.statisticTick) }
+function safeWatermarkPart(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= -1 }
+function sameWatermark(left: TelemetryWatermark, right: TelemetryWatermark): boolean { return left.eventSequence === right.eventSequence && left.statisticTick === right.statisticTick }
+function watermarkCovers(left: TelemetryWatermark, right: TelemetryWatermark): boolean { return left.eventSequence >= right.eventSequence && left.statisticTick >= right.statisticTick }
+function formatWatermark(value: TelemetryWatermark): string { return `${value.eventSequence}/${value.statisticTick}` }
+function assertTelemetryComplete(integrity: TelemetryIntegrity): void { if (integrity.status !== 'complete') throw new Error(`Telemetry export is ${integrity.status}${integrity.unexplainedSequenceGaps[0] ? ` at sequence ${integrity.unexplainedSequenceGaps[0].first}` : ''}`) }
 
 /** Community scope is part of identity so two catchments cannot overwrite one another. */
 export function statisticStorageKey(sample: StatisticSample): string {
@@ -418,6 +569,38 @@ function cursorValues<T>(index: IDBIndex, keyRange: IDBKeyRange, direction: IDBC
       cursor.continue()
     }
   })
+}
+
+function cursorMap<TValue, TResult>(index: IDBIndex, keyRange: IDBKeyRange, direction: IDBCursorDirection, map: (value: TValue) => TResult): Promise<TResult[]> {
+  return new Promise((resolve, reject) => {
+    const values: TResult[] = []
+    const operation = index.openCursor(keyRange, direction)
+    operation.onerror = () => reject(operation.error ?? new Error('IndexedDB cursor failed'))
+    operation.onsuccess = () => {
+      const cursor = operation.result
+      if (!cursor) { resolve(values); return }
+      values.push(map(cursor.value as TValue))
+      cursor.continue()
+    }
+  })
+}
+
+function streamCursor<T>(index: IDBIndex, keyRange: IDBKeyRange, consume: (value: T) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const operation = index.openCursor(keyRange, 'next')
+    operation.onerror = () => reject(operation.error ?? new Error('IndexedDB export cursor failed'))
+    operation.onsuccess = () => {
+      const cursor = operation.result
+      if (!cursor) { resolve(); return }
+      consume(cursor.value as T)
+      cursor.continue()
+    }
+  })
+}
+
+function deleteByIndex(index: IDBIndex, keyRange: IDBKeyRange): void {
+  const operation = index.openKeyCursor(keyRange)
+  operation.onsuccess = () => { const cursor = operation.result; if (cursor) { index.objectStore.delete(cursor.primaryKey); cursor.continue() } }
 }
 
 function boundedHistoryLimit(value: number | undefined, fallback: number): number {

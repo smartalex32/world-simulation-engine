@@ -501,7 +501,7 @@ test('browser worker preserves the Node golden digest for adversarial stable IDs
     ],
   }
   const engine = SimulationEngine.create(creation, 32, 24, contentPack)
-  engine.event('RUN_CREATED')
+  engine.event('RUN_CREATED', { seed: creation.seed, width: creation.width, height: creation.height, population: creation.initialPopulationCount, worldName: creation.name })
   engine.advance(48)
   const expected = await engine.snapshot()
   expect(expected.state.people.some((person) => person.fictionalInfection?.pathogenId === 'A_10')).toBe(true)
@@ -727,6 +727,51 @@ test('inspects persisted experience and deterministic development at the 720-hou
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
   await expect(page.getByText('Requested delta', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: /Hook development source/ }).first()).toBeVisible()
+})
+
+test('commits a retry-safe snapshot with an exact telemetry prefix', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  await page.getByRole('button', { name: 'Step +1h' }).click()
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '1')
+
+  const inspect = () => page.evaluate(async () => new Promise<{ atomic: boolean; covered: boolean; eventCount: number; through: number; snapshotThrough: number; snapshotNext: number; snapshotTick: number }>((resolve, reject) => {
+    const opening = indexedDB.open('world-simulation-workbench')
+    opening.onerror = () => reject(opening.error)
+    opening.onsuccess = () => {
+      const database = opening.result
+      const transaction = database.transaction(['runs', 'snapshots', 'events'])
+      const runsRequest = transaction.objectStore('runs').getAll()
+      const snapshotsRequest = transaction.objectStore('snapshots').getAll()
+      const eventsRequest = transaction.objectStore('events').getAll()
+      transaction.onerror = () => reject(transaction.error)
+      transaction.oncomplete = () => {
+        const run = runsRequest.result.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0]
+        const autosave = snapshotsRequest.result.find((snapshot) => snapshot.kind === 'autosave' && snapshot.runId === run?.runId)
+        const events = eventsRequest.result.filter((event) => event.runId === run?.runId)
+        const through = run?.telemetry?.through?.eventSequence ?? -1
+        const firstProduced = run?.telemetry?.eventRetention?.firstProducedSequence ?? through + 1
+        const retained = new Set(events.map((event) => event.sequence))
+        const dropped = run?.telemetry?.eventRetention?.droppedSequenceRanges ?? []
+        const covered = Array.from({ length: Math.max(0, through - firstProduced + 1) }, (_, index) => firstProduced + index).every((sequence) => retained.has(sequence) || dropped.some((range: { first: number; last: number }) => sequence >= range.first && sequence <= range.last))
+        const snapshotThrough = autosave?.telemetry?.through?.eventSequence ?? -1
+        const snapshotNext = autosave?.snapshot?.state?.nextEventSequence ?? -1
+        const snapshotTick = autosave?.snapshot?.state?.tick ?? -1
+        const atomic = Boolean(autosave?.telemetry && snapshotThrough === through && snapshotNext - 1 === through && covered)
+        database.close()
+        resolve({ atomic, covered, eventCount: events.length, through, snapshotThrough, snapshotNext, snapshotTick })
+      }
+    }
+  }))
+
+  await expect.poll(async () => (await inspect()).snapshotTick).toBe(1)
+  const before = await inspect()
+  expect(before.atomic, JSON.stringify(before)).toBe(true)
+  await page.getByPlaceholder('Snapshot name').fill('Retry-safe checkpoint')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByText('Saved snapshot: Retry-safe checkpoint')).toBeVisible()
+  const after = await inspect()
+  expect(after).toEqual(before)
 })
 
 test('maps and explains authoritative catchment measures without losing a hooked person', async ({ page }) => {

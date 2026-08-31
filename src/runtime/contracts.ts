@@ -1,6 +1,7 @@
 import type { MapProjectionRequest, ProjectionInvalidation, WorkbenchProjection } from '../projection'
 import type { DraftViewportProjection, DraftViewportRequest, SimulationEvent, SnapshotEnvelope, StatisticSample, Terrain, WorldCreationDraft, WorldDraftPreview, WorldDraftRecord } from '../simulation/domain/types'
 import type { ContentPack, ResolvedContentPack } from '../contentPacks'
+import type { EventRetentionReport } from '../simulation/events/retention'
 
 /** Platform-neutral continuation metadata. It is deliberately excluded from
  * canonical engine state and may be ignored by hosted adapters. */
@@ -11,6 +12,20 @@ export interface RuntimeContinuationState {
 }
 
 export type WorkbenchSnapshotEnvelope = SnapshotEnvelope & { workerContinuation?: RuntimeContinuationState }
+
+export interface TelemetryWatermark { eventSequence: number; statisticTick: number }
+export const EMPTY_TELEMETRY_WATERMARK: TelemetryWatermark = { eventSequence: -1, statisticTick: -1 }
+
+export interface WorkbenchCheckpointEnvelope {
+  version: 1
+  checkpointId: string
+  snapshot: WorkbenchSnapshotEnvelope
+  committed: TelemetryWatermark
+  through: TelemetryWatermark
+  events: SimulationEvent[]
+  statistics: StatisticSample[]
+  eventRetention: EventRetentionReport
+}
 
 /** The application command contract is owned by runtime, not either adapter. */
 export type SimulationCommand =
@@ -39,6 +54,7 @@ export type SimulationCommand =
   | { type: 'SET_SPEED'; requestId: string; ticksPerBatch: number }
   | { type: 'SET_VIEWPORT'; requestId: string; viewport: MapProjectionRequest }
   | { type: 'REQUEST_SNAPSHOT'; requestId: string }
+  | { type: 'REQUEST_CHECKPOINT'; requestId: string; committed: TelemetryWatermark }
   | { type: 'RESET'; requestId: string }
   | { type: 'DISPOSE'; requestId: string }
 
@@ -49,11 +65,12 @@ export type CommandAcknowledgement<C extends SimulationCommand = SimulationComma
 export type SimulationResponse =
   | { type: 'READY' }
   | CommandAcknowledgement
-  | { type: 'FRAME'; requestId?: string; projection: WorkbenchProjection; events: SimulationEvent[]; statistics: StatisticSample[]; processingMs: number; projectionInvalidation: ProjectionInvalidation }
+  | { type: 'FRAME'; requestId?: string; projection: WorkbenchProjection; events: SimulationEvent[]; statistics: StatisticSample[]; eventRetention: EventRetentionReport; processingMs: number; projectionInvalidation: ProjectionInvalidation }
   | { type: 'STATUS'; requestId?: string; status: 'idle' | 'paused' | 'playing'; ticksPerBatch: number }
   | { type: 'DRAFT'; requestId: string; action: 'created' | 'hydrated' | 'updated' | 'zoneCellsUpdated' | 'terrainPainted' | 'elevationPainted' | 'resourcesPainted' | 'undone' | 'redone' | 'reset' | 'previewed' | 'committing' | 'committed' | 'discarded'; draft?: WorldDraftRecord; preview?: WorldDraftPreview }
   | { type: 'DRAFT_VIEWPORT'; requestId: string; viewport: DraftViewportProjection }
   | { type: 'SNAPSHOT'; requestId: string; snapshot: WorkbenchSnapshotEnvelope }
+  | { type: 'CHECKPOINT'; requestId: string; checkpoint: WorkbenchCheckpointEnvelope }
   | { type: 'ERROR'; requestId?: string; message: string; stack?: string }
 
 export function requestId(): string {

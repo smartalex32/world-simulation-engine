@@ -283,6 +283,22 @@ See `docs/ROADMAP.md` for detailed sequencing, planned capabilities, and deferre
 * Import/export support
 * Explicit migration or rejection boundaries
 
+Simulation events are defined by one versioned catalog that owns each event's
+typed payload codec and `durable`, `bounded`, or `sampled` retention policy.
+Retention runs only after authoritative events have been created, never consumes
+randomness, and reports per-type drop counts plus exact sequence ranges. Durable
+event classes are never evicted by volume limits.
+
+The browser worker produces checkpoint envelopes containing the snapshot,
+continuation state, retained event/statistic delta, retention report, and committed
+and produced watermarks. IndexedDB commits that envelope in one transaction with
+deterministic event and statistic keys, compare-and-swap watermarks, and retry-safe
+named checkpoint IDs. History and export surface unexplained telemetry gaps rather
+than silently treating incomplete evidence as complete. The workbench's NDJSON
+export reads event and statistic records with IndexedDB cursors so large histories
+do not require an unbounded `getAll()` allocation. Bundle version 3 imports validate
+event payloads through the same catalog used by runtime persistence.
+
 ## Optional hosted single-node runtime
 
 The browser-hosted workbench remains the default. The hosted runtime now uses

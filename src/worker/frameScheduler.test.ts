@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
-import { SimulationBatchScheduler, TELEMETRY_EVENT_FLUSH_THRESHOLD, TELEMETRY_STATISTIC_FLUSH_THRESHOLD, TelemetryBuffer, validateWorkerContinuation } from './frameScheduler'
+import { CheckpointTelemetryBuffer, SimulationBatchScheduler, TELEMETRY_EVENT_FLUSH_THRESHOLD, TELEMETRY_STATISTIC_FLUSH_THRESHOLD, TelemetryBuffer, validateWorkerContinuation } from './frameScheduler'
 
 describe('worker frame scheduling', () => {
   it('splits a logical batch into 24-tick quanta and emits one logical clock duration', () => {
@@ -71,10 +71,21 @@ describe('worker frame scheduling', () => {
     expect(buffer.shouldFlush()).toBe(true)
     expect(buffer.drain().statistics).toEqual(statistics)
   })
+
+  it('replays an uncommitted checkpoint delta and prunes only after its watermark advances', () => {
+    const buffer = new CheckpointTelemetryBuffer()
+    buffer.append([event(0), event(1)], [statistic(1)])
+    expect(buffer.since(-1, -1).events.map(({ sequence }) => sequence)).toEqual([0, 1])
+    expect(buffer.since(-1, -1).events.map(({ sequence }) => sequence)).toEqual([0, 1])
+    buffer.append([event(2)], [statistic(2)])
+    const next = buffer.since(1, 1)
+    expect(next.events.map(({ sequence }) => sequence)).toEqual([2])
+    expect(next.statistics.map(({ tick }) => tick)).toEqual([2])
+  })
 })
 
 function event(index: number): SimulationEvent {
-  return { id: `event-${index}`, runId: 'run-test', tick: index, type: 'CLOCK_ADVANCED', version: 1, payload: {} }
+  return { id: `event-${index}`, runId: 'run-test', tick: index, sequence: index, type: 'CLOCK_ADVANCED', version: 1, payload: { hours: 1, currentTick: index } }
 }
 
 function statistic(index: number): StatisticSample {

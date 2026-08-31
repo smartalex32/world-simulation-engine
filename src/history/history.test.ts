@@ -3,7 +3,7 @@ import { eventInvolvesPerson, historicalHighlights, metricDelta, metricTimeline,
 import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
 
 function event(id: string, tick: number, type: SimulationEvent['type'], payload: SimulationEvent['payload']): SimulationEvent {
-  return { id, tick, type, payload, runId: 'run-history', version: 1 }
+  return { id, tick, sequence: tick, type, payload, runId: 'run-history', version: 1 }
 }
 
 describe('historical evidence views', () => {
