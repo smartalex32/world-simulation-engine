@@ -14,10 +14,12 @@ import { CommunityInspector, CommunitySignals } from './ui/CommunityPanels'
 import { WorldSetup, isWorldSetupGeometryValid, regionForPreset, type WorldSetupValues } from './ui/WorldSetup'
 import { HistoryPanel } from './ui/HistoryPanel'
 import type { DraftZoneViewportRequest } from './ui/DraftZoneMap'
-import { mergeWorkbenchProjection } from './ui/projectionFrame'
 import type { ContributionView, VariableDefinitionView } from './ui/personVariables'
 import { SimulationWorkerClient } from './worker/client'
-import type { SimulationResponse } from './worker/protocol'
+import type { SimulationResponse } from './runtime/contracts'
+import { useSimulationSession } from './ui/controllers/useSimulationSession'
+import { useDraftController } from './ui/controllers/useDraftController'
+import { usePersistenceController } from './ui/controllers/usePersistenceController'
 import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver, diffContentPacks, exportContentPack, importContentPack } from './contentPacks'
 import type { ContentPack, ResolvedContentPack } from './contentPacks'
 
@@ -34,6 +36,10 @@ const PAUSED_AUTOSAVE_DELAY_MS = 300
 export default function App() {
   const client = useMemo(() => new SimulationWorkerClient(), [])
   const database = useMemo(() => new WorkbenchDatabase(), [])
+  const session = useSimulationSession(client)
+  const draftController = useDraftController()
+  const persistenceController = usePersistenceController()
+  const { projection, status, speed, events, statistics, processingMs } = session
   const [seed, setSeed] = useState('valley-001')
   const [setupOpen, setSetupOpen] = useState(false)
   const [activeMode, setActiveMode] = useState<'world' | 'simulation' | 'analytics' | 'entities' | 'history' | 'tools' | 'settings'>('world')
@@ -58,21 +64,7 @@ export default function App() {
   const [draftBusy, setDraftBusy] = useState(false)
   const worldDraftRef = useRef<WorldDraftRecord | undefined>(undefined)
   const draftBusyRef = useRef(false)
-  const latestDraftViewportRequestRevision = useRef(0)
-  const minimumDraftViewportRevision = useRef(0)
-  const pendingDraftZoneCells = useRef<{ zoneId: string; cellIds: string[] } | undefined>(undefined)
-  const pendingTerrainPaint = useRef<{ terrain: Terrain; cellIds: string[] } | undefined>(undefined)
-  const pendingElevationPaint = useRef<{ elevation: number; cellIds: string[] } | undefined>(undefined)
-  const pendingDraftUpdate = useRef<WorldSetupValues | undefined>(undefined)
-  const draftPersistenceChain = useRef<Promise<unknown>>(Promise.resolve())
-  const commitAfterDraftUpdateRef = useRef(false)
-  const commitAfterDraftSignatureRef = useRef<string | undefined>(undefined)
-  const [projection, setProjection] = useState<WorkbenchProjection>()
   const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
-  const [status, setStatus] = useState<'starting' | 'idle' | 'paused' | 'playing'>('starting')
-  const [speed, setSpeed] = useState(24)
-  const [events, setEvents] = useState<SimulationEvent[]>([])
-  const [statistics, setStatistics] = useState<StatisticSample[]>([])
   const [history, setHistory] = useState<RunHistory>()
   const [historyLoading, setHistoryLoading] = useState(false)
   const [selectedCellId, setSelectedCellId] = useState<string>()
@@ -84,7 +76,6 @@ export default function App() {
   const [showHouseholds, setShowHouseholds] = useState(false)
   const [snapshots, setSnapshots] = useState<SavedSnapshot[]>([])
   const [error, setError] = useState<string>()
-  const [processingMs, setProcessingMs] = useState(0)
   const [saveName, setSaveName] = useState('')
   const [namedSavePending, setNamedSavePending] = useState(false)
   const [lastNamedSave, setLastNamedSave] = useState<string>()
@@ -98,13 +89,12 @@ export default function App() {
   }, [contentPackJson, contentPacks, selectedContentPackKey])
   const namedSavePendingRef = useRef(false)
   /** Serializes observational snapshots so autosave cannot race a named save. */
-  const snapshotRequestChain = useRef<Promise<void>>(Promise.resolve())
   const pausedAutosaveTimer = useRef<number | undefined>(undefined)
   const lastAutosavedTick = useRef(-1)
   const lastCheckpointTick = useRef(-1)
   const statusRef = useRef<typeof status>('starting')
   const importRef = useRef<HTMLInputElement>(null)
-  const requestViewport = useCallback((request: import('./projection').MapProjectionRequest) => client.setViewport(request), [client])
+  const requestViewport = session.requestViewport
 
   function setDraftOperationBusy(value: boolean) {
     draftBusyRef.current = value
@@ -112,9 +102,7 @@ export default function App() {
   }
 
   function requestSnapshot() {
-    const request = snapshotRequestChain.current.then(() => client.snapshot())
-    snapshotRequestChain.current = request.then(() => undefined, () => undefined)
-    return request
+    return persistenceController.requestSnapshot(() => client.snapshot())
   }
 
   function schedulePausedAutosave() {
@@ -133,6 +121,14 @@ export default function App() {
     const selected = contentPacks.find((entry) => `${entry.id}@${entry.version}` === selectedContentPackKey)?.pack
     if (!selected) throw new Error(`Selected content pack is unavailable: ${selectedContentPackKey}`)
     return selected
+  }
+
+  function sendPendingDraftOperation(operation: import('./ui/controllers/useDraftController').PendingDraftOperation) {
+    if (operation.type === 'update') void client.updateDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(operation.setup))
+    else if (operation.type === 'zone') void client.updateDraftZoneCells(WORLD_SETUP_DRAFT_ID, operation.zoneId, operation.cellIds)
+    else if (operation.type === 'terrain') void client.paintDraftTerrain(WORLD_SETUP_DRAFT_ID, operation.cellIds, operation.terrain)
+    else if (operation.type === 'elevation') void client.paintDraftElevation(WORLD_SETUP_DRAFT_ID, operation.cellIds, operation.elevation)
+    else void client.paintDraftResources(WORLD_SETUP_DRAFT_ID, operation.cellIds, operation.resourceCapacity)
   }
   function selectedResolvedContentPack(): ResolvedContentPack {
     const current = contentPackSelectionRef.current
@@ -154,52 +150,32 @@ export default function App() {
       void handleResponse(response)
     })
     async function handleResponse(response: SimulationResponse) {
-      if (response.type === 'READY') {
-        client.create(seed, selectedResolvedContentPack())
-      } else if (response.type === 'FRAME') {
-        const previousProjection = projectionRef.current
-        const startedNewProjection = previousProjection !== undefined && previousProjection.projectionEpoch !== response.projection.projectionEpoch
-        const nextProjection = { ...mergeWorkbenchProjection(previousProjection, response.projection), digest: response.projection.digest ?? previousProjection?.digest }
-        projectionRef.current = nextProjection
-        setProjection(nextProjection)
-        setProcessingMs(response.processingMs)
-        if (startedNewProjection) {
-          setEvents([...response.events].reverse())
-          setStatistics([...response.statistics])
-        } else {
-          if (response.events.length) setEvents((current) => [...response.events].reverse().concat(current).slice(0, 150))
-          if (response.statistics.length) setStatistics((current) => [...response.statistics, ...current].slice(0, 150))
-        }
+      if (response.type === 'FRAME') {
         try { await database.appendTelemetry(response.events, response.statistics) } catch (reason) { setError(messageOf(reason)) }
       } else if (response.type === 'STATUS') {
-        setStatus(response.status)
-        setSpeed(response.ticksPerBatch)
         if (response.status === 'paused') schedulePausedAutosave()
       } else if (response.type === 'ERROR') {
         setError(response.message)
-        setStatus('paused')
-        commitAfterDraftUpdateRef.current = false
         // A draft edit may briefly be invalid while a user is changing a
         // coordinated set of fields (for example, adding a zone before
         // reallocating population). If a later complete form state arrived
         // while that request was in flight, submit that latest state rather
         // than dropping it with the rejected intermediate request.
-        const pending = pendingDraftUpdate.current
+        if (worldDraftRef.current) draftController.recoverFromFailure()
+        const pending = worldDraftRef.current ? draftController.takeNext() : undefined
         if (pending) {
-          pendingDraftUpdate.current = undefined
           setDraftOperationBusy(true)
-          client.updateDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(pending))
+          sendPendingDraftOperation(pending)
         } else {
           setDraftOperationBusy(false)
         }
       } else if (response.type === 'DRAFT_VIEWPORT') {
-        if (response.viewport.draftId === WORLD_SETUP_DRAFT_ID && response.viewport.revision >= minimumDraftViewportRevision.current && response.viewport.revision >= latestDraftViewportRequestRevision.current) setDraftViewport(response.viewport)
+        if (response.viewport.draftId === WORLD_SETUP_DRAFT_ID && draftController.acceptViewport(response.viewport.revision)) setDraftViewport(response.viewport)
       } else if (response.type === 'DRAFT') {
         if (response.action === 'committing') {
           // This arrives before the new run's FRAME so its RUN_CREATED event
           // is retained. The draft remains recoverable until commit succeeds.
-          setEvents([])
-          setStatistics([])
+          session.clearTimeline()
           setHistory(undefined)
           setSelectedCellId(undefined)
           setSelectedPersonId(undefined)
@@ -210,8 +186,8 @@ export default function App() {
           if (discarded) {
             try { await database.deleteWorldDraft(discarded.draftId) } catch (reason) { setError(messageOf(reason)) }
           }
-          commitAfterDraftUpdateRef.current = false
           worldDraftRef.current = undefined
+          draftController.close()
           setWorldDraft(undefined)
           setDraftPreview(undefined)
           setDraftViewport(undefined)
@@ -228,7 +204,7 @@ export default function App() {
         } else if (response.draft) {
           // IndexedDB writes are asynchronous; ignore an older worker reply
           // that resumes after a newer accepted draft has already arrived.
-          if (worldDraftRef.current && response.draft.revision < worldDraftRef.current.revision) return
+          if (!draftController.acceptDraft(response.draft.revision)) return
           if (response.action === 'updated' || response.action === 'zoneCellsUpdated' || response.action === 'terrainPainted' || response.action === 'elevationPainted' || response.action === 'resourcesPainted' || response.action === 'undone' || response.action === 'redone') setError(undefined)
           worldDraftRef.current = response.draft
           setWorldDraft(response.draft)
@@ -251,46 +227,22 @@ export default function App() {
             // Persist accepted revisions in worker order. IndexedDB requests
             // from overlapping response handlers can otherwise finish out of
             // order and resurrect an older draft after a reload.
-            draftPersistenceChain.current = draftPersistenceChain.current.then(() => database.saveWorldDraft(response.draft!))
-            await draftPersistenceChain.current
-            if (response.action === 'updated' && commitAfterDraftUpdateRef.current && commitAfterDraftSignatureRef.current === worldSetupSignature(acceptedSetup)) {
-              commitAfterDraftUpdateRef.current = false
-              commitAfterDraftSignatureRef.current = undefined
-              client.commitDraft(WORLD_SETUP_DRAFT_ID, undefined, selectedResolvedContentPack())
+            await persistenceController.persistDraft(() => database.saveWorldDraft(response.draft!))
+            const pending = draftController.takeNext()
+            if (pending) {
+              setDraftOperationBusy(true)
+              sendPendingDraftOperation(pending)
             } else {
-              const pendingUpdate = pendingDraftUpdate.current
               // Keep the worker draft convergent with the latest form state,
               // even when a response races a burst of React input events.
               // The explicit comparison is the acknowledgement boundary used
               // by both persistence and the enabled commit control.
               const desiredSetup = worldSetupRef.current
-              if (pendingUpdate || (isCommitReadyWorldSetup(desiredSetup) && worldSetupSignature(desiredSetup) !== worldSetupSignature(acceptedSetup))) {
-                const nextDraft = pendingUpdate ?? desiredSetup
-                pendingDraftUpdate.current = undefined
+              if (isCommitReadyWorldSetup(desiredSetup) && worldSetupSignature(desiredSetup) !== worldSetupSignature(acceptedSetup)) {
                 setDraftOperationBusy(true)
-                client.updateDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(nextDraft))
+                void client.updateDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(desiredSetup))
               } else {
                 setDraftOperationBusy(false)
-                const pending = pendingDraftZoneCells.current
-              if (pending) {
-                pendingDraftZoneCells.current = undefined
-                setDraftOperationBusy(true)
-                client.updateDraftZoneCells(WORLD_SETUP_DRAFT_ID, pending.zoneId, pending.cellIds)
-              } else {
-                const terrain = pendingTerrainPaint.current
-                if (terrain) {
-                  pendingTerrainPaint.current = undefined
-                  setDraftOperationBusy(true)
-                  client.paintDraftTerrain(WORLD_SETUP_DRAFT_ID, terrain.cellIds, terrain.terrain)
-                } else {
-                  const elevation = pendingElevationPaint.current
-                  if (elevation) {
-                    pendingElevationPaint.current = undefined
-                    setDraftOperationBusy(true)
-                    client.paintDraftElevation(WORLD_SETUP_DRAFT_ID, elevation.cellIds, elevation.elevation)
-                  }
-                }
-                }
               }
             }
           } catch (reason) {
@@ -306,7 +258,6 @@ export default function App() {
       window.clearInterval(interval)
       if (pausedAutosaveTimer.current !== undefined) window.clearTimeout(pausedAutosaveTimer.current)
       unsubscribe()
-      client.dispose()
     }
   }, [client, database])
 
@@ -391,13 +342,13 @@ export default function App() {
     try {
       const value: unknown = JSON.parse(await file.text())
       const saved = await database.importBundle(value)
-      client.load(saved.snapshot, await database.resolveSnapshotContentPack(saved.snapshot))
+      await client.load(saved.snapshot, await database.resolveSnapshotContentPack(saved.snapshot))
       setSeed(saved.snapshot.state.config.seed)
+      session.setSeed(saved.snapshot.state.config.seed)
       const setup = worldSetupFromCreation(saved.snapshot.state.config.worldCreation)
       worldSetupRef.current = setup
       setWorldSetup(setup)
-      setEvents([])
-      setStatistics([])
+      session.clearTimeline()
       setHistory(undefined)
       setSelectedCellId(undefined)
       setSelectedPersonId(undefined)
@@ -415,8 +366,7 @@ export default function App() {
     setDraftPreview(undefined)
     setDraftViewport(undefined)
     setAcceptedDraftSignature(undefined)
-    latestDraftViewportRequestRevision.current = 0
-    minimumDraftViewportRevision.current = 0
+    draftController.open()
     setDraftOperationBusy(true)
     try {
       const saved = await database.loadWorldDraft(WORLD_SETUP_DRAFT_ID)
@@ -441,7 +391,7 @@ export default function App() {
     // allowing the user to finish the edit.
     if (!isCommitReadyWorldSetup(next)) return
     if (draftBusyRef.current) {
-      pendingDraftUpdate.current = next
+      draftController.queue({ type: 'update', setup: next })
       return
     }
     setDraftOperationBusy(true)
@@ -454,49 +404,50 @@ export default function App() {
 
   const requestDraftViewport = useCallback((viewport: DraftZoneViewportRequest) => {
     if (!worldDraftRef.current || draftBusyRef.current) return
-    latestDraftViewportRequestRevision.current = Math.max(latestDraftViewportRequestRevision.current, viewport.revision)
+    draftController.requestViewport(viewport.revision)
     client.requestDraftViewport(WORLD_SETUP_DRAFT_ID, viewport)
-  }, [client])
+  }, [client, draftController])
 
   const updateDraftZoneCells = useCallback((zoneId: string, cellIds: readonly string[]) => {
     if (!worldDraftRef.current) return
     if (draftBusyRef.current) {
-      pendingDraftZoneCells.current = { zoneId, cellIds: [...cellIds] }
+      draftController.queue({ type: 'zone', zoneId, cellIds: [...cellIds] })
       return
     }
     // Ignore any in-flight terrain response. DraftZoneMap will issue its next
     // monotonically newer request once the accepted draft revision arrives.
-    minimumDraftViewportRevision.current = latestDraftViewportRequestRevision.current + 1
+    draftController.invalidateViewport()
     setDraftViewport(undefined)
     setDraftOperationBusy(true)
     client.updateDraftZoneCells(WORLD_SETUP_DRAFT_ID, zoneId, [...cellIds])
-  }, [client])
+  }, [client, draftController])
 
   const paintDraftTerrain = useCallback((terrain: Terrain, cellIds: readonly string[]) => {
     if (!worldDraftRef.current) return
-    if (draftBusyRef.current) { pendingTerrainPaint.current = { terrain, cellIds: [...cellIds] }; return }
-    minimumDraftViewportRevision.current = latestDraftViewportRequestRevision.current + 1
+    if (draftBusyRef.current) { draftController.queue({ type: 'terrain', terrain, cellIds: [...cellIds] }); return }
+    draftController.invalidateViewport()
     setDraftViewport(undefined)
     setDraftOperationBusy(true)
     client.paintDraftTerrain(WORLD_SETUP_DRAFT_ID, [...cellIds], terrain)
-  }, [client])
+  }, [client, draftController])
 
   const paintDraftElevation = useCallback((elevation: number, cellIds: readonly string[]) => {
     if (!worldDraftRef.current) return
-    if (draftBusyRef.current) { pendingElevationPaint.current = { elevation, cellIds: [...cellIds] }; return }
-    minimumDraftViewportRevision.current = latestDraftViewportRequestRevision.current + 1
+    if (draftBusyRef.current) { draftController.queue({ type: 'elevation', elevation, cellIds: [...cellIds] }); return }
+    draftController.invalidateViewport()
     setDraftViewport(undefined)
     setDraftOperationBusy(true)
     client.paintDraftElevation(WORLD_SETUP_DRAFT_ID, [...cellIds], elevation)
-  }, [client])
+  }, [client, draftController])
 
   const paintDraftResources = useCallback((resourceCapacity: number, cellIds: readonly string[]) => {
-    if (!worldDraftRef.current || draftBusyRef.current) return
-    minimumDraftViewportRevision.current = latestDraftViewportRequestRevision.current + 1
+    if (!worldDraftRef.current) return
+    if (draftBusyRef.current) { draftController.queue({ type: 'resources', resourceCapacity, cellIds: [...cellIds] }); return }
+    draftController.invalidateViewport()
     setDraftViewport(undefined)
     setDraftOperationBusy(true)
     client.paintDraftResources(WORLD_SETUP_DRAFT_ID, [...cellIds], resourceCapacity)
-  }, [client])
+  }, [client, draftController])
 
   function discardWorldSetup() {
     if (!worldDraftRef.current) {
@@ -554,6 +505,7 @@ export default function App() {
   function commitWorldSetup() {
     const currentDraft = worldDraftRef.current
     if (!currentDraft) return
+    draftController.beginCommit()
     setDraftOperationBusy(true)
     client.commitDraft(WORLD_SETUP_DRAFT_ID, undefined, selectedResolvedContentPack())
   }
@@ -603,21 +555,21 @@ export default function App() {
         <button className="secondary" onClick={() => { void openWorldSetup() }}>Create world</button>
         <span className="active-world-seed">Seed <strong>{projection?.seed ?? seed}</strong></span>
         <div className="divider" />
-        <button className="icon-button" onClick={() => client.step()} disabled={status === 'playing'} title="Advance one hour">Step +1h</button>
+        <button className="icon-button" onClick={() => session.step()} disabled={status === 'playing'} title="Advance one hour">Step +1h</button>
         {status === 'playing'
-          ? <button className="primary" onClick={() => client.pause()}>Pause</button>
-          : <button className="primary" onClick={() => client.play(speed)} disabled={!projection}>Play</button>}
-        <select aria-label="Simulation speed" value={speed} onChange={(event) => { const value = Number(event.target.value); setSpeed(value); client.setSpeed(value) }}>
+          ? <button className="primary" onClick={() => session.pause()}>Pause</button>
+          : <button className="primary" onClick={() => session.play()} disabled={!projection}>Play</button>}
+        <select aria-label="Simulation speed" value={speed} onChange={(event) => session.changeSpeed(Number(event.target.value))}>
           {SPEEDS.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
         </select>
-        <button className="secondary" onClick={() => client.reset()}>Reset</button>
+        <button className="secondary" onClick={() => session.reset()}>Reset</button>
         <div className="control-spacer" />
         <button className="secondary" onClick={() => importRef.current?.click()}>Import</button>
         <button className="secondary" onClick={() => void exportRun()}>Export</button>
         <input ref={importRef} hidden type="file" accept="application/json,.json" onChange={(event) => void importRun(event.target.files?.[0])} />
       </section>
 
-      {error && <div className="error-banner"><strong>Workbench error</strong><span>{error}</span><button onClick={() => setError(undefined)}>Dismiss</button></div>}
+      {(error ?? session.error) && <div className="error-banner"><strong>Workbench error</strong><span>{error ?? session.error}</span><button onClick={() => { setError(undefined); session.dismissError() }}>Dismiss</button></div>}
 
       <section className="workspace">
         <aside className="left-panel panel">

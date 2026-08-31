@@ -228,6 +228,15 @@ function validateHostedCommand(value: unknown): HostedRunCommand {
       return { type: 'SET_SPEED', requestId: value.requestId, ticksPerBatch: value.ticksPerBatch }
     case 'REQUEST_SNAPSHOT': return { type: 'REQUEST_SNAPSHOT', requestId: value.requestId }
     case 'RESET': return { type: 'RESET', requestId: value.requestId }
+    case 'MATERIALIZE_COHORT':
+      if (typeof value.cohortId !== 'string' || !value.cohortId || !isSafeInteger(value.populationCount) || value.populationCount < 1) throw new Error('Hosted cohort materialization command is invalid')
+      return { type: 'MATERIALIZE_COHORT', requestId: value.requestId, cohortId: value.cohortId, populationCount: value.populationCount }
+    case 'DEMATERIALIZE_PEOPLE':
+      if (!Array.isArray(value.personIds) || value.personIds.some((id) => typeof id !== 'string' || !id)) throw new Error('Hosted people dematerialization command is invalid')
+      return { type: 'DEMATERIALIZE_PEOPLE', requestId: value.requestId, personIds: [...value.personIds] }
+    case 'SET_PROTECTED_PEOPLE':
+      if (!Array.isArray(value.personIds) || value.personIds.some((id) => typeof id !== 'string' || !id)) throw new Error('Hosted protected people command is invalid')
+      return { type: 'SET_PROTECTED_PEOPLE', requestId: value.requestId, personIds: [...value.personIds] }
     case 'SET_VIEWPORT': return { type: 'SET_VIEWPORT', requestId: value.requestId, viewport: parseViewport(value.viewport) }
     default: throw new Error(`Unsupported hosted command: ${value.type}`)
   }
