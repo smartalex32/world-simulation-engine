@@ -70,7 +70,7 @@ import { PERSON_VARIABLE_DEFINITIONS, PERSON_VARIABLE_ID } from '../variables/re
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
 import { createContentPackRuntime, evaluateExpression, resolveContentPack, type ContentPack, type ContentPackRuntime, type ResolvedContentPack } from '../../contentPacks'
 import { adjustPersonVariable, createDefaultPersonVariableValues, getPersonVariable, setPersonVariable, validatePersonVariableValues } from '../variables/storage'
-import { validateEconomyState, validateHouseholdActivityState, validateInfrastructureState } from './invariants'
+import { validateCanonicalSimulationState } from '../validation/canonicalState'
 import {
   accumulateParentCuriosityExposure,
   completeParentCuriosityExposureWindow,
@@ -232,7 +232,7 @@ export class SimulationEngine {
     reconcileSettlementRegions({ settlements: world.settlements, cells: world.grid.cells, households: generatedPopulation.households, cohorts, markets, organizations, roads: world.roads ?? [], tick: 0 })
     const infrastructure = createInfrastructureAssets({ roads: world.roads ?? [], cells: world.grid.cells, settlements: world.settlements, markets, organizations, tick: 0 })
     const governance = createLocalGovernance(communities, generatedPopulation.people)
-    return new SimulationEngine({
+    const engine = new SimulationEngine({
       runId,
       tick: 0,
       nextEventSequence: 1,
@@ -293,6 +293,8 @@ export class SimulationEngine {
       dailyEnvironmentalCounters: { foodRegenerated: 0 },
       randomStreams: random.snapshot(),
     }, random, runtime)
+    engine.assertInvariants()
+    return engine
   }
 
   static async restore(snapshotValue: unknown, contentPack: ContentPack | ResolvedContentPack = DEFAULT_PREINDUSTRIAL_PACK): Promise<SimulationEngine> {
@@ -663,6 +665,7 @@ export class SimulationEngine {
   async snapshot(): Promise<SnapshotEnvelope> {
     this.state.randomStreams = this.random.snapshot()
     this.syncCommunityCounterState()
+    this.assertInvariants()
     const snapshot = await createSnapshot(this.state)
     return this.migrationProvenance === undefined ? snapshot : { ...snapshot, migrationProvenance: structuredClone(this.migrationProvenance) }
   }
@@ -1659,58 +1662,7 @@ export class SimulationEngine {
   }
 
   private assertInvariants(): void {
-    validateInfrastructureState(this.state)
-    validateEconomyState(this.state)
-    validateHouseholdActivityState(this.state)
-    validateCommunitySimulationState(this.state)
-    const { width, height, cells } = this.state.world.grid
-    if (cells.length !== width * height) throw new Error('World cell count does not match bounds')
-    if (new Set(cells.map((cell) => cell.id)).size !== cells.length) throw new Error('World contains duplicate cell IDs')
-    for (const cell of cells) {
-      if (!Number.isInteger(cell.foodAmount) || cell.foodAmount < 0 || cell.foodAmount > cell.resourceCapacity) throw new Error(`Cell ${cell.id} has invalid food stock`)
-    }
-    if (!Number.isSafeInteger(this.state.tick) || this.state.tick < 0) throw new Error('Simulation tick is invalid')
-    if (new Set(this.state.people.map((person) => person.id)).size !== this.state.people.length) throw new Error('Population contains duplicate person IDs')
-    const personIds = new Set(this.state.people.map((person) => person.id))
-    if (new Set(this.state.organizations.map((organization) => organization.id)).size !== this.state.organizations.length) throw new Error('Organizations contain duplicate IDs')
-    for (const organization of this.state.organizations) {
-      if (organization.kind !== 'school') throw new Error(`Organization ${organization.id} has invalid kind`)
-      if (organization.members.some((member) => member.role !== 'learner')) throw new Error(`Organization ${organization.id} has invalid member role`)
-      if (!Number.isSafeInteger(organization.serviceCapacity) || organization.serviceCapacity < 1) throw new Error(`Organization ${organization.id} has invalid service capacity`)
-    }
-    for (const person of this.state.people) {
-      if (!this.cellById.has(person.locationCellId)) throw new Error(`Person ${person.id} occupies a missing cell`)
-      validatePersonVariableValues(person.variables, this.contentPackRuntime.variables)
-      if (!person.knowledge || Object.values(person.knowledge).some((value) => !Number.isSafeInteger(value) || value < 0 || value > 1000)) throw new Error(`Person ${person.id} has invalid knowledge values`)
-      if (typeof person.schoolLearningHours !== 'number' || !Number.isSafeInteger(person.schoolLearningHours) || person.schoolLearningHours < 0) throw new Error(`Person ${person.id} has invalid school learning hours`)
-      if (person.schoolAttendance && (!this.state.organizations.some((organization) => organization.id === person.schoolAttendance?.schoolId) || !Number.isSafeInteger(person.schoolAttendance.returnTick) || person.schoolAttendance.returnTick <= this.state.tick)) throw new Error(`Person ${person.id} has invalid school attendance state`)
-      if (person.journey) {
-        const destination = this.cellById.get(person.journey.destinationCellId)
-        if (!destination?.movementCost) throw new Error(`Person ${person.id} is traveling to an invalid cell`)
-        if (!Number.isInteger(person.journey.remainingCost) || person.journey.remainingCost <= 0 || person.journey.remainingCost > person.journey.totalCost) throw new Error(`Person ${person.id} has invalid journey progress`)
-      }
-      if (person.lastEncounter) {
-        if (!personIds.has(person.lastEncounter.otherPersonId) || person.lastEncounter.otherPersonId === person.id) throw new Error(`Person ${person.id} has an invalid last encounter`)
-        if (person.lastEncounter.tick > this.state.tick) throw new Error(`Person ${person.id} has a future encounter`)
-        const encounterLocation = this.activityLocationById.get(person.lastEncounter.activityLocationId)
-        if (!encounterLocation || encounterLocation.cellId !== person.lastEncounter.cellId) throw new Error(`Person ${person.id} has an invalid encounter activity location`)
-      }
-    }
-    if (new Set(this.state.relationships.map((relationship) => relationship.id)).size !== this.state.relationships.length) throw new Error('Relationships contain duplicate IDs')
-    const sortedRelationshipIds = this.state.relationships.map((relationship) => relationship.id).sort()
-    if (this.state.relationships.some((relationship, index) => relationship.id !== sortedRelationshipIds[index])) throw new Error('Relationships are not in canonical order')
-    for (const relationship of this.state.relationships) {
-      if (relationship.personAId >= relationship.personBId || relationship.id !== relationshipId(relationship.personAId, relationship.personBId)) throw new Error(`Relationship ${relationship.id} is not canonical`)
-      if (!personIds.has(relationship.personAId) || !personIds.has(relationship.personBId)) throw new Error(`Relationship ${relationship.id} contains a missing person`)
-      const bounded = [relationship.familiarity, relationship.interactionFrequency, ...Object.values(relationship.aToB), ...Object.values(relationship.bToA)]
-      if (bounded.some((value) => !Number.isInteger(value) || value < 0 || value > 1000)) throw new Error(`Relationship ${relationship.id} has invalid dimensions`)
-      if (!Number.isSafeInteger(relationship.interactionCount) || relationship.interactionCount < 1) throw new Error(`Relationship ${relationship.id} has invalid interaction count`)
-      if (!Number.isSafeInteger(relationship.lastInteractionTick) || relationship.lastInteractionTick < 1 || relationship.lastInteractionTick > this.state.tick) throw new Error(`Relationship ${relationship.id} has invalid interaction tick`)
-    }
-    const social = this.state.dailySocialCounters
-    if (Object.values(social).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error('Daily social counters are invalid')
-    if (social.positiveEncounters + social.neutralEncounters + social.tenseEncounters !== social.encounters) throw new Error('Daily social outcome counters do not sum to encounters')
-    if (social.relationshipsFormed > social.encounters) throw new Error('Daily relationship formations exceed encounters')
+    validateCanonicalSimulationState(this.state, this.contentPackRuntime)
   }
 
   private economicCounters(): NonNullable<SimulationState['dailyEconomicCounters']> {

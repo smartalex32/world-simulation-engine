@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SNAPSHOT_SCHEMA_VERSION, type PersonState, type SimulationState } from '../domain/types'
 import { SimulationEngine } from '../engine/engine'
-import { validateHouseholdActivityState } from '../engine/invariants'
+import { validateHouseholdActivityState } from '../households/invariants'
 import { resolveCurrentActivity, commonsActivityId } from '../activities/model'
 import { resolveEncounters } from '../relationships/encounters'
 import { calculateCuriosityInheritance } from '../households/inheritance'
