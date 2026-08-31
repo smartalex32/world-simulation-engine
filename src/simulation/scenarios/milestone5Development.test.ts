@@ -9,6 +9,7 @@ import { createSnapshot } from '../serialization/snapshot'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { getPersonVariable, setPersonVariable } from '../variables/storage'
 import { createCommunityState, createDailyCommunityCounters, createTwoCatchmentGeography } from '../community'
+import { createLocalGovernance } from '../governance/model'
 
 interface ControlledOptions {
   secondParentAway?: boolean
@@ -28,6 +29,10 @@ async function controlledEngine(options: ControlledOptions = {}): Promise<Simula
   const awayCell = { ...secondSource, id: '10,10', q: 10, r: 10, resourceCapacity: 0, foodAmount: 0, foodRegenerationPerDay: 0 }
   state.world.grid = { width: 2, height: 1, cells: [homeCell, awayCell] }
   state.markets = []
+  state.economy = { version: 1, markets: [], tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 }
+  state.organizations = []
+  state.infrastructure = []
+  state.disputes = []
   state.config.worldWidth = 2
   state.config.worldHeight = 1
   state.tick = 0
@@ -89,6 +94,7 @@ async function controlledEngine(options: ControlledOptions = {}): Promise<Simula
     communityId: community.catchment.id,
     counters: { ...createDailyCommunityCounters(), windowStartTick: 1, windowEndTick: 24 },
   }))
+  state.governance = createLocalGovernance(state.communities, state.people)
   return SimulationEngine.restore(await createSnapshot(state))
 }
 

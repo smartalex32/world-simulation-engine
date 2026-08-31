@@ -18,6 +18,7 @@ import { getPersonVariable, setPersonVariable } from '../variables/storage'
 import { PERSON_VARIABLE_IDS } from '../variables/types'
 import { compareStableText } from '../../shared/stableOrder'
 import { createCommunityState, createDailyCommunityCounters, createTwoCatchmentGeography } from '../community'
+import { createLocalGovernance } from '../governance/model'
 
 function expectAllVariablesBounded(projection: WorldProjection): void {
   for (const person of projection.people) {
@@ -52,6 +53,10 @@ async function controlledSnapshot(seed: string, personCount: number): Promise<Sn
   const secondCell = { ...cell, id: '1,0', q: 1 }
   state.world.grid = { width: 2, height: 1, cells: [cell, secondCell] }
   state.markets = []
+  state.economy = { version: 1, markets: [], tradeTraces: [], productionTraces: [], wageTraces: [], totalTaxCollectedUnits: 0 }
+  state.organizations = []
+  state.infrastructure = []
+  state.disputes = []
   state.config.worldWidth = 2
   state.config.worldHeight = 1
   state.tick = 5
@@ -100,6 +105,7 @@ async function controlledSnapshot(seed: string, personCount: number): Promise<Sn
       ? { ...createDailyCommunityCounters(), windowStartTick: 1, windowEndTick: 24, exposedPersonIds, exposedPersonHours: personCount * state.tick, curiosityPersonHourSum }
       : { ...createDailyCommunityCounters(), windowStartTick: 1, windowEndTick: 24 },
   }))
+  state.governance = createLocalGovernance(state.communities, state.people)
   return createSnapshot(state)
 }
 
@@ -124,7 +130,7 @@ describe('Milestone 4 deterministic state and persistence', () => {
     expect(firstSnapshot.state.randomStreams).toEqual(secondSnapshot.state.randomStreams)
     expect(firstSnapshot.state).toEqual(secondSnapshot.state)
     expect(firstSnapshot.digest).toBe(secondSnapshot.digest)
-  }, 30_000)
+  }, 45_000)
 
   it('round-trips registry versions and all named population/action/encounter streams', async () => {
     const engine = SimulationEngine.create('milestone-4-round-trip')

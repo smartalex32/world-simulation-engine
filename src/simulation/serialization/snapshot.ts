@@ -26,10 +26,7 @@ import {
 } from '../domain/types'
 import { canonicalStringify, stateDigest } from './digest'
 import { normalizeWorldCreationRequest } from '../domain/worldCreation'
-import { HOUSEHOLD_GENERATION_STREAM } from '../households/config'
-import { validateEconomyState, validateHouseholdActivityState, validateInfrastructureState } from '../engine/invariants'
-import { validatePersonVariableValues } from '../variables/storage'
-import { validateCommunitySimulationState } from '../community/invariants'
+import { validateCanonicalSimulationState } from '../validation/canonicalState'
 import { COHORT_MODEL_VERSION } from '../cohorts/model'
 import { migrateSnapshotSchema } from './migrations'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
@@ -45,7 +42,6 @@ export async function createSnapshot(state: SimulationState): Promise<SnapshotEn
     digest: await stateDigest(state),
   }
 }
-
 /** A caller supplies the exact immutable pack selected for a non-default run.
  * Snapshot payloads carry only its stable reference so content is never silently
  * embedded, reinterpreted, or changed by a later pack edit. */
@@ -79,7 +75,7 @@ export async function validateSnapshot(value: unknown, contentPack: ContentPack 
   if (snapshot.state.config.householdModelVersion !== HOUSEHOLD_MODEL_VERSION) {
     throw new Error(`Unsupported household model version: ${String(snapshot.state.config.householdModelVersion)}`)
   }
-  if (snapshot.state.config.infrastructureModelVersion !== INFRASTRUCTURE_MODEL_VERSION || !Array.isArray(snapshot.state.infrastructure)) {
+  if (snapshot.state.config.infrastructureModelVersion !== INFRASTRUCTURE_MODEL_VERSION) {
     throw new Error('Unsupported infrastructure configuration')
   }
   if (snapshot.state.config.activityRegistryVersion !== ACTIVITY_REGISTRY_VERSION) {
@@ -112,6 +108,7 @@ export async function validateSnapshot(value: unknown, contentPack: ContentPack 
   if (snapshot.state.config.worldGeneratorVersion !== WORLD_GENERATOR_VERSION) {
     throw new Error(`Unsupported world generator version: ${String(snapshot.state.config.worldGeneratorVersion)}`)
   }
+  validateCanonicalSimulationState(snapshot.state, runtime)
   if (snapshot.state.config.worldWidth !== snapshot.state.world.grid.width || snapshot.state.config.worldHeight !== snapshot.state.world.grid.height) {
     throw new Error('Snapshot world dimensions do not match configuration')
   }
@@ -124,36 +121,7 @@ export async function validateSnapshot(value: unknown, contentPack: ContentPack 
   if (snapshot.state.world.name !== normalizedCreation.name || canonicalStringify(authoredSettlements) !== canonicalStringify(normalizedCreation.settlements) || canonicalStringify(snapshot.state.world.roads ?? []) !== canonicalStringify(normalizedCreation.roads ?? [])) {
     throw new Error('Snapshot world does not match creation request')
   }
-  if (!Array.isArray(snapshot.state.people)) throw new Error('Snapshot contains an invalid population')
-  for (const person of snapshot.state.people) {
-    validatePersonVariableValues(person.variables, runtime.variables)
-    if (!person.knowledge || Object.keys(person.knowledge).sort().join('|') !== 'knowledge.foraging|knowledge.localTerrain') throw new Error(`Person ${person.id} contains invalid knowledge records`)
-    if (Object.values(person.knowledge).some((value) => !Number.isSafeInteger(value) || value < 0 || value > 1000)) throw new Error(`Person ${person.id} contains invalid knowledge values`)
-    if (typeof person.schoolLearningHours !== 'number' || !Number.isSafeInteger(person.schoolLearningHours) || person.schoolLearningHours < 0) throw new Error(`Person ${person.id} contains invalid school learning hours`)
-  }
-  validateHouseholdActivityState(snapshot.state)
-  validateInfrastructureState(snapshot.state)
-  validateEconomyState(snapshot.state)
-  validateCommunitySimulationState(snapshot.state)
-  validateRandomStreams(snapshot.state.randomStreams)
   const actual = await stateDigest(snapshot.state)
   if (actual !== snapshot.digest) throw new Error('Snapshot digest does not match its contents')
   return snapshot as SnapshotEnvelope
-}
-
-function validateRandomStreams(value: unknown): void {
-  if (!Array.isArray(value)) throw new Error('Snapshot contains invalid random streams')
-  const names: string[] = []
-  for (const entry of value) {
-    if (!entry || typeof entry !== 'object') throw new Error('Snapshot contains an invalid random stream')
-    const stream = entry as { name?: unknown; stateHex?: unknown; incrementHex?: unknown }
-    if (typeof stream.name !== 'string' || !/^[0-9a-f]{16}$/i.test(String(stream.stateHex)) || !/^[0-9a-f]{16}$/i.test(String(stream.incrementHex))) {
-      throw new Error('Snapshot contains an invalid random stream')
-    }
-    names.push(stream.name)
-  }
-  if (!names.every((name, index) => index === 0 || (names[index - 1] as string) < name)) throw new Error('Snapshot random streams are not in canonical order')
-  for (const required of Object.values(HOUSEHOLD_GENERATION_STREAM)) {
-    if (!names.includes(required)) throw new Error(`Snapshot is missing random stream: ${required}`)
-  }
 }

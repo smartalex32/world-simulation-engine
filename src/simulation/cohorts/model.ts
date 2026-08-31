@@ -103,7 +103,7 @@ export function validatePopulationCohorts(value: unknown, zones: readonly Popula
     if (cohort.cellAllocations.some((allocation) => !cellsById.get(allocation.cellId)?.movementCost || !positiveInteger(allocation.populationCount)) || cohort.cellAllocations.reduce((sum, allocation) => sum + allocation.populationCount, 0) !== cohort.populationCount) throw new Error(`Cohort ${cohort.id} allocations do not match valid world cells`)
   }
   const expectedIds = zones.filter((zone) => (zone.cohortPopulationCount ?? 0) > 0).map((zone) => `cohort:${zone.id}`).sort(compareText)
-  if (expectedIds.length !== ids.size || expectedIds.some((id) => !ids.has(id))) throw new Error('Simulation cohorts do not match world creation')
+  if (expectedIds.length !== ids.size || expectedIds.some((id) => !ids.has(id)) || value.some((cohort, index) => index > 0 && value[index - 1]!.id >= cohort.id)) throw new Error('Simulation cohorts do not match canonical world creation order')
 }
 
 function createCohort(zone: PopulationPlacementZone, cellsById: ReadonlyMap<string, GeographicCell>): PopulationCohortState {

@@ -9,6 +9,7 @@ describe('ten-thousand-person scale benchmark', () => {
     expect(result.createMilliseconds).toBeGreaterThanOrEqual(0)
     expect(result.advanceMilliseconds).toBeGreaterThanOrEqual(0)
     expect(result.snapshotMilliseconds).toBeGreaterThanOrEqual(0)
+    expect(result.validationMilliseconds).toBeGreaterThanOrEqual(0)
     expect(result.livingPersonIndexBuilds).toBe(1)
   }, 60_000)
 
@@ -17,6 +18,7 @@ describe('ten-thousand-person scale benchmark', () => {
     expect(result.population).toBe(MIXED_FIDELITY_BENCHMARK.detailedPopulation)
     expect(result.cohortPopulation).toBe(MIXED_FIDELITY_BENCHMARK.cohortPopulation)
     expect(result.digest).toBe(result.restoredDigest)
+    expect(result.validationMilliseconds).toBeGreaterThanOrEqual(0)
     expect(result.livingPersonIndexBuilds).toBe(1)
   }, 60_000)
 })

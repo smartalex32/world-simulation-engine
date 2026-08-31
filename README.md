@@ -344,12 +344,23 @@ Its local HTTP API is intentionally limited to `/health`, owner-authorized run
 projection, and owner-authorized typed run commands. It is not collaboration, a
 public API, or a multi-node scheduler.
 
+Canonical state is validated through one platform-neutral simulation boundary at
+world creation, restoration, authoritative mutation, and snapshot generation.
+Snapshot validation separately owns envelope schema/version/content-pack/digest
+authentication. Validation errors include a stable subsystem, canonical state
+path, code, and message; this validation has no random, wall-clock, rendering,
+or I/O dependency. Digest-correct snapshots with structurally invalid state that
+older boundaries accepted are now explicitly rejected; they are not migrated
+because invalid references have no supported canonical interpretation. This
+does not change canonical output or any engine, model, or schema version.
+
 Milestone 44 adds a reproducible detailed-agent scale benchmark: `pnpm
 benchmark:scale` creates a 128 × 128 blank-land world with 10,000 people,
 advances it one hour, and verifies snapshot restoration against the canonical
-digest. Hosts may opt into that same initial population using
-`HOSTED_WORLD_POPULATION=10000`; the browser world-builder deliberately retains
-its 500-person authoring guardrail. The benchmark reports elapsed time as local
+digest. The benchmark reports canonical-validation time separately from its
+creation, advance, and snapshot timings. Hosts may opt into that same initial
+population using `HOSTED_WORLD_POPULATION=10000`; the browser world-builder
+deliberately retains its 500-person authoring guardrail. The benchmark reports elapsed time as local
 evidence only—hardware timing does not affect simulation output.
 
 Milestone 70 begins civilization-scale integration validation with `pnpm

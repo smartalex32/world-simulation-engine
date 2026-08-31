@@ -1,5 +1,10 @@
 import type { WorldCreationDraft } from '../domain/types'
+import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
+import { createContentPackRuntime } from '../../contentPacks/runtime'
+import { validateCanonicalSimulationState } from '../validation/canonicalState'
 import { SimulationEngine } from './engine'
+
+const validationRuntime = createContentPackRuntime(DEFAULT_PREINDUSTRIAL_PACK)
 
 export const TEN_THOUSAND_PERSON_BENCHMARK = Object.freeze({
   population: 10_000,
@@ -24,6 +29,7 @@ export interface ScaleBenchmarkResult {
   createMilliseconds: number
   advanceMilliseconds: number
   snapshotMilliseconds: number
+  validationMilliseconds: number
   livingPersonIndexBuilds: number
   digest: string
   restoredDigest: string
@@ -45,6 +51,9 @@ export async function runTenThousandPersonBenchmark(seed = 'scale-10k-v1'): Prom
   const snapshottedAt = performance.now()
   const snapshot = await engine.snapshot()
   const snapshotMilliseconds = performance.now() - snapshottedAt
+  const validatedAt = performance.now()
+  validateCanonicalSimulationState(snapshot.state, validationRuntime)
+  const validationMilliseconds = performance.now() - validatedAt
 
   const restored = await SimulationEngine.restore(snapshot)
   const restoredSnapshot = await restored.snapshot()
@@ -53,6 +62,7 @@ export async function runTenThousandPersonBenchmark(seed = 'scale-10k-v1'): Prom
     createMilliseconds: roundedMilliseconds(createMilliseconds),
     advanceMilliseconds: roundedMilliseconds(advanceMilliseconds),
     snapshotMilliseconds: roundedMilliseconds(snapshotMilliseconds),
+    validationMilliseconds: roundedMilliseconds(validationMilliseconds),
     livingPersonIndexBuilds,
     digest: snapshot.digest,
     restoredDigest: restoredSnapshot.digest,
@@ -73,8 +83,11 @@ export async function runMixedFidelityBenchmark(seed = 'scale-10k-plus-100k-v1')
   const snapshottedAt = performance.now()
   const snapshot = await engine.snapshot()
   const snapshotMilliseconds = performance.now() - snapshottedAt
+  const validatedAt = performance.now()
+  validateCanonicalSimulationState(snapshot.state, validationRuntime)
+  const validationMilliseconds = performance.now() - validatedAt
   const restoredDigest = (await (await SimulationEngine.restore(snapshot)).snapshot()).digest
-  return { population: MIXED_FIDELITY_BENCHMARK.detailedPopulation, cohortPopulation: MIXED_FIDELITY_BENCHMARK.cohortPopulation, width: MIXED_FIDELITY_BENCHMARK.width, height: MIXED_FIDELITY_BENCHMARK.height, simulatedHours: MIXED_FIDELITY_BENCHMARK.simulatedHours, createMilliseconds: roundedMilliseconds(createMilliseconds), advanceMilliseconds: roundedMilliseconds(advanceMilliseconds), snapshotMilliseconds: roundedMilliseconds(snapshotMilliseconds), livingPersonIndexBuilds, digest: snapshot.digest, restoredDigest }
+  return { population: MIXED_FIDELITY_BENCHMARK.detailedPopulation, cohortPopulation: MIXED_FIDELITY_BENCHMARK.cohortPopulation, width: MIXED_FIDELITY_BENCHMARK.width, height: MIXED_FIDELITY_BENCHMARK.height, simulatedHours: MIXED_FIDELITY_BENCHMARK.simulatedHours, createMilliseconds: roundedMilliseconds(createMilliseconds), advanceMilliseconds: roundedMilliseconds(advanceMilliseconds), snapshotMilliseconds: roundedMilliseconds(snapshotMilliseconds), validationMilliseconds: roundedMilliseconds(validationMilliseconds), livingPersonIndexBuilds, digest: snapshot.digest, restoredDigest }
 }
 
 export function tenThousandPersonBenchmarkDraft(seed = 'scale-10k-v1'): WorldCreationDraft {
