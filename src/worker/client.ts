@@ -5,11 +5,13 @@ import { requestId, type SimulationCommand, type SimulationResponse, type Workbe
 import type { ContentPack, ResolvedContentPack } from '../contentPacks'
 
 type Listener = (response: SimulationResponse) => void
+type CommandAck = Extract<SimulationResponse, { type: 'ACK' }>
 
 export class SimulationWorkerClient {
   private readonly worker = new Worker(new URL('./simulation.worker.ts', import.meta.url), { type: 'module' })
   private readonly listeners = new Set<Listener>()
   private readonly pendingSnapshots = new Map<string, { resolve: (snapshot: WorkbenchSnapshotEnvelope) => void; reject: (error: Error) => void }>()
+  private readonly pendingCommands = new Map<string, { resolve: (ack: CommandAck) => void; reject: (error: Error) => void }>()
   private ready = false
 
   constructor() {
@@ -26,12 +28,18 @@ export class SimulationWorkerClient {
           pending.resolve(response.snapshot)
         }
       }
+      if (response.type === 'ACK') {
+        const pending = this.pendingCommands.get(response.requestId)
+        if (pending) { this.pendingCommands.delete(response.requestId); pending.resolve(response) }
+      }
       if (response.type === 'ERROR' && response.requestId) {
         const pending = this.pendingSnapshots.get(response.requestId)
         if (pending) {
           this.pendingSnapshots.delete(response.requestId)
           pending.reject(new Error(response.message))
         }
+        const command = this.pendingCommands.get(response.requestId)
+        if (command) { this.pendingCommands.delete(response.requestId); command.reject(new Error(response.message)) }
       }
       for (const listener of this.listeners) listener(response)
     })
@@ -94,6 +102,16 @@ export class SimulationWorkerClient {
     })
   }
 
+  /** Sends any runtime command with an explicit correlated completion. Legacy
+   * convenience methods retain their fire-and-forget behavior for UI flows
+   * that already consume richer FRAME/DRAFT responses. */
+  execute(command: SimulationCommand): Promise<CommandAck> {
+    return new Promise((resolve, reject) => {
+      this.pendingCommands.set(command.requestId, { resolve, reject })
+      this.send(command)
+    })
+  }
+
   dispose(): void {
     this.rejectPending(new Error('Simulation worker client was disposed'))
     this.send({ type: 'DISPOSE', requestId: requestId() })
@@ -107,5 +125,7 @@ export class SimulationWorkerClient {
   private rejectPending(error: Error): void {
     for (const pending of this.pendingSnapshots.values()) pending.reject(error)
     this.pendingSnapshots.clear()
+    for (const pending of this.pendingCommands.values()) pending.reject(error)
+    this.pendingCommands.clear()
   }
 }
