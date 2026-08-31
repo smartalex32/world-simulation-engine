@@ -41,7 +41,7 @@ describe('browser/server authoritative golden fixture', () => {
     const browserEngine = SimulationEngine.create(creation)
     const application = new SimulationApplicationService()
     const command = { type: 'STEP' as const, requestId: 'adapter-step', count: 24 }
-    const browserResult = application.execute(browserEngine, command)
+    const browserResult = application.execute(command, { engine: browserEngine })
     const browserSnapshot = await browserEngine.snapshot()
     const browserProjection = new WorkbenchProjectionBuilder(SimulationEngine.create(creation).project()).build(browserEngine.project(), {
       revision: 0, bounds: { minQ: 0, maxQ: 31, minR: 0, maxR: 23 }, projectedHexRadius: 0, overlay: 'terrain',
@@ -58,5 +58,30 @@ describe('browser/server authoritative golden fixture', () => {
     expect(frame.statistics).toEqual(browserResult.statistics)
     expect(frame.projection).toEqual(browserProjection)
     expect(hostedResult.responses).toContainEqual({ type: 'ACK', requestId: command.requestId, command: command.type })
+  }, 30_000)
+
+  it('keeps identical multi-command sequences deterministic across browser and hosted adapters', async () => {
+    const creation = defaultWorldCreationRequest('adapter-sequence-golden')
+    const browserEngine = SimulationEngine.create(creation)
+    const application = new SimulationApplicationService()
+    const store = new MemoryHostedRunStore()
+    const hosted = await HostedRunService.open({ runId: 'adapter-sequence', ownerId: 'owner', ownerToken: 'secret', creation }, store)
+    const commands = [
+      { type: 'STEP' as const, requestId: 'sequence-step-1', count: 12 },
+      { type: 'SET_PROTECTED_PEOPLE' as const, requestId: 'sequence-protect', personIds: ['person-0001'] },
+      { type: 'STEP' as const, requestId: 'sequence-step-2', count: 36 },
+    ]
+
+    for (const command of commands) {
+      const browser = application.execute(command, { engine: browserEngine })
+      const server = await hosted.execute('secret', command)
+      const frame = server.responses.find((response) => response.type === 'FRAME')
+      expect(frame?.type).toBe('FRAME')
+      if (frame?.type !== 'FRAME') throw new Error('Expected hosted frame')
+      expect(frame.events).toEqual(browser.events)
+      expect(frame.statistics).toEqual(browser.statistics)
+      expect(server.responses).toContainEqual({ type: 'ACK', requestId: command.requestId, command: command.type })
+      expect((await store.load('adapter-sequence'))?.snapshot.digest).toBe((await browserEngine.snapshot()).digest)
+    }
   }, 30_000)
 })

@@ -284,7 +284,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
           finalizePartialBatch()
           batchScheduler.reset()
           const started = performance.now()
-          const result = application.execute(engine, command)
+          const result = application.execute(command, { engine })
           pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
           const snapshot = await engine.snapshot()
           telemetry.append(result.events, result.statistics)
@@ -296,7 +296,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
         case 'MATERIALIZE_COHORT': {
           if (!engine) throw new Error('No simulation run is loaded')
           playing = false
-          const result = application.execute(engine, command)
+          const result = application.execute(command, { engine })
           pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
           const snapshot = await engine.snapshot()
           telemetry.append(result.events, result.statistics)
@@ -307,7 +307,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
         case 'DEMATERIALIZE_PEOPLE': {
           if (!engine) throw new Error('No simulation run is loaded')
           playing = false
-          const result = application.execute(engine, command)
+          const result = application.execute(command, { engine })
           pendingProjectionInvalidation = mergeProjectionInvalidations(pendingProjectionInvalidation, result.projectionInvalidation)
           const snapshot = await engine.snapshot()
           telemetry.append(result.events, result.statistics)
@@ -317,7 +317,7 @@ worker.addEventListener('message', (message: MessageEvent<SimulationCommand>) =>
         }
         case 'SET_PROTECTED_PEOPLE': {
           if (!engine) throw new Error('No simulation run is loaded')
-          application.execute(engine, command)
+          application.execute(command, { engine })
           const snapshot = await engine.snapshot()
           flushFrame(command.requestId, snapshot.digest)
           break

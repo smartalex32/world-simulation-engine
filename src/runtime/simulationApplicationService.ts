@@ -10,12 +10,15 @@ export interface EngineCommandExecution {
   projectionInvalidation: ProjectionInvalidation
 }
 
+export interface SimulationCommandContext { engine: SimulationEngine }
+
 /**
  * The one application-layer implementation for engine mutations. Adapters own
  * scheduling, durability, and response delivery; this service owns neither.
  */
 export class SimulationApplicationService {
-  execute(engine: SimulationEngine, command: EngineCommand): EngineCommandExecution {
+  execute(command: EngineCommand, context: SimulationCommandContext): EngineCommandExecution {
+    const { engine } = context
     if (command.type === 'STEP') {
       const count = command.count ?? 1
       if (!Number.isSafeInteger(count) || count < 1) throw new Error('Simulation step count must be a positive safe integer')

@@ -291,6 +291,12 @@ adapters share runtime-owned command/response contracts and the same engine-comm
 application service; adapters retain only scheduling or durable-authority concerns.
 Every completed command emits a request-correlated acknowledgement (with correlated
 errors), while frames, snapshots, and draft responses retain their typed payloads.
+The React workbench delegates worker lifecycle/frame merging to
+`useSimulationSession`, draft revision and pending-edit ordering to
+`useDraftController`, and serialized snapshot/draft writes to
+`usePersistenceController`. These controllers accept worker or persistence ports,
+so their failure, stale-response, and disposal behavior is testable without a real
+Worker or IndexedDB; authoritative simulation and draft mutation remain worker-owned.
 The host serializes authoritative commands, writes
 compressed, checksummed canonical snapshots and telemetry batches through
 PostgreSQL transactions, rejects competing mutations with a locked tick/digest

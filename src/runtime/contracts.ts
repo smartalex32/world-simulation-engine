@@ -44,10 +44,11 @@ export type SimulationCommand =
 
 export type EngineCommand = Extract<SimulationCommand, { type: 'STEP' | 'MATERIALIZE_COHORT' | 'DEMATERIALIZE_PEOPLE' | 'SET_PROTECTED_PEOPLE' }>
 export type HostedRunCommand = Extract<SimulationCommand, { type: 'STEP' | 'MATERIALIZE_COHORT' | 'DEMATERIALIZE_PEOPLE' | 'SET_PROTECTED_PEOPLE' | 'PAUSE' | 'SET_SPEED' | 'SET_VIEWPORT' | 'REQUEST_SNAPSHOT' | 'RESET' }>
+export type CommandAcknowledgement<C extends SimulationCommand = SimulationCommand> = { type: 'ACK'; requestId: C['requestId']; command: C['type'] }
 
 export type SimulationResponse =
   | { type: 'READY' }
-  | { type: 'ACK'; requestId: string; command: SimulationCommand['type'] }
+  | CommandAcknowledgement
   | { type: 'FRAME'; requestId?: string; projection: WorkbenchProjection; events: SimulationEvent[]; statistics: StatisticSample[]; processingMs: number; projectionInvalidation: ProjectionInvalidation }
   | { type: 'STATUS'; requestId?: string; status: 'idle' | 'paused' | 'playing'; ticksPerBatch: number }
   | { type: 'DRAFT'; requestId: string; action: 'created' | 'hydrated' | 'updated' | 'zoneCellsUpdated' | 'terrainPainted' | 'elevationPainted' | 'resourcesPainted' | 'undone' | 'redone' | 'reset' | 'previewed' | 'committing' | 'committed' | 'discarded'; draft?: WorldDraftRecord; preview?: WorldDraftPreview }
