@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { DEFAULT_PREINDUSTRIAL_PACK, type ContentPack } from '../../src/contentPacks'
 import { WorkbenchProjectionBuilder } from '../../src/projection/buildMapProjection'
 import { createCommonsActivity, createHouseholdHomeActivity } from '../../src/simulation/activities/model'
@@ -15,6 +15,15 @@ import { PERSON_VARIABLE_ID } from '../../src/simulation/variables/registry'
 import { setPersonVariable } from '../../src/simulation/variables/storage'
 
 
+export type WorkbenchCapability = 'authoring' | 'navigation' | 'reproducibility' | 'inspection'
+export type WorkbenchTestBody = NonNullable<Parameters<typeof import('@playwright/test').test>[2]>
+
+export function registerWorkbenchTests(
+  capability: WorkbenchCapability,
+  registerTest: (title: string, run: WorkbenchTestBody) => void,
+): void {
+const capabilityTest = (owner: WorkbenchCapability, title: string, run: WorkbenchTestBody) => { if (owner === capability) registerTest(title, run) }
+
 async function advanceOneHour(page: import('@playwright/test').Page, tick: number): Promise<void> {
   await page.getByTitle('Advance one hour').click()
   await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', String(tick))
@@ -28,7 +37,7 @@ async function waitForMapSettled(canvas: import('@playwright/test').Locator): Pr
   }).toBe(true)
 }
 
-test('opens the world setup surface with explicit scale and placement allocations', async ({ page }) => {
+capabilityTest('authoring', 'opens the world setup surface with explicit scale and placement allocations', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
@@ -76,7 +85,7 @@ test('opens the world setup surface with explicit scale and placement allocation
   await expect(page.locator('.world-overview strong')).toHaveText('Ardentia')
 })
 
-test('authors a city seed and inspects its pre-commit placement evidence', async ({ page }) => {
+capabilityTest('authoring', 'authors a city seed and inspects its pre-commit placement evidence', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
   const setup = page.getByRole('dialog', { name: 'Shape a new world' })
@@ -90,7 +99,7 @@ test('authors a city seed and inspects its pre-commit placement evidence', async
   await expect(setup.locator('.placement-card').first().locator('.placement-preview')).toContainText('steps to anchor')
 })
 
-test('creates an inspectable distant cohort without materializing every person', async ({ page }) => {
+capabilityTest('authoring', 'creates an inspectable distant cohort without materializing every person', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
   const setup = page.getByRole('dialog', { name: 'Shape a new world' })
@@ -104,7 +113,7 @@ test('creates an inspectable distant cohort without materializing every person',
   await expect(page.getByLabel('Organization evidence')).toContainText('Distant cohort · population-zone-1')
 })
 
-test('authors a deterministic blank-land canvas before committing a world', async ({ page }) => {
+capabilityTest('authoring', 'authors a deterministic blank-land canvas before committing a world', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
   const setup = page.getByRole('dialog', { name: 'Shape a new world' })
@@ -133,7 +142,7 @@ test('authors a deterministic blank-land canvas before committing a world', asyn
   await expect(page.locator('.world-overview strong')).toHaveText('The Seeded Valley')
 })
 
-test('loads persisted historical evidence without changing the active world', async ({ page }) => {
+capabilityTest('authoring', 'loads persisted historical evidence without changing the active world', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   await page.getByRole('button', { name: 'history', exact: true }).click()
@@ -144,7 +153,7 @@ test('loads persisted historical evidence without changing the active world', as
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
 })
 
-test('offers an optional deterministic chronicle without changing simulation state', async ({ page }) => {
+capabilityTest('authoring', 'offers an optional deterministic chronicle without changing simulation state', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const tick = await page.locator('[data-simulation-tick]').getAttribute('data-simulation-tick')
@@ -155,7 +164,7 @@ test('offers an optional deterministic chronicle without changing simulation sta
   await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', tick ?? '')
 })
 
-test('keeps real map tools and presentation diagnostics available from workbench navigation', async ({ page }) => {
+capabilityTest('navigation', 'keeps real map tools and presentation diagnostics available from workbench navigation', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const tick = await page.locator('[data-simulation-tick]').getAttribute('data-simulation-tick')
@@ -172,7 +181,7 @@ test('keeps real map tools and presentation diagnostics available from workbench
   await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', tick ?? '')
 })
 
-test('keeps the map and controls usable at a constrained width', async ({ page }) => {
+capabilityTest('navigation', 'keeps the map and controls usable at a constrained width', async ({ page }) => {
   await page.setViewportSize({ width: 640, height: 900 })
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
@@ -185,7 +194,7 @@ test('keeps the map and controls usable at a constrained width', async ({ page }
   await expect(page.getByText('Day 0 · 01:00')).toBeVisible()
 })
 
-test('shows a bounded generated map only for a non-settlement draft zone', async ({ page }) => {
+capabilityTest('authoring', 'shows a bounded generated map only for a non-settlement draft zone', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
   const setup = page.getByRole('dialog', { name: 'Shape a new world' })
@@ -207,7 +216,7 @@ test('shows a bounded generated map only for a non-settlement draft zone', async
   await expect.poll(() => selection.textContent()).not.toBe(before)
 })
 
-test('persists an accepted drawn zone through reload and commits its authoritative cells', async ({ page }) => {
+capabilityTest('authoring', 'persists an accepted drawn zone through reload and commits its authoritative cells', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
   let setup = page.getByRole('dialog', { name: 'Shape a new world' })
@@ -239,7 +248,7 @@ test('persists an accepted drawn zone through reload and commits its authoritati
   await expect(page.locator('.world-overview strong')).toHaveText('The Seeded Valley')
 })
 
-test('authors arbitrary stable placement zones before a draft commit', async ({ page }) => {
+capabilityTest('authoring', 'authors arbitrary stable placement zones before a draft commit', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
   const setup = page.getByRole('dialog', { name: 'Shape a new world' })
@@ -265,7 +274,7 @@ test('authors arbitrary stable placement zones before a draft commit', async ({ 
   await restored.getByRole('button', { name: 'Discard draft', exact: true }).click()
 })
 
-test('commits a three-zone population draft', async ({ page }) => {
+capabilityTest('authoring', 'commits a three-zone population draft', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
   const setup = page.getByRole('dialog', { name: 'Shape a new world' })
@@ -282,7 +291,7 @@ test('commits a three-zone population draft', async ({ page }) => {
   await expect(page.locator('.settlement-list')).toContainText('Settlement 3')
 })
 
-test('discards an editable world draft without changing the active simulation', async ({ page }) => {
+capabilityTest('authoring', 'discards an editable world draft without changing the active simulation', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const activeSeed = await page.locator('.active-world-seed').textContent()
@@ -298,7 +307,7 @@ test('discards an editable world draft without changing the active simulation', 
   await expect(page.locator('.active-world-seed')).toHaveText(activeSeed ?? '')
 })
 
-test('rehydrates a persisted draft before any authoritative world commit', async ({ page }) => {
+capabilityTest('authoring', 'rehydrates a persisted draft before any authoritative world commit', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
   let setup = page.getByRole('dialog', { name: 'Shape a new world' })
@@ -314,7 +323,7 @@ test('rehydrates a persisted draft before any authoritative world commit', async
   await expect(setup).toBeHidden()
 })
 
-test('settles an idle viewport request and supports keyboard map navigation', async ({ page }) => {
+capabilityTest('navigation', 'settles an idle viewport request and supports keyboard map navigation', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const canvas = page.getByLabel('Hex world map')
@@ -327,7 +336,7 @@ test('settles an idle viewport request and supports keyboard map navigation', as
   await expect(canvas).toHaveAttribute('data-map-revision', /\d+/)
 })
 
-test('recenters the map from the world minimap without changing simulation state', async ({ page }) => {
+capabilityTest('navigation', 'recenters the map from the world minimap without changing simulation state', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const canvas = page.getByLabel('Hex world map')
@@ -344,7 +353,7 @@ test('recenters the map from the world minimap without changing simulation state
   await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
 })
 
-test('supports keyboard recentering from the accessible world minimap', async ({ page }) => {
+capabilityTest('navigation', 'supports keyboard recentering from the accessible world minimap', async ({ page }) => {
   await page.goto('/')
   const canvas = page.getByLabel('Hex world map')
   await waitForMapSettled(canvas)
@@ -359,7 +368,7 @@ test('supports keyboard recentering from the accessible world minimap', async ({
   await expect(page.getByText('Day 0 · 00:00')).toBeVisible()
 })
 
-test('switches to bounded world overview rendering without distant hex outlines', async ({ page }) => {
+capabilityTest('navigation', 'switches to bounded world overview rendering without distant hex outlines', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const canvas = page.getByLabel('Hex world map')
@@ -379,7 +388,7 @@ test('switches to bounded world overview rendering without distant hex outlines'
   await expect(page.locator('#map-render-status')).toContainText(/regional overview|world overview/)
 })
 
-test('keeps a hooked person live without changing the camera', async ({ page }) => {
+capabilityTest('inspection', 'keeps a hooked person live without changing the camera', async ({ page }) => {
   const expected = SimulationEngine.create('valley-001')
   const before = expected.project()
   const after = expected.step(1).projection
@@ -408,7 +417,7 @@ test('keeps a hooked person live without changing the camera', async ({ page }) 
   await expect(page.locator('.inspector-grid .metric').filter({ hasText: 'Location' }).first().locator('strong')).toHaveText(moved.locationCellId)
 })
 
-test('creates, steps, inspects, and saves a deterministic world', async ({ page }) => {
+capabilityTest('reproducibility', '@critical creates, steps, inspects, and saves a deterministic world', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   await page.getByRole('button', { name: 'food', exact: true }).click()
@@ -468,7 +477,7 @@ test('creates, steps, inspects, and saves a deterministic world', async ({ page 
   await expect(page.getByText('Person hooked')).toBeVisible()
 })
 
-test('the same seed and step count produce the same digest', async ({ page }) => {
+capabilityTest('reproducibility', 'the same seed and step count produce the same digest', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   // A click merely queues a worker command.  Synchronize on the authoritative
@@ -483,7 +492,7 @@ test('the same seed and step count produce the same digest', async ({ page }) =>
   await expect(page.locator('.fact').filter({ hasText: 'SAVED HASH' }).locator('strong')).toHaveText(firstDigest ?? '')
 })
 
-test('browser worker preserves the Node golden digest for adversarial stable IDs', async ({ page }) => {
+capabilityTest('reproducibility', 'browser worker preserves the Node golden digest for adversarial stable IDs', async ({ page }) => {
   const creation = defaultWorldCreationRequest('ordering-A_10.a')
   creation.settlements = [
     { id: 'settlement-z-2', name: 'Z', anchorCellId: '8,8' },
@@ -519,7 +528,7 @@ test('browser worker preserves the Node golden digest for adversarial stable IDs
   expect(browserSnapshot.digest).toBe(expected.digest)
 })
 
-test('browser worker applies the same fidelity invalidations as the shared projection path', async ({ page }) => {
+capabilityTest('reproducibility', 'browser worker applies the same fidelity invalidations as the shared projection path', async ({ page }) => {
   const seed = 'projection-fidelity-parity'
   const cells = SimulationEngine.create(seed, 16, 12).project().world.grid.cells.filter((cell) => cell.movementCost > 0 && cell.habitability >= 500).map((cell) => cell.id)
   const creation = {
@@ -595,7 +604,7 @@ test('browser worker applies the same fidelity invalidations as the shared proje
   expect(browser.dematerialized.projection.summary).toEqual(expectedDematerializedProjection.summary)
 })
 
-test('encounter events navigate between hooked people and their relationships', async ({ page }) => {
+capabilityTest('inspection', 'encounter events navigate between hooked people and their relationships', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   for (let hour = 1; hour <= 24; hour += 1) await advanceOneHour(page, hour)
@@ -612,7 +621,7 @@ test('encounter events navigate between hooked people and their relationships', 
   await expect(page.locator('.right-panel .panel-title').first().locator('span')).toHaveText((relationshipTarget ?? '').replace('Hook ', ''))
 })
 
-test('hooks a fixed child, inspects household origins, and re-hooks a parent without camera follow', async ({ page }) => {
+capabilityTest('inspection', 'hooks a fixed child, inspects household origins, and re-hooks a parent without camera follow', async ({ page }) => {
   const expected = await SimulationEngine.create('valley-001')
   const expectedProjection = expected.project()
   const peopleByCell = new Map<string, number>()
@@ -655,7 +664,7 @@ test('hooks a fixed child, inspects household origins, and re-hooks a parent wit
   expect(dimensions.height).toBeGreaterThan(250)
 })
 
-test('inspects persisted experience and deterministic development at the 720-hour boundary', async ({ page }) => {
+capabilityTest('inspection', 'inspects persisted experience and deterministic development at the 720-hour boundary', async ({ page }) => {
   const engine = await controlledDevelopmentEngine()
   const result = engine.step(720)
   const child = result.projection.people.find((person) => person.id === 'person-0101')
@@ -729,7 +738,7 @@ test('inspects persisted experience and deterministic development at the 720-hou
   await expect(page.getByRole('button', { name: /Hook development source/ }).first()).toBeVisible()
 })
 
-test('commits a retry-safe snapshot with an exact telemetry prefix', async ({ page }) => {
+capabilityTest('reproducibility', 'commits a retry-safe snapshot with an exact telemetry prefix', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   await page.getByRole('button', { name: 'Step +1h' }).click()
@@ -774,7 +783,7 @@ test('commits a retry-safe snapshot with an exact telemetry prefix', async ({ pa
   expect(after).toEqual(before)
 })
 
-test('maps and explains authoritative catchment measures without losing a hooked person', async ({ page }) => {
+capabilityTest('inspection', 'maps and explains authoritative catchment measures without losing a hooked person', async ({ page }) => {
   const restoreEngine = await SimulationEngine.create('valley-001')
   const restoreResult = restoreEngine.step(24)
   const westAtSnapshot = restoreResult.projection.communities.find((community) => community.catchment.displayName === 'West Valley')
@@ -840,7 +849,7 @@ test('maps and explains authoritative catchment measures without losing a hooked
   await expect(page.locator('.community-signal-card').filter({ hasText: 'West Valley' })).toContainText(`${((westAtSnapshot?.emergent['community.emergent.socialTrust'] ?? 0) / 10).toFixed(1)}%`)
 })
 
-test('shows the authoritative community influence in an actual person action trace', async ({ page }) => {
+capabilityTest('inspection', 'shows the authoritative community influence in an actual person action trace', async ({ page }) => {
   const expected = await SimulationEngine.create('valley-001')
   const result = expected.step(25)
   const person = result.projection.people.find((candidate) => candidate.lastDecision?.contributions.some((contribution) => contribution.kind === 'communityInfluence' && contribution.value !== 0))
@@ -986,4 +995,5 @@ function requiredDevelopmentPerson(peopleById: ReadonlyMap<string, PersonState>,
   const person = peopleById.get(id)
   if (!person) throw new Error(`Controlled UI development fixture missing ${id}`)
   return person
+}
 }

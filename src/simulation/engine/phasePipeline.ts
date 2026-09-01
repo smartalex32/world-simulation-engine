@@ -22,6 +22,8 @@ export interface TickPhaseContext {
   readonly tick: number
   /** Noncanonical bounded diagnostic counters; never authoritative state. */
   readonly phaseCounts?: Record<string, number>
+  /** Optional noncanonical timing wrapper supplied only by diagnostic hosts. */
+  readonly measurePhase?: (phaseId: string, operation: () => void) => void
 }
 
 export interface DeterministicTickPhase<Context extends TickPhaseContext> extends TickPhaseManifestEntry {
@@ -39,7 +41,11 @@ const runStaticTickPipeline = <Context extends TickPhaseContext>(
   phases: readonly DeterministicTickPhase<Context>[],
   context: Context,
 ): void => {
-  for (const phase of phases) if (cadenceMatches(context.tick, phase.cadence)) { if (context.phaseCounts) context.phaseCounts[phase.id] = (context.phaseCounts[phase.id] ?? 0) + 1; phase.run(context) }
+  for (const phase of phases) if (cadenceMatches(context.tick, phase.cadence)) {
+    if (context.phaseCounts) context.phaseCounts[phase.id] = (context.phaseCounts[phase.id] ?? 0) + 1
+    if (context.measurePhase) context.measurePhase(phase.id, () => phase.run(context))
+    else phase.run(context)
+  }
 }
 
 /** The engine-specific pipeline is assembled from this immutable definition;

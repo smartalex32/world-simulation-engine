@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { WorkbenchProjectionBuilder } from '../../projection/buildMapProjection'
 import { SimulationEngine } from '../engine/engine'
-import { advanceCohortsAnnual, advanceCohortsDaily } from './model'
+import { advanceCohortsAnnual, advanceCohortsDaily, validatePopulationCohorts } from './model'
 import { defaultWorldCreationRequest } from '../domain/worldCreation'
 
 describe('authoritative population cohorts', () => {
@@ -40,7 +40,9 @@ describe('authoritative population cohorts', () => {
 
   it('advances aggregate demographic bands and retained event totals annually', () => {
     const cohorts = [{ version: 3 as const, id: 'cohort:west', sourceZoneId: 'west', populationCount: 100, householdCount: 34, foodUnits: 10, cellAllocations: [{ cellId: '0,0', populationCount: 100 }], ageBands: { children: 20, adults: 70, elders: 10 }, economicProductivityPermille: 1000, culturalCohesionPermille: 500, developmentIndexPermille: 500, eventTotals: { births: 0, deaths: 0, migrationIn: 0, migrationOut: 0 } }]
+    const cells = [{ id: '0,0', q: 0, r: 0, terrain: 'plain' as const, elevation: 0, habitability: 1000, movementCost: 1000, resourceCapacity: 100, foodAmount: 10, foodRegenerationPerDay: 1 }]
     advanceCohortsAnnual(cohorts)
     expect(cohorts[0]).toMatchObject({ populationCount: 103, ageBands: { children: 22, adults: 70, elders: 11 }, eventTotals: { births: 3, deaths: 0 } })
+    expect(() => validatePopulationCohorts(cohorts, [{ id: 'west', name: 'West', cellIds: ['0,0'], populationCount: 0, cohortPopulationCount: 100 }], cells)).not.toThrow()
   })
 })

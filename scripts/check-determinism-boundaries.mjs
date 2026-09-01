@@ -4,6 +4,7 @@ import { join, relative } from 'node:path'
 const protectedRoots = ['src/simulation', 'src/contentPacks', 'src/persistence', 'src/hosted', 'src/history', 'src/projection', 'src/worker']
 const forbidden = [/\.localeCompare\s*\(/, /Math\.random\s*\(/, /Date\.now\s*\(/, /performance\.now\s*\(/]
 const operationalExemptions = new Map([
+  ['src/simulation/engine/engine.ts', [/performance\.now\s*\(/g]],
   ['src/simulation/engine/scaleBenchmark.ts', [/performance\.now\s*\(/g]],
   ['src/worker/simulation.worker.ts', [/performance\.now\s*\(/g]],
   ['src/worker/protocol.ts', [/Date\.now\s*\(/g]],

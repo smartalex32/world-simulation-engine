@@ -61,9 +61,9 @@ export function reconcileSettlementRegions(input: { settlements: SettlementState
 
 /** Causal settlement evidence for a real household relocation. Values describe
  * observed regional conditions; they do not assign settlement membership. */
-export function settlementMigrationTrace(settlements: readonly SettlementState[], sourceCellId: string, destinationCellId: string, householdTiePermille: number, foodAccessDeltaPermille: number, travelCost: number): SettlementMigrationTrace {
-  const source = settlementAtCell(settlements, sourceCellId)
-  const destination = settlementAtCell(settlements, destinationCellId)
+export function settlementMigrationTrace(settlements: readonly SettlementState[], sourceCellId: string, destinationCellId: string, householdTiePermille: number, foodAccessDeltaPermille: number, travelCost: number, settlementByCellId?: ReadonlyMap<string, SettlementState>): SettlementMigrationTrace {
+  const source = settlementByCellId ? settlementByCellId.get(sourceCellId) : settlementAtCell(settlements, sourceCellId)
+  const destination = settlementByCellId ? settlementByCellId.get(destinationCellId) : settlementAtCell(settlements, destinationCellId)
   const regional = destination?.regional
   const residents = (regional?.detailedResidentPopulationCount ?? 0) + (regional?.cohortResidentPopulationCount ?? 0)
   return {

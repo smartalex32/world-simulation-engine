@@ -9,6 +9,7 @@ export interface PathResult {
 export interface PathSearchResult {
   path?: PathResult
   truncated: boolean
+  expansions: number
 }
 
 export interface PathSearchOptions {
@@ -26,8 +27,8 @@ export function findPathDetailed(grid: HexGrid, startCellId: string, goalCellId:
   if (!(maxExpansions === Number.POSITIVE_INFINITY || (Number.isSafeInteger(maxExpansions) && maxExpansions >= 1))) throw new RangeError('Path expansion limit must be a positive safe integer')
   const start = cells.get(startCellId)
   const goal = cells.get(goalCellId)
-  if (!start || !goal || !start.movementCost || !goal.movementCost) return { truncated: false }
-  if (start.id === goal.id) return { path: { cellIds: [start.id], totalCost: 0 }, truncated: false }
+  if (!start || !goal || !start.movementCost || !goal.movementCost) return { truncated: false, expansions: 0 }
+  if (start.id === goal.id) return { path: { cellIds: [start.id], totalCost: 0 }, truncated: false, expansions: 0 }
 
   const open = new Set([start.id])
   const cameFrom = new Map<string, string>()
@@ -36,13 +37,13 @@ export function findPathDetailed(grid: HexGrid, startCellId: string, goalCellId:
 
   let expansions = 0
   while (open.size > 0) {
-    if (expansions >= maxExpansions) return { truncated: true }
+    if (expansions >= maxExpansions) return { truncated: true, expansions }
     const currentId = [...open].sort((a, b) => {
       const difference = (estimates.get(a) ?? Number.POSITIVE_INFINITY) - (estimates.get(b) ?? Number.POSITIVE_INFINITY)
       return difference || (a < b ? -1 : a > b ? 1 : 0)
     })[0]
     if (!currentId) break
-    if (currentId === goal.id) return { path: reconstructPath(cameFrom, costs, currentId), truncated: false }
+    if (currentId === goal.id) return { path: reconstructPath(cameFrom, costs, currentId), truncated: false, expansions }
     open.delete(currentId)
     expansions += 1
     const current = cells.get(currentId)
@@ -60,7 +61,7 @@ export function findPathDetailed(grid: HexGrid, startCellId: string, goalCellId:
       open.add(neighbor.id)
     }
   }
-  return { truncated: false }
+  return { truncated: false, expansions }
 }
 
 function reconstructPath(cameFrom: Map<string, string>, costs: Map<string, number>, goalId: string): PathResult {

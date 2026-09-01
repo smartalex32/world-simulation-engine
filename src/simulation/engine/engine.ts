@@ -94,7 +94,7 @@ import { acquireLanguage, initialLanguage } from '../language/model'
 import { createLocalGovernance, updateLegitimacy } from '../governance/model'
 import { applyDispute, disputeId, resolveCommunityContentions } from '../conflict/model'
 import { discoverLocalTerrain, initialKnowledge, transmitKnowledge } from '../knowledge/model'
-import { evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION_STREAM, relocationTrace } from '../households/relocation'
+import { buildHouseholdRelocationIndex, evaluateHouseholdRelocation, HOUSEHOLD_RELOCATION, HOUSEHOLD_RELOCATION_STREAM, relocationTrace } from '../households/relocation'
 import { advanceCohortFictionalInfections, applyAnnualCohortInfectionMortality, emptyHealthExposure, FICTIONAL_PATHOGEN_STREAM, healthStressMortalityRiskPermille, progressFictionalInfections, resolveDailyHealthStress, transmitFictionalPathogens } from '../health/model'
 import { attemptPracticalExperiment, INNOVATION_STREAM } from '../innovation/model'
 import { COHORT_MODEL_VERSION, advanceCohortsAnnual, advanceCohortsDaily, cohortPopulationByCell, createInitialCohorts } from '../cohorts/model'
@@ -149,7 +149,7 @@ export interface AdvanceResult {
   /** Noncanonical cache hints; authoritative execution never reads these. */
   changeSet: AuthoritativeChangeSet
   /** Noncanonical measurements scoped to this advance call. */
-  diagnostics: { livingPersonIndexBuilds: number; phaseCounts: Record<string, number> }
+  diagnostics: { livingPersonIndexBuilds: number; phaseCounts: Record<string, number>; phaseMilliseconds: Record<string, number>; relocationIndexBuilds: number; relocationPathExpansions: number }
 }
 
 export interface FidelityCommandResult { event: SimulationEvent; changeSet: AuthoritativeChangeSet }
@@ -157,6 +157,8 @@ export interface FidelityCommandResult { event: SimulationEvent; changeSet: Auth
 export interface AdvanceOptions {
   /** False defers the batch clock event so a worker may yield without changing event sequencing. */
   clockEventHours?: number | false
+  /** Collect noncanonical per-phase host timings; authoritative output never reads them. */
+  measurePhaseMilliseconds?: boolean
 }
 
 /** Canonical, non-extensible order for every authoritative tick. */
@@ -323,12 +325,14 @@ export class SimulationEngine {
     const eventSink = new EventSink()
     const livingPersonIndexBuildsBefore = this.livingPersonIndexBuilds
     const phaseCounts: Record<string, number> = {}
+    const phaseMilliseconds: Record<string, number> = {}
+    const relocationDiagnostics = { indexBuilds: 0, pathExpansions: 0 }
     const changeCategories = new Set<AuthoritativeChangeSet['categories'][number]>()
     const changedCellIds = new Set<string>()
     const pushEvent = (event: SimulationEvent) => eventSink.emit(event)
     const statistics: StatisticSample[] = []
     for (let index = 0; index < count; index += 1) {
-      this.runTickPipeline({ pushEvent, statistics, changeCategories, changedCellIds, phaseCounts, invalidate: (categories, cellIds = []) => { for (const category of categories) changeCategories.add(category); for (const cellId of cellIds) changedCellIds.add(cellId) } })
+      this.runTickPipeline({ pushEvent, statistics, changeCategories, changedCellIds, phaseCounts, phaseMilliseconds, measurePhases: options.measurePhaseMilliseconds === true, relocationDiagnostics, invalidate: (categories, cellIds = []) => { for (const category of categories) changeCategories.add(category); for (const cellId of cellIds) changedCellIds.add(cellId) } })
     }
     // Disputes are indexed during encounter resolution.  Materialize the stable serialized
     // collection once per requested advance batch instead of rebuilding it for every encounter.
@@ -341,13 +345,18 @@ export class SimulationEngine {
     }
     const eventBatch = eventSink.batch()
     this.assertInvariants()
-    return { events: eventBatch.events, eventRetention: eventBatch.retention, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds), diagnostics: { livingPersonIndexBuilds: this.livingPersonIndexBuilds - livingPersonIndexBuildsBefore, phaseCounts } }
+    return { events: eventBatch.events, eventRetention: eventBatch.retention, statistics, changeSet: changeSetFromEvents([], changeCategories, changedCellIds), diagnostics: { livingPersonIndexBuilds: this.livingPersonIndexBuilds - livingPersonIndexBuildsBefore, phaseCounts, phaseMilliseconds, relocationIndexBuilds: relocationDiagnostics.indexBuilds, relocationPathExpansions: relocationDiagnostics.pathExpansions } }
   }
 
   private runTickPipeline(runtime: EngineTickRuntime): void {
     const context: SimulationTickContext = {
       tick: this.state.tick + 1,
       phaseCounts: runtime.phaseCounts,
+      ...(runtime.measurePhases ? { measurePhase: (phaseId: string, operation: () => void) => {
+        const startedAt = performance.now()
+        operation()
+        runtime.phaseMilliseconds[phaseId] = (runtime.phaseMilliseconds[phaseId] ?? 0) + performance.now() - startedAt
+      } } : {}),
       state: this.state,
       random: this.random,
       content: this.contentPackRuntime,
@@ -369,7 +378,7 @@ export class SimulationEngine {
       decisionsAndActions: (context) => { const result = this.runDecisionsAndActions(runtime.pushEvent); context.scratch.decisions = result.decisions; context.scratch.postActionActivityOccupancy = result.occupancy; if (result.decisions.length > 0) runtime.invalidate(['people']); if (result.changedCellIds.length > 0) runtime.invalidate(['locations'], result.changedCellIds) },
       encountersAndMarkets: (context) => { const encounters = this.runEncountersAndMarkets(runtime.pushEvent, context.scratch); if (encounters > 0) runtime.invalidate(['relationships', 'communities']) },
       exposureEnvironmentAndHealth: (context) => { this.runExposureEnvironmentAndHealth(runtime.pushEvent, context.scratch); runtime.invalidate(['people', 'communities']) },
-      monthlyProcessing: () => { this.runMonthlyProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds); runtime.invalidate(['people', 'locations', 'communities']) },
+      monthlyProcessing: () => { this.runMonthlyProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds, runtime.relocationDiagnostics); runtime.invalidate(['people', 'locations', 'communities']) },
       annualProcessing: () => { this.runAnnualProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds); runtime.invalidate(['people', 'relationships']) },
       dailyProcessing: () => { this.runDailyProcessing(runtime.pushEvent, runtime.statistics); runtime.invalidate(['people', 'communities']) },
     }
@@ -475,7 +484,7 @@ export class SimulationEngine {
     this.accumulateDevelopmentExposure()
   }
 
-  private runMonthlyProcessing(pushEvent: (event: SimulationEvent) => void, changeCategories: Set<AuthoritativeChangeSet['categories'][number]>, changedCellIds: Set<string>): void {
+  private runMonthlyProcessing(pushEvent: (event: SimulationEvent) => void, changeCategories: Set<AuthoritativeChangeSet['categories'][number]>, changedCellIds: Set<string>, relocationDiagnostics: { indexBuilds: number; pathExpansions: number }): void {
     for (const production of produceMonthlyGoods({ economy: this.state.economy, households: this.state.households, peopleById: this.personById, recipes: this.contentPackRuntime.pack.economy.recipes, tick: this.state.tick })) pushEvent(this.event('PERSON_WORKED', { householdId: production.householdId, recipeId: production.recipeId, laborHours: production.laborHours, outputUnits: Object.values(production.outputs).reduce((sum, value) => sum + value, 0) }))
     for (const trade of clearMarkets({ economy: this.state.economy, households: this.state.households, markets: this.state.markets, cellsById: this.cellById, tick: this.state.tick })) { this.economicCounters().exchangeCount += 1; pushEvent(this.event('HOUSEHOLDS_EXCHANGED_TOOLS', { marketId: trade.marketId, sellerHouseholdId: trade.sellerHouseholdId, buyerHouseholdId: trade.buyerHouseholdId, goodId: trade.goodId, quantity: trade.quantity, unitPriceUnits: trade.unitPriceUnits, transportCostUnits: trade.transportCostUnits, taxUnits: trade.taxUnits })) }
     for (const wage of distributeMarketWages({ economy: this.state.economy, households: this.state.households, peopleById: this.personById, tick: this.state.tick })) pushEvent(this.event('PERSON_WORKED', { householdId: wage.householdId, marketId: wage.marketId, wageUnits: wage.wageUnits, workerCount: wage.workerCount }))
@@ -483,7 +492,7 @@ export class SimulationEngine {
     for (const asset of maintainInfrastructure(this.state.infrastructure, this.state.tick)) { const trace = asset.lastTrace; if (trace) pushEvent(this.event('INFRASTRUCTURE_UPDATED', { assetId: asset.id, kind: trace.kind, capacity: trace.capacity, conditionPermille: asset.conditionPermille, disruptionPermille: asset.disruptionPermille, reason: trace.reason })) }
     this.processDevelopment(pushEvent)
     this.processBroaderDevelopment(pushEvent)
-    this.resolveMonthlyHouseholdRelocations(pushEvent)
+    this.resolveMonthlyHouseholdRelocations(pushEvent, relocationDiagnostics)
     for (const transition of updateSettlementScales({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, people: this.state.people })) pushEvent(this.event('SETTLEMENT_SCALE_CHANGED', { settlementId: transition.settlementId, previousScale: transition.previousScale, nextScale: transition.nextScale, population: transition.evidence.population, densityPerHomeCell: Math.round(transition.evidence.densityPerHomeCell * 1000), resourceUnitsPerResident: Math.round(transition.evidence.resourceUnitsPerResident * 1000), accessPermille: transition.evidence.accessPermille }))
     const reconciliationInput = () => ({ settlements: this.state.world.settlements, cells: this.state.world.grid.cells, households: this.state.households, cohorts: this.state.cohorts, markets: this.state.markets, organizations: this.state.organizations, roads: this.state.world.roads ?? [], infrastructure: this.state.infrastructure, tick: this.state.tick })
     for (const transition of reconcileSettlementRegions(reconciliationInput())) pushEvent(this.event('SETTLEMENT_REGIONAL_TRANSITION', { settlementId: transition.settlementId, previousStatus: transition.previousStatus, nextStatus: transition.nextStatus, kind: transition.kind, reason: transition.reason }))
@@ -1391,9 +1400,14 @@ export class SimulationEngine {
    * A bounded monthly home-choice pass. It changes homes only after a concrete
    * geographic candidate has been evaluated and a named stochastic roll accepts it.
    */
-  private resolveMonthlyHouseholdRelocations(pushEvent: (event: SimulationEvent) => void): void {
+  private resolveMonthlyHouseholdRelocations(
+    pushEvent: (event: SimulationEvent) => void,
+    diagnostics: { indexBuilds: number; pathExpansions: number } = { indexBuilds: 0, pathExpansions: 0 },
+  ): void {
     if (this.state.tick % HOUSEHOLD_RELOCATION.intervalHours !== 0) return
     const roadCellIds = new Set((this.state.world.roads ?? []).flatMap((road) => road.cellIds))
+    const index = buildHouseholdRelocationIndex(this.state.world.grid.cells, this.state.households, this.state.relationships, this.state.world.settlements)
+    diagnostics.indexBuilds += 1
     const relocationRng = this.random.stream(HOUSEHOLD_RELOCATION_STREAM)
     for (const household of [...this.state.households].sort((first, second) => compareIds(first.id, second.id))) {
       const evaluation = evaluateHouseholdRelocation({
@@ -1405,14 +1419,17 @@ export class SimulationEngine {
         roadCellIds,
         settlements: this.state.world.settlements,
         healthDisplacementPermille: Math.floor(household.memberIds.filter((id) => this.personById.get(id)?.fictionalInfection?.phase === 'infectious').length * 250 / Math.max(1, household.memberIds.length)),
+        index,
+        diagnostics,
       })
       if (!evaluation.candidate || evaluation.probabilityPermille === 0) continue
       const trace = relocationTrace(evaluation, this.state.tick, relocationRng.nextInt(1000))
       if (!trace) continue
-      trace.settlementMigration = settlementMigrationTrace(this.state.world.settlements, trace.sourceCellId, trace.destinationCellId, trace.householdTiePermille, trace.foodAccessDeltaPermille, trace.travelCost)
+      trace.settlementMigration = settlementMigrationTrace(this.state.world.settlements, trace.sourceCellId, trace.destinationCellId, trace.householdTiePermille, trace.foodAccessDeltaPermille, trace.travelCost, index.settlementByCellId)
       const homeActivity = this.activityLocationById.get(household.homeActivityLocationId)
       if (!homeActivity || homeActivity.kind !== 'home') throw new Error(`Household ${household.id} has no valid home activity`)
       household.homeCellId = trace.destinationCellId
+      index.moveHousehold(household, trace.sourceCellId, trace.destinationCellId)
       household.lastRelocation = trace
       homeActivity.cellId = trace.destinationCellId
       for (const personId of household.memberIds) {
@@ -1772,6 +1789,9 @@ interface EngineTickRuntime {
   readonly changeCategories: Set<AuthoritativeChangeSet['categories'][number]>
   readonly changedCellIds: Set<string>
   readonly phaseCounts: Record<string, number>
+  readonly phaseMilliseconds: Record<string, number>
+  readonly measurePhases: boolean
+  readonly relocationDiagnostics: { indexBuilds: number; pathExpansions: number }
   readonly invalidate: (categories: readonly AuthoritativeChangeSet['categories'][number][], cellIds?: readonly string[]) => void
 }
 
