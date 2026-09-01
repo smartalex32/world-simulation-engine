@@ -20,6 +20,7 @@ describe('projection-free engine advance', () => {
       ['decisions-and-actions', 'hourly'],
       ['encounters-and-markets', 'hourly'],
       ['exposure-environment-and-health', 'hourly'],
+      ['organization-lifecycle', 'daily'],
       ['monthly-processing', 'monthly'],
       ['annual-processing', 'annual'],
       ['daily-processing-and-statistics', 'daily'],
@@ -29,7 +30,7 @@ describe('projection-free engine advance', () => {
     expect(TICK_PHASE_MANIFEST.map((phase) => phase.rngStreams)).toEqual([
       ['life-cycle.mortality'], [], [], ['organization.school.attendance'],
       ['actions', 'innovation.practical-experiment', 'content-pack.<pack>.<stream>'], ['encounters'],
-      ['health.fictional-pathogen'], ['household.relocation'],
+      ['health.fictional-pathogen'], ['organization.lifecycle'], ['household.relocation'],
       ['life-cycle.partnership', 'life-cycle.birth', 'life-cycle.inheritance'], [],
     ])
     expect(Object.isFrozen(TICK_PHASE_MANIFEST)).toBe(true)
@@ -47,36 +48,34 @@ describe('projection-free engine advance', () => {
   it.each([
     {
       boundary: 1,
-      digest: 'ff2fa0ba32242c1168b2a65e7a412b5f00640f67017e533afcc923183522a243',
+      digest: '6771c2eff6a0f384de8abb0b98203f4d8989f59d488bf8cac55c1dcd72ccab7c',
       randomStreams: '29ecdd00e858eb8b6361ff9e6b5143ddbaf84099931a4758889f8bb6e0aabb97',
       events: '367d7ed0a630c026450f0445c4dfa403a5d5229bede3aa60fed478664c06f0b9',
       statistics: '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
     },
     {
       boundary: 24,
-      digest: '4e9a78c9676f481f42e5a5dc04ea69d9a719caeb426492ca9b8f490b9688a6b0',
+      digest: '236a4bb6d52d34c3d01e4166a42328fecd4b25160ec79d0f0638c36dfba7f375',
       randomStreams: '257981ba63a7fce051914fba6fe6d3bdaa39cea9cb6f199b85fc63558345e39e',
       events: 'b3eb4651adec5951caad3e9dfe1396d2447cb84e29642f76213d0d077a5040c4',
       statistics: 'edd18712be2c3dc2577687f858cb2b5020db73f7a1edbaa11b8fcb7f99292016',
     },
     {
       boundary: 720,
-      digest: '0fd95c309ca89016a54da1df7d0ad4e452a6708e4f1dff21f1d15edf7a14e765',
+      digest: '8a774a1994e0c22762c38e9ccfb81dc2453f809e1ce2889a60705b0b3498689d',
       randomStreams: 'd19bf8d30008e3d6fa225ec73d9fe37065f1a21bf6af0abf37841eb7700e3aae',
       events: '989c4d2502b6fc9677cf100b57ce157cdca587763bd317def131f7fd52ce5208',
       statistics: '962f2ab39e328128004c7f1740a294efbe9f10f4d1dedadf0e3b17ec1b2562d7',
     },
     {
       boundary: 8760,
-      digest: '5fef9aa925d88335420e36faf75ac4df4b3a8820e4edcba9d987a402bf722eda',
+      digest: 'dc09b1467bd1f44318b609540f0cd5674fe845eda8cf54d8c4ff26dcd5faee1d',
       randomStreams: '09c2c5bed0559fab768a6c03ed7782fd41f6776fed6e3b900a399911bca730bc',
       events: 'b54854f144a53a66f61815129511976e555da3af186380adf356661d11979676',
       statistics: '3093c47dcb6e1bbe637a9ab6367cd1732857425423c2285fe1b5e48038d8e35d',
     },
   ])('matches the pre-pipeline canonical contract at the $boundary-hour boundary', async ({ boundary, digest, randomStreams, events, statistics }) => {
-    // RNG, event, and statistic digests remain the pre-pipeline contract. The
-    // state digest intentionally reflects the immutable default-pack 1.1.0
-    // reference; execution behavior and draw order remain unchanged.
+    // Fixed digests record the versioned lifecycle contract.
     const engine = createBoundaryEngine(`phase-compat-${boundary}`)
     const result = engine.advance(boundary, { clockEventHours: false })
     const snapshot = await engine.snapshot()
@@ -90,9 +89,9 @@ describe('projection-free engine advance', () => {
     const engine = SimulationEngine.create('phase-compat-full')
     const result = engine.advance(48, { clockEventHours: false })
     const snapshot = await engine.snapshot()
-    expect(snapshot.digest).toBe('18801ba09d1c9844cc7aeab844df203de1c5a40f3e8f479567d0e11e7aab8a97')
-    expect(await canonicalDigest(snapshot.state.randomStreams)).toBe('65d2460040dd8f2b8360aa3c4be0d12a0e2ba117b278cfdc34cf2fd69e0015a9')
-    expect(await canonicalDigest(result.events)).toBe('021ea3c19cb0e4244cbabc7bd0a12bd1c9698e38c48f44846a8522ffbc44dadd')
+    expect(snapshot.digest).toBe('4cd84b4e4a3fb36a96a14bf5c16fdd2817416aa071db04f8c04ac43c4ca377e1')
+    expect(await canonicalDigest(snapshot.state.randomStreams)).toBe('7ae6d7a2f35b8ff03e3ad8fb19b15eff891207ceea2dd67ad50f9da639abd51c')
+    expect(await canonicalDigest(result.events)).toBe('06a9c17bd0cc9918702516c2c5a0c1f1b39ebefb8318910be7838882a84e09a9')
     expect(await canonicalDigest(result.statistics)).toBe('a58dda13775abebd3a99e0d76e92cb1f5a894c668c02c55415aa4bc18312f636')
   })
 

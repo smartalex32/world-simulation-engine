@@ -492,8 +492,8 @@ export class SimulationEngine {
   private runOrganizationLifecycle(pushEvent: (event: SimulationEvent) => void): number {
     const lifecycle = this.state.organizationLifecycle!
     const outcome = advanceOrganizationLifecycle({ tick: this.state.tick, definitions: this.contentPackRuntime.organizationDefinitions, people: this.state.people, organizations: this.state.organizations, relationships: this.state.relationships, lifecycle, nextPermille: () => this.random.stream(ORGANIZATION_LIFECYCLE_STREAM).nextInt(1000) })
-    for (const trace of lifecycle.latestFormationTraces.filter((trace) => trace.tick === this.state.tick)) if (trace.formed && trace.organizationId) pushEvent(this.event('ORGANIZATION_FORMED', { organizationId: trace.organizationId, kindId: trace.kindId, locationCellId: trace.locationCellId, probabilityPermille: trace.finalProbabilityPermille, randomRollPermille: trace.randomRollPermille }))
-    for (const trace of lifecycle.latestMembershipTraces.filter((trace) => trace.tick === this.state.tick)) if (trace.selected) pushEvent(this.event('ORGANIZATION_MEMBERSHIP_CHANGED', { personId: trace.personId, organizationId: trace.organizationId, change: trace.change, roleId: trace.nextRoleId, probabilityPermille: trace.finalProbabilityPermille, randomRollPermille: trace.randomRollPermille }))
+    for (const trace of outcome.formationTraces) if (trace.formed && trace.organizationId) pushEvent(this.event('ORGANIZATION_FORMED', { organizationId: trace.organizationId, kindId: trace.kindId, locationCellId: trace.locationCellId, probabilityPermille: trace.finalProbabilityPermille, randomRollPermille: trace.randomRollPermille }))
+    for (const trace of outcome.membershipTraces) if (trace.selected) pushEvent(this.event('ORGANIZATION_MEMBERSHIP_CHANGED', { personId: trace.personId, organizationId: trace.organizationId, change: trace.change, roleId: trace.nextRoleId, probabilityPermille: trace.finalProbabilityPermille, randomRollPermille: trace.randomRollPermille }))
     return outcome.formations + outcome.memberships
   }
 

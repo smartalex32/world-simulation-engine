@@ -59,6 +59,29 @@ describe('canonical serialization', () => {
     await expect(SimulationEngine.restore(advanced)).resolves.toBeInstanceOf(SimulationEngine)
   })
 
+  it('upgrades an authenticated schema-45 default-pack snapshot and continues deterministically', async () => {
+    const source = await SimulationEngine.create('schema-45-default-pack').snapshot()
+    const legacy = structuredClone(source)
+    legacy.schemaVersion = 45
+    legacy.engineVersion = '0.46.0'
+    legacy.state.config.organizationModelVersion = 2
+    legacy.state.config.contentPackVersion = '1.1.0'
+    legacy.state.config.contentPackChecksum = '0'.repeat(32)
+    legacy.state.config.contentPackDependencies = []
+    const legacyState = legacy.state as { organizationLifecycle?: unknown }
+    legacyState.organizationLifecycle = undefined
+    legacy.digest = await stateDigest(legacy.state)
+
+    const migrated = await validateSnapshot(legacy)
+    expect(migrated.state.config.contentPackVersion).toBe('1.2.0')
+    expect(migrated.state.config.contentPackChecksum).not.toBe('0'.repeat(32))
+    const restored = await SimulationEngine.restore(migrated)
+    const control = await SimulationEngine.restore(migrated)
+    restored.advance(24, { clockEventHours: false })
+    control.advance(24, { clockEventHours: false })
+    expect(await restored.snapshot()).toEqual(await control.snapshot())
+  })
+
   it('repairs schema-44 creation input contaminated by runtime settlement state', async () => {
     const creation = defaultWorldCreationRequest('schema-44-settlement-repair')
     creation.settlements = [{ id: 'settlement-one', name: 'One', anchorCellId: '8,8' }]
@@ -66,6 +89,7 @@ describe('canonical serialization', () => {
     const legacy = structuredClone(current)
     legacy.schemaVersion = 44
     legacy.engineVersion = '0.45.0'
+    legacy.state.config.organizationModelVersion = 2
     legacy.state.config.worldCreation.settlements = structuredClone(legacy.state.world.settlements)
     legacy.digest = await stateDigest(legacy.state)
 

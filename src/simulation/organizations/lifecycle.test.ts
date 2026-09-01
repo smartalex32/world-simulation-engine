@@ -9,9 +9,18 @@ describe('organization lifecycle', () => {
   it('forms deterministically from shared activity plus a recorded relationship, retaining explanation evidence', () => {
     const organizations: never[] = []; const lifecycle = { nextOrganizationSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] }
     const result = advanceOrganizationLifecycle({ tick: 24, definitions: [definition], people: [person('a'), person('b')] as never, organizations, relationships: [{ id: 'a|b' }] as never, lifecycle, nextPermille: () => 0 })
-    expect(result).toEqual({ formations: 1, memberships: 0 })
+    expect(result).toMatchObject({ formations: 1, memberships: 0, formationTraces: [{ formed: true }] })
     expect(organizations[0]).toMatchObject({ id: 'organization.club.000001', members: [{ personId: 'a', role: 'member' }, { personId: 'b', role: 'member' }] })
-    expect(lifecycle.latestFormationTraces[0]).toMatchObject({ formed: true, rngStream: 'organization.lifecycle', factors: { activityPermille: 1000, relationshipPermille: 1000 } })
+    expect(lifecycle.latestFormationTraces[0]).toMatchObject({ formed: true, rngStream: 'organization.lifecycle', factors: { activityPermille: 1000, proximityPermille: 1000, relationshipPermille: 1000 } })
+  })
+  it('returns every selected trace to the phase caller even after bounded history is pruned', () => {
+    const people = Array.from({ length: 80 }, (_, index) => ({ ...person(`p${String(index).padStart(3, '0')}`), locationCellId: `${Math.floor(index / 16)},1`, currentActivity: { locationId: `activity.commons.${Math.floor(index / 16)},1` } }))
+    const relationships = [0, 1, 2, 3, 4].flatMap((group) => people.slice(group * 16 + 1, group * 16 + 16).map((candidate) => ({ id: `${people[group * 16]!.id}|${candidate.id}` })))
+    const organizations: never[] = []; const lifecycle = { nextOrganizationSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] }
+    const result = advanceOrganizationLifecycle({ tick: 24, definitions: [definition], people: people as never, organizations, relationships: relationships as never, lifecycle, nextPermille: () => 0 })
+    expect(result.formationTraces).toHaveLength(5)
+    expect(result.membershipTraces.filter((trace) => trace.selected)).toHaveLength(70)
+    expect(lifecycle.latestMembershipTraces).toHaveLength(64)
   })
   it('keeps explicit role change and leaving separate from relationship evidence', () => {
     const organization = { id: 'club', name: 'Club', kind: 'club', locationCellId: '1,1', activityLocationId: 'activity.commons.1,1', members: [{ personId: 'a', role: 'member' }], serviceCapacity: 8, sharedRuleIds: [] } as OrganizationState

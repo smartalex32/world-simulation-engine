@@ -1,5 +1,6 @@
 import { ENGINE_VERSION, SNAPSHOT_SCHEMA_VERSION, type SnapshotEnvelope, type SnapshotMigrationPathStep } from '../domain/types'
 import { canonicalDigest, stateDigest } from './digest'
+import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver } from '../../contentPacks'
 
 type SnapshotStateLike = Record<string, unknown>
 
@@ -73,7 +74,9 @@ const migrationSteps = new Map<number, MigrationStep>([
     fromSchemaVersion: 45, toSchemaVersion: 46, kind: 'behavior-upgrade', sourceEngineVersion: '0.46.0', targetEngineVersion: ENGINE_VERSION,
     upgrade: (snapshot) => {
       const config = requiredObject(snapshot.state.config, 'Schema-45 state configuration is invalid')
-      return { ...snapshot.state, config: { ...config, organizationModelVersion: 3 }, organizationLifecycle: { nextOrganizationSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] } }
+      const resolved = createContentPackResolver([DEFAULT_PREINDUSTRIAL_PACK]).resolve(DEFAULT_PREINDUSTRIAL_PACK.manifest.id, DEFAULT_PREINDUSTRIAL_PACK.manifest.version)
+      const isDefaultPreindustrial = config.contentPackId === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && config.contentPackVersion === '1.1.0'
+      return { ...snapshot.state, config: { ...config, organizationModelVersion: 3, ...(isDefaultPreindustrial ? { contentPackVersion: resolved.pack.manifest.version, contentPackChecksum: resolved.checksum, contentPackDependencies: resolved.dependencies } : {}) }, organizationLifecycle: { nextOrganizationSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] } }
     },
   }],
 ])
@@ -172,7 +175,7 @@ function readHistoricalState(value: unknown, schemaVersion: number): SnapshotSta
   const config = requiredObject(state.config, `Schema-${schemaVersion} snapshot configuration is invalid`)
   const expectedVersions: Readonly<Record<string, number>> = { worldGeneratorVersion: 1, contentPackModelVersion: 2, variableRegistryVersion: 2, influenceRegistryVersion: 1, householdModelVersion: 4, activityRegistryVersion: 1, developmentRegistryVersion: 2, communityRegistryVersion: 1, environmentModelVersion: 3, lifeCycleModelVersion: 1, economyModelVersion: 3, cultureModelVersion: 1, languageModelVersion: 1, governanceModelVersion: 2, conflictModelVersion: 2, knowledgeModelVersion: 1, healthModelVersion: 2, innovationModelVersion: 1, infrastructureModelVersion: 1, cohortModelVersion: 3 }
   for (const [name, expected] of Object.entries(expectedVersions)) if (config[name] !== expected) throw new Error(`Schema-${schemaVersion} snapshot has incompatible ${name}`)
-  if (config.organizationModelVersion !== 2 && config.organizationModelVersion !== 3) throw new Error(`Schema-${schemaVersion} snapshot has incompatible organizationModelVersion`)
+  if (config.organizationModelVersion !== 2) throw new Error(`Schema-${schemaVersion} snapshot has incompatible organizationModelVersion`)
   if (config.baseTickHours !== 1 || !Number.isSafeInteger(state.tick) || (state.tick as number) < 0) throw new Error(`Schema-${schemaVersion} snapshot clock is invalid`)
   const world = requiredObject(state.world, `Schema-${schemaVersion} snapshot world is invalid`)
   requiredObject(world.grid, `Schema-${schemaVersion} snapshot grid is invalid`)
