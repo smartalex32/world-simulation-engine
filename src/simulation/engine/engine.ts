@@ -182,7 +182,6 @@ export class SimulationEngine {
   private livingPersonIndexBuilds = 0
 
   private constructor(private state: SimulationState, random: RandomProvider, private readonly contentPackRuntime: ContentPackRuntime = createContentPackRuntime(DEFAULT_PREINDUSTRIAL_PACK), private readonly migrationProvenance?: SnapshotEnvelope['migrationProvenance']) {
-    this.state.organizationLifecycle ??= { nextOrganizationSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] }
     this.random = random
     this.cellById = new Map(state.world.grid.cells.map((cell) => [cell.id, cell]))
     this.roadCellIds = new Set((state.world.roads ?? []).flatMap((road) => road.cellIds))
@@ -492,11 +491,9 @@ export class SimulationEngine {
 
   private runOrganizationLifecycle(pushEvent: (event: SimulationEvent) => void): number {
     const lifecycle = this.state.organizationLifecycle!
-    const formationStart = lifecycle.latestFormationTraces.length
-    const membershipStart = lifecycle.latestMembershipTraces.length
     const outcome = advanceOrganizationLifecycle({ tick: this.state.tick, definitions: this.contentPackRuntime.organizationDefinitions, people: this.state.people, organizations: this.state.organizations, relationships: this.state.relationships, lifecycle, nextPermille: () => this.random.stream(ORGANIZATION_LIFECYCLE_STREAM).nextInt(1000) })
-    for (const trace of lifecycle.latestFormationTraces.slice(formationStart)) if (trace.formed && trace.organizationId) pushEvent(this.event('ORGANIZATION_FORMED', { organizationId: trace.organizationId, kindId: trace.kindId, locationCellId: trace.locationCellId, probabilityPermille: trace.finalProbabilityPermille, randomRollPermille: trace.randomRollPermille }))
-    for (const trace of lifecycle.latestMembershipTraces.slice(membershipStart)) if (trace.selected) pushEvent(this.event('ORGANIZATION_MEMBERSHIP_CHANGED', { personId: trace.personId, organizationId: trace.organizationId, change: trace.change, roleId: trace.nextRoleId, probabilityPermille: trace.finalProbabilityPermille, randomRollPermille: trace.randomRollPermille }))
+    for (const trace of lifecycle.latestFormationTraces.filter((trace) => trace.tick === this.state.tick)) if (trace.formed && trace.organizationId) pushEvent(this.event('ORGANIZATION_FORMED', { organizationId: trace.organizationId, kindId: trace.kindId, locationCellId: trace.locationCellId, probabilityPermille: trace.finalProbabilityPermille, randomRollPermille: trace.randomRollPermille }))
+    for (const trace of lifecycle.latestMembershipTraces.filter((trace) => trace.tick === this.state.tick)) if (trace.selected) pushEvent(this.event('ORGANIZATION_MEMBERSHIP_CHANGED', { personId: trace.personId, organizationId: trace.organizationId, change: trace.change, roleId: trace.nextRoleId, probabilityPermille: trace.finalProbabilityPermille, randomRollPermille: trace.randomRollPermille }))
     return outcome.formations + outcome.memberships
   }
 

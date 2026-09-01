@@ -32,7 +32,7 @@ export function validateCanonicalSimulationState(state: SimulationState, runtime
   requireCollection(state.households, 'households', 'state.households')
   requireCollection(state.markets, 'markets', 'state.markets')
   requireCollection(state.organizations, 'organizations', 'state.organizations')
-  if (state.organizationLifecycle) { if (!Number.isSafeInteger(state.organizationLifecycle.nextOrganizationSequence) || state.organizationLifecycle.nextOrganizationSequence < 1) fail('organizations', 'state.organizationLifecycle', 'lifecycle', 'Organization lifecycle state is invalid'); requireCollection(state.organizationLifecycle.latestFormationTraces, 'organizations', 'state.organizationLifecycle.latestFormationTraces'); requireCollection(state.organizationLifecycle.latestMembershipTraces, 'organizations', 'state.organizationLifecycle.latestMembershipTraces') }
+  if (!state.organizationLifecycle || !Number.isSafeInteger(state.organizationLifecycle.nextOrganizationSequence) || state.organizationLifecycle.nextOrganizationSequence < 1) fail('organizations', 'state.organizationLifecycle', 'lifecycle', 'Organization lifecycle state is invalid'); requireCollection(state.organizationLifecycle.latestFormationTraces, 'organizations', 'state.organizationLifecycle.latestFormationTraces'); requireCollection(state.organizationLifecycle.latestMembershipTraces, 'organizations', 'state.organizationLifecycle.latestMembershipTraces')
   requireCollection(state.infrastructure, 'infrastructure', 'state.infrastructure')
   requireCollection(state.governance, 'governance', 'state.governance')
   requireCollection(state.disputes, 'disputes', 'state.disputes')

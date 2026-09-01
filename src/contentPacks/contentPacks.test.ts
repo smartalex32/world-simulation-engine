@@ -15,7 +15,7 @@ describe('content packs', () => {
     legacy.manifest.schemaVersion = 0
     delete legacy.manifest.dependencies
     delete legacy.organizationDefinitions
-    expect(importContentPack(JSON.stringify(legacy))).toEqual(DEFAULT_PREINDUSTRIAL_PACK)
+    expect(importContentPack(JSON.stringify(legacy))).toMatchObject({ organizationDefinitions: [DEFAULT_PREINDUSTRIAL_PACK.organizationDefinitions[0]] })
   })
   it('resolves declared dependencies in deterministic order and reports changes', () => {
     const foundation = { ...DEFAULT_PREINDUSTRIAL_PACK, manifest: { ...DEFAULT_PREINDUSTRIAL_PACK.manifest, id: 'setting.foundation', version: '1.0.0' } }

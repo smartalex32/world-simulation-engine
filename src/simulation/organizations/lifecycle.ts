@@ -17,11 +17,12 @@ export function advanceOrganizationLifecycle(input: { tick: number; definitions:
   const organizationsByActivity = new Map<string, OrganizationState[]>()
   for (const organization of input.organizations) { const values = organizationsByActivity.get(organization.activityLocationId) ?? []; values.push(organization); organizationsByActivity.set(organization.activityLocationId, values) }
   let formations = 0; let memberships = 0
-  for (const [activityLocationId, people] of [...peopleByActivity.entries()].sort(([a], [b]) => compareStableText(a, b))) {
+  for (const [activityLocationId, people] of [...peopleByActivity.entries()].filter(([id]) => id.startsWith('activity.commons.')).sort(([a], [b]) => compareStableText(a, b))) {
     const pair = relatedPair(people, relationshipIds)
     if (!pair) continue
     const factors = factorsFor(pair, relationshipIds)
     for (const definition of activeDefinitions) {
+      if ((organizationsByActivity.get(activityLocationId) ?? []).some((organization) => organization.kind === definition.id)) continue
       const roll = input.nextPermille(); const probability = evaluateProbability(definition.lifecycle!.baseFormationPermille, factors)
       if (roll >= probability) { appendFormation(input.lifecycle, { tick: input.tick, kindId: definition.id, candidatePersonIds: pair.map((person) => person.id), locationCellId: pair[0].locationCellId, baseProbabilityPermille: definition.lifecycle!.baseFormationPermille, factors, finalProbabilityPermille: probability, rngStream: ORGANIZATION_LIFECYCLE_STREAM, randomRollPermille: roll, formed: false, rejectionReason: 'probability' }); continue }
       const sequence = input.lifecycle.nextOrganizationSequence++; const id = `organization.${definition.id}.${String(sequence).padStart(6, '0')}`

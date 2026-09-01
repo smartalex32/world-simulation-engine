@@ -5,7 +5,7 @@ import type { ContentPack } from './types'
 /** Initial setting-agnostic pack: current preindustrial rules retain their
  * existing IDs and coefficients while becoming portable inspectable content. */
 export const DEFAULT_PREINDUSTRIAL_PACK: ContentPack = Object.freeze({
-  manifest: Object.freeze({ format: 'world-simulation-content-pack', schemaVersion: 1, id: 'setting.preindustrial.default', version: '1.1.0', name: 'Default preindustrial setting', dependencies: Object.freeze([]) }),
+  manifest: Object.freeze({ format: 'world-simulation-content-pack', schemaVersion: 1, id: 'setting.preindustrial.default', version: '1.2.0', name: 'Default preindustrial setting', dependencies: Object.freeze([]) }),
   personVariables: Object.freeze(PERSON_VARIABLE_DEFINITIONS.map((definition) => Object.freeze({ ...definition }))),
   influences: Object.freeze(INFLUENCE_DEFINITIONS.map((definition) => Object.freeze({ ...definition }))),
   pathogens: Object.freeze([
@@ -23,6 +23,7 @@ export const DEFAULT_PREINDUSTRIAL_PACK: ContentPack = Object.freeze({
   }),
   organizationDefinitions: Object.freeze([
     Object.freeze({ id: 'school', name: 'School', purposeIds: Object.freeze(['education']), memberRoleIds: Object.freeze(['learner', 'educator']), sharedRuleIds: Object.freeze(['organization.rule.attendance.v1']), initialService: Object.freeze({ location: 'settlement-anchor', activityLocation: 'commons', serviceCapacity: 24 }) }),
+    Object.freeze({ id: 'study-circle', name: 'Study circle', purposeIds: Object.freeze(['education']), memberRoleIds: Object.freeze(['member', 'steward']), sharedRuleIds: Object.freeze([]), initialService: Object.freeze({ location: 'settlement-anchor', activityLocation: 'commons', serviceCapacity: 8 }), lifecycle: Object.freeze({ formation: true, defaultMemberRoleId: 'member', cadenceHours: 24, baseFormationPermille: 80, baseMembershipPermille: 120 }) }),
   ]),
   formulas: Object.freeze({
     // Retains the historical authored base weight while exercising the

@@ -115,7 +115,7 @@ export interface SimulationState {
   markets: MarketState[]
   economy: EconomyState
   organizations: OrganizationState[]
-  organizationLifecycle?: OrganizationLifecycleState
+  organizationLifecycle: OrganizationLifecycleState
   infrastructure: InfrastructureAssetState[]
   governance: LocalGovernanceState[]
   disputes: DisputeState[]

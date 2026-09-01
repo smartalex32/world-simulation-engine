@@ -1,7 +1,7 @@
 // Stable text tie-breaks replace locale-dependent ordering. Snapshots from
 // earlier engines are rejected rather than resumed under changed semantics.
-export const ENGINE_VERSION = '0.46.0'
-export const SNAPSHOT_SCHEMA_VERSION = 45
+export const ENGINE_VERSION = '0.47.0'
+export const SNAPSHOT_SCHEMA_VERSION = 46
 /** Versioned content-pack selection is authoritative configuration, not UI state. */
 export const CONTENT_PACK_MODEL_VERSION = 2
 export const BASE_TICK_HOURS = 1
@@ -17,7 +17,7 @@ export const ENVIRONMENT_MODEL_VERSION = 3
 export const LIFE_CYCLE_MODEL_VERSION = 1
 /** Versioned, non-monetary household food production and sharing rules. */
 export const ECONOMY_MODEL_VERSION = 3
-export const ORGANIZATION_MODEL_VERSION = 2
+export const ORGANIZATION_MODEL_VERSION = 3
 export const CULTURE_MODEL_VERSION = 1
 export const LANGUAGE_MODEL_VERSION = 1
 export const GOVERNANCE_MODEL_VERSION = 2

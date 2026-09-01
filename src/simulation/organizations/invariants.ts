@@ -18,7 +18,6 @@ export function validateOrganizationState(state: SimulationState, definitions: R
     if (organization.sharedRuleIds.length !== definition.sharedRuleIds.length || organization.sharedRuleIds.some((id, index) => id !== definition.sharedRuleIds[index])) fail('organizations', `state.organizations.${organization.id}.sharedRuleIds`, 'shared-rules', `Organization ${organization.id} does not match its defined rules`)
   }
   const lifecycle = state.organizationLifecycle
-  if (!lifecycle) return
   if (lifecycle.latestFormationTraces.some((trace, index) => !Number.isSafeInteger(trace.tick) || trace.tick < 0 || (index > 0 && lifecycle.latestFormationTraces[index - 1]!.tick > trace.tick))) fail('organizations', 'state.organizationLifecycle.latestFormationTraces', 'trace-ordering', 'Organization formation traces are invalid')
   if (lifecycle.latestMembershipTraces.some((trace, index) => !Number.isSafeInteger(trace.tick) || trace.tick < 0 || (index > 0 && lifecycle.latestMembershipTraces[index - 1]!.tick > trace.tick))) fail('organizations', 'state.organizationLifecycle.latestMembershipTraces', 'trace-ordering', 'Organization membership traces are invalid')
 }
