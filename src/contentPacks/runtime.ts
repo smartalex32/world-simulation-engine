@@ -4,6 +4,7 @@ import type { PersonVariableDefinition, PersonVariableId } from '../simulation/v
 import { createPersonVariableRegistry, type PersonVariableRegistry } from '../simulation/variables/storage'
 import { validateContentPack } from './validate'
 import type { ContentPack } from './types'
+import type { OrganizationDefinition, OrganizationKind } from '../simulation/organizations/types'
 import { compareStableText } from '../shared/stableOrder'
 
 /** Immutable, validated registries selected at run creation. No module-level
@@ -14,6 +15,8 @@ export interface ContentPackRuntime {
   readonly variableById: ReadonlyMap<PersonVariableId, PersonVariableDefinition>
   readonly variables: PersonVariableRegistry
   readonly influences: InfluenceRegistry
+  readonly organizationDefinitions: readonly OrganizationDefinition[]
+  readonly organizationDefinitionById: ReadonlyMap<OrganizationKind, OrganizationDefinition>
 }
 
 export function createPackVariableValues(runtime: ContentPackRuntime, overrides: Readonly<Record<string, number>> = {}): Record<string, number> {
@@ -41,5 +44,8 @@ export function createContentPackRuntime(candidate: ContentPack): ContentPackRun
   const variableDefinitions = Object.freeze([...pack.personVariables].sort((left, right) => left.order - right.order || compareStableText(left.id, right.id)))
   const variableById = new Map<PersonVariableId, PersonVariableDefinition>()
   for (const definition of variableDefinitions) variableById.set(definition.id, definition)
-  return Object.freeze({ pack, variableDefinitions, variableById, variables: createPersonVariableRegistry(variableDefinitions), influences: createInfluenceRegistry(pack.influences, new Set(variableDefinitions.map((definition) => definition.id))) })
+  const organizationDefinitions = Object.freeze([...pack.organizationDefinitions].sort((left, right) => compareStableText(left.id, right.id)))
+  const organizationDefinitionById = new Map<OrganizationKind, OrganizationDefinition>()
+  for (const definition of organizationDefinitions) organizationDefinitionById.set(definition.id, definition)
+  return Object.freeze({ pack, variableDefinitions, variableById, variables: createPersonVariableRegistry(variableDefinitions), influences: createInfluenceRegistry(pack.influences, new Set(variableDefinitions.map((definition) => definition.id))), organizationDefinitions, organizationDefinitionById })
 }

@@ -1,5 +1,6 @@
 import type { InfluenceEdgeDefinition } from '../simulation/influences/types'
 import type { PersonVariableDefinition } from '../simulation/variables/types'
+import type { OrganizationDefinition } from '../simulation/organizations/types'
 
 /** Stable content IDs are portable references, never display labels. */
 export type ContentPackId = string
@@ -65,6 +66,7 @@ export interface ContentPack {
   influences: readonly InfluenceEdgeDefinition[]
   pathogens: readonly FictionalPathogenDefinition[]
   economy: { goods: readonly EconomyGoodDefinition[]; recipes: readonly EconomyRecipeDefinition[] }
+  organizationDefinitions: readonly OrganizationDefinition[]
   formulas?: Readonly<Record<string, DeterministicExpression>>
 }
 

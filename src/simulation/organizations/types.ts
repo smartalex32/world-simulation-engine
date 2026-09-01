@@ -1,8 +1,22 @@
 import type { ActivityLocationId } from '../households/types'
 
 export type OrganizationId = string
-export type OrganizationKind = 'school'
-export type OrganizationMemberRole = 'learner' | 'educator'
+export type OrganizationKind = string
+export type OrganizationMemberRole = string
+/** Engine-owned rules may be referenced by setting packs; they are not pack code. */
+export const ORGANIZATION_SHARED_RULE_IDS = ['organization.rule.attendance.v1'] as const
+export type OrganizationSharedRuleId = typeof ORGANIZATION_SHARED_RULE_IDS[number]
+export const ORGANIZATION_PURPOSE_IDS = ['education'] as const
+/** Versioned setting data. It declares classification and initial-service
+ * semantics, never automatic member effects, leadership, or reputation. */
+export interface OrganizationDefinition {
+  id: OrganizationKind
+  name: string
+  purposeIds: readonly string[]
+  memberRoleIds: readonly OrganizationMemberRole[]
+  sharedRuleIds: readonly string[]
+  initialService: { location: 'settlement-anchor'; activityLocation: 'commons'; serviceCapacity: number }
+}
 export interface OrganizationMember { personId: string; role: OrganizationMemberRole }
 /** Persistent coordinated group; membership is not a trait, belief, or attitude assignment. */
 export interface OrganizationState {

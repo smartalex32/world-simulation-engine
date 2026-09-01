@@ -14,7 +14,18 @@ influence edges, and optional declarative formulas. Imports are validated,
 canonicalized with stable JSON ordering, and saved atomically to IndexedDB or
 the hosted PostgreSQL catalog.
 
-The default `setting.preindustrial.default@1.0.0` pack supplies the current
+Packs also declare versioned `organizationDefinitions`: stable kind IDs and
+display names, purpose IDs, permitted member-role IDs, engine-owned shared-rule
+IDs, and explicit initial service semantics. The current binding creates one
+`school` at each authored settlement anchor using the `commons` activity
+location and the definition's service capacity. Definition metadata is exposed
+read-only in organization projections; membership does not infer relationships,
+beliefs, traits, identity, reputation, assets, leadership, or person effects.
+The same schema-backed codec is used by browser import, the SDK, and hosted
+catalog endpoints, so invalid kinds, roles, purposes, or rule references are
+rejected consistently.
+
+The default `setting.preindustrial.default@1.1.0` pack supplies the current
 preindustrial person variables and decision influences. Engine-required base
 variables remain mandatory so the present simulation systems have defined
 semantics; packs may add variables and pack-owned influence edges without a
@@ -76,6 +87,9 @@ digest are part of the reproducibility contract. Pack changes require a new
 semantic version: catalog implementations reject a different payload at an
 existing `id@version`. A snapshot with a missing, graph-checksum-mismatched, or
 non-default legacy-unverified pack is rejected, never migrated by guesswork.
-The original manifest shape (`schemaVersion: 0`)
-is explicitly migrated to version 1 during import; unknown future schemas are
-rejected.
+The original manifest shape (`schemaVersion: 0`) and v1 packs without
+organization definitions are explicitly migrated during import; unknown future
+schemas are rejected. The default pack's organization contract is published as
+`1.1.0`, not as a replacement for immutable `1.0.0` bytes. Older
+checksum-bound snapshots must be restored with their original pack graph and
+are rejected when that graph is unavailable, never reinterpreted by guesswork.

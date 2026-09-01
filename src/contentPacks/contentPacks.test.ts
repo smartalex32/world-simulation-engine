@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CONTENT_PACK_CODEC, ContentPackClient, DEFAULT_PREINDUSTRIAL_PACK, MemoryContentPackCatalog, createContentPackRegistry, createContentPackResolver, createContentPackRuntime, createPackVariableValues, diffContentPacks, evaluateExpression, exportContentPack, importContentPack, validateContentPack, validatePackVariableValues } from '.'
 import { SimulationEngine } from '../simulation/engine/engine'
+import { validateCanonicalSimulationState } from '../simulation/validation/canonicalState'
 
 describe('content packs', () => {
   it('round-trips the default setting through canonical export', () => {
@@ -9,10 +10,11 @@ describe('content packs', () => {
     expect(validateContentPack(restored).canonicalJson).toBe(exportContentPack(DEFAULT_PREINDUSTRIAL_PACK))
     expect(CONTENT_PACK_CODEC.schema).toMatchObject({ $id: 'world-simulation/content-pack' })
   })
-  it('migrates the prior manifest shape before canonical validation', () => {
-    const legacy = structuredClone(DEFAULT_PREINDUSTRIAL_PACK) as unknown as { manifest: Record<string, unknown> }
+  it('migrates prior manifest and organization contract shapes before canonical validation', () => {
+    const legacy = structuredClone(DEFAULT_PREINDUSTRIAL_PACK) as unknown as { manifest: Record<string, unknown>; organizationDefinitions?: unknown }
     legacy.manifest.schemaVersion = 0
     delete legacy.manifest.dependencies
+    delete legacy.organizationDefinitions
     expect(importContentPack(JSON.stringify(legacy))).toEqual(DEFAULT_PREINDUSTRIAL_PACK)
   })
   it('resolves declared dependencies in deterministic order and reports changes', () => {
@@ -58,6 +60,29 @@ describe('content packs', () => {
     const values = createPackVariableValues(runtime, { 'person.trait.curiosity': 750 })
     expect(values['person.trait.curiosity']).toBe(750)
     expect(() => validatePackVariableValues(runtime, { ...values, unexpected: 1 })).toThrow('missing or unexpected')
+  })
+  it('validates pack-defined organization definitions and resolves them for canonical organization state', async () => {
+    const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    pack.manifest = { ...pack.manifest, id: 'setting.organization-fixture', version: '1.0.0', name: 'Organization fixture' }
+    pack.organizationDefinitions = [...pack.organizationDefinitions, { id: 'archive', name: 'Archive', purposeIds: ['education'], memberRoleIds: ['curator'], sharedRuleIds: [], initialService: { location: 'settlement-anchor', activityLocation: 'commons', serviceCapacity: 4 } }]
+    const runtime = createContentPackRuntime(pack)
+    expect(runtime.organizationDefinitionById.get('archive')?.memberRoleIds).toEqual(['curator'])
+    const snapshot = await SimulationEngine.create('organization-fixture', 32, 24, pack).snapshot()
+    const location = snapshot.state.activityLocations.find((entry) => entry.kind === 'commons')!
+    snapshot.state.organizations.push({ id: 'organization.archive.001', name: 'Archive 1', kind: 'archive', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 4, sharedRuleIds: [] })
+    snapshot.state.organizations.sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
+    expect(() => validateCanonicalSimulationState(snapshot.state, runtime)).not.toThrow()
+    const invalid = structuredClone(pack)
+    invalid.organizationDefinitions = [{ id: 'archive', name: 'Archive', purposeIds: ['unknown-purpose'], memberRoleIds: ['curator', 'curator'], sharedRuleIds: ['organization.rule.missing'], initialService: { location: 'settlement-anchor', activityLocation: 'commons', serviceCapacity: 4 } }]
+    try { validateContentPack(invalid); throw new Error('Expected validation failure') } catch (error) {
+      expect((error as { diagnostics: { path: string }[] }).diagnostics.map((diagnostic) => diagnostic.path)).toEqual(expect.arrayContaining(['organizationDefinitions[0].purposeIds', 'organizationDefinitions[0].memberRoleIds', 'organizationDefinitions[0].sharedRuleIds']))
+    }
+    const invalidSchool = structuredClone(pack)
+    invalidSchool.organizationDefinitions = [{ ...invalidSchool.organizationDefinitions.find((definition) => definition.id === 'school')!, memberRoleIds: ['educator'], sharedRuleIds: [] }]
+    expect(() => validateContentPack(invalidSchool)).toThrow('School definitions must allow the learner role')
+    const invalidAttendance = structuredClone(pack)
+    invalidAttendance.organizationDefinitions = [{ ...invalidAttendance.organizationDefinitions.find((definition) => definition.id === 'school')!, id: 'archive', memberRoleIds: ['curator'] }]
+    expect(() => validateContentPack(invalidAttendance)).toThrow('attendance rule is reserved')
   })
   it('selects an immutable custom pack for a run and restores it only with that pack', async () => {
     const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)

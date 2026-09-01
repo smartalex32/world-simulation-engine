@@ -47,35 +47,36 @@ describe('projection-free engine advance', () => {
   it.each([
     {
       boundary: 1,
-      digest: '7658bf62aceb8ca36b75621207934ab772356163ee27e17cc0ea4e04ed677c3a',
+      digest: 'ff2fa0ba32242c1168b2a65e7a412b5f00640f67017e533afcc923183522a243',
       randomStreams: '29ecdd00e858eb8b6361ff9e6b5143ddbaf84099931a4758889f8bb6e0aabb97',
       events: '367d7ed0a630c026450f0445c4dfa403a5d5229bede3aa60fed478664c06f0b9',
       statistics: '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
     },
     {
       boundary: 24,
-      digest: '56d8845b89a3bd26d85b747ed0affe24ed7f3ac4d863fc160bc5a61e2a4f0acf',
+      digest: '4e9a78c9676f481f42e5a5dc04ea69d9a719caeb426492ca9b8f490b9688a6b0',
       randomStreams: '257981ba63a7fce051914fba6fe6d3bdaa39cea9cb6f199b85fc63558345e39e',
       events: 'b3eb4651adec5951caad3e9dfe1396d2447cb84e29642f76213d0d077a5040c4',
       statistics: 'edd18712be2c3dc2577687f858cb2b5020db73f7a1edbaa11b8fcb7f99292016',
     },
     {
       boundary: 720,
-      digest: '0f7c9b269aa9938c014f9d3f5e87baf36347c6948c1309df8f478eca47e97b8a',
+      digest: '0fd95c309ca89016a54da1df7d0ad4e452a6708e4f1dff21f1d15edf7a14e765',
       randomStreams: 'd19bf8d30008e3d6fa225ec73d9fe37065f1a21bf6af0abf37841eb7700e3aae',
       events: '989c4d2502b6fc9677cf100b57ce157cdca587763bd317def131f7fd52ce5208',
       statistics: '962f2ab39e328128004c7f1740a294efbe9f10f4d1dedadf0e3b17ec1b2562d7',
     },
     {
       boundary: 8760,
-      digest: '52a8cf9b4c94277cddac8b41f01eb45e3b7795bdc09236e3c8cead6d535d252f',
+      digest: '5fef9aa925d88335420e36faf75ac4df4b3a8820e4edcba9d987a402bf722eda',
       randomStreams: '09c2c5bed0559fab768a6c03ed7782fd41f6776fed6e3b900a399911bca730bc',
       events: 'b54854f144a53a66f61815129511976e555da3af186380adf356661d11979676',
       statistics: '3093c47dcb6e1bbe637a9ab6367cd1732857425423c2285fe1b5e48038d8e35d',
     },
   ])('matches the pre-pipeline canonical contract at the $boundary-hour boundary', async ({ boundary, digest, randomStreams, events, statistics }) => {
-    // State/RNG/statistic digests remain the pre-pipeline contract. Event
-    // digests include event-catalog-v1 sequencing and deterministic retention.
+    // RNG, event, and statistic digests remain the pre-pipeline contract. The
+    // state digest intentionally reflects the immutable default-pack 1.1.0
+    // reference; execution behavior and draw order remain unchanged.
     const engine = createBoundaryEngine(`phase-compat-${boundary}`)
     const result = engine.advance(boundary, { clockEventHours: false })
     const snapshot = await engine.snapshot()
@@ -89,7 +90,7 @@ describe('projection-free engine advance', () => {
     const engine = SimulationEngine.create('phase-compat-full')
     const result = engine.advance(48, { clockEventHours: false })
     const snapshot = await engine.snapshot()
-    expect(snapshot.digest).toBe('75c6b4da2a848f4c70202ddc6e858c657115fbadad2a689b0718aea3dbd58053')
+    expect(snapshot.digest).toBe('18801ba09d1c9844cc7aeab844df203de1c5a40f3e8f479567d0e11e7aab8a97')
     expect(await canonicalDigest(snapshot.state.randomStreams)).toBe('65d2460040dd8f2b8360aa3c4be0d12a0e2ba117b278cfdc34cf2fd69e0015a9')
     expect(await canonicalDigest(result.events)).toBe('021ea3c19cb0e4244cbabc7bd0a12bd1c9698e38c48f44846a8522ffbc44dadd')
     expect(await canonicalDigest(result.statistics)).toBe('a58dda13775abebd3a99e0d76e92cb1f5a894c668c02c55415aa4bc18312f636')

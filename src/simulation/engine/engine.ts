@@ -231,7 +231,9 @@ export class SimulationEngine {
     // projection. It remains independent from authored settlement markers.
     initializeSettlementScales({ settlements: world.settlements, cells: world.grid.cells, people: generatedPopulation.people })
     // A school is an authored place service; an unmarked home cell is never silently promoted into one.
-    const organizations = createInitialSchools(generatedPopulation.people, world.settlements.map((settlement) => settlement.anchorCellId))
+    const schoolDefinition = runtime.organizationDefinitionById.get('school')
+    if (!schoolDefinition) throw new Error('Content pack is missing required school organization definition')
+    const organizations = createInitialSchools(generatedPopulation.people, world.settlements.map((settlement) => settlement.anchorCellId), schoolDefinition)
     const markets = createInitialMarkets(world.grid.cells, world.settlements)
     for (const household of generatedPopulation.households) if (household.inventory) initializeGoods(household.inventory)
     const economy = createEconomyState(markets, runtime.pack.economy.goods)
@@ -660,6 +662,7 @@ export class SimulationEngine {
       communities: this.state.communities,
       relationships: this.state.relationships,
       variableDefinitions: this.contentPackRuntime.variableDefinitions,
+      organizationDefinitions: this.contentPackRuntime.organizationDefinitions,
       communityVariableDefinitions: COMMUNITY_VARIABLE_DEFINITIONS,
       communityFeedbackDefinitions: COMMUNITY_FEEDBACK_DEFINITIONS,
       digest,
@@ -1029,7 +1032,7 @@ export class SimulationEngine {
     if (this.state.organizations.length === 0) return
     const roadCellIds = new Set((this.state.world.roads ?? []).flatMap((road) => road.cellIds))
     const stream = this.random.stream(SCHOOL_ATTENDANCE_STREAM)
-    for (const school of [...this.state.organizations].sort((first, second) => compareIds(first.id, second.id))) {
+    for (const school of [...this.state.organizations].filter((organization) => organization.sharedRuleIds.includes('organization.rule.attendance.v1')).sort((first, second) => compareIds(first.id, second.id))) {
       let occupiedSeats = 0
       const learners = school.members.map((member) => this.personById.get(member.personId))
         .filter((person): person is SimulationState['people'][number] => person !== undefined && person.lifeStatus !== 'dead')

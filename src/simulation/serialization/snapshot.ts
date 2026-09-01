@@ -65,9 +65,14 @@ export async function validateSnapshot(value: unknown, contentPack: ContentPack 
   }
   const resolvedPack = resolveContentPack(contentPack)
   const runtime = createContentPackRuntime(resolvedPack.pack)
+  const legacyDefaultPackReference = snapshot.state.config.contentPackChecksum === undefined
+    && snapshot.state.config.contentPackId === DEFAULT_PREINDUSTRIAL_PACK.manifest.id
+    && snapshot.state.config.contentPackVersion === '1.0.0'
+    && runtime.pack.manifest.id === DEFAULT_PREINDUSTRIAL_PACK.manifest.id
+    && runtime.pack.manifest.version === DEFAULT_PREINDUSTRIAL_PACK.manifest.version
   if (snapshot.state.config.contentPackModelVersion !== CONTENT_PACK_MODEL_VERSION
     || snapshot.state.config.contentPackId !== runtime.pack.manifest.id
-    || snapshot.state.config.contentPackVersion !== runtime.pack.manifest.version) {
+    || (snapshot.state.config.contentPackVersion !== runtime.pack.manifest.version && !legacyDefaultPackReference)) {
     throw new Error('Unsupported content pack configuration')
   }
   const expectedDependencies = canonicalStringify(resolvedPack.dependencies)

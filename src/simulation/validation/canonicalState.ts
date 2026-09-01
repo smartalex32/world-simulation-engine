@@ -19,7 +19,7 @@ export { CanonicalSimulationValidationError, type CanonicalValidationSubsystem }
  * clocks, and randomness. This is the one validator for created, restored,
  * runtime-mutated, and persisted canonical state.
  */
-export function validateCanonicalSimulationState(state: SimulationState, runtime: Pick<ContentPackRuntime, 'variables'>): void {
+export function validateCanonicalSimulationState(state: SimulationState, runtime: Pick<ContentPackRuntime, 'variables' | 'organizationDefinitionById'>): void {
   if (!state || typeof state !== 'object') fail('world', 'state', 'shape', 'Simulation state must be an object')
   if (!state.config || typeof state.config !== 'object') fail('world', 'state.config', 'shape', 'Simulation configuration is invalid')
   if (!state.world || typeof state.world !== 'object' || !state.world.grid || typeof state.world.grid !== 'object') fail('world', 'state.world.grid', 'shape', 'Simulation world grid is invalid')
@@ -67,7 +67,7 @@ export function validateCanonicalSimulationState(state: SimulationState, runtime
 
   validateDetailedPopulationState(state, runtime)
   validateMarketState(state)
-  validateOrganizationState(state)
+  validateOrganizationState(state, runtime.organizationDefinitionById)
   validateGovernanceState(state)
   validateDisputeState(state)
   validateRelationshipState(state)

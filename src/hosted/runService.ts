@@ -70,7 +70,7 @@ function fingerprint(command: HostedRunCommand): string { return createHash('sha
 async function resolveStoredContentPack(snapshot: WorkbenchSnapshotEnvelope, store: HostedRunStore, supplied?: ResolvedContentPack): Promise<ResolvedContentPack> {
   const config = snapshot.state.config
   if (supplied) return resolveContentPack(supplied)
-  if (config.contentPackId === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && config.contentPackVersion === DEFAULT_PREINDUSTRIAL_PACK.manifest.version) return resolveContentPack(DEFAULT_PREINDUSTRIAL_PACK)
+  if (config.contentPackId === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && (config.contentPackVersion === DEFAULT_PREINDUSTRIAL_PACK.manifest.version || (config.contentPackVersion === '1.0.0' && config.contentPackChecksum === undefined))) return resolveContentPack(DEFAULT_PREINDUSTRIAL_PACK)
   if (!isContentPackCatalog(store)) throw new Error(`Hosted snapshot content pack is unavailable: ${config.contentPackId}@${config.contentPackVersion}`)
   const packs: ContentPack[] = [DEFAULT_PREINDUSTRIAL_PACK]
   const visiting = new Set<string>()

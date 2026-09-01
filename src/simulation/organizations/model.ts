@@ -1,15 +1,15 @@
 import type { OrganizationState, PersonState } from '../domain/types'
-import { SCHOOL_ATTENDANCE } from './attendance'
 import { compareStableText } from '../../shared/stableOrder'
+import type { OrganizationDefinition } from './types'
 
 /** First generic organization slice: deterministic local schools, without belief assignment. */
-export function createInitialSchools(people: readonly PersonState[], anchorCellIds: readonly string[]): OrganizationState[] {
+export function createInitialSchools(people: readonly PersonState[], anchorCellIds: readonly string[], definition: OrganizationDefinition): OrganizationState[] {
   const anchors = [...new Set(anchorCellIds)].sort()
   const schools = anchors.map((cellId, index): OrganizationState => {
     const id = `organization.school.${String(index + 1).padStart(3, '0')}`
     const members = people.filter((person) => person.ageYears < 18 && nearestAnchor(person.homeCellId, anchors) === cellId)
       .map((person) => ({ personId: person.id, role: 'learner' as const }))
-    return { id, name: `School ${index + 1}`, kind: 'school', locationCellId: cellId, activityLocationId: `activity.commons.${cellId}`, members, serviceCapacity: SCHOOL_ATTENDANCE.serviceCapacity, sharedRuleIds: ['organization.rule.attendance.v1'] }
+    return { id, name: `School ${index + 1}`, kind: definition.id, locationCellId: cellId, activityLocationId: `activity.commons.${cellId}`, members, serviceCapacity: definition.initialService.serviceCapacity, sharedRuleIds: [...definition.sharedRuleIds] }
   })
   return schools
 }
