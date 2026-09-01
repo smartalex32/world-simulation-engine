@@ -245,6 +245,9 @@ export class PostgresHostedRunStore implements HostedRunStore, HostedJobStore, H
     const packId = config?.contentPackId
     const packVersion = config?.contentPackVersion
     if (typeof packId !== 'string' || typeof packVersion !== 'string') throw new Error('Hosted snapshot content pack reference is invalid')
+    if (packId === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && packVersion === '1.0.0' && config?.contentPackChecksum === undefined) {
+      return validateSnapshot(snapshot, DEFAULT_PREINDUSTRIAL_PACK)
+    }
     const packs: ContentPack[] = [DEFAULT_PREINDUSTRIAL_PACK]
     const visited = new Set<string>()
     const load = async (id: string, version: string): Promise<void> => {
