@@ -8,7 +8,7 @@ import { DEFAULT_PREINDUSTRIAL_PACK } from '../contentPacks'
 import { encodePayload } from './postgres'
 import { SharedWorldService, type SharedWorldServiceState } from './sharedWorlds'
 import { HOSTED_JOB_VERSION, type HostedRunRecord, type HostedSimulationJob } from './types'
-import historicalSnapshot from '../simulation/serialization/fixtures/engine-0.45.0-schema-44-settlement.json'
+import historicalSnapshot from '../simulation/serialization/fixtures/engine-0.46.0-schema-45-settlement-expected.json'
 import { SimulationEngine } from '../simulation/engine/engine'
 import { ENGINE_VERSION, SNAPSHOT_SCHEMA_VERSION } from '../simulation/domain/types'
 
@@ -112,9 +112,9 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
     expect(await store.migrateStoredSnapshots()).toBe(1)
     expect(await store.migrateStoredSnapshots()).toBe(0)
     const restored = await store.load(record.runId)
-    expect(restored?.snapshot).toMatchObject({ schemaVersion: SNAPSHOT_SCHEMA_VERSION, engineVersion: ENGINE_VERSION, migrationProvenance: { sourceSchemaVersion: 44, sourceEngineVersion: '0.45.0', sourceDigest: historicalSnapshot.digest } })
+    expect(restored?.snapshot).toMatchObject({ schemaVersion: SNAPSHOT_SCHEMA_VERSION, engineVersion: ENGINE_VERSION, migrationProvenance: { sourceSchemaVersion: 44, sourceEngineVersion: '0.45.0', sourceDigest: historicalSnapshot.migrationProvenance.sourceDigest } })
     const backup = await store.pool.query<{ source_schema_version: number; source_engine_version: string; source_digest: string }>('SELECT source_schema_version, source_engine_version, source_digest FROM hosted_snapshot_migration_backups WHERE run_id = $1', [record.runId])
-    expect(backup.rows).toEqual([{ source_schema_version: 44, source_engine_version: '0.45.0', source_digest: historicalSnapshot.digest }])
+    expect(backup.rows).toEqual([{ source_schema_version: 45, source_engine_version: '0.46.0', source_digest: historicalSnapshot.digest }])
   })
 
   it('reconciles a pending hosted job digest with its migrated snapshot in the same transaction', async () => {
@@ -172,7 +172,7 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
     await store.saveJob({ version: HOSTED_JOB_VERSION, recordRevision: 1, jobId: 'legacy-incompatible', runId: record.runId, ownerId: 'owner', status: 'running', queueOrder: 1, startTick: 0, totalTicks: 24, advancedTicks: 0, committedTick: 1, committedDigest: '0'.repeat(64), quantumTicks: 24, checkpointIntervalTicks: 24, lastCheckpointTick: 0, createdAt: now, updatedAt: now }, 0)
 
     await expect(store.migrateStoredSnapshots()).rejects.toThrow('Active hosted job committed state is incompatible')
-    expect((await store.load(record.runId))?.snapshot.schemaVersion).toBe(44)
+    expect((await store.load(record.runId))?.snapshot.schemaVersion).toBe(45)
     expect((await store.pool.query<{ count: number }>('SELECT count(*)::int AS count FROM hosted_snapshot_migration_backups WHERE run_id = $1', [record.runId])).rows[0]?.count).toBe(0)
   })
   it('rolls back candidate state and telemetry when a transaction write fails', async () => {

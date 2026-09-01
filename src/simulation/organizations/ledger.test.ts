@@ -5,6 +5,7 @@ import { observeOrganizationReputation, transferOrganizationAsset } from './ledg
 import type { OrganizationState } from './types'
 import { SimulationEngine } from '../engine/engine'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
+import { defaultWorldCreationRequest } from '../domain/worldCreation'
 
 function organization(id: string): OrganizationState {
   return { id, name: id, kind: 'club', locationCellId: '0,0', activityLocationId: 'activity.commons.0,0', members: [], serviceCapacity: 1, sharedRuleIds: [], assets: { currencyUnits: 3, goods: { 'good.food': 5 }, latestTransferTraces: [] }, reputationLedger: { nextObservationSequence: 1, observations: [], currentByObserver: [] } }
@@ -48,11 +49,18 @@ describe('organization-owned assets and observer reputation', () => {
     const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
     pack.manifest = { ...pack.manifest, id: 'setting.organization-ledger.fixture', version: '1.0.0', name: 'Organization ledger fixture' }
     pack.organizationDefinitions = pack.organizationDefinitions.map((definition) => definition.id === 'school' ? { ...definition, assets: { initialCurrencyUnits: 4, initialGoods: { 'good.food': 6 } }, reputation: { enabled: true } } : definition)
-    const engine = SimulationEngine.create('organization-ledger-round-trip', 32, 24, pack)
+    const creation = { ...defaultWorldCreationRequest('milestone-28-school-service', 16, 12), settlements: [{ id: 'school-place', name: 'School Place', preset: 'central' as const }] }
+    const engine = SimulationEngine.create(creation, 16, 12, pack)
     const before = await engine.snapshot()
     expect(before.state.organizations.every((organization) => organization.assets?.currencyUnits === 4 && organization.reputationLedger?.observations.length === 0)).toBe(true)
     const restored = await SimulationEngine.restore(before, pack)
-    engine.advance(24, { clockEventHours: false }); restored.advance(24, { clockEventHours: false })
+    const firstAdvance = engine.advance(24, { clockEventHours: false })
+    const restoredAdvance = restored.advance(24, { clockEventHours: false })
+    const reputationEvents = firstAdvance.events.filter((event) => event.type === 'ORGANIZATION_REPUTATION_OBSERVED')
+    expect(reputationEvents.length).toBeGreaterThan(0)
+    expect(reputationEvents.every((event) => firstAdvance.events.some((candidate) => candidate.id === event.payload.causalEventId && candidate.type === 'PERSON_ATTENDED_SCHOOL'))).toBe(true)
+    expect(restoredAdvance.events).toEqual(firstAdvance.events)
+    expect((await engine.snapshot()).state.organizations.some((organization) => (organization.reputationLedger?.observations.length ?? 0) > 0)).toBe(true)
     expect(await restored.snapshot()).toEqual(await engine.snapshot())
     const defaultSnapshot = await SimulationEngine.create('organization-ledger-default').snapshot()
     expect(defaultSnapshot.state.organizations.every((organization) => organization.assets === undefined && organization.reputationLedger === undefined)).toBe(true)

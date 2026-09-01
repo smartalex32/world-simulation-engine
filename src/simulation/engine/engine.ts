@@ -91,6 +91,7 @@ import { clearMarkets, createEconomyState, decayGoods, distributeMarketWages, in
 import { createInitialSchools } from '../organizations/model'
 import { advanceOrganizationLifecycle, ORGANIZATION_LIFECYCLE_STREAM } from '../organizations/lifecycle'
 import { evaluateSchoolAttendance, SCHOOL_ATTENDANCE, SCHOOL_ATTENDANCE_STREAM, schoolAttendanceTrace, schoolTravelCost } from '../organizations/attendance'
+import { observeOrganizationReputation, ORGANIZATION_SERVICE_REPUTATION_DELTA_PERMILLE } from '../organizations/ledger'
 import { createCulturalState, transmitCulture } from '../culture/model'
 import { acquireLanguage, initialLanguage } from '../language/model'
 import { createLocalGovernance, updateLegitimacy } from '../governance/model'
@@ -1117,7 +1118,12 @@ export class SimulationEngine {
         person.schoolAttendance = { schoolId: school.id, returnTick: this.state.tick + SCHOOL_ATTENDANCE.durationHours }
         person.schoolLearningHours = (person.schoolLearningHours ?? 0) + SCHOOL_ATTENDANCE.durationHours
         if (trace.travelCost !== null) this.recordTravel(trace.travelCost * 2)
-        pushEvent(this.event('PERSON_ATTENDED_SCHOOL', { personId: person.id, schoolId: school.id, schoolCellId: school.locationCellId, travelCost: trace.travelCost, probabilityPermille: trace.probabilityPermille, randomRollPermille: roll, learningHours: SCHOOL_ATTENDANCE.durationHours }))
+        const attendanceEvent = this.event('PERSON_ATTENDED_SCHOOL', { personId: person.id, schoolId: school.id, schoolCellId: school.locationCellId, travelCost: trace.travelCost, probabilityPermille: trace.probabilityPermille, randomRollPermille: roll, learningHours: SCHOOL_ATTENDANCE.durationHours })
+        pushEvent(attendanceEvent)
+        if (school.reputationLedger) {
+          const observation = observeOrganizationReputation({ organization: school, observer: { kind: 'person', id: person.id }, source: 'service', causalEventId: attendanceEvent.id, tick: this.state.tick, deltaPermille: ORGANIZATION_SERVICE_REPUTATION_DELTA_PERMILLE })
+          pushEvent(this.event('ORGANIZATION_REPUTATION_OBSERVED', { observationSequence: observation.sequence, organizationId: school.id, observerKind: observation.observer.kind, observerId: observation.observer.id, source: observation.source, causalEventId: observation.causalEventId, previousValuePermille: observation.previousValuePermille, deltaPermille: observation.deltaPermille, valuePermille: observation.valuePermille }))
+        }
       }
     }
   }

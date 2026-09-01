@@ -165,7 +165,9 @@ opt an organization kind into an owned integer goods/currency account and a
 bounded observer-specific reputation ledger. Transfers conserve balances across
 households, markets, and organizations with structured traces; reputation
 observations retain observer, causal event, source, tick, prior value, delta,
-and bounded result. Membership does not create a relationship, reputation,
+and bounded result. Completed observed school service records a small positive
+observer-specific reputation change and a durable causal history event.
+Membership does not create a relationship, reputation,
 resource ownership, identity, belief, or automatic person-level effect.
 
 Local governance is also presented as bounded evidence for an observed

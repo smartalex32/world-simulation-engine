@@ -26,4 +26,15 @@ describe('organization projection', () => {
     expect(profiles[0]!.latestMembershipEvidence).not.toBe(evidence)
     expect(profiles[0]!.latestMembershipEvidence?.factors).not.toBe(evidence.factors)
   })
+
+  it('projects detached owned balances, transfers, and observer-specific evidence', () => {
+    const transfer = { sequence: 1, tick: 4, from: { kind: 'organization' as const, id: 'circle-1' }, to: { kind: 'household' as const, id: 'household-1' }, asset: 'good' as const, goodId: 'good.food', amount: 1, previousFromAmount: 2, previousToAmount: 1, nextFromAmount: 1, nextToAmount: 2, reason: 'service' }
+    const observation = { sequence: 1, tick: 4, observer: { kind: 'person' as const, id: 'person-1' }, source: 'service' as const, causalEventId: 'event-1', previousValuePermille: 500, deltaPermille: 10, valuePermille: 510 }
+    const profiles = buildProjectedOrganizationProfiles([{ id: 'circle-1', name: 'Circle', kind: 'circle', locationCellId: '0,0', activityLocationId: 'activity.commons.0,0', members: [], serviceCapacity: 4, sharedRuleIds: [], assets: { currencyUnits: 3, goods: { 'good.food': 1 }, latestTransferTraces: [transfer] }, reputationLedger: { nextObservationSequence: 2, observations: [observation], currentByObserver: [{ observer: observation.observer, valuePermille: 510, lastObservationSequence: 1, lastObservedTick: 4 }] } }], [], [{ id: 'circle', name: 'Circle', purposeIds: [], memberRoleIds: [], sharedRuleIds: [], initialService: { location: 'settlement-anchor', activityLocation: 'commons', serviceCapacity: 4 }, assets: { initialCurrencyUnits: 3, initialGoods: { 'good.food': 2 } }, reputation: { enabled: true } }])
+    expect(profiles[0]).toMatchObject({ ownedResourcesStatus: 'owned-account', ownedCurrencyUnits: 3, ownedGoods: { 'good.food': 1 }, reputationStatus: 'observer-evidence', latestAssetTransferEvidence: [transfer], latestReputationEvidence: [observation], reputationByObserver: [{ observer: observation.observer, valuePermille: 510 }] })
+    profiles[0]!.ownedGoods!['good.food'] = 99
+    profiles[0]!.latestReputationEvidence![0]!.valuePermille = 0
+    expect(transfer.nextFromAmount).toBe(1)
+    expect(observation.valuePermille).toBe(510)
+  })
 })

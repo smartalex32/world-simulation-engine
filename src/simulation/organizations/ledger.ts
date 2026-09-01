@@ -6,6 +6,8 @@ import type { OrganizationAssetAccount, OrganizationAssetParty, OrganizationAsse
 export const ORGANIZATION_ASSET_TRACE_LIMIT = 128
 export const ORGANIZATION_REPUTATION_OBSERVATION_LIMIT = 256
 export const ORGANIZATION_REPUTATION_OBSERVER_LIMIT = 128
+/** A completed, directly observed service window contributes small positive evidence. */
+export const ORGANIZATION_SERVICE_REPUTATION_DELTA_PERMILLE = 10
 
 export function createOrganizationAssetAccount(definition: { assets?: { initialCurrencyUnits: number; initialGoods: Readonly<Record<string, number>> } }): OrganizationAssetAccount | undefined {
   if (!definition.assets) return undefined
@@ -47,7 +49,7 @@ export function transferOrganizationAsset(input: { tick: number; from: Organizat
 /** Records bounded, causal observer evidence. It deliberately does not average observers. */
 export function observeOrganizationReputation(input: { organization: OrganizationState; observer: OrganizationReputationObserver; source: OrganizationReputationSource; causalEventId: string; tick: number; deltaPermille: number }): OrganizationReputationObservation {
   const ledger = input.organization.reputationLedger
-  if (!ledger || !input.causalEventId || !Number.isSafeInteger(input.tick) || input.tick < 0 || !Number.isSafeInteger(input.deltaPermille) || input.deltaPermille < -1000 || input.deltaPermille > 1000) throw new Error('Organization reputation observation is invalid')
+  if (!ledger || !input.observer.id || !['person', 'organization'].includes(input.observer.kind) || !['service', 'exchange', 'member-conduct', 'relationship'].includes(input.source) || !input.causalEventId || !Number.isSafeInteger(input.tick) || input.tick < 0 || !Number.isSafeInteger(input.deltaPermille) || input.deltaPermille < -1000 || input.deltaPermille > 1000) throw new Error('Organization reputation observation is invalid')
   const current = ledger.currentByObserver.find((entry) => entry.observer.kind === input.observer.kind && entry.observer.id === input.observer.id)
   const prior = current?.valuePermille ?? 500
   const observation: OrganizationReputationObservation = { sequence: ledger.nextObservationSequence++, tick: input.tick, observer: input.observer, source: input.source, causalEventId: input.causalEventId, previousValuePermille: prior, deltaPermille: input.deltaPermille, valuePermille: Math.max(0, Math.min(1000, prior + input.deltaPermille)) }
