@@ -5,6 +5,7 @@ import { migrateSnapshotSchema, snapshotCompatibilityReport } from './migrations
 import historicalSnapshot from './fixtures/engine-0.45.0-schema-44.json'
 import historicalSettlementSnapshot from './fixtures/engine-0.45.0-schema-44-settlement.json'
 import rejectedHistoricalSnapshot from './fixtures/engine-0.44.0-schema-43.json'
+import { SimulationEngine } from '../engine/engine'
 
 function historicalFixture(): SnapshotEnvelope {
   return structuredClone(historicalSnapshot) as unknown as SnapshotEnvelope
@@ -15,35 +16,15 @@ describe('snapshot migration registry', () => {
   it('reports the documented current-plus-prior-two release window', () => {
     expect(snapshotCompatibilityReport()).toEqual([
       expect.objectContaining({ schemaVersion: 43, disposition: 'rejected' }),
-      expect.objectContaining({ schemaVersion: 44, disposition: 'migratable' }),
+      expect.objectContaining({ schemaVersion: 44, disposition: 'rejected' }),
       expect.objectContaining({ schemaVersion: 45, disposition: 'migratable' }),
       expect.objectContaining({ schemaVersion: 46, disposition: 'migratable' }),
       expect.objectContaining({ schemaVersion: SNAPSHOT_SCHEMA_VERSION, disposition: 'directly-loadable' }),
     ])
   })
 
-  it('migrates an immutable state-changing 0.45.0 fixture to its recorded canonical target', async () => {
-    const source = historicalSettlementFixture()
-    const migrated = await migrateSnapshotSchema(source)
-
-    expect(source).toMatchObject({ schemaVersion: 44, engineVersion: '0.45.0' })
-    expect(migrated).toMatchObject({
-      schemaVersion: SNAPSHOT_SCHEMA_VERSION,
-      engineVersion: ENGINE_VERSION,
-      digest: await stateDigest(migrated.state),
-      migrationProvenance: {
-        sourceSchemaVersion: 44,
-        sourceEngineVersion: '0.45.0',
-        sourceDigest: source.digest,
-        targetSchemaVersion: SNAPSHOT_SCHEMA_VERSION,
-        schemaPath: [{ fromSchemaVersion: 44, toSchemaVersion: 45, kind: 'behavior-upgrade' }, { fromSchemaVersion: 45, toSchemaVersion: 46, kind: 'behavior-upgrade' }, { fromSchemaVersion: 46, toSchemaVersion: SNAPSHOT_SCHEMA_VERSION, kind: 'behavior-upgrade' }],
-      },
-    })
-    expect(migrated.state.config.organizationModelVersion).toBe(4)
-    expect(migrated.state.config.contentPackModelVersion).toBe(3)
-    expect(migrated.state.organizationLifecycle).toEqual({ nextOrganizationSequence: 1, nextTraceSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] })
-    expect(migrated.state.config.worldCreation.settlements[0]).not.toHaveProperty('regional')
-    expect(migrated.state.config.worldCreation.settlements[0]).not.toHaveProperty('scale')
+  it('rejects the authenticated schema-44 release outside the supported window', async () => {
+    await expect(migrateSnapshotSchema(historicalSettlementFixture())).rejects.toThrow('outside the current-plus-prior-two')
   })
 
   it('rejects a corrupted historical fixture before any migration runs', async () => {
@@ -66,11 +47,9 @@ describe('snapshot migration registry', () => {
   })
 
   it('rejects altered migrated provenance even though the simulation state digest is unchanged', async () => {
-    const migrated = await migrateSnapshotSchema(historicalSettlementFixture())
-    if (!migrated.migrationProvenance) throw new Error('Missing migration provenance')
-    migrated.migrationProvenance.sourceDigest = '0'.repeat(64)
-
-    await expect(migrateSnapshotSchema(migrated)).rejects.toThrow('Snapshot migration provenance digest does not match its contents')
+    const source = await SimulationEngine.create('provenance-current').snapshot()
+    if (!source.migrationProvenance) { source.migrationProvenance = { sourceSchemaVersion: 45, sourceEngineVersion: '0.46.0', sourceDigest: '0'.repeat(64), targetSchemaVersion: SNAPSHOT_SCHEMA_VERSION, targetStateDigest: source.digest, schemaPath: [{ fromSchemaVersion: 45, toSchemaVersion: 46, kind: 'behavior-upgrade' }, { fromSchemaVersion: 46, toSchemaVersion: 47, kind: 'behavior-upgrade' }], targetEnvelopeDigest: '0'.repeat(64) } }
+    await expect(migrateSnapshotSchema(source)).rejects.toThrow('Snapshot migration provenance')
   })
 
   it('rejects unsupported old and future schemas explicitly', async () => {

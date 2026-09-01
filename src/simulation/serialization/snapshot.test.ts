@@ -38,26 +38,8 @@ describe('canonical serialization', () => {
     ]))
   })
 
-  it('restores the authenticated historical fixture with the migrated envelope evidence intact', async () => {
-    const restored = await validateSnapshot(historicalFixture())
-
-    expect(restored).toMatchObject({
-      schemaVersion: SNAPSHOT_SCHEMA_VERSION,
-      engineVersion: ENGINE_VERSION,
-      migrationProvenance: expect.objectContaining({ sourceSchemaVersion: 44, sourceEngineVersion: '0.45.0', targetSchemaVersion: SNAPSHOT_SCHEMA_VERSION }),
-    })
-    expect(restored.digest).toBe(await stateDigest(restored.state))
-  })
-
-  it('retains authenticated migration provenance across restore, advancement, and a later restore', async () => {
-    const migrated = await validateSnapshot(historicalFixture())
-    const engine = await SimulationEngine.restore(migrated)
-    engine.advance(1)
-    const advanced = await engine.snapshot()
-
-    expect(advanced).toMatchObject({ migrationProvenance: migrated.migrationProvenance })
-    expect(advanced.digest).not.toBe(migrated.digest)
-    await expect(SimulationEngine.restore(advanced)).resolves.toBeInstanceOf(SimulationEngine)
+  it('rejects the authenticated schema-44 historical fixture outside the compatibility window', async () => {
+    await expect(validateSnapshot(historicalFixture())).rejects.toThrow('outside the current-plus-prior-two')
   })
 
   it('rejects malformed organization lifecycle evidence in a re-digested snapshot', async () => {
@@ -156,7 +138,7 @@ describe('canonical serialization', () => {
     await expect(SimulationEngine.restore(migrated, pack)).resolves.toBeInstanceOf(SimulationEngine)
   })
 
-  it('repairs schema-44 creation input contaminated by runtime settlement state', async () => {
+  it('rejects schema-44 creation input outside the compatibility window', async () => {
     const creation = defaultWorldCreationRequest('schema-44-settlement-repair')
     creation.settlements = [{ id: 'settlement-one', name: 'One', anchorCellId: '8,8' }]
     const current = await SimulationEngine.create(creation).snapshot()
@@ -168,10 +150,7 @@ describe('canonical serialization', () => {
     legacy.state.config.worldCreation.settlements = structuredClone(legacy.state.world.settlements)
     legacy.digest = await stateDigest(legacy.state)
 
-    const restored = await validateSnapshot(legacy)
-    expect(restored.state.config.worldCreation.settlements).toEqual(creation.settlements)
-    expect(restored.state.world.settlements[0]).toHaveProperty('regional')
-    expect(restored.digest).toBe(await stateDigest(restored.state))
+    await expect(validateSnapshot(legacy)).rejects.toThrow('outside the current-plus-prior-two')
   })
 
   it('rejects unsupported household, activity, development, community, and life-cycle registry versions', async () => {

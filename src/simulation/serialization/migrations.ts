@@ -17,7 +17,7 @@ interface SupportedSchema extends SnapshotSchemaCompatibility { readState(value:
 /** The explicit current-plus-prior-two release window. */
 export const SUPPORTED_SNAPSHOT_SCHEMAS: readonly SnapshotSchemaCompatibility[] = Object.freeze([
   Object.freeze({ schemaVersion: 43, engineVersions: Object.freeze(['0.44.0']), disposition: 'rejected', reason: 'Engine 0.44.0 used locale-dependent ordering and cannot be resumed by a stable-order executor.' }),
-  Object.freeze({ schemaVersion: 44, engineVersions: Object.freeze(['0.45.0']), disposition: 'migratable', reason: 'Engine 0.45.0 state has stable ordering and can be upgraded through the audited schema-45 boundary.' }),
+  Object.freeze({ schemaVersion: 44, engineVersions: Object.freeze(['0.45.0']), disposition: 'rejected', reason: 'Schema 44 is outside the current-plus-prior-two compatibility window.' }),
   Object.freeze({ schemaVersion: 45, engineVersions: Object.freeze(['0.46.0']), disposition: 'migratable', reason: 'Organization lifecycle state and its fixed RNG phase require an explicit schema-46 behavior upgrade.' }),
   Object.freeze({ schemaVersion: 46, engineVersions: Object.freeze(['0.47.0']), disposition: 'migratable', reason: 'Organization-owned accounts and observer-specific reputation require an explicit schema-47 behavior upgrade.' }),
   Object.freeze({ schemaVersion: SNAPSHOT_SCHEMA_VERSION, engineVersions: Object.freeze([ENGINE_VERSION]), disposition: 'directly-loadable', reason: 'Current envelope and behavioral contract.' }),
