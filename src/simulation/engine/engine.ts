@@ -500,6 +500,7 @@ export class SimulationEngine {
       organizations: this.state.organizations,
       relationships: this.state.relationships,
       lifecycle,
+      assetAndReputationEnabled: this.state.config.organizationAssetReputationModelVersion === 1,
       formationScopeByActivityLocation: new Map([
         ...this.state.communities.flatMap((community) => community.catchment.cellIds.map((cellId) => [`activity.commons.${cellId}`, `community:${community.catchment.id}`] as const)),
         ...this.state.world.settlements.flatMap((settlement) => {

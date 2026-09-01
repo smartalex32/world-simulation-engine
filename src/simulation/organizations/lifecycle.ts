@@ -38,6 +38,8 @@ interface LifecycleInput {
   nextPermille: () => number
   /** Engine-resolved authoritative geographic scope for each commons activity. */
   formationScopeByActivityLocation?: ReadonlyMap<string, string>
+  /** Legacy snapshots preserve pre-account/evidence pack semantics. */
+  assetAndReputationEnabled?: boolean
 }
 
 /**
@@ -129,8 +131,8 @@ export function advanceOrganizationLifecycle(input: LifecycleInput): Organizatio
 
       const { id, sequence } = nextOrganizationId(definition.id, input.lifecycle, organizationIds)
       const members = pair.map((person) => ({ personId: person.id, role: lifecycle.membership.defaultRoleId }))
-      const assets = createOrganizationAssetAccount(definition)
-      const reputationLedger = createOrganizationReputationLedger(definition)
+      const assets = input.assetAndReputationEnabled ? createOrganizationAssetAccount(definition) : undefined
+      const reputationLedger = input.assetAndReputationEnabled ? createOrganizationReputationLedger(definition) : undefined
       const organization: OrganizationState = {
         id,
         name: `${definition.name} ${sequence}`,

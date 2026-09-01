@@ -74,6 +74,15 @@ describe('organization lifecycle', () => {
     expect(lifecycle.nextTraceSequence).toBe(2)
   })
 
+  it('preserves legacy lifecycle formation semantics without initializing future accounts or reputation', () => {
+    const legacyDefinition: OrganizationDefinition = { ...definition, assets: { initialCurrencyUnits: 7, initialGoods: { 'good.food': 2 } }, reputation: { enabled: true } }
+    const organizations: OrganizationState[] = []
+    advanceOrganizationLifecycle({ tick: 24, definitions: [legacyDefinition], people: [person('a'), person('b')] as never, organizations, relationships: [{ id: 'a|b' }] as never, lifecycle: lifecycleState(), nextPermille: () => 0, assetAndReputationEnabled: false })
+    expect(organizations[0]).toMatchObject({ id: 'organization.club.000001' })
+    expect(organizations[0]?.assets).toBeUndefined()
+    expect(organizations[0]?.reputationLedger).toBeUndefined()
+  })
+
   it('does not claim an RNG draw for a deterministic precondition rejection', () => {
     let draws = 0
     const result = advanceOrganizationLifecycle({
