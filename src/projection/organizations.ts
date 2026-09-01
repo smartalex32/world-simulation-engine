@@ -1,12 +1,14 @@
 import type { OrganizationState, RelationshipState } from '../simulation/domain/types'
 import type { ProjectedOrganizationProfile } from './types'
 import { compareStableText } from '../shared/stableOrder'
+import type { OrganizationDefinition } from '../simulation/organizations/types'
 
 /**
  * Read-only group evidence. Membership alone creates neither a relationship,
  * reputation, shared wealth, nor a behavioral modifier.
  */
-export function buildProjectedOrganizationProfiles(organizations: readonly OrganizationState[], relationships: readonly RelationshipState[]): ProjectedOrganizationProfile[] {
+export function buildProjectedOrganizationProfiles(organizations: readonly OrganizationState[], relationships: readonly RelationshipState[], definitions: readonly OrganizationDefinition[] = []): ProjectedOrganizationProfile[] {
+  const definitionById = new Map(definitions.map((definition) => [definition.id, definition]))
   return [...organizations].sort((first, second) => compareStableText(first.id, second.id)).map((organization) => {
     const memberIds = new Set(organization.members.map((member) => member.personId))
     const internalRelationships = relationships
@@ -16,10 +18,14 @@ export function buildProjectedOrganizationProfiles(organizations: readonly Organ
       counts[member.role] = (counts[member.role] ?? 0) + 1
       return counts
     }, {} as Record<string, number>)
+    const definition = definitionById.get(organization.kind)
     return {
       id: organization.id,
       name: organization.name,
       kind: organization.kind,
+      definitionName: definition?.name ?? organization.kind,
+      purposeIds: [...(definition?.purposeIds ?? [])].sort(compareStableText),
+      allowedMemberRoleIds: [...(definition?.memberRoleIds ?? [])].sort(compareStableText),
       locationCellId: organization.locationCellId,
       goal: organization.kind === 'school' ? 'education' : 'unspecified',
       memberCount: organization.members.length,

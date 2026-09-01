@@ -7,6 +7,7 @@ import type { DisputeState, LocalGovernanceState, OrganizationState } from '../o
 import type { PersonState, RelationshipState } from '../people/types'
 import type { PopulationPlacementZone, WorldState } from '../spatial/types'
 import type { PersonVariableDefinition } from '../variables/types'
+import type { OrganizationDefinition } from '../organizations/types'
 
 export interface WorldProjection {
   runId: string
@@ -30,6 +31,7 @@ export interface WorldProjection {
   communities: CommunitySimulationState[]
   relationships: RelationshipState[]
   variableDefinitions: readonly PersonVariableDefinition[]
+  organizationDefinitions?: readonly OrganizationDefinition[]
   communityVariableDefinitions: readonly CommunityVariableDefinition[]
   communityFeedbackDefinitions: readonly CommunityFeedbackEdgeDefinition[]
   digest?: string

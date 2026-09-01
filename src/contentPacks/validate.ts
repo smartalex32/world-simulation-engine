@@ -1,17 +1,21 @@
 import { canonicalStringify } from '../shared/canonicalJson'
 import { schema } from '../shared/schema'
 import { PERSON_VARIABLE_IDS } from '../simulation/variables/types'
+import { ORGANIZATION_PURPOSE_IDS, ORGANIZATION_SHARED_RULE_IDS, type OrganizationDefinition } from '../simulation/organizations/types'
 import type { ContentPack, ContentPackDiagnostic, DeterministicCondition, DeterministicExpression, EconomyGoodDefinition, EconomyRecipeDefinition, FictionalPathogenDefinition, ValidatedContentPack } from './types'
 
 export const CONTENT_PACK_SCHEMA_VERSION = 1
+const LEGACY_SCHOOL_ORGANIZATION_DEFINITION: OrganizationDefinition = {
+  id: 'school', name: 'School', purposeIds: ['education'], memberRoleIds: ['learner', 'educator'], sharedRuleIds: ['organization.rule.attendance.v1'], initialService: { location: 'settlement-anchor', activityLocation: 'commons', serviceCapacity: 24 },
+}
 
 export const CONTENT_PACK_CODEC = schema.custom<ContentPack>({
   $id: 'world-simulation/content-pack', type: 'object',
-  required: ['manifest', 'personVariables', 'influences', 'formulas', 'pathogens', 'economy'],
+  required: ['manifest', 'personVariables', 'influences', 'formulas', 'pathogens', 'economy', 'organizationDefinitions'],
   properties: {
     manifest: { type: 'object', required: ['format', 'schemaVersion', 'id', 'version', 'name', 'dependencies'] },
     personVariables: { type: 'array' }, influences: { type: 'array' }, formulas: { type: 'object' },
-    pathogens: { type: 'array' }, economy: { type: 'object', required: ['goods', 'recipes'] },
+    pathogens: { type: 'array' }, economy: { type: 'object', required: ['goods', 'recipes'] }, organizationDefinitions: { type: 'array' },
   },
 }, (value) => validateContentPack(value).pack)
 
@@ -29,6 +33,8 @@ export function validateContentPack(value: unknown): ValidatedContentPack {
   validateUnique(pack.personVariables, 'personVariables', (item) => item.id, diagnostics)
   validateUnique(pack.influences, 'influences', (item) => item.id, diagnostics)
   validateUnique(pack.pathogens, 'pathogens', (item) => item.id, diagnostics)
+  validateUnique(pack.organizationDefinitions, 'organizationDefinitions', (item) => item.id, diagnostics)
+  for (const [index, definition] of (pack.organizationDefinitions ?? []).entries()) validateOrganizationDefinition(definition, `organizationDefinitions[${index}]`, diagnostics)
   if (!pack.economy || !Array.isArray(pack.economy.goods) || !Array.isArray(pack.economy.recipes)) diagnostics.push({ path: 'economy', message: 'Economy needs goods and recipes arrays' })
   else {
     validateUnique(pack.economy.goods, 'economy.goods', (item) => item.id, diagnostics)
@@ -69,8 +75,29 @@ export function migrateContentPack(value: unknown): ContentPack {
   }
   migrated.pathogens ??= []
   migrated.economy ??= { goods: [], recipes: [] }
+  // Prior v1 packs only supported this exact school specialization.  Preserve
+  // their behavior explicitly instead of accepting an empty runtime registry.
+  migrated.organizationDefinitions ??= [LEGACY_SCHOOL_ORGANIZATION_DEFINITION]
   if (!isContentPackCandidate(migrated)) throw invalid('pack', 'Content pack collections are invalid')
   return migrated
+}
+
+function validateOrganizationDefinition(definition: OrganizationDefinition, path: string, diagnostics: ContentPackDiagnostic[]): void {
+  const uniqueStableIds = (ids: readonly string[] | undefined, field: string, allowEmpty = false) => {
+    if (!Array.isArray(ids) || (!allowEmpty && ids.length === 0) || ids.some((id) => !stableId(id)) || new Set(ids).size !== ids.length) diagnostics.push({ path: `${path}.${field}`, message: 'Must contain unique stable IDs' })
+  }
+  if (!definition || !stableId(definition.id) || typeof definition.name !== 'string' || definition.name.trim().length === 0) diagnostics.push({ path, message: 'Organization definition needs a stable ID and display name' })
+  uniqueStableIds(definition?.purposeIds, 'purposeIds')
+  for (const purposeId of definition?.purposeIds ?? []) if (!ORGANIZATION_PURPOSE_IDS.includes(purposeId as never)) diagnostics.push({ path: `${path}.purposeIds`, message: `Unknown organization purpose: ${purposeId}` })
+  uniqueStableIds(definition?.memberRoleIds, 'memberRoleIds')
+  uniqueStableIds(definition?.sharedRuleIds, 'sharedRuleIds', true)
+  for (const ruleId of definition?.sharedRuleIds ?? []) if (!ORGANIZATION_SHARED_RULE_IDS.includes(ruleId as never)) diagnostics.push({ path: `${path}.sharedRuleIds`, message: `Unknown organization rule: ${ruleId}` })
+  const hasAttendance = definition?.sharedRuleIds?.includes('organization.rule.attendance.v1') ?? false
+  if (definition?.id === 'school' && !definition.memberRoleIds.includes('learner')) diagnostics.push({ path: `${path}.memberRoleIds`, message: 'School definitions must allow the learner role' })
+  if (definition?.id === 'school' && !hasAttendance) diagnostics.push({ path: `${path}.sharedRuleIds`, message: 'School definitions must include the attendance rule' })
+  if (definition?.id !== 'school' && hasAttendance) diagnostics.push({ path: `${path}.sharedRuleIds`, message: 'The attendance rule is reserved for school definitions' })
+  const initial = definition?.initialService
+  if (!initial || initial.location !== 'settlement-anchor' || initial.activityLocation !== 'commons' || !positiveInteger(initial.serviceCapacity)) diagnostics.push({ path: `${path}.initialService`, message: 'Initial service needs settlement-anchor, commons, and positive capacity' })
 }
 
 function validateEconomyGood(good: EconomyGoodDefinition, path: string, diagnostics: ContentPackDiagnostic[]): void {
@@ -127,7 +154,7 @@ function validateUnique<T>(items: readonly T[] | undefined, path: string, key: (
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function isContentPackCandidate(value: unknown): value is ContentPack {
   if (!isRecord(value) || !isRecord(value.manifest) || !Array.isArray(value.personVariables) || !Array.isArray(value.influences)
-    || !Array.isArray(value.pathogens) || !isRecord(value.economy) || !Array.isArray(value.economy.goods) || !Array.isArray(value.economy.recipes)) return false
+    || !Array.isArray(value.pathogens) || !Array.isArray(value.organizationDefinitions) || !isRecord(value.economy) || !Array.isArray(value.economy.goods) || !Array.isArray(value.economy.recipes)) return false
   return value.formulas === undefined || isRecord(value.formulas)
 }
 function stableId(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*$/.test(value) }

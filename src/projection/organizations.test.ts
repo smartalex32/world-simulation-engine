@@ -9,9 +9,9 @@ describe('organization projection', () => {
     ], [
       { id: 'outside', personAId: 'a', personBId: 'c', familiarity: 900 },
       { id: 'inside', personAId: 'a', personBId: 'b', familiarity: 400 },
-    ] as never)
+    ] as never, [{ id: 'school', name: 'School', purposeIds: ['education'], memberRoleIds: ['learner', 'educator'], sharedRuleIds: ['organization.rule.attendance.v1'], initialService: { location: 'settlement-anchor', activityLocation: 'commons', serviceCapacity: 24 } }])
     expect(profiles).toEqual([
-      expect.objectContaining({ id: 'school-1', goal: 'education', memberCount: 2, roleCounts: { learner: 2 }, internalRelationshipCount: 1, internalAverageFamiliarity: 400, reputationStatus: 'not-measured', ownedResourcesStatus: 'not-modeled' }),
+      expect.objectContaining({ id: 'school-1', definitionName: 'School', purposeIds: ['education'], allowedMemberRoleIds: ['educator', 'learner'], goal: 'education', memberCount: 2, roleCounts: { learner: 2 }, internalRelationshipCount: 1, internalAverageFamiliarity: 400, reputationStatus: 'not-measured', ownedResourcesStatus: 'not-modeled' }),
       expect.objectContaining({ id: 'school-2', memberCount: 0, internalRelationshipCount: 0, internalAverageFamiliarity: 0 }),
     ])
   })
