@@ -28,6 +28,6 @@ describe('weighted hex pathfinding', () => {
   })
 
   it('reports a bounded search honestly when its expansion budget is exhausted', () => {
-    expect(findPathDetailed(grid, '0,0', '2,0', { maxExpansions: 1 })).toEqual({ truncated: true })
+    expect(findPathDetailed(grid, '0,0', '2,0', { maxExpansions: 1 })).toEqual({ truncated: true, expansions: 1 })
   })
 })

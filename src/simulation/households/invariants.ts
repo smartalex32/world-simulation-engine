@@ -169,7 +169,14 @@ function validateInitialPopulationPlacement(state: SimulationState): void {
     if (!zoneId) throw new Error(`Person ${person.id} home is outside all population creation zones`)
     actual.set(zoneId, (actual.get(zoneId) ?? 0) + 1)
   }
-  for (const cohort of state.cohorts) actual.set(cohort.sourceZoneId, (actual.get(cohort.sourceZoneId) ?? 0) + cohort.populationCount)
+  for (const cohort of state.cohorts) {
+    const authoredPopulationEquivalent = cohort.populationCount
+      - cohort.eventTotals.births
+      + cohort.eventTotals.deaths
+      - cohort.eventTotals.migrationIn
+      + cohort.eventTotals.migrationOut
+    actual.set(cohort.sourceZoneId, (actual.get(cohort.sourceZoneId) ?? 0) + authoredPopulationEquivalent)
+  }
   for (const [zoneId, populationCount] of expected) if ((actual.get(zoneId) ?? 0) !== populationCount) throw new Error(`Population zone ${zoneId} does not match its requested allocation`)
 }
 

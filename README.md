@@ -376,14 +376,18 @@ older boundaries accepted are now explicitly rejected; they are not migrated
 because invalid references have no supported canonical interpretation. This
 does not change canonical output or any engine, model, or schema version.
 
-Milestone 44 adds a reproducible detailed-agent scale benchmark: `pnpm
-benchmark:scale` creates a 128 × 128 blank-land world with 10,000 people,
-advances it one hour, and verifies snapshot restoration against the canonical
-digest. The benchmark reports canonical-validation time separately from its
-creation, advance, and snapshot timings. Hosts may opt into that same initial
-population using `HOSTED_WORLD_POPULATION=10000`; the browser world-builder
-deliberately retains its 500-person authoring guardrail. The benchmark reports elapsed time as local
-evidence only—hardware timing does not affect simulation output.
+Milestone 44 adds a reproducible detailed-agent scale benchmark, extended by
+Milestone 52's performance governance. `pnpm benchmark:scale` measures 10,000
+detailed people, a mixed-fidelity 10,000 + 100,000 population, independently
+scheduled hourly/daily/monthly/annual phase paths, and representative
+mixed-fidelity month/year boundaries. It reports phase execution, index and
+path-search work, snapshot size and gzip size, validation, projection, and
+restoration evidence. Hosts may opt into the 10,000-person initial population
+using `HOSTED_WORLD_POPULATION=10000`; the browser world-builder retains its
+500-person authoring guardrail. Timing is local evidence only and never affects
+simulation output or a portable PR pass/fail threshold. See
+[`docs/PERFORMANCE_BASELINE.md`](docs/PERFORMANCE_BASELINE.md) for the measured
+reference and CI cadence.
 
 Milestone 70 begins civilization-scale integration validation with `pnpm
 audit:civilization`. The audit deliberately exercises the normal engine through

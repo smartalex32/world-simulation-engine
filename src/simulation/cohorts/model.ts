@@ -93,7 +93,9 @@ export function validatePopulationCohorts(value: unknown, zones: readonly Popula
     if (!cohort || cohort.version !== COHORT_MODEL_VERSION || typeof cohort.id !== 'string' || cohort.id !== `cohort:${cohort.sourceZoneId}` || ids.has(cohort.id)) throw new Error('Simulation contains an invalid cohort identity')
     ids.add(cohort.id)
     const zone = zonesById.get(cohort.sourceZoneId)
-    if (!zone || !nonNegativeInteger(cohort.populationCount) || cohort.populationCount > (zone.cohortPopulationCount ?? 0)) throw new Error(`Cohort ${cohort.id} has an invalid population`)
+    // cohortPopulationCount is the authored starting population, not a lifetime
+    // capacity. Annual births may legitimately grow the retained cohort.
+    if (!zone || !nonNegativeInteger(cohort.populationCount)) throw new Error(`Cohort ${cohort.id} has an invalid population`)
     if (!nonNegativeInteger(cohort.householdCount) || cohort.householdCount !== Math.ceil(cohort.populationCount / 3) || !nonNegativeInteger(cohort.foodUnits)) throw new Error(`Cohort ${cohort.id} has invalid household or food totals`)
     const bands = cohort.ageBands
     if (!bands || !nonNegativeInteger(bands.children) || !nonNegativeInteger(bands.adults) || !nonNegativeInteger(bands.elders) || bands.children + bands.adults + bands.elders !== cohort.populationCount) throw new Error(`Cohort ${cohort.id} has invalid age totals`)

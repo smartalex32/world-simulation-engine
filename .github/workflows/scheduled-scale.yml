@@ -1,0 +1,50 @@
+name: scheduled-scale-and-browser-validation
+
+on:
+  schedule:
+    - cron: '17 7 * * 1'
+  workflow_dispatch:
+
+jobs:
+  scale-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:toolchain
+      - name: Capture detailed, mixed-fidelity, and scheduled-phase evidence
+        run: pnpm --silent benchmark:scale > scale-baseline.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scale-baseline-${{ github.run_id }}
+          path: scale-baseline.json
+          if-no-files-found: error
+          retention-days: 30
+
+  cross-browser-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+      options: --user 1001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test:e2e

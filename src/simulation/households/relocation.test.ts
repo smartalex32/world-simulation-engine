@@ -4,9 +4,21 @@ import type { RandomStreamSnapshot, SimulationState } from '../domain/types'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { setPersonVariable } from '../variables/storage'
 import { findPath } from '../spatial/pathfinding'
-import { HOUSEHOLD_RELOCATION, evaluateHouseholdRelocation, relocationTrace } from './relocation'
+import { buildHouseholdRelocationIndex, HOUSEHOLD_RELOCATION, evaluateHouseholdRelocation, relocationTrace } from './relocation'
 
 describe('household relocation', () => {
+  it('preserves evaluation output when reusable spatial indexes and path diagnostics are enabled', () => {
+    const fixture = relocationFixture()
+    const indexedDiagnostics = { pathExpansions: 0 }
+    const baseline = evaluateHouseholdRelocation(fixture)
+    const indexed = evaluateHouseholdRelocation({
+      ...fixture,
+      index: buildHouseholdRelocationIndex(fixture.cells, fixture.households, fixture.relationships),
+      diagnostics: indexedDiagnostics,
+    })
+    expect(indexed).toEqual(baseline)
+    expect(indexedDiagnostics.pathExpansions).toBeGreaterThan(0)
+  })
   it('prefers a reachable food-rich home under household scarcity and records the complete trace', () => {
     const fixture = relocationFixture()
     const evaluation = evaluateHouseholdRelocation(fixture)
