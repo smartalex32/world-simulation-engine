@@ -16,7 +16,9 @@ the hosted PostgreSQL catalog.
 
 Packs also declare versioned `organizationDefinitions`: stable kind IDs and
 display names, purpose IDs, permitted member-role IDs, engine-owned shared-rule
-IDs, and explicit initial service semantics. The current binding creates one
+IDs, and explicit initial service semantics. Definitions may additionally opt
+into an initial integer goods/currency account and an observer-specific
+reputation ledger; omitted fields model neither capability. The current binding creates one
 `school` at each authored settlement anchor using the `commons` activity
 location and the definition's service capacity. Definition metadata is exposed
 read-only in organization projections; membership does not infer relationships,
@@ -25,7 +27,7 @@ The same schema-backed codec is used by browser import, the SDK, and hosted
 catalog endpoints, so invalid kinds, roles, purposes, or rule references are
 rejected consistently.
 
-The default `setting.preindustrial.default@1.1.0` pack supplies the current
+The default `setting.preindustrial.default@1.2.0` pack supplies the current
 preindustrial person variables and decision influences. Engine-required base
 variables remain mandatory so the present simulation systems have defined
 semantics; packs may add variables and pack-owned influence edges without a

@@ -17,6 +17,7 @@ describe('snapshot migration registry', () => {
       expect.objectContaining({ schemaVersion: 43, disposition: 'rejected' }),
       expect.objectContaining({ schemaVersion: 44, disposition: 'migratable' }),
       expect.objectContaining({ schemaVersion: 45, disposition: 'migratable' }),
+      expect.objectContaining({ schemaVersion: 46, disposition: 'migratable' }),
       expect.objectContaining({ schemaVersion: SNAPSHOT_SCHEMA_VERSION, disposition: 'directly-loadable' }),
     ])
   })
@@ -35,10 +36,10 @@ describe('snapshot migration registry', () => {
         sourceEngineVersion: '0.45.0',
         sourceDigest: source.digest,
         targetSchemaVersion: SNAPSHOT_SCHEMA_VERSION,
-        schemaPath: [{ fromSchemaVersion: 44, toSchemaVersion: 45, kind: 'behavior-upgrade' }, { fromSchemaVersion: 45, toSchemaVersion: SNAPSHOT_SCHEMA_VERSION, kind: 'behavior-upgrade' }],
+        schemaPath: [{ fromSchemaVersion: 44, toSchemaVersion: 45, kind: 'behavior-upgrade' }, { fromSchemaVersion: 45, toSchemaVersion: 46, kind: 'behavior-upgrade' }, { fromSchemaVersion: 46, toSchemaVersion: SNAPSHOT_SCHEMA_VERSION, kind: 'behavior-upgrade' }],
       },
     })
-    expect(migrated.state.config.organizationModelVersion).toBe(3)
+    expect(migrated.state.config.organizationModelVersion).toBe(4)
     expect(migrated.state.config.contentPackModelVersion).toBe(3)
     expect(migrated.state.organizationLifecycle).toEqual({ nextOrganizationSequence: 1, nextTraceSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] })
     expect(migrated.state.config.worldCreation.settlements[0]).not.toHaveProperty('regional')

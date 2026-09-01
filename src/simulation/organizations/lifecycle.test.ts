@@ -225,7 +225,7 @@ describe('organization lifecycle', () => {
       expect(event.payload).toMatchObject({ traceSequence: expect.any(Number), baseProbabilityPermille: expect.any(Number), activityPermille: expect.any(Number), proximityPermille: expect.any(Number), relationshipPermille: expect.any(Number), interestPermille: expect.any(Number), exposurePermille: expect.any(Number), probabilityPermille: expect.any(Number), randomRollPermille: expect.any(Number) })
       if (event.type === 'ORGANIZATION_MEMBERSHIP_CHANGED' && event.payload.change === 'left') expect(event.payload.previousRoleId).toEqual(expect.any(String))
     }
-    expect(snapshot.digest).toBe('f1bfeef97736d821176eb8492ae51f9b5a3aaf02faefa8a0702ef7238f14e009')
+    expect(snapshot.digest).toBe('e1bca4a3b0cb980e7cc9e70bb8586450040bb8bfeb1c6664c68f45a6d5ae9162')
     expect(await canonicalDigest(snapshot.state.randomStreams)).toBe('50632f5cbbe1c091927fe35992d1e4a5b1aa1a11436a72f6ef7efb7b7b3f8507')
     expect(await canonicalDigest(result.events)).toBe('0d37321015b37db507a7cfcac12ff917db16337eb51dfe862d6a691f3c4be4f3')
 

@@ -160,9 +160,13 @@ separate structured factors. Selected transitions use only the named
 `organization.lifecycle` RNG stream and retain ordered traces and durable
 events. School definitions omit this lifecycle, so attendance remains service
 exposure rather than automatic membership. Read-only group profiles expose the
-current lifecycle status and latest membership evidence. Membership does not
-create a relationship, reputation, resource ownership, identity, belief, or
-automatic person-level effect.
+current lifecycle status and latest membership evidence. Packs may explicitly
+opt an organization kind into an owned integer goods/currency account and a
+bounded observer-specific reputation ledger. Transfers conserve balances across
+households, markets, and organizations with structured traces; reputation
+observations retain observer, causal event, source, tick, prior value, delta,
+and bounded result. Membership does not create a relationship, reputation,
+resource ownership, identity, belief, or automatic person-level effect.
 
 Local governance is also presented as bounded evidence for an observed
 geographic catchment: active representatives, legitimacy, food-relief access,
