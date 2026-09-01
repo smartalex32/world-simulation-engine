@@ -59,6 +59,24 @@ describe('canonical serialization', () => {
     await expect(SimulationEngine.restore(advanced)).resolves.toBeInstanceOf(SimulationEngine)
   })
 
+  it('rejects malformed organization lifecycle evidence in a re-digested snapshot', async () => {
+    const snapshot = await SimulationEngine.create('organization-lifecycle-trace-validation').snapshot()
+    const person = snapshot.state.people[0]
+    const location = snapshot.state.activityLocations.find((candidate) => candidate.kind === 'commons')
+    if (!person || !location) throw new Error('Expected default person and commons location')
+    const malformed = structuredClone(snapshot)
+    malformed.state.organizations.push({ id: 'organization.school.trace-test', name: 'Trace test school', kind: 'school', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 1, sharedRuleIds: ['organization.rule.attendance.v1'] })
+    const organization = malformed.state.organizations[0]!
+    malformed.state.organizationLifecycle.latestMembershipTraces.push({ tick: 0, organizationId: organization.id, personId: person.id, change: 'joined', nextRoleId: 'not-a-defined-role', baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1000, relationshipPermille: 1000, interestPermille: 1000, exposurePermille: 1000 }, finalProbabilityPermille: 1, rngStream: 'organization.lifecycle', randomRollPermille: 0, selected: true })
+    malformed.digest = await stateDigest(malformed.state)
+    await expect(validateSnapshot(malformed)).rejects.toThrow('Organization membership trace is invalid')
+
+    const corruptFactor = structuredClone(snapshot)
+    corruptFactor.state.organizationLifecycle.latestFormationTraces.push({ tick: 0, kindId: 'unknown-kind', candidatePersonIds: [person.id], locationCellId: location.cellId, baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1001, relationshipPermille: 1000, interestPermille: 1000, exposurePermille: 1000 }, finalProbabilityPermille: 1, rngStream: 'organization.lifecycle', randomRollPermille: 0, formed: false, rejectionReason: 'probability' })
+    corruptFactor.digest = await stateDigest(corruptFactor.state)
+    await expect(validateSnapshot(corruptFactor)).rejects.toThrow('Organization formation traces are invalid')
+  })
+
   it('upgrades an authenticated schema-45 default-pack snapshot and continues deterministically', async () => {
     const source = await SimulationEngine.create('schema-45-default-pack').snapshot()
     const legacy = structuredClone(source)
