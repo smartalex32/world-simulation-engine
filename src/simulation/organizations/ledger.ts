@@ -1,9 +1,11 @@
 import type { EconomyState, HouseholdState, MarketState } from '../domain/types'
 import { compareStableText } from '../../shared/stableOrder'
+import { synchronizeLegacyGoods } from '../economy/stockFlow'
 import type { OrganizationAssetAccount, OrganizationAssetParty, OrganizationAssetTransferTrace, OrganizationReputationLedger, OrganizationReputationObservation, OrganizationReputationObserver, OrganizationReputationSource, OrganizationState } from './types'
 
 export const ORGANIZATION_ASSET_TRACE_LIMIT = 128
 export const ORGANIZATION_REPUTATION_OBSERVATION_LIMIT = 256
+export const ORGANIZATION_REPUTATION_OBSERVER_LIMIT = 128
 
 export function createOrganizationAssetAccount(definition: { assets?: { initialCurrencyUnits: number; initialGoods: Readonly<Record<string, number>> } }): OrganizationAssetAccount | undefined {
   if (!definition.assets) return undefined
@@ -11,7 +13,7 @@ export function createOrganizationAssetAccount(definition: { assets?: { initialC
 }
 
 export function createOrganizationReputationLedger(definition: { reputation?: { enabled: boolean } }): OrganizationReputationLedger | undefined {
-  return definition.reputation?.enabled ? { nextObservationSequence: 1, observations: [] } : undefined
+  return definition.reputation?.enabled ? { nextObservationSequence: 1, observations: [], currentByObserver: [] } : undefined
 }
 
 /** Moves one existing fixed-point unit balance with no implicit member ownership. */
@@ -24,11 +26,16 @@ export function transferOrganizationAsset(input: { tick: number; from: Organizat
   const from = balance(input.from, input, input.asset, input.goodId)
   const to = balance(input.to, input, input.asset, input.goodId)
   if (from.get() < input.amount) throw new Error('Organization asset transfer exceeds source balance')
+  if (to.get() > Number.MAX_SAFE_INTEGER - input.amount) throw new Error('Organization asset transfer exceeds destination balance')
   const trace: OrganizationAssetTransferTrace = {
     sequence: nextTraceSequence(input.organizations), tick: input.tick, from: input.from, to: input.to, asset: input.asset,
     ...(input.goodId ? { goodId: input.goodId } : {}), amount: input.amount, previousFromAmount: from.get(), previousToAmount: to.get(), nextFromAmount: from.get() - input.amount, nextToAmount: to.get() + input.amount, reason: input.reason,
   }
   from.set(trace.nextFromAmount); to.set(trace.nextToAmount)
+  for (const party of [input.from, input.to]) if (party.kind === 'household') {
+    const inventory = input.households.find((household) => household.id === party.id)?.inventory
+    if (inventory) synchronizeLegacyGoods(inventory)
+  }
   for (const organizationId of [input.from, input.to].filter((party): party is Extract<OrganizationAssetParty, { kind: 'organization' }> => party.kind === 'organization').map((party) => party.id).sort(compareStableText)) {
     const account = input.organizations.find((organization) => organization.id === organizationId)?.assets
     if (!account) throw new Error('Organization asset account is missing')
@@ -41,9 +48,12 @@ export function transferOrganizationAsset(input: { tick: number; from: Organizat
 export function observeOrganizationReputation(input: { organization: OrganizationState; observer: OrganizationReputationObserver; source: OrganizationReputationSource; causalEventId: string; tick: number; deltaPermille: number }): OrganizationReputationObservation {
   const ledger = input.organization.reputationLedger
   if (!ledger || !input.causalEventId || !Number.isSafeInteger(input.tick) || input.tick < 0 || !Number.isSafeInteger(input.deltaPermille) || input.deltaPermille < -1000 || input.deltaPermille > 1000) throw new Error('Organization reputation observation is invalid')
-  const prior = [...ledger.observations].filter((entry) => entry.observer.kind === input.observer.kind && entry.observer.id === input.observer.id).sort((a, b) => b.sequence - a.sequence)[0]?.valuePermille ?? 500
+  const current = ledger.currentByObserver.find((entry) => entry.observer.kind === input.observer.kind && entry.observer.id === input.observer.id)
+  const prior = current?.valuePermille ?? 500
   const observation: OrganizationReputationObservation = { sequence: ledger.nextObservationSequence++, tick: input.tick, observer: input.observer, source: input.source, causalEventId: input.causalEventId, previousValuePermille: prior, deltaPermille: input.deltaPermille, valuePermille: Math.max(0, Math.min(1000, prior + input.deltaPermille)) }
   ledger.observations = [...ledger.observations, observation].sort((a, b) => a.sequence - b.sequence).slice(-ORGANIZATION_REPUTATION_OBSERVATION_LIMIT)
+  ledger.currentByObserver = [...ledger.currentByObserver.filter((entry) => entry.observer.kind !== input.observer.kind || entry.observer.id !== input.observer.id), { observer: input.observer, valuePermille: observation.valuePermille, lastObservationSequence: observation.sequence, lastObservedTick: observation.tick }]
+    .sort((a, b) => a.lastObservedTick - b.lastObservedTick || a.lastObservationSequence - b.lastObservationSequence || compareStableText(`${a.observer.kind}:${a.observer.id}`, `${b.observer.kind}:${b.observer.id}`)).slice(-ORGANIZATION_REPUTATION_OBSERVER_LIMIT)
   return observation
 }
 

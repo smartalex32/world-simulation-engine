@@ -7,7 +7,7 @@ import { SimulationEngine } from '../engine/engine'
 import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
 
 function organization(id: string): OrganizationState {
-  return { id, name: id, kind: 'club', locationCellId: '0,0', activityLocationId: 'activity.commons.0,0', members: [], serviceCapacity: 1, sharedRuleIds: [], assets: { currencyUnits: 3, goods: { 'good.food': 5 }, latestTransferTraces: [] }, reputationLedger: { nextObservationSequence: 1, observations: [] } }
+  return { id, name: id, kind: 'club', locationCellId: '0,0', activityLocationId: 'activity.commons.0,0', members: [], serviceCapacity: 1, sharedRuleIds: [], assets: { currencyUnits: 3, goods: { 'good.food': 5 }, latestTransferTraces: [] }, reputationLedger: { nextObservationSequence: 1, observations: [], currentByObserver: [] } }
 }
 
 describe('organization-owned assets and observer reputation', () => {
@@ -41,6 +41,7 @@ describe('organization-owned assets and observer reputation', () => {
     expect(followUp).toMatchObject({ previousValuePermille: 620, valuePermille: 640 })
     expect(org.members).toEqual([])
     expect(org.reputationLedger!.observations).toHaveLength(3)
+    expect(org.reputationLedger!.currentByObserver).toEqual(expect.arrayContaining([expect.objectContaining({ observer: { kind: 'person', id: 'person.a' }, valuePermille: 640 }), expect.objectContaining({ observer: { kind: 'person', id: 'person.b' }, valuePermille: 420 })]))
   })
 
   it('round-trips opted-in accounts and evidence with deterministic continuation while default schools remain opt-out', async () => {

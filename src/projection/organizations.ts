@@ -44,8 +44,8 @@ export function buildProjectedOrganizationProfiles(organizations: readonly Organ
       internalAverageFamiliarity: internalRelationships.length === 0 ? 0 : Math.round(internalRelationships.reduce((sum, relationship) => sum + relationship.familiarity, 0) / internalRelationships.length),
       reputationStatus: organization.reputationLedger ? 'observer-evidence' : 'not-measured',
       ownedResourcesStatus: organization.assets ? 'owned-account' : 'not-modeled',
-      ...(organization.assets ? { ownedCurrencyUnits: organization.assets.currencyUnits, ownedGoods: { ...organization.assets.goods } } : {}),
-      ...(organization.reputationLedger ? { latestReputationEvidence: organization.reputationLedger.observations.slice(-8).map((entry) => structuredClone(entry)) } : {}),
+      ...(organization.assets ? { ownedCurrencyUnits: organization.assets.currencyUnits, ownedGoods: { ...organization.assets.goods }, latestAssetTransferEvidence: organization.assets.latestTransferTraces.slice(-8).map((entry) => structuredClone(entry)) } : {}),
+      ...(organization.reputationLedger ? { latestReputationEvidence: organization.reputationLedger.observations.slice(-8).map((entry) => structuredClone(entry)), reputationByObserver: organization.reputationLedger.currentByObserver.map((entry) => structuredClone(entry)) } : {}),
     }
   })
 }

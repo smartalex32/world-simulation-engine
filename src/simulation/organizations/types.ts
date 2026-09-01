@@ -40,7 +40,8 @@ export interface OrganizationAssetTransferTrace { sequence: number; tick: number
 export type OrganizationReputationObserver = { kind: 'person' | 'organization'; id: string }
 export type OrganizationReputationSource = 'service' | 'exchange' | 'member-conduct' | 'relationship'
 export interface OrganizationReputationObservation { sequence: number; tick: number; observer: OrganizationReputationObserver; source: OrganizationReputationSource; causalEventId: string; previousValuePermille: number; deltaPermille: number; valuePermille: number }
-export interface OrganizationReputationLedger { nextObservationSequence: number; observations: OrganizationReputationObservation[] }
+export interface OrganizationReputationCurrent { observer: OrganizationReputationObserver; valuePermille: number; lastObservationSequence: number; lastObservedTick: number }
+export interface OrganizationReputationLedger { nextObservationSequence: number; observations: OrganizationReputationObservation[]; currentByObserver: OrganizationReputationCurrent[] }
 export interface OrganizationMember { personId: string; role: OrganizationMemberRole }
 export type OrganizationMembershipChange = 'joined' | 'role-changed' | 'left'
 export type OrganizationLifecycleRejection = 'disabled' | 'insufficient-activity' | 'already-member' | 'no-relationship' | 'no-role' | 'probability' | 'invalid-transition'

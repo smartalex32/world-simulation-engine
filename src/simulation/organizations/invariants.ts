@@ -2,7 +2,7 @@ import type { SimulationState } from '../domain/types'
 import type { OrganizationDefinition, OrganizationMembershipTrace } from './types'
 import { failCanonicalValidation as fail } from '../validation/error'
 import { ORGANIZATION_LIFECYCLE_STREAM, ORGANIZATION_LIFECYCLE_TRACE_LIMIT } from './lifecycle'
-import { ORGANIZATION_ASSET_TRACE_LIMIT, ORGANIZATION_REPUTATION_OBSERVATION_LIMIT } from './ledger'
+import { ORGANIZATION_ASSET_TRACE_LIMIT, ORGANIZATION_REPUTATION_OBSERVATION_LIMIT, ORGANIZATION_REPUTATION_OBSERVER_LIMIT } from './ledger'
 
 /** Canonical validation owned by the organization subsystem. */
 export function validateOrganizationState(state: SimulationState, definitions: ReadonlyMap<string, OrganizationDefinition>): void {
@@ -20,7 +20,7 @@ export function validateOrganizationState(state: SimulationState, definitions: R
     if (organization.sharedRuleIds.length !== definition.sharedRuleIds.length || organization.sharedRuleIds.some((id, index) => id !== definition.sharedRuleIds[index])) fail('organizations', `state.organizations.${organization.id}.sharedRuleIds`, 'shared-rules', `Organization ${organization.id} does not match its defined rules`)
     const assetAndReputationEnabled = state.config.organizationAssetReputationModelVersion === 1
     if (Boolean(organization.assets) !== (assetAndReputationEnabled && Boolean(definition.assets)) || organization.assets && (!Number.isSafeInteger(organization.assets.currencyUnits) || organization.assets.currencyUnits < 0 || organization.assets.latestTransferTraces.length > ORGANIZATION_ASSET_TRACE_LIMIT || Object.values(organization.assets.goods).some((value) => !Number.isSafeInteger(value) || value < 0) || !validAssetTraces(organization.assets.latestTransferTraces))) fail('organizations', `state.organizations.${organization.id}.assets`, 'asset-account', `Organization ${organization.id} has an invalid owned asset account`)
-    if (Boolean(organization.reputationLedger) !== (assetAndReputationEnabled && Boolean(definition.reputation?.enabled)) || organization.reputationLedger && (!Number.isSafeInteger(organization.reputationLedger.nextObservationSequence) || organization.reputationLedger.nextObservationSequence < 1 || organization.reputationLedger.observations.length > ORGANIZATION_REPUTATION_OBSERVATION_LIMIT || !validReputationLedger(organization.reputationLedger))) fail('organizations', `state.organizations.${organization.id}.reputationLedger`, 'reputation-ledger', `Organization ${organization.id} has invalid reputation evidence`)
+    if (Boolean(organization.reputationLedger) !== (assetAndReputationEnabled && Boolean(definition.reputation?.enabled)) || organization.reputationLedger && (!Number.isSafeInteger(organization.reputationLedger.nextObservationSequence) || organization.reputationLedger.nextObservationSequence < 1 || organization.reputationLedger.observations.length > ORGANIZATION_REPUTATION_OBSERVATION_LIMIT || !validReputationLedger(organization.reputationLedger, personIds, ids))) fail('organizations', `state.organizations.${organization.id}.reputationLedger`, 'reputation-ledger', `Organization ${organization.id} has invalid reputation evidence`)
   }
   const lifecycle = state.organizationLifecycle
   if (!Number.isSafeInteger(lifecycle.nextOrganizationSequence) || lifecycle.nextOrganizationSequence < 1) fail('organizations', 'state.organizationLifecycle.nextOrganizationSequence', 'sequence', 'Organization lifecycle sequence is invalid')
@@ -57,18 +57,22 @@ function validAssetTraces(traces: NonNullable<SimulationState['organizations'][n
     && trace.nextFromAmount === trace.previousFromAmount - trace.amount && trace.nextToAmount === trace.previousToAmount + trace.amount && trace.reason.length > 0)
 }
 
-function validReputationLedger(ledger: NonNullable<SimulationState['organizations'][number]['reputationLedger']>): boolean {
+function validReputationLedger(ledger: NonNullable<SimulationState['organizations'][number]['reputationLedger']>, personIds: ReadonlySet<string>, organizationIds: ReadonlySet<string>): boolean {
   const seen = new Set<string>()
   return ledger.observations.every((entry, index) => {
     const key = `${entry.observer.kind}:${entry.observer.id}:${entry.sequence}`
     const valid = Number.isSafeInteger(entry.sequence) && entry.sequence >= 1 && (index === 0 || ledger.observations[index - 1]!.sequence < entry.sequence)
-      && Number.isSafeInteger(entry.tick) && entry.tick >= 0 && (entry.observer.kind === 'person' || entry.observer.kind === 'organization') && entry.observer.id.length > 0
+      && Number.isSafeInteger(entry.tick) && entry.tick >= 0 && (entry.observer.kind === 'person' ? personIds.has(entry.observer.id) : entry.observer.kind === 'organization' && organizationIds.has(entry.observer.id))
       && ['service', 'exchange', 'member-conduct', 'relationship'].includes(entry.source) && entry.causalEventId.length > 0
       && [entry.previousValuePermille, entry.deltaPermille, entry.valuePermille].every(Number.isSafeInteger) && entry.previousValuePermille >= 0 && entry.previousValuePermille <= 1000 && entry.deltaPermille >= -1000 && entry.deltaPermille <= 1000 && entry.valuePermille === Math.max(0, Math.min(1000, entry.previousValuePermille + entry.deltaPermille))
     if (seen.has(key)) return false
     seen.add(key)
     return valid
   }) && ledger.observations.every((entry) => entry.sequence < ledger.nextObservationSequence)
+    && ledger.currentByObserver.length <= ORGANIZATION_REPUTATION_OBSERVER_LIMIT
+    && ledger.currentByObserver.every((entry, index) => (entry.observer.kind === 'person' ? personIds.has(entry.observer.id) : entry.observer.kind === 'organization' && organizationIds.has(entry.observer.id))
+      && Number.isSafeInteger(entry.valuePermille) && entry.valuePermille >= 0 && entry.valuePermille <= 1000 && Number.isSafeInteger(entry.lastObservationSequence) && entry.lastObservationSequence >= 1 && entry.lastObservationSequence < ledger.nextObservationSequence && Number.isSafeInteger(entry.lastObservedTick) && entry.lastObservedTick >= 0
+      && (index === 0 || ledger.currentByObserver[index - 1]!.lastObservedTick < entry.lastObservedTick || ledger.currentByObserver[index - 1]!.lastObservedTick === entry.lastObservedTick && ledger.currentByObserver[index - 1]!.lastObservationSequence < entry.lastObservationSequence))
 }
 
 function validTraceNumbers(trace: { sequence: unknown; tick: unknown; baseProbabilityPermille: unknown; finalProbabilityPermille: unknown; randomRollPermille?: unknown; factors: unknown }): boolean {
