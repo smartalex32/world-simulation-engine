@@ -99,7 +99,20 @@ function validateOrganizationDefinition(definition: OrganizationDefinition, path
   const initial = definition?.initialService
   if (!initial || initial.location !== 'settlement-anchor' || initial.activityLocation !== 'commons' || !positiveInteger(initial.serviceCapacity)) diagnostics.push({ path: `${path}.initialService`, message: 'Initial service needs settlement-anchor, commons, and positive capacity' })
   const lifecycle = definition?.lifecycle
-  if (lifecycle !== undefined && (!Number.isSafeInteger(lifecycle.cadenceHours) || lifecycle.cadenceHours < 24 || lifecycle.cadenceHours % 24 !== 0 || !permille(lifecycle.baseFormationPermille) || !permille(lifecycle.baseMembershipPermille) || !definition.memberRoleIds.includes(lifecycle.defaultMemberRoleId))) diagnostics.push({ path: `${path}.lifecycle`, message: 'Lifecycle needs daily cadence, permille probabilities, and an allowed default role' })
+  if (lifecycle !== undefined) {
+    const formation = lifecycle.formation
+    const membership = lifecycle.membership
+    const validCadence = Number.isSafeInteger(lifecycle.cadenceHours) && lifecycle.cadenceHours >= 24 && lifecycle.cadenceHours % 24 === 0
+    const validFormation = typeof formation?.enabled === 'boolean' && permille(formation.baseProbabilityPermille)
+    const validMembership = typeof membership?.enabled === 'boolean'
+      && definition.memberRoleIds.includes(membership.defaultRoleId)
+      && permille(membership.baseJoinProbabilityPermille)
+      && permille(membership.baseRoleChangeProbabilityPermille)
+      && permille(membership.baseLeaveProbabilityPermille)
+      && permille(membership.roleChangeInterestThresholdPermille)
+    if (!validCadence || !validFormation || !validMembership) diagnostics.push({ path: `${path}.lifecycle`, message: 'Lifecycle needs a daily cadence, explicit enablement, permille probabilities, and an allowed default role' })
+    if (membership?.enabled && definition.memberRoleIds.length < 2 && membership.baseRoleChangeProbabilityPermille > 0) diagnostics.push({ path: `${path}.lifecycle.membership`, message: 'Role-change probability requires at least two allowed roles' })
+  }
 }
 
 function validateEconomyGood(good: EconomyGoodDefinition, path: string, diagnostics: ContentPackDiagnostic[]): void {

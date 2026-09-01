@@ -3,7 +3,7 @@
 export const ENGINE_VERSION = '0.47.0'
 export const SNAPSHOT_SCHEMA_VERSION = 46
 /** Versioned content-pack selection is authoritative configuration, not UI state. */
-export const CONTENT_PACK_MODEL_VERSION = 2
+export const CONTENT_PACK_MODEL_VERSION = 3
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 2
 export const INFLUENCE_REGISTRY_VERSION = 1

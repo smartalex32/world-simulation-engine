@@ -76,7 +76,16 @@ const migrationSteps = new Map<number, MigrationStep>([
       const config = requiredObject(snapshot.state.config, 'Schema-45 state configuration is invalid')
       const resolved = createContentPackResolver([DEFAULT_PREINDUSTRIAL_PACK]).resolve(DEFAULT_PREINDUSTRIAL_PACK.manifest.id, DEFAULT_PREINDUSTRIAL_PACK.manifest.version)
       const isDefaultPreindustrial = config.contentPackId === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && config.contentPackVersion === '1.1.0'
-      return { ...snapshot.state, config: { ...config, organizationModelVersion: 3, ...(isDefaultPreindustrial ? { contentPackVersion: resolved.pack.manifest.version, contentPackChecksum: resolved.checksum, contentPackDependencies: resolved.dependencies } : {}) }, organizationLifecycle: { nextOrganizationSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] } }
+      return {
+        ...snapshot.state,
+        config: {
+          ...config,
+          contentPackModelVersion: 3,
+          organizationModelVersion: 3,
+          ...(isDefaultPreindustrial ? { contentPackVersion: resolved.pack.manifest.version, contentPackChecksum: resolved.checksum, contentPackDependencies: resolved.dependencies } : {}),
+        },
+        organizationLifecycle: { nextOrganizationSequence: 1, nextTraceSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] },
+      }
     },
   }],
 ])

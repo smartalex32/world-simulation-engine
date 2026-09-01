@@ -23,7 +23,19 @@ export const DEFAULT_PREINDUSTRIAL_PACK: ContentPack = Object.freeze({
   }),
   organizationDefinitions: Object.freeze([
     Object.freeze({ id: 'school', name: 'School', purposeIds: Object.freeze(['education']), memberRoleIds: Object.freeze(['learner', 'educator']), sharedRuleIds: Object.freeze(['organization.rule.attendance.v1']), initialService: Object.freeze({ location: 'settlement-anchor', activityLocation: 'commons', serviceCapacity: 24 }) }),
-    Object.freeze({ id: 'study-circle', name: 'Study circle', purposeIds: Object.freeze(['education']), memberRoleIds: Object.freeze(['member', 'steward']), sharedRuleIds: Object.freeze([]), initialService: Object.freeze({ location: 'settlement-anchor', activityLocation: 'commons', serviceCapacity: 8 }), lifecycle: Object.freeze({ formation: true, defaultMemberRoleId: 'member', cadenceHours: 24, baseFormationPermille: 80, baseMembershipPermille: 120 }) }),
+    Object.freeze({
+      id: 'study-circle',
+      name: 'Study circle',
+      purposeIds: Object.freeze(['education']),
+      memberRoleIds: Object.freeze(['member', 'steward']),
+      sharedRuleIds: Object.freeze([]),
+      initialService: Object.freeze({ location: 'settlement-anchor', activityLocation: 'commons', serviceCapacity: 8 }),
+      lifecycle: Object.freeze({
+        cadenceHours: 24,
+        formation: Object.freeze({ enabled: true, baseProbabilityPermille: 80 }),
+        membership: Object.freeze({ enabled: true, defaultRoleId: 'member', baseJoinProbabilityPermille: 120, baseRoleChangeProbabilityPermille: 20, baseLeaveProbabilityPermille: 10, roleChangeInterestThresholdPermille: 750 }),
+      }),
+    }),
   ]),
   formulas: Object.freeze({
     // Retains the historical authored base weight while exercising the

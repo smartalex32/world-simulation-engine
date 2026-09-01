@@ -39,7 +39,8 @@ describe('snapshot migration registry', () => {
       },
     })
     expect(migrated.state.config.organizationModelVersion).toBe(3)
-    expect(migrated.state.organizationLifecycle).toEqual({ nextOrganizationSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] })
+    expect(migrated.state.config.contentPackModelVersion).toBe(3)
+    expect(migrated.state.organizationLifecycle).toEqual({ nextOrganizationSequence: 1, nextTraceSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] })
     expect(migrated.state.config.worldCreation.settlements[0]).not.toHaveProperty('regional')
     expect(migrated.state.config.worldCreation.settlements[0]).not.toHaveProperty('scale')
   })

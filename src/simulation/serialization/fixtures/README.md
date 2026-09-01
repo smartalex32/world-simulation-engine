@@ -9,7 +9,9 @@ rejection of the old locale-dependent ordering contract.
 generated from commit `cfb8269` (the 0.45.0 release line). The latter includes
 a real settlement whose derived runtime fields contaminated the creation input.
 `engine-0.46.0-schema-45-settlement-expected.json` is its recorded canonical
-target envelope, including authenticated migration provenance.
+target envelope from the 0.46.0 release, including authenticated migration
+provenance. Current migrations continue through that behavior boundary to the
+current schema rather than rewriting this historical artifact.
 
 Fixtures are release artifacts: do not regenerate them from the current engine
 to update a test expectation.

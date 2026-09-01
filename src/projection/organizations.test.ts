@@ -15,4 +15,15 @@ describe('organization projection', () => {
       expect.objectContaining({ id: 'school-2', memberCount: 0, internalRelationshipCount: 0, internalAverageFamiliarity: 0 }),
     ])
   })
+
+  it('projects pack-defined lifecycle status and a detached copy of the latest membership evidence', () => {
+    const evidence = { sequence: 1, tick: 24, organizationId: 'circle-1', personId: 'b', change: 'joined' as const, nextRoleId: 'member', baseProbabilityPermille: 100, factors: { activityPermille: 1000, proximityPermille: 1000, relationshipPermille: 0, interestPermille: 500, exposurePermille: 0 }, finalProbabilityPermille: 225, rngStream: 'organization.lifecycle', randomRollPermille: 0, selected: true }
+    const profiles = buildProjectedOrganizationProfiles([
+      { id: 'circle-1', name: 'Circle', kind: 'study-circle', locationCellId: '1,1', activityLocationId: 'activity.commons.1,1', members: [{ personId: 'b', role: 'member' }], serviceCapacity: 8, sharedRuleIds: [] },
+    ], [], [{ id: 'study-circle', name: 'Study circle', purposeIds: ['education'], memberRoleIds: ['member', 'steward'], sharedRuleIds: [], initialService: { location: 'settlement-anchor', activityLocation: 'commons', serviceCapacity: 8 }, lifecycle: { cadenceHours: 24, formation: { enabled: true, baseProbabilityPermille: 80 }, membership: { enabled: true, defaultRoleId: 'member', baseJoinProbabilityPermille: 120, baseRoleChangeProbabilityPermille: 20, baseLeaveProbabilityPermille: 10, roleChangeInterestThresholdPermille: 750 } } }], { nextOrganizationSequence: 2, nextTraceSequence: 2, latestFormationTraces: [], latestMembershipTraces: [evidence] })
+
+    expect(profiles[0]).toMatchObject({ goal: 'education', lifecycleStatus: 'formation-enabled', latestMembershipEvidence: evidence })
+    expect(profiles[0]!.latestMembershipEvidence).not.toBe(evidence)
+    expect(profiles[0]!.latestMembershipEvidence?.factors).not.toBe(evidence.factors)
+  })
 })

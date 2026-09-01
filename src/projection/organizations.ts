@@ -1,13 +1,13 @@
 import type { OrganizationState, RelationshipState } from '../simulation/domain/types'
 import type { ProjectedOrganizationProfile } from './types'
 import { compareStableText } from '../shared/stableOrder'
-import type { OrganizationDefinition } from '../simulation/organizations/types'
+import type { OrganizationDefinition, OrganizationLifecycleState } from '../simulation/organizations/types'
 
 /**
  * Read-only group evidence. Membership alone creates neither a relationship,
  * reputation, shared wealth, nor a behavioral modifier.
  */
-export function buildProjectedOrganizationProfiles(organizations: readonly OrganizationState[], relationships: readonly RelationshipState[], definitions: readonly OrganizationDefinition[] = [], lifecycle?: { latestMembershipTraces: readonly { tick: number; organizationId: string; personId: string; change: string; selected: boolean; rejectionReason?: string }[] }): ProjectedOrganizationProfile[] {
+export function buildProjectedOrganizationProfiles(organizations: readonly OrganizationState[], relationships: readonly RelationshipState[], definitions: readonly OrganizationDefinition[] = [], lifecycle?: OrganizationLifecycleState): ProjectedOrganizationProfile[] {
   const definitionById = new Map(definitions.map((definition) => [definition.id, definition]))
   return [...organizations].sort((first, second) => compareStableText(first.id, second.id)).map((organization) => {
     const memberIds = new Set(organization.members.map((member) => member.personId))
@@ -19,6 +19,12 @@ export function buildProjectedOrganizationProfiles(organizations: readonly Organ
       return counts
     }, {} as Record<string, number>)
     const definition = definitionById.get(organization.kind)
+    const latestMembershipEvidence = lifecycle?.latestMembershipTraces.filter((trace) => trace.organizationId === organization.id).at(-1)
+    const lifecycleStatus = definition?.lifecycle?.formation.enabled
+      ? 'formation-enabled' as const
+      : definition?.lifecycle?.membership.enabled
+        ? 'membership-only' as const
+        : 'disabled' as const
     return {
       id: organization.id,
       name: organization.name,
@@ -27,13 +33,13 @@ export function buildProjectedOrganizationProfiles(organizations: readonly Organ
       purposeIds: [...(definition?.purposeIds ?? [])].sort(compareStableText),
       allowedMemberRoleIds: [...(definition?.memberRoleIds ?? [])].sort(compareStableText),
       locationCellId: organization.locationCellId,
-      goal: organization.kind === 'school' ? 'education' : 'unspecified',
+      goal: definition?.purposeIds.includes('education') ? 'education' : 'unspecified',
       memberCount: organization.members.length,
       roleCounts,
       serviceCapacity: organization.serviceCapacity,
       sharedRuleIds: [...organization.sharedRuleIds].sort(),
-      lifecycleStatus: definition?.lifecycle?.formation ? 'eligible' as const : 'disabled' as const,
-      ...(lifecycle?.latestMembershipTraces.filter((trace) => trace.organizationId === organization.id).at(-1) ? { latestMembershipEvidence: lifecycle.latestMembershipTraces.filter((trace) => trace.organizationId === organization.id).at(-1) } : {}),
+      lifecycleStatus,
+      ...(latestMembershipEvidence ? { latestMembershipEvidence: structuredClone(latestMembershipEvidence) } : {}),
       internalRelationshipCount: internalRelationships.length,
       internalAverageFamiliarity: internalRelationships.length === 0 ? 0 : Math.round(internalRelationships.reduce((sum, relationship) => sum + relationship.familiarity, 0) / internalRelationships.length),
       reputationStatus: 'not-measured',

@@ -67,20 +67,31 @@ describe('canonical serialization', () => {
     const malformed = structuredClone(snapshot)
     malformed.state.organizations.push({ id: 'organization.school.trace-test', name: 'Trace test school', kind: 'school', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 1, sharedRuleIds: ['organization.rule.attendance.v1'] })
     const organization = malformed.state.organizations[0]!
-    malformed.state.organizationLifecycle.latestMembershipTraces.push({ tick: 0, organizationId: organization.id, personId: person.id, change: 'joined', nextRoleId: 'not-a-defined-role', baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1000, relationshipPermille: 1000, interestPermille: 1000, exposurePermille: 1000 }, finalProbabilityPermille: 1, rngStream: 'organization.lifecycle', randomRollPermille: 0, selected: true })
+    malformed.state.organizationLifecycle.nextTraceSequence = 2
+    malformed.state.organizationLifecycle.latestMembershipTraces.push({ sequence: 1, tick: 0, organizationId: organization.id, personId: person.id, change: 'joined', nextRoleId: 'not-a-defined-role', baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1000, relationshipPermille: 1000, interestPermille: 1000, exposurePermille: 1000 }, finalProbabilityPermille: 1, rngStream: 'organization.lifecycle', randomRollPermille: 0, selected: true })
     malformed.digest = await stateDigest(malformed.state)
     await expect(validateSnapshot(malformed)).rejects.toThrow('Organization membership trace is invalid')
 
     const corruptFactor = structuredClone(snapshot)
-    corruptFactor.state.organizationLifecycle.latestFormationTraces.push({ tick: 0, kindId: 'unknown-kind', candidatePersonIds: [person.id], locationCellId: location.cellId, baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1001, relationshipPermille: 1000, interestPermille: 1000, exposurePermille: 1000 }, finalProbabilityPermille: 1, rngStream: 'organization.lifecycle', randomRollPermille: 0, formed: false, rejectionReason: 'probability' })
+    corruptFactor.state.organizationLifecycle.nextTraceSequence = 2
+    corruptFactor.state.organizationLifecycle.latestFormationTraces.push({ sequence: 1, tick: 0, kindId: 'unknown-kind', candidatePersonIds: [person.id], locationCellId: location.cellId, baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1001, relationshipPermille: 1000, interestPermille: 1000, exposurePermille: 1000 }, finalProbabilityPermille: 1, rngStream: 'organization.lifecycle', randomRollPermille: 0, formed: false, rejectionReason: 'probability' })
     corruptFactor.digest = await stateDigest(corruptFactor.state)
     await expect(validateSnapshot(corruptFactor)).rejects.toThrow('Organization formation traces are invalid')
 
     const impossibleOutcome = structuredClone(snapshot)
     impossibleOutcome.state.organizations.push({ id: 'organization.school.trace-test', name: 'Trace test school', kind: 'school', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 1, sharedRuleIds: ['organization.rule.attendance.v1'] })
-    impossibleOutcome.state.organizationLifecycle.latestMembershipTraces.push({ tick: 0, organizationId: 'organization.school.trace-test', personId: person.id, change: 'joined', nextRoleId: 'learner', baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1000, relationshipPermille: 1000, interestPermille: 1000, exposurePermille: 1000 }, finalProbabilityPermille: 1, rngStream: 'wrong-stream', randomRollPermille: 999, selected: true, rejectionReason: 'probability' } as never)
+    impossibleOutcome.state.organizationLifecycle.nextTraceSequence = 2
+    impossibleOutcome.state.organizationLifecycle.latestMembershipTraces.push({ sequence: 1, tick: 0, organizationId: 'organization.school.trace-test', personId: person.id, change: 'joined', nextRoleId: 'learner', baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1000, relationshipPermille: 1000, interestPermille: 1000, exposurePermille: 1000 }, finalProbabilityPermille: 1, rngStream: 'wrong-stream', randomRollPermille: 999, selected: true, rejectionReason: 'probability' } as never)
     impossibleOutcome.digest = await stateDigest(impossibleOutcome.state)
     await expect(validateSnapshot(impossibleOutcome)).rejects.toThrow('Organization membership trace is invalid')
+
+    const impossibleTransition = structuredClone(snapshot)
+    impossibleTransition.state.organizations.push({ id: 'organization.study-circle.trace-test', name: 'Trace test circle', kind: 'study-circle', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 8, sharedRuleIds: [] })
+    impossibleTransition.state.organizations.sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
+    impossibleTransition.state.organizationLifecycle.nextTraceSequence = 2
+    impossibleTransition.state.organizationLifecycle.latestMembershipTraces.push({ sequence: 1, tick: 0, organizationId: 'organization.study-circle.trace-test', personId: person.id, change: 'joined', nextRoleId: 'member', baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1000, relationshipPermille: 0, interestPermille: 500, exposurePermille: 0 }, finalProbabilityPermille: 1, rngStream: 'organization.lifecycle', randomRollPermille: 0, selected: true })
+    impossibleTransition.digest = await stateDigest(impossibleTransition.state)
+    await expect(validateSnapshot(impossibleTransition)).rejects.toThrow('Selected organization join was impossible')
   })
 
   it('upgrades an authenticated schema-45 default-pack snapshot and continues deterministically', async () => {
@@ -88,6 +99,7 @@ describe('canonical serialization', () => {
     const legacy = structuredClone(source)
     legacy.schemaVersion = 45
     legacy.engineVersion = '0.46.0'
+    legacy.state.config.contentPackModelVersion = 2
     legacy.state.config.organizationModelVersion = 2
     legacy.state.config.contentPackVersion = '1.1.0'
     legacy.state.config.contentPackChecksum = '0'.repeat(32)
@@ -113,6 +125,7 @@ describe('canonical serialization', () => {
     const legacy = structuredClone(current)
     legacy.schemaVersion = 44
     legacy.engineVersion = '0.45.0'
+    legacy.state.config.contentPackModelVersion = 2
     legacy.state.config.organizationModelVersion = 2
     legacy.state.config.worldCreation.settlements = structuredClone(legacy.state.world.settlements)
     legacy.digest = await stateDigest(legacy.state)

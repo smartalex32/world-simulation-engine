@@ -51,6 +51,9 @@ describe('content packs', () => {
     expect(() => evaluateExpression({ kind: 'randomChance', stream: '', probabilityPermille: { kind: 'constant', value: 5 }, whenTrue: { kind: 'constant', value: 2 }, whenFalse: { kind: 'constant', value: 1 } }, {}, random)).toThrow('named RNG')
     expect(() => validateContentPack({ ...DEFAULT_PREINDUSTRIAL_PACK, formulas: { bad: { kind: 'add', operands: [] } } })).toThrow('one or more operands')
     expect(() => validateContentPack({ ...DEFAULT_PREINDUSTRIAL_PACK, formulas: { bad: { kind: 'if', condition: { kind: 'not' }, whenTrue: { kind: 'constant', value: 1 }, whenFalse: { kind: 'constant', value: 0 } } } })).toThrow('Condition is invalid')
+    const invalidLifecycle = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    invalidLifecycle.organizationDefinitions[1]!.lifecycle!.membership.defaultRoleId = 'unknown-role'
+    expect(() => validateContentPack(invalidLifecycle)).toThrow('Lifecycle needs')
   })
   it('builds stable immutable runtime registries from a validated pack', () => {
     const runtime = createContentPackRuntime(DEFAULT_PREINDUSTRIAL_PACK)
