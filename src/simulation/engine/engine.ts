@@ -88,6 +88,7 @@ import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STR
 import { createInitialMarkets, resolveFoodShares, resolveToolExchanges } from '../economy/model'
 import { clearMarkets, createEconomyState, decayGoods, distributeMarketWages, initializeGoods, produceMonthlyGoods } from '../economy/stockFlow'
 import { createInitialSchools } from '../organizations/model'
+import { advanceOrganizationLifecycle, ORGANIZATION_LIFECYCLE_STREAM } from '../organizations/lifecycle'
 import { evaluateSchoolAttendance, SCHOOL_ATTENDANCE, SCHOOL_ATTENDANCE_STREAM, schoolAttendanceTrace, schoolTravelCost } from '../organizations/attendance'
 import { createCulturalState, transmitCulture } from '../culture/model'
 import { acquireLanguage, initialLanguage } from '../language/model'
@@ -181,6 +182,7 @@ export class SimulationEngine {
   private livingPersonIndexBuilds = 0
 
   private constructor(private state: SimulationState, random: RandomProvider, private readonly contentPackRuntime: ContentPackRuntime = createContentPackRuntime(DEFAULT_PREINDUSTRIAL_PACK), private readonly migrationProvenance?: SnapshotEnvelope['migrationProvenance']) {
+    this.state.organizationLifecycle ??= { nextOrganizationSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] }
     this.random = random
     this.cellById = new Map(state.world.grid.cells.map((cell) => [cell.id, cell]))
     this.roadCellIds = new Set((state.world.roads ?? []).flatMap((road) => road.cellIds))
@@ -284,6 +286,7 @@ export class SimulationEngine {
       households: generatedPopulation.households,
       markets,
       organizations,
+      organizationLifecycle: { nextOrganizationSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] },
       infrastructure,
       economy,
       governance,
@@ -380,6 +383,7 @@ export class SimulationEngine {
       decisionsAndActions: (context) => { const result = this.runDecisionsAndActions(runtime.pushEvent); context.scratch.decisions = result.decisions; context.scratch.postActionActivityOccupancy = result.occupancy; if (result.decisions.length > 0) runtime.invalidate(['people']); if (result.changedCellIds.length > 0) runtime.invalidate(['locations'], result.changedCellIds) },
       encountersAndMarkets: (context) => { const encounters = this.runEncountersAndMarkets(runtime.pushEvent, context.scratch); if (encounters > 0) runtime.invalidate(['relationships', 'communities']) },
       exposureEnvironmentAndHealth: (context) => { this.runExposureEnvironmentAndHealth(runtime.pushEvent, context.scratch); runtime.invalidate(['people', 'communities']) },
+      organizationLifecycle: () => { const outcome = this.runOrganizationLifecycle(runtime.pushEvent); if (outcome > 0) runtime.invalidate(['locations']) },
       monthlyProcessing: () => { this.runMonthlyProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds, runtime.relocationDiagnostics); runtime.invalidate(['people', 'locations', 'communities']) },
       annualProcessing: () => { this.runAnnualProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds); runtime.invalidate(['people', 'relationships']) },
       dailyProcessing: () => { this.runDailyProcessing(runtime.pushEvent, runtime.statistics); runtime.invalidate(['people', 'communities']) },
@@ -484,6 +488,16 @@ export class SimulationEngine {
     this.recordCommunityPersonHours()
     this.recordCommunityDevelopmentExposure()
     this.accumulateDevelopmentExposure()
+  }
+
+  private runOrganizationLifecycle(pushEvent: (event: SimulationEvent) => void): number {
+    const lifecycle = this.state.organizationLifecycle!
+    const formationStart = lifecycle.latestFormationTraces.length
+    const membershipStart = lifecycle.latestMembershipTraces.length
+    const outcome = advanceOrganizationLifecycle({ tick: this.state.tick, definitions: this.contentPackRuntime.organizationDefinitions, people: this.state.people, organizations: this.state.organizations, relationships: this.state.relationships, lifecycle, nextPermille: () => this.random.stream(ORGANIZATION_LIFECYCLE_STREAM).nextInt(1000) })
+    for (const trace of lifecycle.latestFormationTraces.slice(formationStart)) if (trace.formed && trace.organizationId) pushEvent(this.event('ORGANIZATION_FORMED', { organizationId: trace.organizationId, kindId: trace.kindId, locationCellId: trace.locationCellId, probabilityPermille: trace.finalProbabilityPermille, randomRollPermille: trace.randomRollPermille }))
+    for (const trace of lifecycle.latestMembershipTraces.slice(membershipStart)) if (trace.selected) pushEvent(this.event('ORGANIZATION_MEMBERSHIP_CHANGED', { personId: trace.personId, organizationId: trace.organizationId, change: trace.change, roleId: trace.nextRoleId, probabilityPermille: trace.finalProbabilityPermille, randomRollPermille: trace.randomRollPermille }))
+    return outcome.formations + outcome.memberships
   }
 
   private runMonthlyProcessing(pushEvent: (event: SimulationEvent) => void, changeCategories: Set<AuthoritativeChangeSet['categories'][number]>, changedCellIds: Set<string>, relocationDiagnostics: { indexBuilds: number; pathExpansions: number }): void {
@@ -654,6 +668,7 @@ export class SimulationEngine {
       markets: this.state.markets,
       economy: this.state.economy,
       organizations: this.state.organizations,
+      organizationLifecycle: this.state.organizationLifecycle,
       infrastructure: this.state.infrastructure,
       governance: this.state.governance,
       disputes: this.state.disputes,

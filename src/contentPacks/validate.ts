@@ -98,6 +98,8 @@ function validateOrganizationDefinition(definition: OrganizationDefinition, path
   if (definition?.id !== 'school' && hasAttendance) diagnostics.push({ path: `${path}.sharedRuleIds`, message: 'The attendance rule is reserved for school definitions' })
   const initial = definition?.initialService
   if (!initial || initial.location !== 'settlement-anchor' || initial.activityLocation !== 'commons' || !positiveInteger(initial.serviceCapacity)) diagnostics.push({ path: `${path}.initialService`, message: 'Initial service needs settlement-anchor, commons, and positive capacity' })
+  const lifecycle = definition?.lifecycle
+  if (lifecycle !== undefined && (!Number.isSafeInteger(lifecycle.cadenceHours) || lifecycle.cadenceHours < 24 || lifecycle.cadenceHours % 24 !== 0 || !permille(lifecycle.baseFormationPermille) || !permille(lifecycle.baseMembershipPermille) || !definition.memberRoleIds.includes(lifecycle.defaultMemberRoleId))) diagnostics.push({ path: `${path}.lifecycle`, message: 'Lifecycle needs daily cadence, permille probabilities, and an allowed default role' })
 }
 
 function validateEconomyGood(good: EconomyGoodDefinition, path: string, diagnostics: ContentPackDiagnostic[]): void {

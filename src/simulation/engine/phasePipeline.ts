@@ -80,6 +80,7 @@ export interface SimulationPhaseOperations {
   decisionsAndActions(context: SimulationTickContext): void
   encountersAndMarkets(context: SimulationTickContext): void
   exposureEnvironmentAndHealth(context: SimulationTickContext): void
+  organizationLifecycle(context: SimulationTickContext): void
   monthlyProcessing(context: SimulationTickContext): void
   annualProcessing(context: SimulationTickContext): void
   dailyProcessing(context: SimulationTickContext): void
@@ -99,6 +100,7 @@ const SIMULATION_TICK_PHASES = Object.freeze([
   defineSimulationPhase({ id: 'decisions-and-actions', cadence: 'hourly', rngStreams: ['actions', 'innovation.practical-experiment', 'content-pack.<pack>.<stream>'], run: (context) => context.operations.decisionsAndActions(context) }),
   defineSimulationPhase({ id: 'encounters-and-markets', cadence: 'hourly', rngStreams: ['encounters'], run: (context) => context.operations.encountersAndMarkets(context) }),
   defineSimulationPhase({ id: 'exposure-environment-and-health', cadence: 'hourly', rngStreams: ['health.fictional-pathogen'], run: (context) => context.operations.exposureEnvironmentAndHealth(context) }),
+  defineSimulationPhase({ id: 'organization-lifecycle', cadence: 'daily', rngStreams: ['organization.lifecycle'], run: (context) => context.operations.organizationLifecycle(context) }),
   defineSimulationPhase({ id: 'monthly-processing', cadence: 'monthly', rngStreams: ['household.relocation'], run: (context) => context.operations.monthlyProcessing(context) }),
   defineSimulationPhase({ id: 'annual-processing', cadence: 'annual', rngStreams: lifecycleAnnual, run: (context) => context.operations.annualProcessing(context) }),
   defineSimulationPhase({ id: 'daily-processing-and-statistics', cadence: 'daily', rngStreams: [], run: (context) => context.operations.dailyProcessing(context) }),

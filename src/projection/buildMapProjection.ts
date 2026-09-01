@@ -131,7 +131,7 @@ export class WorkbenchProjectionBuilder {
       settlements: buildProjectedSettlements(source.world.settlements, source.world.grid.cells, source.people, source.households),
       settlementLinks: buildProjectedSettlementLinks(source.world.settlements, source.world.grid.cells, source.world.roads),
       settlementServices: buildProjectedSettlementServices(source.world.settlements, source.world.grid.cells, source.markets, source.organizations, source.world.roads, source.infrastructure),
-      organizationProfiles: buildProjectedOrganizationProfiles(source.organizations, source.relationships, source.organizationDefinitions ?? []),
+      organizationProfiles: buildProjectedOrganizationProfiles(source.organizations, source.relationships, source.organizationDefinitions ?? [], source.organizationLifecycle),
       governanceProfiles: buildProjectedGovernanceProfiles(source.governance, projectedCommunities, source.people, source.organizations),
       economy: buildProjectedEconomicSummary(source.households, source.people, source.economy),
       settlementDiffusion: buildProjectedSettlementDiffusion(source.world.settlements, source.people),

@@ -3,7 +3,7 @@ import type { PopulationCohortState, PopulationFidelityState } from '../cohorts/
 import type { EconomyState, MarketState } from '../economy/types'
 import type { HouseholdState, ParentChildLink, ActivityLocationState } from '../households/types'
 import type { InfrastructureAssetState } from '../infrastructure/types'
-import type { DisputeState, LocalGovernanceState, OrganizationState } from '../organizations/types'
+import type { DisputeState, LocalGovernanceState, OrganizationLifecycleState, OrganizationState } from '../organizations/types'
 import type { PersonState, RelationshipState } from '../people/types'
 import type { PopulationPlacementZone, WorldState } from '../spatial/types'
 import type { PersonVariableDefinition } from '../variables/types'
@@ -23,6 +23,7 @@ export interface WorldProjection {
   markets: MarketState[]
   economy: EconomyState
   organizations: OrganizationState[]
+  organizationLifecycle?: OrganizationLifecycleState
   infrastructure: InfrastructureAssetState[]
   governance: LocalGovernanceState[]
   disputes: DisputeState[]

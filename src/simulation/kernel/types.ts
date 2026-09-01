@@ -3,7 +3,7 @@ import type { PopulationCohortState, PopulationFidelityState } from '../cohorts/
 import type { EconomyState, MarketState } from '../economy/types'
 import type { ActivityLocationState, HouseholdState, ParentChildLink } from '../households/types'
 import type { InfrastructureAssetState } from '../infrastructure/types'
-import type { DisputeState, LocalGovernanceState, OrganizationState } from '../organizations/types'
+import type { DisputeState, LocalGovernanceState, OrganizationLifecycleState, OrganizationState } from '../organizations/types'
 import type { PersonState, RelationshipState } from '../people/types'
 import type { WorldCreationRequest, WorldState } from '../spatial/types'
 
@@ -115,6 +115,7 @@ export interface SimulationState {
   markets: MarketState[]
   economy: EconomyState
   organizations: OrganizationState[]
+  organizationLifecycle?: OrganizationLifecycleState
   infrastructure: InfrastructureAssetState[]
   governance: LocalGovernanceState[]
   disputes: DisputeState[]

@@ -44,6 +44,8 @@ export interface SimulationEventPayloadMap {
   COMMUNITY_CONTENTION_RESOLVED: { communityId: string; disputeId?: string; kind?: string; grievanceBefore?: number; grievanceAfter?: number; legitimacyPermille?: number }
   PERSON_ATTENDED_SCHOOL: PersonPayload & { schoolId: string; schoolCellId: string; travelCost: number | null; probabilityPermille: number; randomRollPermille: number; learningHours: number }
   PERSON_MISSED_SCHOOL: PersonPayload & { schoolId: string; reason: string; travelCost?: number | null; probabilityPermille?: number; randomRollPermille: number }
+  ORGANIZATION_FORMED: { organizationId: string; kindId: string; locationCellId: string; probabilityPermille: number; randomRollPermille: number }
+  ORGANIZATION_MEMBERSHIP_CHANGED: PersonPayload & { organizationId: string; change: string; roleId?: string; probabilityPermille: number; randomRollPermille: number }
   PERSON_EXPLORED: PersonActionPayload
   PERSON_RESTED: PersonActionPayload
   PERSON_SOCIALIZED: PersonActionPayload
@@ -137,6 +139,8 @@ export const EVENT_CATALOG = {
   COMMUNITY_CONTENTION_RESOLVED: entry('COMMUNITY_CONTENTION_RESOLVED', 'durable', [{ communityId: 'string' }]),
   PERSON_ATTENDED_SCHOOL: entry('PERSON_ATTENDED_SCHOOL', 'bounded', [{ ...person, schoolId: 'string', schoolCellId: 'string' }], 100),
   PERSON_MISSED_SCHOOL: entry('PERSON_MISSED_SCHOOL', 'bounded', [{ ...person, schoolId: 'string', reason: 'string' }], 100),
+  ORGANIZATION_FORMED: entry('ORGANIZATION_FORMED', 'durable', [{ organizationId: 'string', kindId: 'string', locationCellId: 'string', probabilityPermille: 'number', randomRollPermille: 'number' }]),
+  ORGANIZATION_MEMBERSHIP_CHANGED: entry('ORGANIZATION_MEMBERSHIP_CHANGED', 'durable', [{ ...person, organizationId: 'string', change: 'string', probabilityPermille: 'number', randomRollPermille: 'number' }]),
   PERSON_EXPLORED: entry('PERSON_EXPLORED', 'bounded', [action], 100), PERSON_RESTED: entry('PERSON_RESTED', 'sampled', [action], 20), PERSON_SOCIALIZED: entry('PERSON_SOCIALIZED', 'sampled', [action], 20),
   PERSON_ACTIVITY_CHANGED: entry('PERSON_ACTIVITY_CHANGED', 'sampled', [{ ...person, previousKind: 'string', currentKind: 'string' }], 20),
   PERSON_AGED: entry('PERSON_AGED', 'durable', [{ ...person, ageYears: 'number' }]),
