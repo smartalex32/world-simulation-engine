@@ -59,7 +59,7 @@ export function advanceOrganizationLifecycle(input: { tick: number; definitions:
         const change: OrganizationMembershipChange = alternativeRole ? 'role-changed' : 'left'
         const base = change === 'left' ? Math.max(0, 300 - factors.interestPermille) : alternativeRole ? Math.floor(definition.lifecycle!.baseMembershipPermille / 2) : 0
         const roll = base === 0 ? 0 : input.nextPermille(); const probability = base === 0 ? 0 : evaluateProbability(base, factors); const selected = roll < probability
-        recordMembership({ tick: input.tick, organizationId: organization.id, personId: person.id, change, previousRoleId: existing.role, ...(change === 'role-changed' && alternativeRole ? { nextRoleId: alternativeRole } : {}), baseProbabilityPermille: base, factors, finalProbabilityPermille: probability, rngStream: ORGANIZATION_LIFECYCLE_STREAM, randomRollPermille: roll, selected, ...(selected ? {} : { rejectionReason: alternativeRole ? 'probability' : 'no-role' }) })
+        recordMembership({ tick: input.tick, organizationId: organization.id, personId: person.id, change, previousRoleId: existing.role, ...(change === 'role-changed' && alternativeRole ? { nextRoleId: alternativeRole } : {}), baseProbabilityPermille: base, factors, finalProbabilityPermille: probability, rngStream: ORGANIZATION_LIFECYCLE_STREAM, randomRollPermille: roll, selected, ...(selected ? {} : { rejectionReason: base > 0 ? 'probability' : 'no-role' }) })
         if (selected) { applyOrganizationMembershipChange(organization, person.id, change, change === 'role-changed' ? alternativeRole : undefined); memberships += 1 }
       }
     }

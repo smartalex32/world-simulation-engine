@@ -1,6 +1,7 @@
 import type { SimulationState } from '../domain/types'
 import type { OrganizationDefinition } from './types'
 import { failCanonicalValidation as fail } from '../validation/error'
+import { ORGANIZATION_LIFECYCLE_STREAM } from './lifecycle'
 
 /** Canonical validation owned by the organization subsystem. */
 export function validateOrganizationState(state: SimulationState, definitions: ReadonlyMap<string, OrganizationDefinition>): void {
@@ -24,7 +25,7 @@ export function validateOrganizationState(state: SimulationState, definitions: R
   if (lifecycle.latestFormationTraces.some((trace, index) => !validTraceNumbers(trace) || (index > 0 && lifecycle.latestFormationTraces[index - 1]!.tick > trace.tick))) fail('organizations', 'state.organizationLifecycle.latestFormationTraces', 'trace-ordering', 'Organization formation traces are invalid')
   if (lifecycle.latestMembershipTraces.some((trace, index) => !validTraceNumbers(trace) || (index > 0 && lifecycle.latestMembershipTraces[index - 1]!.tick > trace.tick))) fail('organizations', 'state.organizationLifecycle.latestMembershipTraces', 'trace-ordering', 'Organization membership traces are invalid')
   for (const trace of lifecycle.latestFormationTraces) {
-    if (!definitions.has(trace.kindId) || !cellsById.has(trace.locationCellId) || !Array.isArray(trace.candidatePersonIds) || trace.candidatePersonIds.some((personId) => !personIds.has(personId)) || typeof trace.formed !== 'boolean' || !validLifecycleReason(trace.rejectionReason) || (trace.formed ? !trace.organizationId : trace.organizationId !== undefined)) fail('organizations', 'state.organizationLifecycle.latestFormationTraces', 'formation-schema', 'Organization formation trace is invalid')
+    if (!definitions.has(trace.kindId) || !cellsById.has(trace.locationCellId) || !Array.isArray(trace.candidatePersonIds) || trace.candidatePersonIds.some((personId) => !personIds.has(personId)) || typeof trace.formed !== 'boolean' || trace.rngStream !== ORGANIZATION_LIFECYCLE_STREAM || !validLifecycleReason(trace.rejectionReason) || !coherentOutcome(trace.formed, trace.rejectionReason, trace.finalProbabilityPermille, trace.randomRollPermille) || (trace.formed ? !trace.organizationId : trace.organizationId !== undefined)) fail('organizations', 'state.organizationLifecycle.latestFormationTraces', 'formation-schema', 'Organization formation trace is invalid')
     if (trace.formed) { const organization = state.organizations.find((candidate) => candidate.id === trace.organizationId); if (!organization || organization.kind !== trace.kindId || organization.locationCellId !== trace.locationCellId) fail('organizations', 'state.organizationLifecycle.latestFormationTraces', 'organization-reference', 'Organization formation trace does not match its organization') }
   }
   for (const trace of lifecycle.latestMembershipTraces) {
@@ -32,7 +33,7 @@ export function validateOrganizationState(state: SimulationState, definitions: R
     const definition = organization ? definitions.get(organization.kind) : undefined
     const validRole = (role: unknown): role is string => typeof role === 'string' && Boolean(definition?.memberRoleIds.includes(role))
     const validTransition = trace.change === 'joined' ? trace.previousRoleId === undefined && validRole(trace.nextRoleId) : trace.change === 'role-changed' ? validRole(trace.previousRoleId) && validRole(trace.nextRoleId) && trace.previousRoleId !== trace.nextRoleId : trace.change === 'left' ? validRole(trace.previousRoleId) && trace.nextRoleId === undefined : false
-    if (!organization || !personIds.has(trace.personId) || typeof trace.selected !== 'boolean' || !validLifecycleReason(trace.rejectionReason) || !validTransition) fail('organizations', 'state.organizationLifecycle.latestMembershipTraces', 'membership-reference', 'Organization membership trace is invalid')
+    if (!organization || !personIds.has(trace.personId) || typeof trace.selected !== 'boolean' || trace.rngStream !== ORGANIZATION_LIFECYCLE_STREAM || !validLifecycleReason(trace.rejectionReason) || !coherentOutcome(trace.selected, trace.rejectionReason, trace.finalProbabilityPermille, trace.randomRollPermille) || !validTransition) fail('organizations', 'state.organizationLifecycle.latestMembershipTraces', 'membership-reference', 'Organization membership trace is invalid')
   }
 }
 
@@ -44,3 +45,9 @@ function validTraceNumbers(trace: { tick: unknown; baseProbabilityPermille: unkn
 }
 
 function validLifecycleReason(reason: unknown): boolean { return reason === undefined || ['disabled', 'insufficient-activity', 'already-member', 'no-relationship', 'no-role', 'probability', 'invalid-transition'].includes(reason as string) }
+
+function coherentOutcome(selected: boolean, reason: unknown, probability: number, roll: number): boolean {
+  if (selected) return reason === undefined && roll < probability
+  if (reason === 'probability') return roll >= probability
+  return reason !== undefined && probability === 0 && roll === 0
+}

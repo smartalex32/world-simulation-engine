@@ -75,6 +75,12 @@ describe('canonical serialization', () => {
     corruptFactor.state.organizationLifecycle.latestFormationTraces.push({ tick: 0, kindId: 'unknown-kind', candidatePersonIds: [person.id], locationCellId: location.cellId, baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1001, relationshipPermille: 1000, interestPermille: 1000, exposurePermille: 1000 }, finalProbabilityPermille: 1, rngStream: 'organization.lifecycle', randomRollPermille: 0, formed: false, rejectionReason: 'probability' })
     corruptFactor.digest = await stateDigest(corruptFactor.state)
     await expect(validateSnapshot(corruptFactor)).rejects.toThrow('Organization formation traces are invalid')
+
+    const impossibleOutcome = structuredClone(snapshot)
+    impossibleOutcome.state.organizations.push({ id: 'organization.school.trace-test', name: 'Trace test school', kind: 'school', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 1, sharedRuleIds: ['organization.rule.attendance.v1'] })
+    impossibleOutcome.state.organizationLifecycle.latestMembershipTraces.push({ tick: 0, organizationId: 'organization.school.trace-test', personId: person.id, change: 'joined', nextRoleId: 'learner', baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1000, relationshipPermille: 1000, interestPermille: 1000, exposurePermille: 1000 }, finalProbabilityPermille: 1, rngStream: 'wrong-stream', randomRollPermille: 999, selected: true, rejectionReason: 'probability' } as never)
+    impossibleOutcome.digest = await stateDigest(impossibleOutcome.state)
+    await expect(validateSnapshot(impossibleOutcome)).rejects.toThrow('Organization membership trace is invalid')
   })
 
   it('upgrades an authenticated schema-45 default-pack snapshot and continues deterministically', async () => {

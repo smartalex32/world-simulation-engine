@@ -89,7 +89,7 @@ describe('projection-free engine advance', () => {
     const engine = SimulationEngine.create('phase-compat-full')
     const result = engine.advance(48, { clockEventHours: false })
     const snapshot = await engine.snapshot()
-    expect(snapshot.digest).toBe('4cd84b4e4a3fb36a96a14bf5c16fdd2817416aa071db04f8c04ac43c4ca377e1')
+    expect(snapshot.digest).toBe('de002ec8847c8ab77cef206798b90eb55b0d1415c8eb52eaaa42a9a2b3fd1aed')
     expect(await canonicalDigest(snapshot.state.randomStreams)).toBe('7ae6d7a2f35b8ff03e3ad8fb19b15eff891207ceea2dd67ad50f9da639abd51c')
     expect(await canonicalDigest(result.events)).toBe('06a9c17bd0cc9918702516c2c5a0c1f1b39ebefb8318910be7838882a84e09a9')
     expect(await canonicalDigest(result.statistics)).toBe('a58dda13775abebd3a99e0d76e92cb1f5a894c668c02c55415aa4bc18312f636')
