@@ -18,6 +18,9 @@ export function createOrganizationReputationLedger(definition: { reputation?: { 
 export function transferOrganizationAsset(input: { tick: number; from: OrganizationAssetParty; to: OrganizationAssetParty; asset: 'currency' | 'good'; goodId?: string; amount: number; reason: string; organizations: OrganizationState[]; households: HouseholdState[]; markets: readonly MarketState[]; economy: EconomyState }): OrganizationAssetTransferTrace {
   if (!Number.isSafeInteger(input.tick) || input.tick < 0 || !Number.isSafeInteger(input.amount) || input.amount < 1 || !input.reason) throw new Error('Organization asset transfer is invalid')
   if (input.asset === 'good' && !input.goodId) throw new Error('Organization good transfer requires a good ID')
+  if (input.asset === 'currency' && input.goodId !== undefined) throw new Error('Organization currency transfer cannot name a good')
+  if (input.from.kind === input.to.kind && input.from.id === input.to.id) throw new Error('Organization asset transfer requires distinct parties')
+  if (input.from.kind !== 'organization' && input.to.kind !== 'organization') throw new Error('Organization asset transfer requires an organization party')
   const from = balance(input.from, input, input.asset, input.goodId)
   const to = balance(input.to, input, input.asset, input.goodId)
   if (from.get() < input.amount) throw new Error('Organization asset transfer exceeds source balance')

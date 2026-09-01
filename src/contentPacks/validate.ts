@@ -42,6 +42,7 @@ export function validateContentPack(value: unknown): ValidatedContentPack {
     for (const [index, good] of pack.economy.goods.entries()) validateEconomyGood(good, `economy.goods[${index}]`, diagnostics)
     const goodIds = new Set(pack.economy.goods.map((good) => good.id))
     for (const [index, recipe] of pack.economy.recipes.entries()) validateEconomyRecipe(recipe, goodIds, `economy.recipes[${index}]`, diagnostics)
+    for (const [index, definition] of pack.organizationDefinitions.entries()) for (const goodId of Object.keys(definition.assets?.initialGoods ?? {})) if (!goodIds.has(goodId)) diagnostics.push({ path: `organizationDefinitions[${index}].assets.initialGoods`, message: `Organization asset references unknown good: ${goodId}` })
   }
   for (const [index, pathogen] of (pack.pathogens ?? []).entries()) validatePathogen(pathogen, `pathogens[${index}]`, diagnostics)
   for (const [index, definition] of (pack.personVariables ?? []).entries()) {

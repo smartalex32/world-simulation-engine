@@ -25,6 +25,10 @@ describe('organization-owned assets and observer reputation', () => {
     expect((org.assets!.goods['good.food'] ?? 0) + (household.inventory!.goods!['good.food'] ?? 0)).toBe(goodsBefore)
     expect(org.assets!.currencyUnits + household.inventory!.currencyUnits! + economy.markets[0]!.treasuryUnits).toBe(currencyBefore)
     expect(org.assets!.latestTransferTraces.map((trace) => trace.sequence)).toEqual([1, 2])
+    const transfer = { tick: 2, from: { kind: 'organization' as const, id: org.id }, to: { kind: 'household' as const, id: household.id }, asset: 'currency' as const, amount: 1, reason: 'guard', organizations: [org], households: [household], markets, economy }
+    expect(() => transferOrganizationAsset({ ...transfer, to: { kind: 'organization', id: org.id } })).toThrow('distinct parties')
+    expect(() => transferOrganizationAsset({ ...transfer, goodId: 'good.food' })).toThrow('cannot name a good')
+    expect(() => transferOrganizationAsset({ ...transfer, from: { kind: 'household', id: household.id }, to: { kind: 'market', id: 'market.001' } })).toThrow('requires an organization party')
   })
 
   it('retains distinct bounded causal evidence for different observers without membership inference', () => {

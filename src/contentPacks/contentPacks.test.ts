@@ -54,6 +54,9 @@ describe('content packs', () => {
     const invalidLifecycle = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
     invalidLifecycle.organizationDefinitions[1]!.lifecycle!.membership.defaultRoleId = 'unknown-role'
     expect(() => validateContentPack(invalidLifecycle)).toThrow('Lifecycle needs')
+    const phantomOrganizationGood = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    phantomOrganizationGood.organizationDefinitions = phantomOrganizationGood.organizationDefinitions.map((definition) => definition.id === 'school' ? { ...definition, assets: { initialCurrencyUnits: 0, initialGoods: { 'good.phantom': 1 } } } : definition)
+    expect(() => validateContentPack(phantomOrganizationGood)).toThrow('unknown good')
   })
   it('builds stable immutable runtime registries from a validated pack', () => {
     const runtime = createContentPackRuntime(DEFAULT_PREINDUSTRIAL_PACK)
