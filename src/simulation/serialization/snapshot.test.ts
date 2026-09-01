@@ -4,6 +4,7 @@ import { ENGINE_VERSION, KNOWLEDGE_MODEL_VERSION, SNAPSHOT_SCHEMA_VERSION } from
 import { defaultWorldCreationRequest } from '../domain/worldCreation'
 import { SNAPSHOT_CODEC, createSnapshot, canonicalStringify, stateDigest, validateSnapshot } from './snapshot'
 import historicalSnapshot from './fixtures/engine-0.45.0-schema-44.json'
+import { DEFAULT_PREINDUSTRIAL_PACK } from '../../contentPacks/defaultPreindustrial'
 
 function historicalFixture(): unknown {
   return structuredClone(historicalSnapshot)
@@ -136,6 +137,23 @@ describe('canonical serialization', () => {
     const control = await SimulationEngine.restore(migrated)
     restored.advance(24, { clockEventHours: false }); control.advance(24, { clockEventHours: false })
     expect(await restored.snapshot()).toEqual(await control.snapshot())
+  })
+
+  it('preserves legacy custom-pack opt-out semantics when schema-46 ignored future account fields', async () => {
+    const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    pack.manifest = { ...pack.manifest, id: 'setting.schema-46-legacy-fields', version: '1.0.0', name: 'Schema-46 legacy fields' }
+    pack.organizationDefinitions = pack.organizationDefinitions.map((definition) => definition.id === 'school' ? { ...definition, assets: { initialCurrencyUnits: 9, initialGoods: { 'good.food': 3 } }, reputation: { enabled: true } } : definition)
+    const source = await SimulationEngine.create('schema-46-custom-pack', 32, 24, pack).snapshot()
+    const legacy = structuredClone(source)
+    legacy.schemaVersion = 46; legacy.engineVersion = '0.47.0'; legacy.state.config.organizationModelVersion = 3
+    delete legacy.state.config.organizationAssetReputationModelVersion
+    for (const organization of legacy.state.organizations) { delete organization.assets; delete organization.reputationLedger }
+    legacy.digest = await stateDigest(legacy.state)
+
+    const migrated = await validateSnapshot(legacy, pack)
+    expect(migrated.state.config.organizationAssetReputationModelVersion).toBe(0)
+    expect(migrated.state.organizations.every((organization) => organization.assets === undefined && organization.reputationLedger === undefined)).toBe(true)
+    await expect(SimulationEngine.restore(migrated, pack)).resolves.toBeInstanceOf(SimulationEngine)
   })
 
   it('repairs schema-44 creation input contaminated by runtime settlement state', async () => {

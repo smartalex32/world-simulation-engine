@@ -18,6 +18,8 @@ export const LIFE_CYCLE_MODEL_VERSION = 1
 /** Versioned, non-monetary household food production and sharing rules. */
 export const ECONOMY_MODEL_VERSION = 3
 export const ORGANIZATION_MODEL_VERSION = 4
+/** Separates legacy packs that ignored account/evidence fields from new opt-in semantics. */
+export const ORGANIZATION_ASSET_REPUTATION_MODEL_VERSION = 1
 export const CULTURE_MODEL_VERSION = 1
 export const LANGUAGE_MODEL_VERSION = 1
 export const GOVERNANCE_MODEL_VERSION = 2
@@ -47,6 +49,7 @@ export const CURRENT_MODEL_VERSIONS = Object.freeze({
   lifeCycle: LIFE_CYCLE_MODEL_VERSION,
   economy: ECONOMY_MODEL_VERSION,
   organization: ORGANIZATION_MODEL_VERSION,
+  organizationAssetsAndReputation: ORGANIZATION_ASSET_REPUTATION_MODEL_VERSION,
   culture: CULTURE_MODEL_VERSION,
   language: LANGUAGE_MODEL_VERSION,
   governance: GOVERNANCE_MODEL_VERSION,

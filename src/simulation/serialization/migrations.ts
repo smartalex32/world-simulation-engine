@@ -98,7 +98,7 @@ const migrationSteps = new Map<number, MigrationStep>([
       const organizations = requiredArray(state.organizations, 'Schema-46 organizations are invalid')
       const resolved = createContentPackResolver([DEFAULT_PREINDUSTRIAL_PACK]).resolve(DEFAULT_PREINDUSTRIAL_PACK.manifest.id, DEFAULT_PREINDUSTRIAL_PACK.manifest.version)
       const isLegacyDefaultPreindustrial = config.contentPackId === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && config.contentPackVersion === '1.1.0'
-      return { ...state, config: { ...config, organizationModelVersion: 4, ...(isLegacyDefaultPreindustrial ? { contentPackVersion: resolved.pack.manifest.version, contentPackChecksum: resolved.checksum, contentPackDependencies: resolved.dependencies } : {}) }, organizations: organizations.map((entry) => { const organization = requiredObject(entry, 'Schema-46 organization is invalid'); return { ...organization } }) }
+      return { ...state, config: { ...config, organizationModelVersion: 4, organizationAssetReputationModelVersion: 0, ...(isLegacyDefaultPreindustrial ? { contentPackVersion: resolved.pack.manifest.version, contentPackChecksum: resolved.checksum, contentPackDependencies: resolved.dependencies } : {}) }, organizations: organizations.map((entry) => { const organization = requiredObject(entry, 'Schema-46 organization is invalid'); return { ...organization } }) }
     },
   }],
 ])
