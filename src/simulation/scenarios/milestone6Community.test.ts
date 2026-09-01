@@ -16,6 +16,8 @@ import { createSnapshot } from '../serialization/snapshot'
 import { HOUSEHOLD_RELOCATION_STREAM } from '../households/relocation'
 import { FICTIONAL_PATHOGEN_STREAM } from '../health/model'
 import { LIFE_CYCLE_STREAM } from '../lifecycle/model'
+import { ORGANIZATION_LIFECYCLE_STREAM } from '../organizations/lifecycle'
+import { SCHOOL_ATTENDANCE_STREAM } from '../organizations/attendance'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { createDefaultPersonVariableValues } from '../variables/storage'
 
@@ -197,7 +199,7 @@ describe('Milestone 6 authoritative integration', () => {
     const namesAfterOne = (await rngEngine.snapshot()).state.randomStreams.map(({ name }) => name)
     rngEngine.step(999)
     const namesAfterThousand = (await rngEngine.snapshot()).state.randomStreams.map(({ name }) => name)
-    expect(namesAfterThousand).toEqual([...namesAfterOne, HOUSEHOLD_RELOCATION_STREAM, FICTIONAL_PATHOGEN_STREAM, LIFE_CYCLE_STREAM.mortality].sort())
+    expect(namesAfterThousand).toEqual([...namesAfterOne, HOUSEHOLD_RELOCATION_STREAM, FICTIONAL_PATHOGEN_STREAM, LIFE_CYCLE_STREAM.mortality, ORGANIZATION_LIFECYCLE_STREAM, SCHOOL_ATTENDANCE_STREAM].sort())
     expect(namesAfterThousand.some((name) => name.includes('community'))).toBe(false)
   }, 30_000)
 
