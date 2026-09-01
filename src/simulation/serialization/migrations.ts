@@ -127,13 +127,14 @@ export async function migrateSnapshotSchema(value: unknown, targetSchema = SNAPS
     const targetEngineVersion = step.kind === 'behavior-upgrade' ? step.targetEngineVersion : migrated.engineVersion
     if (step.kind === 'data-shape' && targetEngineVersion !== migrated.engineVersion) throw new Error('Data-shape migrations cannot change engine behavior')
     const digest = await stateDigest(state)
+    const original = migrated.migrationProvenance
     const provenanceBase = {
-      sourceSchemaVersion: source.schemaVersion,
-      sourceEngineVersion: source.engineVersion,
-      sourceDigest: source.digest,
+      sourceSchemaVersion: original?.sourceSchemaVersion ?? source.schemaVersion,
+      sourceEngineVersion: original?.sourceEngineVersion ?? source.engineVersion,
+      sourceDigest: original?.sourceDigest ?? source.digest,
       targetSchemaVersion: step.toSchemaVersion,
       targetStateDigest: digest,
-      schemaPath: [...path],
+      schemaPath: [...(original?.schemaPath ?? path.slice(0, -1)), path.at(-1)!],
     }
     const migrationProvenance = {
       ...provenanceBase,
@@ -222,7 +223,8 @@ async function readMigrationProvenance(value: unknown, schemaVersion: number, en
     return { fromSchemaVersion: step.fromSchemaVersion as number, toSchemaVersion: step.toSchemaVersion as number, kind: step.kind as SnapshotMigrationPathStep['kind'] }
   })
   const sourceSchema = schemaFor(provenance.sourceSchemaVersion as number)
-  if (sourceSchema.disposition !== 'migratable' || !sourceSchema.engineVersions.includes(provenance.sourceEngineVersion) || provenance.targetSchemaVersion !== schemaVersion || schemaVersion !== SNAPSHOT_SCHEMA_VERSION || engineVersion !== ENGINE_VERSION || schemaPath.length < 1 || schemaPath[0]?.fromSchemaVersion !== provenance.sourceSchemaVersion || schemaPath.at(-1)?.toSchemaVersion !== schemaVersion || schemaPath.some((step, index) => step.kind !== 'behavior-upgrade' || (index > 0 && schemaPath[index - 1]!.toSchemaVersion !== step.fromSchemaVersion))) throw new Error('Snapshot migration provenance is incompatible')
+  const targetSchema = schemaFor(schemaVersion)
+  if (!sourceSchema.engineVersions.includes(provenance.sourceEngineVersion) || !targetSchema.engineVersions.includes(engineVersion) || provenance.targetSchemaVersion !== schemaVersion || schemaPath.length < 1 || schemaPath[0]?.fromSchemaVersion !== provenance.sourceSchemaVersion || schemaPath.at(-1)?.toSchemaVersion !== schemaVersion || schemaPath.some((step, index) => step.kind !== 'behavior-upgrade' || (index > 0 && schemaPath[index - 1]!.toSchemaVersion !== step.fromSchemaVersion))) throw new Error('Snapshot migration provenance is incompatible')
   const result = { sourceSchemaVersion: provenance.sourceSchemaVersion as number, sourceEngineVersion: provenance.sourceEngineVersion, sourceDigest: provenance.sourceDigest, targetSchemaVersion: provenance.targetSchemaVersion as number, targetStateDigest: provenance.targetStateDigest, schemaPath, targetEnvelopeDigest: provenance.targetEnvelopeDigest }
   const { targetEnvelopeDigest, ...provenanceBase } = result
   if (await migrationProvenanceDigest(schemaVersion, engineVersion, provenanceBase) !== targetEnvelopeDigest) throw new Error('Snapshot migration provenance digest does not match its contents')

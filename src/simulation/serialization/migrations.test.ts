@@ -5,6 +5,7 @@ import { migrateSnapshotSchema, snapshotCompatibilityReport } from './migrations
 import historicalSnapshot from './fixtures/engine-0.45.0-schema-44.json'
 import historicalSettlementSnapshot from './fixtures/engine-0.45.0-schema-44-settlement.json'
 import rejectedHistoricalSnapshot from './fixtures/engine-0.44.0-schema-43.json'
+import schema45Settlement from './fixtures/engine-0.46.0-schema-45-settlement-expected.json'
 import { SimulationEngine } from '../engine/engine'
 
 function historicalFixture(): SnapshotEnvelope {
@@ -25,6 +26,11 @@ describe('snapshot migration registry', () => {
 
   it('rejects the authenticated schema-44 release outside the supported window', async () => {
     await expect(migrateSnapshotSchema(historicalSettlementFixture())).rejects.toThrow('outside the current-plus-prior-two')
+  })
+
+  it('continues a genuine schema-45 envelope carrying historical provenance', async () => {
+    const migrated = await migrateSnapshotSchema(structuredClone(schema45Settlement))
+    expect(migrated).toMatchObject({ schemaVersion: SNAPSHOT_SCHEMA_VERSION, engineVersion: ENGINE_VERSION, migrationProvenance: expect.objectContaining({ sourceSchemaVersion: 44, targetSchemaVersion: SNAPSHOT_SCHEMA_VERSION, schemaPath: [{ fromSchemaVersion: 44, toSchemaVersion: 45, kind: 'behavior-upgrade' }, { fromSchemaVersion: 45, toSchemaVersion: 46, kind: 'behavior-upgrade' }, { fromSchemaVersion: 46, toSchemaVersion: 47, kind: 'behavior-upgrade' }] }) })
   })
 
   it('rejects a corrupted historical fixture before any migration runs', async () => {
