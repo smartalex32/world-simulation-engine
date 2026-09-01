@@ -16,8 +16,27 @@ export interface OrganizationDefinition {
   memberRoleIds: readonly OrganizationMemberRole[]
   sharedRuleIds: readonly string[]
   initialService: { location: 'settlement-anchor'; activityLocation: 'commons'; serviceCapacity: number }
+  /** Omitted definitions never form or alter membership autonomously. */
+  lifecycle?: {
+    cadenceHours: number
+    formation: { enabled: boolean; baseProbabilityPermille: number }
+    membership: {
+      enabled: boolean
+      defaultRoleId: OrganizationMemberRole
+      baseJoinProbabilityPermille: number
+      baseRoleChangeProbabilityPermille: number
+      baseLeaveProbabilityPermille: number
+      roleChangeInterestThresholdPermille: number
+    }
+  }
 }
 export interface OrganizationMember { personId: string; role: OrganizationMemberRole }
+export type OrganizationMembershipChange = 'joined' | 'role-changed' | 'left'
+export type OrganizationLifecycleRejection = 'disabled' | 'insufficient-activity' | 'already-member' | 'no-relationship' | 'no-role' | 'probability' | 'invalid-transition'
+export interface OrganizationLifecycleFactors { activityPermille: number; proximityPermille: number; relationshipPermille: number; interestPermille: number; exposurePermille: number }
+export interface OrganizationFormationTrace { sequence: number; tick: number; kindId: string; candidatePersonIds: string[]; locationCellId: string; baseProbabilityPermille: number; factors: OrganizationLifecycleFactors; finalProbabilityPermille: number; rngStream?: string; randomRollPermille?: number; formed: boolean; rejectionReason?: OrganizationLifecycleRejection; organizationId?: string }
+export interface OrganizationMembershipTrace { sequence: number; tick: number; organizationId: string; personId: string; change: OrganizationMembershipChange; previousRoleId?: string; nextRoleId?: string; baseProbabilityPermille: number; factors: OrganizationLifecycleFactors; finalProbabilityPermille: number; rngStream?: string; randomRollPermille?: number; selected: boolean; rejectionReason?: OrganizationLifecycleRejection }
+export interface OrganizationLifecycleState { nextOrganizationSequence: number; nextTraceSequence: number; latestFormationTraces: OrganizationFormationTrace[]; latestMembershipTraces: OrganizationMembershipTrace[] }
 /** Persistent coordinated group; membership is not a trait, belief, or attitude assignment. */
 export interface OrganizationState {
   id: OrganizationId

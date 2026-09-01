@@ -88,6 +88,7 @@ import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STR
 import { createInitialMarkets, resolveFoodShares, resolveToolExchanges } from '../economy/model'
 import { clearMarkets, createEconomyState, decayGoods, distributeMarketWages, initializeGoods, produceMonthlyGoods } from '../economy/stockFlow'
 import { createInitialSchools } from '../organizations/model'
+import { advanceOrganizationLifecycle, ORGANIZATION_LIFECYCLE_STREAM } from '../organizations/lifecycle'
 import { evaluateSchoolAttendance, SCHOOL_ATTENDANCE, SCHOOL_ATTENDANCE_STREAM, schoolAttendanceTrace, schoolTravelCost } from '../organizations/attendance'
 import { createCulturalState, transmitCulture } from '../culture/model'
 import { acquireLanguage, initialLanguage } from '../language/model'
@@ -284,6 +285,7 @@ export class SimulationEngine {
       households: generatedPopulation.households,
       markets,
       organizations,
+      organizationLifecycle: { nextOrganizationSequence: 1, nextTraceSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] },
       infrastructure,
       economy,
       governance,
@@ -380,6 +382,7 @@ export class SimulationEngine {
       decisionsAndActions: (context) => { const result = this.runDecisionsAndActions(runtime.pushEvent); context.scratch.decisions = result.decisions; context.scratch.postActionActivityOccupancy = result.occupancy; if (result.decisions.length > 0) runtime.invalidate(['people']); if (result.changedCellIds.length > 0) runtime.invalidate(['locations'], result.changedCellIds) },
       encountersAndMarkets: (context) => { const encounters = this.runEncountersAndMarkets(runtime.pushEvent, context.scratch); if (encounters > 0) runtime.invalidate(['relationships', 'communities']) },
       exposureEnvironmentAndHealth: (context) => { this.runExposureEnvironmentAndHealth(runtime.pushEvent, context.scratch); runtime.invalidate(['people', 'communities']) },
+      organizationLifecycle: () => { const outcome = this.runOrganizationLifecycle(runtime.pushEvent); if (outcome > 0) runtime.invalidate(['locations']) },
       monthlyProcessing: () => { this.runMonthlyProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds, runtime.relocationDiagnostics); runtime.invalidate(['people', 'locations', 'communities']) },
       annualProcessing: () => { this.runAnnualProcessing(runtime.pushEvent, runtime.changeCategories, runtime.changedCellIds); runtime.invalidate(['people', 'relationships']) },
       dailyProcessing: () => { this.runDailyProcessing(runtime.pushEvent, runtime.statistics); runtime.invalidate(['people', 'communities']) },
@@ -484,6 +487,56 @@ export class SimulationEngine {
     this.recordCommunityPersonHours()
     this.recordCommunityDevelopmentExposure()
     this.accumulateDevelopmentExposure()
+  }
+
+  private runOrganizationLifecycle(pushEvent: (event: SimulationEvent) => void): number {
+    const lifecycle = this.state.organizationLifecycle!
+    const outcome = advanceOrganizationLifecycle({
+      tick: this.state.tick,
+      definitions: this.contentPackRuntime.organizationDefinitions,
+      people: this.state.people,
+      organizations: this.state.organizations,
+      relationships: this.state.relationships,
+      lifecycle,
+      formationScopeByActivityLocation: new Map([
+        ...this.state.communities.flatMap((community) => community.catchment.cellIds.map((cellId) => [`activity.commons.${cellId}`, `community:${community.catchment.id}`] as const)),
+        ...this.state.world.settlements.flatMap((settlement) => {
+          const cellIds = settlement.regional?.extentCellIds ?? [settlement.anchorCellId]
+          return cellIds.map((cellId) => [`activity.commons.${cellId}`, `settlement:${settlement.id}`] as const)
+        }),
+      ]),
+      nextPermille: () => this.random.stream(ORGANIZATION_LIFECYCLE_STREAM).nextInt(1000),
+    })
+    for (const trace of outcome.formationTraces) {
+      if (!trace.formed || !trace.organizationId || trace.randomRollPermille === undefined) continue
+      pushEvent(this.event('ORGANIZATION_FORMED', {
+        traceSequence: trace.sequence,
+        organizationId: trace.organizationId,
+        kindId: trace.kindId,
+        founderPersonIds: trace.candidatePersonIds.join(','),
+        locationCellId: trace.locationCellId,
+        baseProbabilityPermille: trace.baseProbabilityPermille,
+        ...trace.factors,
+        probabilityPermille: trace.finalProbabilityPermille,
+        randomRollPermille: trace.randomRollPermille,
+      }))
+    }
+    for (const trace of outcome.membershipTraces) {
+      if (!trace.selected || trace.randomRollPermille === undefined) continue
+      pushEvent(this.event('ORGANIZATION_MEMBERSHIP_CHANGED', {
+        traceSequence: trace.sequence,
+        personId: trace.personId,
+        organizationId: trace.organizationId,
+        change: trace.change,
+        previousRoleId: trace.previousRoleId,
+        nextRoleId: trace.nextRoleId,
+        baseProbabilityPermille: trace.baseProbabilityPermille,
+        ...trace.factors,
+        probabilityPermille: trace.finalProbabilityPermille,
+        randomRollPermille: trace.randomRollPermille,
+      }))
+    }
+    return outcome.formations + outcome.memberships
   }
 
   private runMonthlyProcessing(pushEvent: (event: SimulationEvent) => void, changeCategories: Set<AuthoritativeChangeSet['categories'][number]>, changedCellIds: Set<string>, relocationDiagnostics: { indexBuilds: number; pathExpansions: number }): void {
@@ -654,6 +707,7 @@ export class SimulationEngine {
       markets: this.state.markets,
       economy: this.state.economy,
       organizations: this.state.organizations,
+      organizationLifecycle: this.state.organizationLifecycle,
       infrastructure: this.state.infrastructure,
       governance: this.state.governance,
       disputes: this.state.disputes,

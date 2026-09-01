@@ -80,6 +80,7 @@ export interface SimulationPhaseOperations {
   decisionsAndActions(context: SimulationTickContext): void
   encountersAndMarkets(context: SimulationTickContext): void
   exposureEnvironmentAndHealth(context: SimulationTickContext): void
+  organizationLifecycle(context: SimulationTickContext): void
   monthlyProcessing(context: SimulationTickContext): void
   annualProcessing(context: SimulationTickContext): void
   dailyProcessing(context: SimulationTickContext): void
@@ -97,6 +98,10 @@ const SIMULATION_TICK_PHASES = Object.freeze([
   defineSimulationPhase({ id: 'journeys', cadence: 'hourly', rngStreams: [], run: (context) => context.operations.journeys(context) }),
   defineSimulationPhase({ id: 'activities-and-school', cadence: 'hourly', rngStreams: ['organization.school.attendance'], run: (context) => context.operations.activitiesAndSchool(context) }),
   defineSimulationPhase({ id: 'decisions-and-actions', cadence: 'hourly', rngStreams: ['actions', 'innovation.practical-experiment', 'content-pack.<pack>.<stream>'], run: (context) => context.operations.decisionsAndActions(context) }),
+  // Lifecycle evaluates the activity chosen this hour and relationship/exposure
+  // evidence completed before this boundary. Same-tick encounters become input
+  // at the next cadence instead of retroactively changing the opportunity.
+  defineSimulationPhase({ id: 'organization-lifecycle', cadence: 'daily', rngStreams: ['organization.lifecycle'], run: (context) => context.operations.organizationLifecycle(context) }),
   defineSimulationPhase({ id: 'encounters-and-markets', cadence: 'hourly', rngStreams: ['encounters'], run: (context) => context.operations.encountersAndMarkets(context) }),
   defineSimulationPhase({ id: 'exposure-environment-and-health', cadence: 'hourly', rngStreams: ['health.fictional-pathogen'], run: (context) => context.operations.exposureEnvironmentAndHealth(context) }),
   defineSimulationPhase({ id: 'monthly-processing', cadence: 'monthly', rngStreams: ['household.relocation'], run: (context) => context.operations.monthlyProcessing(context) }),

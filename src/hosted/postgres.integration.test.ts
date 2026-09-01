@@ -10,6 +10,7 @@ import { SharedWorldService, type SharedWorldServiceState } from './sharedWorlds
 import { HOSTED_JOB_VERSION, type HostedRunRecord, type HostedSimulationJob } from './types'
 import historicalSnapshot from '../simulation/serialization/fixtures/engine-0.45.0-schema-44-settlement.json'
 import { SimulationEngine } from '../simulation/engine/engine'
+import { ENGINE_VERSION, SNAPSHOT_SCHEMA_VERSION } from '../simulation/domain/types'
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const testIfDatabase = databaseUrl ? describe : describe.skip
@@ -111,7 +112,7 @@ testIfDatabase('PostgreSQL hosted persistence integration', () => {
     expect(await store.migrateStoredSnapshots()).toBe(1)
     expect(await store.migrateStoredSnapshots()).toBe(0)
     const restored = await store.load(record.runId)
-    expect(restored?.snapshot).toMatchObject({ schemaVersion: 45, engineVersion: '0.46.0', migrationProvenance: { sourceSchemaVersion: 44, sourceEngineVersion: '0.45.0', sourceDigest: historicalSnapshot.digest } })
+    expect(restored?.snapshot).toMatchObject({ schemaVersion: SNAPSHOT_SCHEMA_VERSION, engineVersion: ENGINE_VERSION, migrationProvenance: { sourceSchemaVersion: 44, sourceEngineVersion: '0.45.0', sourceDigest: historicalSnapshot.digest } })
     const backup = await store.pool.query<{ source_schema_version: number; source_engine_version: string; source_digest: string }>('SELECT source_schema_version, source_engine_version, source_digest FROM hosted_snapshot_migration_backups WHERE run_id = $1', [record.runId])
     expect(backup.rows).toEqual([{ source_schema_version: 44, source_engine_version: '0.45.0', source_digest: historicalSnapshot.digest }])
   })

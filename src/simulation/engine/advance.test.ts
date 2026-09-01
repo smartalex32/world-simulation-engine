@@ -18,6 +18,7 @@ describe('projection-free engine advance', () => {
       ['journeys', 'hourly'],
       ['activities-and-school', 'hourly'],
       ['decisions-and-actions', 'hourly'],
+      ['organization-lifecycle', 'daily'],
       ['encounters-and-markets', 'hourly'],
       ['exposure-environment-and-health', 'hourly'],
       ['monthly-processing', 'monthly'],
@@ -28,8 +29,8 @@ describe('projection-free engine advance', () => {
     expect(TICK_PHASE_MANIFEST.find((phase) => phase.id === 'encounters-and-markets')?.rngStreams).toContain('encounters')
     expect(TICK_PHASE_MANIFEST.map((phase) => phase.rngStreams)).toEqual([
       ['life-cycle.mortality'], [], [], ['organization.school.attendance'],
-      ['actions', 'innovation.practical-experiment', 'content-pack.<pack>.<stream>'], ['encounters'],
-      ['health.fictional-pathogen'], ['household.relocation'],
+      ['actions', 'innovation.practical-experiment', 'content-pack.<pack>.<stream>'], ['organization.lifecycle'],
+      ['encounters'], ['health.fictional-pathogen'], ['household.relocation'],
       ['life-cycle.partnership', 'life-cycle.birth', 'life-cycle.inheritance'], [],
     ])
     expect(Object.isFrozen(TICK_PHASE_MANIFEST)).toBe(true)
@@ -38,45 +39,45 @@ describe('projection-free engine advance', () => {
 
   it('records execution from the same static tuple at hourly and daily cadence', () => {
     const hourly = SimulationEngine.create('phase-trace-hourly').advance(1, { clockEventHours: false })
-    expect(hourly.diagnostics.phaseCounts).toEqual(Object.fromEntries(TICK_PHASE_MANIFEST.slice(0, 7).map((phase) => [phase.id, 1])))
+    const hourlyPhases = TICK_PHASE_MANIFEST.filter((phase) => phase.cadence === 'hourly')
+    expect(hourly.diagnostics.phaseCounts).toEqual(Object.fromEntries(hourlyPhases.map((phase) => [phase.id, 1])))
     const daily = SimulationEngine.create('phase-trace-daily').advance(24, { clockEventHours: false })
-    expect(daily.diagnostics.phaseCounts).toMatchObject(Object.fromEntries(TICK_PHASE_MANIFEST.slice(0, 7).map((phase) => [phase.id, 24])))
+    expect(daily.diagnostics.phaseCounts).toMatchObject(Object.fromEntries(hourlyPhases.map((phase) => [phase.id, 24])))
+    expect(daily.diagnostics.phaseCounts['organization-lifecycle']).toBe(1)
     expect(daily.diagnostics.phaseCounts['daily-processing-and-statistics']).toBe(1)
   })
 
   it.each([
     {
       boundary: 1,
-      digest: 'ff2fa0ba32242c1168b2a65e7a412b5f00640f67017e533afcc923183522a243',
+      digest: 'ffa7c5e3a5489b3d079312817a2915c7ec695a63c037489a0a86c68a6a27374d',
       randomStreams: '29ecdd00e858eb8b6361ff9e6b5143ddbaf84099931a4758889f8bb6e0aabb97',
       events: '367d7ed0a630c026450f0445c4dfa403a5d5229bede3aa60fed478664c06f0b9',
       statistics: '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
     },
     {
       boundary: 24,
-      digest: '4e9a78c9676f481f42e5a5dc04ea69d9a719caeb426492ca9b8f490b9688a6b0',
+      digest: 'f46351186f46c8c22c92b9d56d5fe6261de34917f0620c0345ba918ef6face0e',
       randomStreams: '257981ba63a7fce051914fba6fe6d3bdaa39cea9cb6f199b85fc63558345e39e',
       events: 'b3eb4651adec5951caad3e9dfe1396d2447cb84e29642f76213d0d077a5040c4',
       statistics: 'edd18712be2c3dc2577687f858cb2b5020db73f7a1edbaa11b8fcb7f99292016',
     },
     {
       boundary: 720,
-      digest: '0fd95c309ca89016a54da1df7d0ad4e452a6708e4f1dff21f1d15edf7a14e765',
+      digest: '1b263b0e2c074f477ebe05a1575e8e034d009f833e1d5603fd3ac3fc342c9447',
       randomStreams: 'd19bf8d30008e3d6fa225ec73d9fe37065f1a21bf6af0abf37841eb7700e3aae',
       events: '989c4d2502b6fc9677cf100b57ce157cdca587763bd317def131f7fd52ce5208',
       statistics: '962f2ab39e328128004c7f1740a294efbe9f10f4d1dedadf0e3b17ec1b2562d7',
     },
     {
       boundary: 8760,
-      digest: '5fef9aa925d88335420e36faf75ac4df4b3a8820e4edcba9d987a402bf722eda',
+      digest: '9d608dfac99875bc4c09017f7f7402b928d128998dd571054a7e38772e052507',
       randomStreams: '09c2c5bed0559fab768a6c03ed7782fd41f6776fed6e3b900a399911bca730bc',
       events: 'b54854f144a53a66f61815129511976e555da3af186380adf356661d11979676',
       statistics: '3093c47dcb6e1bbe637a9ab6367cd1732857425423c2285fe1b5e48038d8e35d',
     },
-  ])('matches the pre-pipeline canonical contract at the $boundary-hour boundary', async ({ boundary, digest, randomStreams, events, statistics }) => {
-    // RNG, event, and statistic digests remain the pre-pipeline contract. The
-    // state digest intentionally reflects the immutable default-pack 1.1.0
-    // reference; execution behavior and draw order remain unchanged.
+  ])('matches the versioned canonical contract at the $boundary-hour boundary', async ({ boundary, digest, randomStreams, events, statistics }) => {
+    // Fixed digests record the versioned lifecycle contract.
     const engine = createBoundaryEngine(`phase-compat-${boundary}`)
     const result = engine.advance(boundary, { clockEventHours: false })
     const snapshot = await engine.snapshot()
@@ -86,13 +87,13 @@ describe('projection-free engine advance', () => {
     expect(await canonicalDigest(result.statistics)).toBe(statistics)
   }, 60_000)
 
-  it('matches the pre-pipeline full-population interaction contract', async () => {
+  it('matches the versioned full-population interaction contract', async () => {
     const engine = SimulationEngine.create('phase-compat-full')
     const result = engine.advance(48, { clockEventHours: false })
     const snapshot = await engine.snapshot()
-    expect(snapshot.digest).toBe('18801ba09d1c9844cc7aeab844df203de1c5a40f3e8f479567d0e11e7aab8a97')
-    expect(await canonicalDigest(snapshot.state.randomStreams)).toBe('65d2460040dd8f2b8360aa3c4be0d12a0e2ba117b278cfdc34cf2fd69e0015a9')
-    expect(await canonicalDigest(result.events)).toBe('021ea3c19cb0e4244cbabc7bd0a12bd1c9698e38c48f44846a8522ffbc44dadd')
+    expect(snapshot.digest).toBe('d374959b3a8306bbf3b0486860fc614d14d839f58e7f293fab4775fe151bb29c')
+    expect(await canonicalDigest(snapshot.state.randomStreams)).toBe('34771d9e3fbb2bca8a5a646dc073e9a6623aade43bfe34bb17d06be9f14ec597')
+    expect(await canonicalDigest(result.events)).toBe('6d079c128d3f03107aa5007e5201e0c4c70836143ca114561fb64046d1e261d3')
     expect(await canonicalDigest(result.statistics)).toBe('a58dda13775abebd3a99e0d76e92cb1f5a894c668c02c55415aa4bc18312f636')
   })
 

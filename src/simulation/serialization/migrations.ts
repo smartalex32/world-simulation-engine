@@ -1,5 +1,6 @@
 import { ENGINE_VERSION, SNAPSHOT_SCHEMA_VERSION, type SnapshotEnvelope, type SnapshotMigrationPathStep } from '../domain/types'
 import { canonicalDigest, stateDigest } from './digest'
+import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver } from '../../contentPacks'
 
 type SnapshotStateLike = Record<string, unknown>
 
@@ -17,6 +18,7 @@ interface SupportedSchema extends SnapshotSchemaCompatibility { readState(value:
 export const SUPPORTED_SNAPSHOT_SCHEMAS: readonly SnapshotSchemaCompatibility[] = Object.freeze([
   Object.freeze({ schemaVersion: 43, engineVersions: Object.freeze(['0.44.0']), disposition: 'rejected', reason: 'Engine 0.44.0 used locale-dependent ordering and cannot be resumed by a stable-order executor.' }),
   Object.freeze({ schemaVersion: 44, engineVersions: Object.freeze(['0.45.0']), disposition: 'migratable', reason: 'Engine 0.45.0 state has stable ordering and can be upgraded through the audited schema-45 boundary.' }),
+  Object.freeze({ schemaVersion: 45, engineVersions: Object.freeze(['0.46.0']), disposition: 'migratable', reason: 'Organization lifecycle state and its fixed RNG phase require an explicit schema-46 behavior upgrade.' }),
   Object.freeze({ schemaVersion: SNAPSHOT_SCHEMA_VERSION, engineVersions: Object.freeze([ENGINE_VERSION]), disposition: 'directly-loadable', reason: 'Current envelope and behavioral contract.' }),
 ])
 
@@ -24,6 +26,7 @@ const supportedSchemas: readonly SupportedSchema[] = [
   { ...SUPPORTED_SNAPSHOT_SCHEMAS[0]!, readState: readSchema43State },
   { ...SUPPORTED_SNAPSHOT_SCHEMAS[1]!, readState: readSchema44State },
   { ...SUPPORTED_SNAPSHOT_SCHEMAS[2]!, readState: readSchema45State },
+  { ...SUPPORTED_SNAPSHOT_SCHEMAS[3]!, readState: readSchema46State },
 ]
 
 interface MigrationStep {
@@ -46,7 +49,7 @@ const migrationSteps = new Map<number, MigrationStep>([
     toSchemaVersion: 45,
     kind: 'behavior-upgrade',
     sourceEngineVersion: '0.45.0',
-    targetEngineVersion: ENGINE_VERSION,
+    targetEngineVersion: '0.46.0',
     upgrade: (snapshot) => {
       const config = requiredObject(snapshot.state.config, 'Schema-44 state configuration is invalid')
       const worldCreation = requiredObject(config.worldCreation, 'Schema-44 world creation request is invalid')
@@ -64,6 +67,24 @@ const migrationSteps = new Map<number, MigrationStep>([
             }),
           },
         },
+      }
+    },
+  }],
+  [45, {
+    fromSchemaVersion: 45, toSchemaVersion: 46, kind: 'behavior-upgrade', sourceEngineVersion: '0.46.0', targetEngineVersion: ENGINE_VERSION,
+    upgrade: (snapshot) => {
+      const config = requiredObject(snapshot.state.config, 'Schema-45 state configuration is invalid')
+      const resolved = createContentPackResolver([DEFAULT_PREINDUSTRIAL_PACK]).resolve(DEFAULT_PREINDUSTRIAL_PACK.manifest.id, DEFAULT_PREINDUSTRIAL_PACK.manifest.version)
+      const isDefaultPreindustrial = config.contentPackId === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && config.contentPackVersion === '1.1.0'
+      return {
+        ...snapshot.state,
+        config: {
+          ...config,
+          contentPackModelVersion: 3,
+          organizationModelVersion: 3,
+          ...(isDefaultPreindustrial ? { contentPackVersion: resolved.pack.manifest.version, contentPackChecksum: resolved.checksum, contentPackDependencies: resolved.dependencies } : {}),
+        },
+        organizationLifecycle: { nextOrganizationSequence: 1, nextTraceSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] },
       }
     },
   }],
@@ -152,11 +173,18 @@ function readSchema45State(value: unknown): SnapshotStateLike {
   requiredObject(state.world, 'Schema-45 snapshot world is invalid')
   return structuredClone(state)
 }
+function readSchema46State(value: unknown): SnapshotStateLike {
+  const state = requiredObject(value, 'Schema-46 snapshot state is invalid')
+  requiredObject(state.config, 'Schema-46 snapshot configuration is invalid')
+  requiredObject(state.world, 'Schema-46 snapshot world is invalid')
+  return structuredClone(state)
+}
 function readHistoricalState(value: unknown, schemaVersion: number): SnapshotStateLike {
   const state = requiredObject(value, `Schema-${schemaVersion} snapshot state is invalid`)
   const config = requiredObject(state.config, `Schema-${schemaVersion} snapshot configuration is invalid`)
-  const expectedVersions: Readonly<Record<string, number>> = { worldGeneratorVersion: 1, contentPackModelVersion: 2, variableRegistryVersion: 2, influenceRegistryVersion: 1, householdModelVersion: 4, activityRegistryVersion: 1, developmentRegistryVersion: 2, communityRegistryVersion: 1, environmentModelVersion: 3, lifeCycleModelVersion: 1, economyModelVersion: 3, organizationModelVersion: 2, cultureModelVersion: 1, languageModelVersion: 1, governanceModelVersion: 2, conflictModelVersion: 2, knowledgeModelVersion: 1, healthModelVersion: 2, innovationModelVersion: 1, infrastructureModelVersion: 1, cohortModelVersion: 3 }
+  const expectedVersions: Readonly<Record<string, number>> = { worldGeneratorVersion: 1, contentPackModelVersion: 2, variableRegistryVersion: 2, influenceRegistryVersion: 1, householdModelVersion: 4, activityRegistryVersion: 1, developmentRegistryVersion: 2, communityRegistryVersion: 1, environmentModelVersion: 3, lifeCycleModelVersion: 1, economyModelVersion: 3, cultureModelVersion: 1, languageModelVersion: 1, governanceModelVersion: 2, conflictModelVersion: 2, knowledgeModelVersion: 1, healthModelVersion: 2, innovationModelVersion: 1, infrastructureModelVersion: 1, cohortModelVersion: 3 }
   for (const [name, expected] of Object.entries(expectedVersions)) if (config[name] !== expected) throw new Error(`Schema-${schemaVersion} snapshot has incompatible ${name}`)
+  if (config.organizationModelVersion !== 2) throw new Error(`Schema-${schemaVersion} snapshot has incompatible organizationModelVersion`)
   if (config.baseTickHours !== 1 || !Number.isSafeInteger(state.tick) || (state.tick as number) < 0) throw new Error(`Schema-${schemaVersion} snapshot clock is invalid`)
   const world = requiredObject(state.world, `Schema-${schemaVersion} snapshot world is invalid`)
   requiredObject(world.grid, `Schema-${schemaVersion} snapshot grid is invalid`)
@@ -175,7 +203,7 @@ async function readMigrationProvenance(value: unknown, schemaVersion: number, en
     return { fromSchemaVersion: step.fromSchemaVersion as number, toSchemaVersion: step.toSchemaVersion as number, kind: step.kind as SnapshotMigrationPathStep['kind'] }
   })
   const sourceSchema = schemaFor(provenance.sourceSchemaVersion as number)
-  if (sourceSchema.disposition !== 'migratable' || !sourceSchema.engineVersions.includes(provenance.sourceEngineVersion) || provenance.targetSchemaVersion !== schemaVersion || schemaVersion !== SNAPSHOT_SCHEMA_VERSION || engineVersion !== ENGINE_VERSION || schemaPath.length !== 1 || schemaPath[0]?.fromSchemaVersion !== provenance.sourceSchemaVersion || schemaPath[0]?.toSchemaVersion !== schemaVersion || schemaPath[0]?.kind !== 'behavior-upgrade') throw new Error('Snapshot migration provenance is incompatible')
+  if (sourceSchema.disposition !== 'migratable' || !sourceSchema.engineVersions.includes(provenance.sourceEngineVersion) || provenance.targetSchemaVersion !== schemaVersion || schemaVersion !== SNAPSHOT_SCHEMA_VERSION || engineVersion !== ENGINE_VERSION || schemaPath.length < 1 || schemaPath[0]?.fromSchemaVersion !== provenance.sourceSchemaVersion || schemaPath.at(-1)?.toSchemaVersion !== schemaVersion || schemaPath.some((step, index) => step.kind !== 'behavior-upgrade' || (index > 0 && schemaPath[index - 1]!.toSchemaVersion !== step.fromSchemaVersion))) throw new Error('Snapshot migration provenance is incompatible')
   const result = { sourceSchemaVersion: provenance.sourceSchemaVersion as number, sourceEngineVersion: provenance.sourceEngineVersion, sourceDigest: provenance.sourceDigest, targetSchemaVersion: provenance.targetSchemaVersion as number, targetStateDigest: provenance.targetStateDigest, schemaPath, targetEnvelopeDigest: provenance.targetEnvelopeDigest }
   const { targetEnvelopeDigest, ...provenanceBase } = result
   if (await migrationProvenanceDigest(schemaVersion, engineVersion, provenanceBase) !== targetEnvelopeDigest) throw new Error('Snapshot migration provenance digest does not match its contents')
