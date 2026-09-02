@@ -83,6 +83,8 @@ export interface RunConfiguration {
   lifeCycleModelVersion: number
   economyModelVersion?: number
   organizationModelVersion?: number
+  /** 0 preserves pre-0.48 pack semantics; 1 interprets explicit asset/evidence opt-ins. */
+  organizationAssetReputationModelVersion?: number
   cultureModelVersion?: number
   languageModelVersion?: number
   governanceModelVersion?: number

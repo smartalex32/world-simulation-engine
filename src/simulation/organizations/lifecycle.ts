@@ -12,6 +12,7 @@ import type {
   OrganizationMembershipTrace,
   OrganizationState,
 } from './types'
+import { createOrganizationAssetAccount, createOrganizationReputationLedger } from './ledger'
 
 export const ORGANIZATION_LIFECYCLE_STREAM = 'organization.lifecycle' as const
 export const ORGANIZATION_LIFECYCLE_TRACE_LIMIT = 64
@@ -37,6 +38,8 @@ interface LifecycleInput {
   nextPermille: () => number
   /** Engine-resolved authoritative geographic scope for each commons activity. */
   formationScopeByActivityLocation?: ReadonlyMap<string, string>
+  /** Legacy snapshots preserve pre-account/evidence pack semantics. */
+  assetAndReputationEnabled?: boolean
 }
 
 /**
@@ -128,6 +131,8 @@ export function advanceOrganizationLifecycle(input: LifecycleInput): Organizatio
 
       const { id, sequence } = nextOrganizationId(definition.id, input.lifecycle, organizationIds)
       const members = pair.map((person) => ({ personId: person.id, role: lifecycle.membership.defaultRoleId }))
+      const assets = input.assetAndReputationEnabled ? createOrganizationAssetAccount(definition) : undefined
+      const reputationLedger = input.assetAndReputationEnabled ? createOrganizationReputationLedger(definition) : undefined
       const organization: OrganizationState = {
         id,
         name: `${definition.name} ${sequence}`,
@@ -137,6 +142,8 @@ export function advanceOrganizationLifecycle(input: LifecycleInput): Organizatio
         members,
         serviceCapacity: definition.initialService.serviceCapacity,
         sharedRuleIds: [...definition.sharedRuleIds],
+        ...(assets ? { assets } : {}),
+        ...(reputationLedger ? { reputationLedger } : {}),
       }
       input.organizations.push(organization)
       organizationIds.add(id)

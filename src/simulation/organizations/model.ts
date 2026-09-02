@@ -1,6 +1,7 @@
 import type { OrganizationState, PersonState } from '../domain/types'
 import { compareStableText } from '../../shared/stableOrder'
 import type { OrganizationDefinition } from './types'
+import { createOrganizationAssetAccount, createOrganizationReputationLedger } from './ledger'
 
 /** First generic organization slice: deterministic local schools, without belief assignment. */
 export function createInitialSchools(people: readonly PersonState[], anchorCellIds: readonly string[], definition: OrganizationDefinition): OrganizationState[] {
@@ -9,7 +10,9 @@ export function createInitialSchools(people: readonly PersonState[], anchorCellI
     const id = `organization.school.${String(index + 1).padStart(3, '0')}`
     const members = people.filter((person) => person.ageYears < 18 && nearestAnchor(person.homeCellId, anchors) === cellId)
       .map((person) => ({ personId: person.id, role: 'learner' as const }))
-    return { id, name: `School ${index + 1}`, kind: definition.id, locationCellId: cellId, activityLocationId: `activity.commons.${cellId}`, members, serviceCapacity: definition.initialService.serviceCapacity, sharedRuleIds: [...definition.sharedRuleIds] }
+    const assets = createOrganizationAssetAccount(definition)
+    const reputationLedger = createOrganizationReputationLedger(definition)
+    return { id, name: `School ${index + 1}`, kind: definition.id, locationCellId: cellId, activityLocationId: `activity.commons.${cellId}`, members, serviceCapacity: definition.initialService.serviceCapacity, sharedRuleIds: [...definition.sharedRuleIds], ...(assets ? { assets } : {}), ...(reputationLedger ? { reputationLedger } : {}) }
   })
   return schools
 }

@@ -46,6 +46,8 @@ export interface SimulationEventPayloadMap {
   PERSON_MISSED_SCHOOL: PersonPayload & { schoolId: string; reason: string; travelCost?: number | null; probabilityPermille?: number; randomRollPermille: number }
   ORGANIZATION_FORMED: { traceSequence: number; organizationId: string; kindId: string; founderPersonIds: string; locationCellId: string; baseProbabilityPermille: number; activityPermille: number; proximityPermille: number; relationshipPermille: number; interestPermille: number; exposurePermille: number; probabilityPermille: number; randomRollPermille: number }
   ORGANIZATION_MEMBERSHIP_CHANGED: PersonPayload & { traceSequence: number; organizationId: string; change: string; previousRoleId?: string; nextRoleId?: string; baseProbabilityPermille: number; activityPermille: number; proximityPermille: number; relationshipPermille: number; interestPermille: number; exposurePermille: number; probabilityPermille: number; randomRollPermille: number }
+  ORGANIZATION_ASSET_TRANSFERRED: { traceSequence: number; organizationId: string; fromKind: string; fromId: string; toKind: string; toId: string; asset: string; goodId?: string; amount: number; reason: string }
+  ORGANIZATION_REPUTATION_OBSERVED: { observationSequence: number; organizationId: string; observerKind: string; observerId: string; source: string; causalEventId: string; previousValuePermille: number; deltaPermille: number; valuePermille: number }
   PERSON_EXPLORED: PersonActionPayload
   PERSON_RESTED: PersonActionPayload
   PERSON_SOCIALIZED: PersonActionPayload
@@ -141,6 +143,8 @@ export const EVENT_CATALOG = {
   PERSON_MISSED_SCHOOL: entry('PERSON_MISSED_SCHOOL', 'bounded', [{ ...person, schoolId: 'string', reason: 'string' }], 100),
   ORGANIZATION_FORMED: entry('ORGANIZATION_FORMED', 'durable', [{ traceSequence: 'number', organizationId: 'string', kindId: 'string', locationCellId: 'string', probabilityPermille: 'number', randomRollPermille: 'number' }]),
   ORGANIZATION_MEMBERSHIP_CHANGED: entry('ORGANIZATION_MEMBERSHIP_CHANGED', 'durable', [{ ...person, traceSequence: 'number', organizationId: 'string', change: 'string', probabilityPermille: 'number', randomRollPermille: 'number' }]),
+  ORGANIZATION_ASSET_TRANSFERRED: entry('ORGANIZATION_ASSET_TRANSFERRED', 'durable', [{ traceSequence: 'number', organizationId: 'string', fromKind: 'string', fromId: 'string', toKind: 'string', toId: 'string', asset: 'string', amount: 'number', reason: 'string' }]),
+  ORGANIZATION_REPUTATION_OBSERVED: entry('ORGANIZATION_REPUTATION_OBSERVED', 'durable', [{ observationSequence: 'number', organizationId: 'string', observerKind: 'string', observerId: 'string', source: 'string', causalEventId: 'string', previousValuePermille: 'number', deltaPermille: 'number', valuePermille: 'number' }]),
   PERSON_EXPLORED: entry('PERSON_EXPLORED', 'bounded', [action], 100), PERSON_RESTED: entry('PERSON_RESTED', 'sampled', [action], 20), PERSON_SOCIALIZED: entry('PERSON_SOCIALIZED', 'sampled', [action], 20),
   PERSON_ACTIVITY_CHANGED: entry('PERSON_ACTIVITY_CHANGED', 'sampled', [{ ...person, previousKind: 'string', currentKind: 'string' }], 20),
   PERSON_AGED: entry('PERSON_AGED', 'durable', [{ ...person, ageYears: 'number' }]),

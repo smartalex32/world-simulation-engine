@@ -74,6 +74,15 @@ describe('organization lifecycle', () => {
     expect(lifecycle.nextTraceSequence).toBe(2)
   })
 
+  it('preserves legacy lifecycle formation semantics without initializing future accounts or reputation', () => {
+    const legacyDefinition: OrganizationDefinition = { ...definition, assets: { initialCurrencyUnits: 7, initialGoods: { 'good.food': 2 } }, reputation: { enabled: true } }
+    const organizations: OrganizationState[] = []
+    advanceOrganizationLifecycle({ tick: 24, definitions: [legacyDefinition], people: [person('a'), person('b')] as never, organizations, relationships: [{ id: 'a|b' }] as never, lifecycle: lifecycleState(), nextPermille: () => 0, assetAndReputationEnabled: false })
+    expect(organizations[0]).toMatchObject({ id: 'organization.club.000001' })
+    expect(organizations[0]?.assets).toBeUndefined()
+    expect(organizations[0]?.reputationLedger).toBeUndefined()
+  })
+
   it('does not claim an RNG draw for a deterministic precondition rejection', () => {
     let draws = 0
     const result = advanceOrganizationLifecycle({
@@ -225,7 +234,7 @@ describe('organization lifecycle', () => {
       expect(event.payload).toMatchObject({ traceSequence: expect.any(Number), baseProbabilityPermille: expect.any(Number), activityPermille: expect.any(Number), proximityPermille: expect.any(Number), relationshipPermille: expect.any(Number), interestPermille: expect.any(Number), exposurePermille: expect.any(Number), probabilityPermille: expect.any(Number), randomRollPermille: expect.any(Number) })
       if (event.type === 'ORGANIZATION_MEMBERSHIP_CHANGED' && event.payload.change === 'left') expect(event.payload.previousRoleId).toEqual(expect.any(String))
     }
-    expect(snapshot.digest).toBe('f1bfeef97736d821176eb8492ae51f9b5a3aaf02faefa8a0702ef7238f14e009')
+    expect(snapshot.digest).toBe('1603ada5f92f61156020e4adf7f9727540fe8e64922961d02bb4f30568ee775e')
     expect(await canonicalDigest(snapshot.state.randomStreams)).toBe('50632f5cbbe1c091927fe35992d1e4a5b1aa1a11436a72f6ef7efb7b7b3f8507')
     expect(await canonicalDigest(result.events)).toBe('0d37321015b37db507a7cfcac12ff917db16337eb51dfe862d6a691f3c4be4f3')
 

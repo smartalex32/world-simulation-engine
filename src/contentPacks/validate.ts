@@ -42,6 +42,7 @@ export function validateContentPack(value: unknown): ValidatedContentPack {
     for (const [index, good] of pack.economy.goods.entries()) validateEconomyGood(good, `economy.goods[${index}]`, diagnostics)
     const goodIds = new Set(pack.economy.goods.map((good) => good.id))
     for (const [index, recipe] of pack.economy.recipes.entries()) validateEconomyRecipe(recipe, goodIds, `economy.recipes[${index}]`, diagnostics)
+    for (const [index, definition] of pack.organizationDefinitions.entries()) for (const goodId of Object.keys(definition.assets?.initialGoods ?? {})) if (!goodIds.has(goodId)) diagnostics.push({ path: `organizationDefinitions[${index}].assets.initialGoods`, message: `Organization asset references unknown good: ${goodId}` })
   }
   for (const [index, pathogen] of (pack.pathogens ?? []).entries()) validatePathogen(pathogen, `pathogens[${index}]`, diagnostics)
   for (const [index, definition] of (pack.personVariables ?? []).entries()) {
@@ -93,6 +94,8 @@ function validateOrganizationDefinition(definition: OrganizationDefinition, path
   uniqueStableIds(definition?.sharedRuleIds, 'sharedRuleIds', true)
   for (const ruleId of definition?.sharedRuleIds ?? []) if (!ORGANIZATION_SHARED_RULE_IDS.includes(ruleId as never)) diagnostics.push({ path: `${path}.sharedRuleIds`, message: `Unknown organization rule: ${ruleId}` })
   const hasAttendance = definition?.sharedRuleIds?.includes('organization.rule.attendance.v1') ?? false
+  if (definition?.assets && (!Number.isSafeInteger(definition.assets.initialCurrencyUnits) || definition.assets.initialCurrencyUnits < 0 || !definition.assets.initialGoods || Object.entries(definition.assets.initialGoods).some(([id, amount]) => !stableId(id) || !Number.isSafeInteger(amount) || amount < 0))) diagnostics.push({ path: `${path}.assets`, message: 'Organization assets need non-negative integer balances keyed by stable good IDs' })
+  if (definition?.reputation && definition.reputation.enabled !== true && definition.reputation.enabled !== false) diagnostics.push({ path: `${path}.reputation`, message: 'Organization reputation enablement must be explicit' })
   if (definition?.id === 'school' && !definition.memberRoleIds.includes('learner')) diagnostics.push({ path: `${path}.memberRoleIds`, message: 'School definitions must allow the learner role' })
   if (definition?.id === 'school' && !hasAttendance) diagnostics.push({ path: `${path}.sharedRuleIds`, message: 'School definitions must include the attendance rule' })
   if (definition?.id !== 'school' && hasAttendance) diagnostics.push({ path: `${path}.sharedRuleIds`, message: 'The attendance rule is reserved for school definitions' })

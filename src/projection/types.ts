@@ -2,10 +2,10 @@ import type { CommunityAggregationTrace, CommunityEmergentValues, CommunityStruc
 import type { DisputeState, GeographicCell, HouseholdState, LocalGovernanceState, MarketState, OrganizationState, ParentChildLink, PersonState, PopulationPlacementZone, RelationshipState, SettlementScale, SettlementState, Terrain, WorldScale } from '../simulation/domain/types'
 import type { PersonVariableDefinition } from '../simulation/variables/types'
 import type { WorldChunkLayout } from '../simulation/spatial/worldChunks'
-import type { OrganizationMembershipTrace } from '../simulation/organizations/types'
+import type { OrganizationAssetTransferTrace, OrganizationMembershipTrace, OrganizationReputationCurrent, OrganizationReputationObservation } from '../simulation/organizations/types'
 
 /** Incremented when the bounded worker-to-workbench projection shape changes. */
-export const PROJECTION_PROTOCOL_VERSION = 16
+export const PROJECTION_PROTOCOL_VERSION = 17
 /** Versioned independently so later cohort simulation cannot masquerade as this read-only map aggregation. */
 export const POPULATION_FIDELITY_VERSION = 1
 export const PROJECTION_CHUNK_SIZE = 32
@@ -203,7 +203,7 @@ export interface ProjectedSettlementLink { id: string; fromSettlementId: string;
 /** Read-only service evidence from physical markets, schools, and roads. */
 export interface ProjectedSettlementService { settlementId: string; marketCount: number; schoolCount: number; schoolCapacity: number; roadCellCount: number; infrastructureCapacity: number; infrastructureConditionPermille: number; disruptedAssetCount: number }
 /** Existing explicit group evidence; unavailable social/economic attributes are not inferred. */
-export interface ProjectedOrganizationProfile { id: string; name: string; kind: OrganizationState['kind']; definitionName: string; purposeIds: string[]; allowedMemberRoleIds: string[]; locationCellId: string; goal: 'education' | 'unspecified'; memberCount: number; roleCounts: Record<string, number>; serviceCapacity: number; sharedRuleIds: string[]; lifecycleStatus: 'disabled' | 'formation-enabled' | 'membership-only'; latestMembershipEvidence?: OrganizationMembershipTrace; internalRelationshipCount: number; internalAverageFamiliarity: number; reputationStatus: 'not-measured'; ownedResourcesStatus: 'not-modeled' }
+export interface ProjectedOrganizationProfile { id: string; name: string; kind: OrganizationState['kind']; definitionName: string; purposeIds: string[]; allowedMemberRoleIds: string[]; locationCellId: string; goal: 'education' | 'unspecified'; memberCount: number; roleCounts: Record<string, number>; serviceCapacity: number; sharedRuleIds: string[]; lifecycleStatus: 'disabled' | 'formation-enabled' | 'membership-only'; latestMembershipEvidence?: OrganizationMembershipTrace; internalRelationshipCount: number; internalAverageFamiliarity: number; reputationStatus: 'not-measured' | 'observer-evidence'; ownedResourcesStatus: 'not-modeled' | 'owned-account'; ownedCurrencyUnits?: number; ownedGoods?: Record<string, number>; latestAssetTransferEvidence?: OrganizationAssetTransferTrace[]; latestReputationEvidence?: OrganizationReputationObservation[]; reputationByObserver?: OrganizationReputationCurrent[] }
 /** Read-only local-governance evidence; a catchment is not legal territory or civic membership. */
 export interface ProjectedGovernanceProfile { id: string; communityId: string; catchmentName: string; catchmentCellCount: number; representativeIds: string[]; activeRepresentativeCount: number; councilOrganizationId: string; councilOrganizationStatus: 'recorded' | 'referenced-not-modeled'; legitimacyPermille: number; legitimacyFactors: { id: string; label: string; valuePermille: number }[]; evaluatedLegitimacyPermille: number; serviceAccessPermille: number; contributionFairnessPermille: number; publicGood: LocalGovernanceState['publicGood']; lastUpdatedTick: number; jurisdictionBasis: 'geographic-catchment'; territoryStatus: 'not-modeled'; civicMembershipStatus: 'not-modeled'; cultureAndIdentityStatus: 'separate-not-inferred'; taxationStatus: 'not-modeled'; budgetStatus: 'not-modeled'; lawAndEnforcementStatus: 'not-modeled'; corruptionStatus: 'not-modeled' }
 /** Read-only household materials and living work roles; not a synthesized wealth model. */

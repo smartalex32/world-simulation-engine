@@ -17,8 +17,9 @@ interface SupportedSchema extends SnapshotSchemaCompatibility { readState(value:
 /** The explicit current-plus-prior-two release window. */
 export const SUPPORTED_SNAPSHOT_SCHEMAS: readonly SnapshotSchemaCompatibility[] = Object.freeze([
   Object.freeze({ schemaVersion: 43, engineVersions: Object.freeze(['0.44.0']), disposition: 'rejected', reason: 'Engine 0.44.0 used locale-dependent ordering and cannot be resumed by a stable-order executor.' }),
-  Object.freeze({ schemaVersion: 44, engineVersions: Object.freeze(['0.45.0']), disposition: 'migratable', reason: 'Engine 0.45.0 state has stable ordering and can be upgraded through the audited schema-45 boundary.' }),
+  Object.freeze({ schemaVersion: 44, engineVersions: Object.freeze(['0.45.0']), disposition: 'rejected', reason: 'Schema 44 is outside the current-plus-prior-two compatibility window.' }),
   Object.freeze({ schemaVersion: 45, engineVersions: Object.freeze(['0.46.0']), disposition: 'migratable', reason: 'Organization lifecycle state and its fixed RNG phase require an explicit schema-46 behavior upgrade.' }),
+  Object.freeze({ schemaVersion: 46, engineVersions: Object.freeze(['0.47.0']), disposition: 'migratable', reason: 'Organization-owned accounts and observer-specific reputation require an explicit schema-47 behavior upgrade.' }),
   Object.freeze({ schemaVersion: SNAPSHOT_SCHEMA_VERSION, engineVersions: Object.freeze([ENGINE_VERSION]), disposition: 'directly-loadable', reason: 'Current envelope and behavioral contract.' }),
 ])
 
@@ -27,6 +28,7 @@ const supportedSchemas: readonly SupportedSchema[] = [
   { ...SUPPORTED_SNAPSHOT_SCHEMAS[1]!, readState: readSchema44State },
   { ...SUPPORTED_SNAPSHOT_SCHEMAS[2]!, readState: readSchema45State },
   { ...SUPPORTED_SNAPSHOT_SCHEMAS[3]!, readState: readSchema46State },
+  { ...SUPPORTED_SNAPSHOT_SCHEMAS[4]!, readState: readSchema47State },
 ]
 
 interface MigrationStep {
@@ -71,7 +73,7 @@ const migrationSteps = new Map<number, MigrationStep>([
     },
   }],
   [45, {
-    fromSchemaVersion: 45, toSchemaVersion: 46, kind: 'behavior-upgrade', sourceEngineVersion: '0.46.0', targetEngineVersion: ENGINE_VERSION,
+    fromSchemaVersion: 45, toSchemaVersion: 46, kind: 'behavior-upgrade', sourceEngineVersion: '0.46.0', targetEngineVersion: '0.47.0',
     upgrade: (snapshot) => {
       const config = requiredObject(snapshot.state.config, 'Schema-45 state configuration is invalid')
       const resolved = createContentPackResolver([DEFAULT_PREINDUSTRIAL_PACK]).resolve(DEFAULT_PREINDUSTRIAL_PACK.manifest.id, DEFAULT_PREINDUSTRIAL_PACK.manifest.version)
@@ -86,6 +88,17 @@ const migrationSteps = new Map<number, MigrationStep>([
         },
         organizationLifecycle: { nextOrganizationSequence: 1, nextTraceSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] },
       }
+    },
+  }],
+  [46, {
+    fromSchemaVersion: 46, toSchemaVersion: 47, kind: 'behavior-upgrade', sourceEngineVersion: '0.47.0', targetEngineVersion: ENGINE_VERSION,
+    upgrade: (snapshot) => {
+      const state = requiredObject(snapshot.state, 'Schema-46 snapshot state is invalid')
+      const config = requiredObject(state.config, 'Schema-46 snapshot configuration is invalid')
+      const organizations = requiredArray(state.organizations, 'Schema-46 organizations are invalid')
+      const resolved = createContentPackResolver([DEFAULT_PREINDUSTRIAL_PACK]).resolve(DEFAULT_PREINDUSTRIAL_PACK.manifest.id, DEFAULT_PREINDUSTRIAL_PACK.manifest.version)
+      const isLegacyDefaultPreindustrial = config.contentPackId === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && config.contentPackVersion === '1.1.0'
+      return { ...state, config: { ...config, organizationModelVersion: 4, organizationAssetReputationModelVersion: 0, ...(isLegacyDefaultPreindustrial ? { contentPackVersion: resolved.pack.manifest.version, contentPackChecksum: resolved.checksum, contentPackDependencies: resolved.dependencies } : {}) }, organizations: organizations.map((entry) => { const organization = requiredObject(entry, 'Schema-46 organization is invalid'); return { ...organization } }) }
     },
   }],
 ])
@@ -114,13 +127,14 @@ export async function migrateSnapshotSchema(value: unknown, targetSchema = SNAPS
     const targetEngineVersion = step.kind === 'behavior-upgrade' ? step.targetEngineVersion : migrated.engineVersion
     if (step.kind === 'data-shape' && targetEngineVersion !== migrated.engineVersion) throw new Error('Data-shape migrations cannot change engine behavior')
     const digest = await stateDigest(state)
+    const original = migrated.migrationProvenance
     const provenanceBase = {
-      sourceSchemaVersion: source.schemaVersion,
-      sourceEngineVersion: source.engineVersion,
-      sourceDigest: source.digest,
+      sourceSchemaVersion: original?.sourceSchemaVersion ?? source.schemaVersion,
+      sourceEngineVersion: original?.sourceEngineVersion ?? source.engineVersion,
+      sourceDigest: original?.sourceDigest ?? source.digest,
       targetSchemaVersion: step.toSchemaVersion,
       targetStateDigest: digest,
-      schemaPath: [...path],
+      schemaPath: [...(original?.schemaPath ?? path.slice(0, -1)), path.at(-1)!],
     }
     const migrationProvenance = {
       ...provenanceBase,
@@ -179,6 +193,12 @@ function readSchema46State(value: unknown): SnapshotStateLike {
   requiredObject(state.world, 'Schema-46 snapshot world is invalid')
   return structuredClone(state)
 }
+function readSchema47State(value: unknown): SnapshotStateLike {
+  const state = requiredObject(value, 'Schema-47 snapshot state is invalid')
+  requiredObject(state.config, 'Schema-47 snapshot configuration is invalid')
+  requiredObject(state.world, 'Schema-47 snapshot world is invalid')
+  return structuredClone(state)
+}
 function readHistoricalState(value: unknown, schemaVersion: number): SnapshotStateLike {
   const state = requiredObject(value, `Schema-${schemaVersion} snapshot state is invalid`)
   const config = requiredObject(state.config, `Schema-${schemaVersion} snapshot configuration is invalid`)
@@ -203,7 +223,8 @@ async function readMigrationProvenance(value: unknown, schemaVersion: number, en
     return { fromSchemaVersion: step.fromSchemaVersion as number, toSchemaVersion: step.toSchemaVersion as number, kind: step.kind as SnapshotMigrationPathStep['kind'] }
   })
   const sourceSchema = schemaFor(provenance.sourceSchemaVersion as number)
-  if (sourceSchema.disposition !== 'migratable' || !sourceSchema.engineVersions.includes(provenance.sourceEngineVersion) || provenance.targetSchemaVersion !== schemaVersion || schemaVersion !== SNAPSHOT_SCHEMA_VERSION || engineVersion !== ENGINE_VERSION || schemaPath.length < 1 || schemaPath[0]?.fromSchemaVersion !== provenance.sourceSchemaVersion || schemaPath.at(-1)?.toSchemaVersion !== schemaVersion || schemaPath.some((step, index) => step.kind !== 'behavior-upgrade' || (index > 0 && schemaPath[index - 1]!.toSchemaVersion !== step.fromSchemaVersion))) throw new Error('Snapshot migration provenance is incompatible')
+  const targetSchema = schemaFor(schemaVersion)
+  if (!sourceSchema.engineVersions.includes(provenance.sourceEngineVersion) || !targetSchema.engineVersions.includes(engineVersion) || provenance.targetSchemaVersion !== schemaVersion || schemaPath.length < 1 || schemaPath[0]?.fromSchemaVersion !== provenance.sourceSchemaVersion || schemaPath.at(-1)?.toSchemaVersion !== schemaVersion || schemaPath.some((step, index) => step.kind !== 'behavior-upgrade' || (index > 0 && schemaPath[index - 1]!.toSchemaVersion !== step.fromSchemaVersion))) throw new Error('Snapshot migration provenance is incompatible')
   const result = { sourceSchemaVersion: provenance.sourceSchemaVersion as number, sourceEngineVersion: provenance.sourceEngineVersion, sourceDigest: provenance.sourceDigest, targetSchemaVersion: provenance.targetSchemaVersion as number, targetStateDigest: provenance.targetStateDigest, schemaPath, targetEnvelopeDigest: provenance.targetEnvelopeDigest }
   const { targetEnvelopeDigest, ...provenanceBase } = result
   if (await migrationProvenanceDigest(schemaVersion, engineVersion, provenanceBase) !== targetEnvelopeDigest) throw new Error('Snapshot migration provenance digest does not match its contents')

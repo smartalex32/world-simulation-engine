@@ -2,6 +2,7 @@ import type { SimulationState } from '../domain/types'
 import type { OrganizationDefinition, OrganizationMembershipTrace } from './types'
 import { failCanonicalValidation as fail } from '../validation/error'
 import { ORGANIZATION_LIFECYCLE_STREAM, ORGANIZATION_LIFECYCLE_TRACE_LIMIT } from './lifecycle'
+import { ORGANIZATION_ASSET_TRACE_LIMIT, ORGANIZATION_REPUTATION_OBSERVATION_LIMIT, ORGANIZATION_REPUTATION_OBSERVER_LIMIT } from './ledger'
 
 /** Canonical validation owned by the organization subsystem. */
 export function validateOrganizationState(state: SimulationState, definitions: ReadonlyMap<string, OrganizationDefinition>): void {
@@ -10,6 +11,8 @@ export function validateOrganizationState(state: SimulationState, definitions: R
   const cellsById = new Map(state.world.grid.cells.map((cell) => [cell.id, cell]))
   const locationsById = new Map(state.activityLocations.map((location) => [location.id, location]))
   const personIds = new Set(state.people.map((person) => person.id))
+  const householdIds = new Set(state.households.map((household) => household.id))
+  const marketIds = new Set(state.markets.map((market) => market.id))
   for (const organization of state.organizations) {
     const definition = definitions.get(organization.kind)
     if (!definition) fail('organizations', `state.organizations.${organization.id}.kind`, 'kind', `Organization ${organization.id} has unknown kind`)
@@ -17,6 +20,9 @@ export function validateOrganizationState(state: SimulationState, definitions: R
     if (!cellsById.get(organization.locationCellId)?.movementCost || locationsById.get(organization.activityLocationId)?.cellId !== organization.locationCellId || organization.members.some((member, index) => !personIds.has(member.personId) || (index > 0 && organization.members[index - 1]!.personId >= member.personId))) fail('organizations', `state.organizations.${organization.id}`, 'member-or-location-reference', `Organization ${organization.id} has invalid members or location`)
     if (!Number.isSafeInteger(organization.serviceCapacity) || organization.serviceCapacity < 1) fail('organizations', `state.organizations.${organization.id}.serviceCapacity`, 'capacity', `Organization ${organization.id} has invalid service capacity`)
     if (organization.sharedRuleIds.length !== definition.sharedRuleIds.length || organization.sharedRuleIds.some((id, index) => id !== definition.sharedRuleIds[index])) fail('organizations', `state.organizations.${organization.id}.sharedRuleIds`, 'shared-rules', `Organization ${organization.id} does not match its defined rules`)
+    const assetAndReputationEnabled = state.config.organizationAssetReputationModelVersion === 1
+    if (Boolean(organization.assets) !== (assetAndReputationEnabled && Boolean(definition.assets)) || organization.assets && !validAssetAccount(organization.assets, organization.id, ids, householdIds, marketIds)) fail('organizations', `state.organizations.${organization.id}.assets`, 'asset-account', `Organization ${organization.id} has an invalid owned asset account`)
+    if (Boolean(organization.reputationLedger) !== (assetAndReputationEnabled && Boolean(definition.reputation?.enabled)) || organization.reputationLedger && (!Number.isSafeInteger(organization.reputationLedger.nextObservationSequence) || organization.reputationLedger.nextObservationSequence < 1 || organization.reputationLedger.observations.length > ORGANIZATION_REPUTATION_OBSERVATION_LIMIT || !validReputationLedger(organization.reputationLedger, personIds, ids))) fail('organizations', `state.organizations.${organization.id}.reputationLedger`, 'reputation-ledger', `Organization ${organization.id} has invalid reputation evidence`)
   }
   const lifecycle = state.organizationLifecycle
   if (!Number.isSafeInteger(lifecycle.nextOrganizationSequence) || lifecycle.nextOrganizationSequence < 1) fail('organizations', 'state.organizationLifecycle.nextOrganizationSequence', 'sequence', 'Organization lifecycle sequence is invalid')
@@ -42,6 +48,47 @@ export function validateOrganizationState(state: SimulationState, definitions: R
     if (!organization || !definition?.lifecycle?.membership.enabled || !personIds.has(trace.personId) || typeof trace.selected !== 'boolean' || !validLifecycleReason(trace.rejectionReason) || !coherentOutcome(trace.selected, trace.rejectionReason, trace.finalProbabilityPermille, trace.rngStream, trace.randomRollPermille) || !validTransition) fail('organizations', 'state.organizationLifecycle.latestMembershipTraces', 'membership-reference', 'Organization membership trace is invalid')
   }
   validateMembershipHistory(state.organizations, lifecycle.latestMembershipTraces)
+}
+
+function validAssetAccount(account: NonNullable<SimulationState['organizations'][number]['assets']>, organizationId: string, organizationIds: ReadonlySet<string>, householdIds: ReadonlySet<string>, marketIds: ReadonlySet<string>): boolean {
+  const traces = account.latestTransferTraces
+  if (!Number.isSafeInteger(account.currencyUnits) || account.currencyUnits < 0 || traces.length > ORGANIZATION_ASSET_TRACE_LIMIT || Object.values(account.goods).some((value) => !Number.isSafeInteger(value) || value < 0)) return false
+  const partyExists = (party: { kind: string; id: string }): boolean => party.kind === 'organization' ? organizationIds.has(party.id) : party.kind === 'household' ? householdIds.has(party.id) : party.kind === 'market' && marketIds.has(party.id)
+  if (!traces.every((trace, index) => Number.isSafeInteger(trace.sequence) && trace.sequence >= 1 && (index === 0 || traces[index - 1]!.sequence < trace.sequence)
+    && Number.isSafeInteger(trace.tick) && trace.tick >= 0 && trace.from.id.length > 0 && trace.to.id.length > 0 && (trace.from.kind !== trace.to.kind || trace.from.id !== trace.to.id)
+    && (trace.from.kind === 'organization' || trace.from.kind === 'household' || trace.from.kind === 'market') && (trace.to.kind === 'organization' || trace.to.kind === 'household' || trace.to.kind === 'market')
+    && partyExists(trace.from) && partyExists(trace.to) && (trace.from.kind === 'organization' && trace.from.id === organizationId || trace.to.kind === 'organization' && trace.to.id === organizationId)
+    && (trace.asset === 'currency' || trace.from.kind !== 'market' && trace.to.kind !== 'market')
+    && (trace.asset === 'currency' || trace.asset === 'good') && (trace.asset === 'currency' ? trace.goodId === undefined : typeof trace.goodId === 'string' && trace.goodId.length > 0)
+    && Number.isSafeInteger(trace.amount) && trace.amount > 0 && [trace.previousFromAmount, trace.previousToAmount, trace.nextFromAmount, trace.nextToAmount].every((value) => Number.isSafeInteger(value) && value >= 0)
+    && trace.nextFromAmount === trace.previousFromAmount - trace.amount && trace.nextToAmount === trace.previousToAmount + trace.amount && trace.reason.length > 0)) return false
+  const latestByAsset = new Map<string, (typeof traces)[number]>()
+  for (const trace of traces) latestByAsset.set(trace.asset === 'currency' ? 'currency' : trace.goodId!, trace)
+  return [...latestByAsset.entries()].every(([assetId, trace]) => {
+    const expected = trace.from.kind === 'organization' && trace.from.id === organizationId ? trace.nextFromAmount : trace.nextToAmount
+    return (assetId === 'currency' ? account.currencyUnits : account.goods[assetId] ?? 0) === expected
+  })
+}
+
+function validReputationLedger(ledger: NonNullable<SimulationState['organizations'][number]['reputationLedger']>, personIds: ReadonlySet<string>, organizationIds: ReadonlySet<string>): boolean {
+  const seen = new Set<string>()
+  return ledger.observations.every((entry, index) => {
+    const key = `${entry.observer.kind}:${entry.observer.id}:${entry.sequence}`
+    const valid = Number.isSafeInteger(entry.sequence) && entry.sequence >= 1 && (index === 0 || ledger.observations[index - 1]!.sequence < entry.sequence)
+      && Number.isSafeInteger(entry.tick) && entry.tick >= 0 && (entry.observer.kind === 'person' ? personIds.has(entry.observer.id) : entry.observer.kind === 'organization' && organizationIds.has(entry.observer.id))
+      && ['service', 'exchange', 'member-conduct', 'relationship'].includes(entry.source) && entry.causalEventId.length > 0
+      && [entry.previousValuePermille, entry.deltaPermille, entry.valuePermille].every(Number.isSafeInteger) && entry.previousValuePermille >= 0 && entry.previousValuePermille <= 1000 && entry.deltaPermille >= -1000 && entry.deltaPermille <= 1000 && entry.valuePermille === Math.max(0, Math.min(1000, entry.previousValuePermille + entry.deltaPermille))
+    if (seen.has(key)) return false
+    seen.add(key)
+    return valid
+  }) && ledger.observations.every((entry) => entry.sequence < ledger.nextObservationSequence)
+    && (ledger.observations.length === 0 ? ledger.nextObservationSequence === 1 : ledger.nextObservationSequence === ledger.observations.at(-1)!.sequence + 1)
+    && ledger.currentByObserver.length <= ORGANIZATION_REPUTATION_OBSERVER_LIMIT
+    && ledger.currentByObserver.every((entry, index) => (entry.observer.kind === 'person' ? personIds.has(entry.observer.id) : entry.observer.kind === 'organization' && organizationIds.has(entry.observer.id))
+      && Number.isSafeInteger(entry.valuePermille) && entry.valuePermille >= 0 && entry.valuePermille <= 1000 && Number.isSafeInteger(entry.lastObservationSequence) && entry.lastObservationSequence >= 1 && entry.lastObservationSequence < ledger.nextObservationSequence && Number.isSafeInteger(entry.lastObservedTick) && entry.lastObservedTick >= 0
+      && (index === 0 || ledger.currentByObserver[index - 1]!.lastObservedTick < entry.lastObservedTick || ledger.currentByObserver[index - 1]!.lastObservedTick === entry.lastObservedTick && ledger.currentByObserver[index - 1]!.lastObservationSequence < entry.lastObservationSequence))
+    && new Set(ledger.currentByObserver.map((entry) => `${entry.observer.kind}:${entry.observer.id}`)).size === ledger.currentByObserver.length
+    && ledger.currentByObserver.every((current) => { const observation = ledger.observations.find((entry) => entry.sequence === current.lastObservationSequence); return observation?.observer.kind === current.observer.kind && observation.observer.id === current.observer.id && observation.tick === current.lastObservedTick && observation.valuePermille === current.valuePermille })
 }
 
 function validTraceNumbers(trace: { sequence: unknown; tick: unknown; baseProbabilityPermille: unknown; finalProbabilityPermille: unknown; randomRollPermille?: unknown; factors: unknown }): boolean {

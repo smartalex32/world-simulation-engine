@@ -29,7 +29,19 @@ export interface OrganizationDefinition {
       roleChangeInterestThresholdPermille: number
     }
   }
+  /** Opt-in institutional property; omitted definitions retain no asset account. */
+  assets?: { initialCurrencyUnits: number; initialGoods: Readonly<Record<string, number>> }
+  /** Opt-in observer-specific evidence ledger; membership never creates entries. */
+  reputation?: { enabled: boolean }
 }
+export interface OrganizationAssetAccount { currencyUnits: number; goods: Record<string, number>; latestTransferTraces: OrganizationAssetTransferTrace[] }
+export type OrganizationAssetParty = { kind: 'organization'; id: OrganizationId } | { kind: 'household'; id: string } | { kind: 'market'; id: string }
+export interface OrganizationAssetTransferTrace { sequence: number; tick: number; from: OrganizationAssetParty; to: OrganizationAssetParty; asset: 'currency' | 'good'; goodId?: string; amount: number; previousFromAmount: number; previousToAmount: number; nextFromAmount: number; nextToAmount: number; reason: string }
+export type OrganizationReputationObserver = { kind: 'person' | 'organization'; id: string }
+export type OrganizationReputationSource = 'service' | 'exchange' | 'member-conduct' | 'relationship'
+export interface OrganizationReputationObservation { sequence: number; tick: number; observer: OrganizationReputationObserver; source: OrganizationReputationSource; causalEventId: string; previousValuePermille: number; deltaPermille: number; valuePermille: number }
+export interface OrganizationReputationCurrent { observer: OrganizationReputationObserver; valuePermille: number; lastObservationSequence: number; lastObservedTick: number }
+export interface OrganizationReputationLedger { nextObservationSequence: number; observations: OrganizationReputationObservation[]; currentByObserver: OrganizationReputationCurrent[] }
 export interface OrganizationMember { personId: string; role: OrganizationMemberRole }
 export type OrganizationMembershipChange = 'joined' | 'role-changed' | 'left'
 export type OrganizationLifecycleRejection = 'disabled' | 'insufficient-activity' | 'already-member' | 'no-relationship' | 'no-role' | 'probability' | 'invalid-transition'
@@ -48,6 +60,10 @@ export interface OrganizationState {
   /** Maximum learners receiving this location-bound service in one scheduled window. */
   serviceCapacity: number
   sharedRuleIds: string[]
+  /** Institution-owned holdings, never inferred from members or leaders. */
+  assets?: OrganizationAssetAccount
+  /** Explicit observer evidence, never a global score. */
+  reputationLedger?: OrganizationReputationLedger
 }
 export type SchoolAttendanceReason = 'available' | 'no-route' | 'no-household-capacity' | 'too-distant' | 'capacity' | 'declined' | 'traveling'
 /** Latest explicit school access evaluation; it is evidence, not a settlement membership. */

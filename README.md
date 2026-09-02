@@ -160,9 +160,15 @@ separate structured factors. Selected transitions use only the named
 `organization.lifecycle` RNG stream and retain ordered traces and durable
 events. School definitions omit this lifecycle, so attendance remains service
 exposure rather than automatic membership. Read-only group profiles expose the
-current lifecycle status and latest membership evidence. Membership does not
-create a relationship, reputation, resource ownership, identity, belief, or
-automatic person-level effect.
+current lifecycle status and latest membership evidence. Packs may explicitly
+opt an organization kind into an owned integer goods/currency account and a
+bounded observer-specific reputation ledger. Transfers conserve balances across
+households, markets, and organizations with structured traces; reputation
+observations retain observer, causal event, source, tick, prior value, delta,
+and bounded result. Completed observed school service records a small positive
+observer-specific reputation change and a durable causal history event.
+Membership does not create a relationship, reputation,
+resource ownership, identity, belief, or automatic person-level effect.
 
 Local governance is also presented as bounded evidence for an observed
 geographic catchment: active representatives, legitimacy, food-relief access,
@@ -251,9 +257,9 @@ default remains 1 km for legacy worlds. Terrain remains dense within the
 existing bounded creator until sparse chunk allocation is introduced.
 
 Snapshot compatibility uses an explicit current-plus-prior-two release window:
-schema 46 / engine 0.47.0 loads directly; schema 45 / engine 0.46.0 and schema
-44 / engine 0.45.0 are authenticated then migrated through their audited
-behavior-upgrade boundaries; schema 43 / engine 0.44.0 is explicitly rejected
+schema 47 / engine 0.48.0 loads directly; schema 46 / engine 0.47.0 and schema
+45 / engine 0.46.0 are authenticated then migrated through their audited
+behavior-upgrade boundaries; schema 44 / engine 0.45.0 is explicitly rejected
 because its locale-dependent ordering cannot be safely resumed. Source-state
 digests are verified before any transformation; migrated envelopes receive
 fresh target digests and retain source schema, engine, digest, and
