@@ -40,7 +40,7 @@ export function RunStatusStrip({ children }: { children: ReactNode }) {
 export function WorkbenchWorkspace({ left, primary, right }: { left: ReactNode; primary: ReactNode; right: ReactNode }) {
   return <section className="workspace">
     <aside className="left-panel panel" aria-label="Workspace controls">{left}</aside>
-    <section id="workbench-primary" className="map-panel panel" tabIndex={-1}>{primary}</section>
+    <section id="workbench-primary" className="map-panel panel" tabIndex={-1} aria-label="Primary workspace">{primary}</section>
     <aside className="right-panel panel" aria-label="Workspace inspector">{right}</aside>
   </section>
 }

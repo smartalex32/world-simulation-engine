@@ -23,7 +23,7 @@ import { usePersistenceController } from './ui/controllers/usePersistenceControl
 import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver, diffContentPacks, exportContentPack, importContentPack } from './contentPacks'
 import type { ContentPack, ResolvedContentPack } from './contentPacks'
 import { Metric, PanelTitle, StatePresentation } from './ui/components/WorkbenchPrimitives'
-import { RunStatusStrip, WorkbenchShell, WorkbenchTopbar, type WorkbenchMode } from './ui/layout/WorkbenchShell'
+import { RunStatusStrip, WorkbenchShell, WorkbenchTopbar, WorkbenchWorkspace, type WorkbenchMode } from './ui/layout/WorkbenchShell'
 
 const SPEEDS = [
   { value: 1, label: '1 hour / batch' },
@@ -595,8 +595,8 @@ export default function App() {
 
       {(error ?? session.error) && <div className="error-banner"><strong>Workbench error</strong><span>{error ?? session.error}</span><button onClick={() => { setError(undefined); session.dismissError() }}>Dismiss</button></div>}
 
-      <section className="workspace">
-        <aside className="left-panel panel">
+      <WorkbenchWorkspace
+        left={<>
           {(activeMode === 'world') && <section className="world-overview"><span className="eyebrow">WORLD OVERVIEW</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{projection ? `${projection.world.width} × ${projection.world.height} hexes · ${projection.world.scale.hexRadiusMeters / 1000} km radius` : 'Awaiting authoritative world'}</small><div><span>People</span><b>{projection?.summary.populationCount ?? 0}</b><span>Households</span><b>{projection?.summary.householdCount ?? 0}</b><span>Food</span><b>{recentMetrics['resources.totalFood'] ?? '—'}</b><span>Season</span><b>{projection ? seasonAtTick(projection.tick).id : '—'}</b></div></section>}
           {(activeMode === 'history') && <section className="world-overview"><span className="eyebrow">RUN HISTORY</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{history ? `${history.events.length} bounded events · ${history.statistics.length} sampled metrics` : 'Load persisted local run evidence'}</small><div><span>Selected person</span><b>{selectedPersonId ?? 'None'}</b><span>Current tick</span><b>{projection?.tick ?? 0}</b></div></section>}
           {(activeMode === 'tools') && <section className="workbench-tool-panel" aria-label="World tools"><span className="eyebrow">WORLD TOOLS</span><strong>Author and inspect</strong><p>Creation remains worker-owned. Map controls change only the presentation projection.</p><button className="primary" onClick={() => void openWorldSetup()}>Create or edit world</button><button onClick={() => setActiveMode('world')}>Return to world overview</button></section>}
@@ -677,14 +677,14 @@ export default function App() {
             onSelectMeasure={(id) => { setCommunityMeasureId(id); setOverlay('community') }}
             onInspect={inspectCommunity}
           />}</>}
-        </aside>
+        </>}
 
-        <section id="workbench-primary" className="map-panel panel" tabIndex={-1}>
+        primary={<>
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {projection?.map.overlay ?? overlay}{projection && projection.map.overlay !== overlay ? ' · updating…' : ''}</span></div>
           {projection ? <HexMap world={projection.world} settlements={projection.settlements} roads={projection.roads} settlementLinks={projection.settlementLinks} map={projection.map} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selectedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelectedCellId(cell.id); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onFocusCell={(cellId) => { setSelectedCellId(cellId); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onViewportRequest={requestViewport} /> : <StatePresentation state="loading">Starting simulation worker…</StatePresentation>}
-        </section>
+        </>}
 
-        <aside className="right-panel panel">
+        right={<>
           <PanelTitle title={selectedCommunity ? 'Community inspector' : selectedPerson ? 'Person inspector' : 'Cell inspector'} subtitle={selectedCommunity ? selectedCommunity.catchment.displayName : selectedPerson ? selectedPerson.id : selected ? `Cell ${selected.id}` : 'Select a cell'} />
           {selectedCommunity
             ? <CommunityInspector community={selectedCommunity} definitions={projection?.communityVariableDefinitions ?? []} hasHookedPerson={selectedPerson !== undefined} onReturnToPerson={() => setSelectedCommunityId(undefined)} />
@@ -706,8 +706,8 @@ export default function App() {
               </div>
             ))}
           </div>
-        </aside>
-      </section>
+        </>}
+      />
 
       {activeMode === 'history'
         ? <HistoryPanel events={history?.events ?? []} statistics={history?.statistics ?? []} checkpoints={history?.checkpoints ?? []} telemetry={history?.telemetry} selectedPersonId={selectedPersonId} onInspectPerson={inspectPerson} onRefresh={() => void refreshHistory()} loading={historyLoading} />

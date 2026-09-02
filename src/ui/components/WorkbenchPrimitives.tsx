@@ -20,8 +20,9 @@ export function Toolbar({ label, children }: { label: string; children: ReactNod
   return <div className="ui-toolbar" role="toolbar" aria-label={label}>{children}</div>
 }
 
+/** A labelled button group. Use this when controls switch local presentation without a tabpanel contract. */
 export function Tabs<T extends string>({ label, tabs, active, onChange }: { label: string; tabs: readonly T[]; active: T; onChange: (tab: T) => void }) {
-  return <div className="ui-tabs" role="tablist" aria-label={label}>{tabs.map((tab) => <button key={tab} type="button" role="tab" aria-selected={active === tab} onClick={() => onChange(tab)}>{tab}</button>)}</div>
+  return <div className="ui-tabs" role="group" aria-label={label}>{tabs.map((tab) => <button key={tab} type="button" aria-pressed={active === tab} onClick={() => onChange(tab)}>{tab}</button>)}</div>
 }
 
 export type PresentationState = 'loading' | 'empty' | 'unavailable' | 'partial' | 'error' | 'stale'

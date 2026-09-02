@@ -17,7 +17,8 @@ must say **Not modeled** or **Unavailable** for unsupported capabilities and
 must never invent projected data.
 
 At desktop widths the workbench is controls, primary canvas, and inspector. At
-820px it preserves the primary canvas above two bounded secondary regions; at
-700px it stacks primary, controls, and inspector without page-level horizontal
+820px its controls and inspector share a row before the primary canvas; at
+700px it stacks controls, primary, and inspector. This retains one coherent
+visual and keyboard reading order while avoiding page-level horizontal
 scrolling. The skip link, landmarks, visible focus ring, labels, headings, and
 polite status messages are part of the shell contract.

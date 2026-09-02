@@ -885,6 +885,12 @@ capabilityTest('navigation', 'uses the responsive workbench shell without horizo
   await expect(skipLink).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(page.locator('#workbench-primary')).toBeFocused()
+  // At the narrowest layout, the final control region action must lead to the
+  // primary canvas rather than jumping ahead of visually earlier controls.
+  const lastControl = page.locator('.left-panel button:not([disabled])').last()
+  await lastControl.focus()
+  await page.keyboard.press('Tab')
+  await expect(page.getByLabel('Hex world map')).toBeFocused()
 })
 
 capabilityTest('inspection', 'inspects explicit organization leadership, pending decisions, and resolved history', async ({ page }) => {
