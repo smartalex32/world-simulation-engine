@@ -57,6 +57,12 @@ describe('content packs', () => {
     const phantomOrganizationGood = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
     phantomOrganizationGood.organizationDefinitions = phantomOrganizationGood.organizationDefinitions.map((definition) => definition.id === 'school' ? { ...definition, assets: { initialCurrencyUnits: 0, initialGoods: { 'good.phantom': 1 } } } : definition)
     expect(() => validateContentPack(phantomOrganizationGood)).toThrow('unknown good')
+    const invalidLeadership = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    invalidLeadership.organizationDefinitions = invalidLeadership.organizationDefinitions.map((definition) => definition.id === 'school' ? { ...definition, leadership: { cadenceHours: 24, leaderRoleId: 'phantom', eligibleMemberRoleIds: ['learner'], minimumAgeYears: 0, minimumScorePermille: 500, removalScorePermille: 400, maxCandidates: 4, factors: { relationshipSupportWeightPermille: 0, organizationReputationWeightPermille: 0, knowledgeWeightPermille: 0, persistenceWeightPermille: 1000 } } } : definition)
+    expect(() => validateContentPack(invalidLeadership)).toThrow('Leadership needs')
+    const unsafeDecision = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    unsafeDecision.organizationDefinitions = unsafeDecision.organizationDefinitions.map((definition) => definition.id === 'school' ? { ...definition, decisionPolicies: [{ id: 'policy.unsafe', cadenceHours: 24, resolutionDelayHours: 24, participantRoleIds: ['learner'], maxParticipants: 4, factors: { relationshipSupportWeightPermille: 0, organizationReputationWeightPermille: 0, knowledgeWeightPermille: 0, persistenceWeightPermille: 1000 }, alternatives: [{ id: 'alternative.a', baseScorePermille: 500, preference: 'neutral', authorizedEffectIds: ['arbitrary.code'] }, { id: 'alternative.b', baseScorePermille: 500, preference: 'neutral', authorizedEffectIds: ['organization.effect.none.v1'] }] }] as never } : definition)
+    expect(() => validateContentPack(unsafeDecision)).toThrow('safe typed alternatives')
   })
   it('builds stable immutable runtime registries from a validated pack', () => {
     const runtime = createContentPackRuntime(DEFAULT_PREINDUSTRIAL_PACK)

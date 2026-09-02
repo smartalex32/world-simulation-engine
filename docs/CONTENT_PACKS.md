@@ -18,7 +18,11 @@ Packs also declare versioned `organizationDefinitions`: stable kind IDs and
 display names, purpose IDs, permitted member-role IDs, engine-owned shared-rule
 IDs, and explicit initial service semantics. Definitions may additionally opt
 into an initial integer goods/currency account and an observer-specific
-reputation ledger; omitted fields model neither capability. The current binding creates one
+reputation ledger. Definitions may also opt into engine-owned leadership and
+decision policies with allowed roles, bounded candidate/participant counts,
+explicit evidence-factor weights, typed alternatives, and safe effect
+authorization IDs. Arbitrary pack code is never executed; omitted fields model
+none of these capabilities. The current binding creates one
 `school` at each authored settlement anchor using the `commons` activity
 location and the definition's service capacity. Definition metadata is exposed
 read-only in organization projections; membership does not infer relationships,

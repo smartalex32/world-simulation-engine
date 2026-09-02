@@ -15,7 +15,7 @@ export const HISTORY_METRICS = [
 
 export interface HistoricalHighlight {
   event: SimulationEvent
-  reason: 'life-cycle' | 'relationship' | 'knowledge' | 'community-change' | 'error'
+  reason: 'life-cycle' | 'relationship' | 'knowledge' | 'community-change' | 'organization-change' | 'error'
 }
 
 const HIGHLIGHT_REASONS: Partial<Record<SimulationEvent['type'], HistoricalHighlight['reason']>> = {
@@ -24,6 +24,8 @@ const HIGHLIGHT_REASONS: Partial<Record<SimulationEvent['type'], HistoricalHighl
   PARTNERSHIP_FORMED: 'relationship',
   PERSON_KNOWLEDGE_DISCOVERED: 'knowledge',
   COMMUNITY_MEASURES_UPDATED: 'community-change',
+  ORGANIZATION_LEADERSHIP_CHANGED: 'organization-change',
+  ORGANIZATION_DECISION_RESOLVED: 'organization-change',
   ERROR: 'error',
 }
 

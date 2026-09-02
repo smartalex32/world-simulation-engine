@@ -10,6 +10,7 @@ import {
   ECONOMY_MODEL_VERSION,
   ORGANIZATION_MODEL_VERSION,
   ORGANIZATION_ASSET_REPUTATION_MODEL_VERSION,
+  ORGANIZATION_LEADERSHIP_DECISION_MODEL_VERSION,
   CULTURE_MODEL_VERSION,
   LANGUAGE_MODEL_VERSION,
   GOVERNANCE_MODEL_VERSION,
@@ -92,6 +93,7 @@ import { createInitialSchools } from '../organizations/model'
 import { advanceOrganizationLifecycle, ORGANIZATION_LIFECYCLE_STREAM } from '../organizations/lifecycle'
 import { evaluateSchoolAttendance, SCHOOL_ATTENDANCE, SCHOOL_ATTENDANCE_STREAM, schoolAttendanceTrace, schoolTravelCost } from '../organizations/attendance'
 import { observeOrganizationReputation, ORGANIZATION_SERVICE_REPUTATION_DELTA_PERMILLE } from '../organizations/ledger'
+import { advanceOrganizationGovernance, ORGANIZATION_DECISION_STREAM } from '../organizations/governance'
 import { createCulturalState, transmitCulture } from '../culture/model'
 import { acquireLanguage, initialLanguage } from '../language/model'
 import { createLocalGovernance, updateLegitimacy } from '../governance/model'
@@ -271,6 +273,7 @@ export class SimulationEngine {
         economyModelVersion: ECONOMY_MODEL_VERSION,
         organizationModelVersion: ORGANIZATION_MODEL_VERSION,
         organizationAssetReputationModelVersion: ORGANIZATION_ASSET_REPUTATION_MODEL_VERSION,
+        organizationLeadershipDecisionModelVersion: ORGANIZATION_LEADERSHIP_DECISION_MODEL_VERSION,
         cultureModelVersion: CULTURE_MODEL_VERSION,
         languageModelVersion: LANGUAGE_MODEL_VERSION,
         governanceModelVersion: GOVERNANCE_MODEL_VERSION,
@@ -502,6 +505,7 @@ export class SimulationEngine {
       relationships: this.state.relationships,
       lifecycle,
       assetAndReputationEnabled: this.state.config.organizationAssetReputationModelVersion === 1,
+      leadershipAndDecisionsEnabled: this.state.config.organizationLeadershipDecisionModelVersion === 1,
       formationScopeByActivityLocation: new Map([
         ...this.state.communities.flatMap((community) => community.catchment.cellIds.map((cellId) => [`activity.commons.${cellId}`, `community:${community.catchment.id}`] as const)),
         ...this.state.world.settlements.flatMap((settlement) => {
@@ -540,7 +544,13 @@ export class SimulationEngine {
         randomRollPermille: trace.randomRollPermille,
       }))
     }
-    return outcome.formations + outcome.memberships
+    const governance = this.state.config.organizationLeadershipDecisionModelVersion === 1
+      ? advanceOrganizationGovernance({ tick: this.state.tick, organizations: this.state.organizations, definitions: this.contentPackRuntime.organizationDefinitions, people: this.state.people, relationships: this.state.relationships, nextDecisionPermille: () => this.random.stream(ORGANIZATION_DECISION_STREAM).nextInt(1000) })
+      : { leadershipTraces: [], proposals: [], resolutions: [] }
+    for (const { organizationId, trace } of governance.leadershipTraces) pushEvent(this.event('ORGANIZATION_LEADERSHIP_CHANGED', { traceSequence: trace.sequence, organizationId, roleId: trace.roleId, outcome: trace.outcome, previousLeaderPersonId: trace.previousLeaderPersonId, selectedLeaderPersonId: trace.selectedLeaderPersonId, contested: trace.contested, reason: trace.reason }))
+    for (const { organizationId, proposal } of governance.proposals) pushEvent(this.event('ORGANIZATION_DECISION_PROPOSED', { proposalSequence: proposal.sequence, organizationId, policyId: proposal.policyId, resolvesAtTick: proposal.resolvesAtTick, participantIds: proposal.participantIds.join(','), participantRoles: proposal.participantRoles.map((participant) => `${participant.personId}:${participant.memberRoleId}`).join(','), alternativeIds: proposal.alternatives.join(',') }))
+    for (const { organizationId, resolution } of governance.resolutions) pushEvent(this.event('ORGANIZATION_DECISION_RESOLVED', { proposalSequence: resolution.proposalSequence, organizationId, policyId: resolution.policyId, participantIds: resolution.participantIds.join(','), participantRoles: resolution.participantRoles.map((participant) => `${participant.personId}:${participant.memberRoleId}`).join(','), factorWeightsPermille: [resolution.factors.relationshipSupportWeightPermille, resolution.factors.organizationReputationWeightPermille, resolution.factors.knowledgeWeightPermille, resolution.factors.persistenceWeightPermille].join(','), knowledgeId: resolution.factors.knowledgeId ?? '', alternativeIds: resolution.alternatives.map((alternative) => alternative.alternativeId).join(','), finalScoresPermille: resolution.alternatives.map((alternative) => alternative.finalScorePermille).join(','), probabilitiesPermille: resolution.alternatives.map((alternative) => alternative.probabilityPermille).join(','), rngStream: resolution.rngStream, randomRollPermille: resolution.randomRollPermille, selectedAlternativeId: resolution.selectedAlternativeId, authorizedEffectIds: resolution.authorizedEffectIds.join(',') }))
+    return outcome.formations + outcome.memberships + governance.leadershipTraces.length + governance.proposals.length + governance.resolutions.length
   }
 
   private runMonthlyProcessing(pushEvent: (event: SimulationEvent) => void, changeCategories: Set<AuthoritativeChangeSet['categories'][number]>, changedCellIds: Set<string>, relocationDiagnostics: { indexBuilds: number; pathExpansions: number }): void {

@@ -7,6 +7,7 @@ import {
   ECONOMY_MODEL_VERSION,
   ORGANIZATION_MODEL_VERSION,
   ORGANIZATION_ASSET_REPUTATION_MODEL_VERSION,
+  ORGANIZATION_LEADERSHIP_DECISION_MODEL_VERSION,
   CULTURE_MODEL_VERSION,
   LANGUAGE_MODEL_VERSION,
   GOVERNANCE_MODEL_VERSION,
@@ -115,6 +116,7 @@ export async function validateSnapshot(value: unknown, contentPack: ContentPack 
   }
   if (snapshot.state.config.organizationModelVersion !== ORGANIZATION_MODEL_VERSION) throw new Error(`Unsupported organization model version: ${String(snapshot.state.config.organizationModelVersion)}`)
   if (snapshot.state.config.organizationAssetReputationModelVersion !== 0 && snapshot.state.config.organizationAssetReputationModelVersion !== ORGANIZATION_ASSET_REPUTATION_MODEL_VERSION) throw new Error('Unsupported organization asset/reputation configuration')
+  if (snapshot.state.config.organizationLeadershipDecisionModelVersion !== 0 && snapshot.state.config.organizationLeadershipDecisionModelVersion !== ORGANIZATION_LEADERSHIP_DECISION_MODEL_VERSION) throw new Error('Unsupported organization leadership/decision configuration')
   if (snapshot.state.config.cultureModelVersion !== CULTURE_MODEL_VERSION) throw new Error(`Unsupported culture model version: ${String(snapshot.state.config.cultureModelVersion)}`)
   if (snapshot.state.config.languageModelVersion !== LANGUAGE_MODEL_VERSION) throw new Error(`Unsupported language model version: ${String(snapshot.state.config.languageModelVersion)}`)
   if (snapshot.state.config.governanceModelVersion !== GOVERNANCE_MODEL_VERSION) throw new Error(`Unsupported governance model version: ${String(snapshot.state.config.governanceModelVersion)}`)

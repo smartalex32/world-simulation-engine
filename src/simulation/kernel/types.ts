@@ -85,6 +85,8 @@ export interface RunConfiguration {
   organizationModelVersion?: number
   /** 0 preserves pre-0.48 pack semantics; 1 interprets explicit asset/evidence opt-ins. */
   organizationAssetReputationModelVersion?: number
+  /** 0 preserves pre-0.49 pack semantics; 1 interprets explicit leadership/decision opt-ins. */
+  organizationLeadershipDecisionModelVersion?: number
   cultureModelVersion?: number
   languageModelVersion?: number
   governanceModelVersion?: number

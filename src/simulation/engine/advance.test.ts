@@ -29,7 +29,7 @@ describe('projection-free engine advance', () => {
     expect(TICK_PHASE_MANIFEST.find((phase) => phase.id === 'encounters-and-markets')?.rngStreams).toContain('encounters')
     expect(TICK_PHASE_MANIFEST.map((phase) => phase.rngStreams)).toEqual([
       ['life-cycle.mortality'], [], [], ['organization.school.attendance'],
-      ['actions', 'innovation.practical-experiment', 'content-pack.<pack>.<stream>'], ['organization.lifecycle'],
+      ['actions', 'innovation.practical-experiment', 'content-pack.<pack>.<stream>'], ['organization.lifecycle', 'organization.decisions'],
       ['encounters'], ['health.fictional-pathogen'], ['household.relocation'],
       ['life-cycle.partnership', 'life-cycle.birth', 'life-cycle.inheritance'], [],
     ])
@@ -50,28 +50,28 @@ describe('projection-free engine advance', () => {
   it.each([
     {
       boundary: 1,
-      digest: '7070a7adfed23c70f8b6264b29cd591c0d87615ca262897fd72bc0527e09c106',
+      digest: '61bdbad128182b4c88de65502b74538eec0aa11d42c9a6df21d14eea60680cd8',
       randomStreams: '29ecdd00e858eb8b6361ff9e6b5143ddbaf84099931a4758889f8bb6e0aabb97',
       events: '367d7ed0a630c026450f0445c4dfa403a5d5229bede3aa60fed478664c06f0b9',
       statistics: '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
     },
     {
       boundary: 24,
-      digest: '0757444156ce8b167b333bcaac5cc5b4bbe2cd206c4b5b00fb1a1f8c76bf09d5',
+      digest: 'bca05fb200be0828c51a932d18c1a50898c53a45c2ada97ec2b47a2242c290dd',
       randomStreams: '257981ba63a7fce051914fba6fe6d3bdaa39cea9cb6f199b85fc63558345e39e',
       events: 'b3eb4651adec5951caad3e9dfe1396d2447cb84e29642f76213d0d077a5040c4',
       statistics: 'edd18712be2c3dc2577687f858cb2b5020db73f7a1edbaa11b8fcb7f99292016',
     },
     {
       boundary: 720,
-      digest: '001a152423c1aa37368a6c676703c95bd818c6715ac0fe5c4d0e7b7011137067',
+      digest: 'd327a9efad6bbc477e2f6181c75231684de2ae167a2baf05226ae9c442ee10aa',
       randomStreams: 'd19bf8d30008e3d6fa225ec73d9fe37065f1a21bf6af0abf37841eb7700e3aae',
       events: '989c4d2502b6fc9677cf100b57ce157cdca587763bd317def131f7fd52ce5208',
       statistics: '962f2ab39e328128004c7f1740a294efbe9f10f4d1dedadf0e3b17ec1b2562d7',
     },
     {
       boundary: 8760,
-      digest: '76a14a49411e66fbb453b0b213e37770a440e1f3bfda7c5edeb7b02311edc8f4',
+      digest: 'd528420014504de6299ae04db6f7918972d576cf5bfcd6381b7b492d26202aa6',
       randomStreams: '09c2c5bed0559fab768a6c03ed7782fd41f6776fed6e3b900a399911bca730bc',
       events: 'b54854f144a53a66f61815129511976e555da3af186380adf356661d11979676',
       statistics: '3093c47dcb6e1bbe637a9ab6367cd1732857425423c2285fe1b5e48038d8e35d',
@@ -91,7 +91,7 @@ describe('projection-free engine advance', () => {
     const engine = SimulationEngine.create('phase-compat-full')
     const result = engine.advance(48, { clockEventHours: false })
     const snapshot = await engine.snapshot()
-    expect(snapshot.digest).toBe('c68a8225079440fbb9dd5284abf72ed18619085fe0cb74113855b466d1dccfa5')
+    expect(snapshot.digest).toBe('f49e627e5cdb087ce4f085ab28d50cfa386f3f2427c410d3d18a68173f818949')
     expect(await canonicalDigest(snapshot.state.randomStreams)).toBe('34771d9e3fbb2bca8a5a646dc073e9a6623aade43bfe34bb17d06be9f14ec597')
     expect(await canonicalDigest(result.events)).toBe('6d079c128d3f03107aa5007e5201e0c4c70836143ca114561fb64046d1e261d3')
     expect(await canonicalDigest(result.statistics)).toBe('a58dda13775abebd3a99e0d76e92cb1f5a894c668c02c55415aa4bc18312f636')
