@@ -727,6 +727,11 @@ Owns:
 
 The UI sends commands rather than bypassing subsystem ownership.
 
+The reusable workbench shell and presentation primitives live under `src/ui/layout`
+and `src/ui/components`. Their documented responsive and accessibility contract is
+in [the UI design system](docs/UI_DESIGN_SYSTEM.md). They consume projections and
+controllers only; UI layout state is never canonical simulation state.
+
 ---
 
 # Reproducibility Model
