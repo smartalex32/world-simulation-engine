@@ -7,6 +7,15 @@ export type OrganizationMemberRole = string
 export const ORGANIZATION_SHARED_RULE_IDS = ['organization.rule.attendance.v1'] as const
 export type OrganizationSharedRuleId = typeof ORGANIZATION_SHARED_RULE_IDS[number]
 export const ORGANIZATION_PURPOSE_IDS = ['education'] as const
+export const ORGANIZATION_DECISION_EFFECT_IDS = ['organization.effect.none.v1'] as const
+export type OrganizationDecisionEffectId = typeof ORGANIZATION_DECISION_EFFECT_IDS[number]
+export type OrganizationEvidenceFactorWeights = {
+  relationshipSupportWeightPermille: number
+  organizationReputationWeightPermille: number
+  knowledgeWeightPermille: number
+  persistenceWeightPermille: number
+  knowledgeId?: KnowledgeId
+}
 /** Versioned setting data. It declares classification and initial-service
  * semantics, never automatic member effects, leadership, or reputation. */
 export interface OrganizationDefinition {
@@ -33,6 +42,19 @@ export interface OrganizationDefinition {
   assets?: { initialCurrencyUnits: number; initialGoods: Readonly<Record<string, number>> }
   /** Opt-in observer-specific evidence ledger; membership never creates entries. */
   reputation?: { enabled: boolean }
+  /** Engine-owned, bounded leader selection. A leader role is separate from membership role mutation. */
+  leadership?: {
+    cadenceHours: number
+    leaderRoleId: OrganizationMemberRole
+    eligibleMemberRoleIds: readonly OrganizationMemberRole[]
+    minimumAgeYears: number
+    minimumScorePermille: number
+    removalScorePermille: number
+    maxCandidates: number
+    factors: OrganizationEvidenceFactorWeights
+  }
+  /** Recurring bounded proposals interpreted only by the engine-owned decision operation. */
+  decisionPolicies?: readonly OrganizationDecisionPolicy[]
 }
 export interface OrganizationAssetAccount { currencyUnits: number; goods: Record<string, number>; latestTransferTraces: OrganizationAssetTransferTrace[] }
 export type OrganizationAssetParty = { kind: 'organization'; id: OrganizationId } | { kind: 'household'; id: string } | { kind: 'market'; id: string }
@@ -42,6 +64,19 @@ export type OrganizationReputationSource = 'service' | 'exchange' | 'member-cond
 export interface OrganizationReputationObservation { sequence: number; tick: number; observer: OrganizationReputationObserver; source: OrganizationReputationSource; causalEventId: string; previousValuePermille: number; deltaPermille: number; valuePermille: number }
 export interface OrganizationReputationCurrent { observer: OrganizationReputationObserver; valuePermille: number; lastObservationSequence: number; lastObservedTick: number }
 export interface OrganizationReputationLedger { nextObservationSequence: number; observations: OrganizationReputationObservation[]; currentByObserver: OrganizationReputationCurrent[] }
+export interface OrganizationLeadershipCandidateEvidence { personId: string; memberRoleId: string; relationshipSupportPermille: number; organizationReputationPermille: number; knowledgePermille: number; persistencePermille: number; finalScorePermille: number }
+export type OrganizationLeadershipOutcome = 'selected' | 'removed' | 'succeeded' | 'no-eligible-leader'
+export interface OrganizationLeadershipTrace { sequence: number; tick: number; roleId: string; outcome: OrganizationLeadershipOutcome; previousLeaderPersonId?: string; selectedLeaderPersonId?: string; contested: boolean; candidates: OrganizationLeadershipCandidateEvidence[]; reason: string }
+export interface OrganizationLeadershipState { nextTraceSequence: number; leaderPersonId?: string; roleId: string; termStartedTick?: number; latestTraces: OrganizationLeadershipTrace[] }
+export type OrganizationDecisionPreference = 'higher-member-evidence' | 'lower-member-evidence' | 'neutral'
+export interface OrganizationDecisionAlternativeDefinition { id: string; baseScorePermille: number; preference: OrganizationDecisionPreference; authorizedEffectIds: readonly OrganizationDecisionEffectId[] }
+export interface OrganizationDecisionPolicy { id: string; cadenceHours: number; resolutionDelayHours: number; participantRoleIds: readonly OrganizationMemberRole[]; maxParticipants: number; factors: OrganizationEvidenceFactorWeights; alternatives: readonly OrganizationDecisionAlternativeDefinition[] }
+export interface OrganizationDecisionParticipant { personId: string; memberRoleId: OrganizationMemberRole }
+export interface OrganizationDecisionProposal { sequence: number; policyId: string; proposedTick: number; resolvesAtTick: number; participantIds: string[]; participantRoles: OrganizationDecisionParticipant[]; alternatives: string[] }
+export interface OrganizationDecisionContribution { participantId: string; relationshipSupportPermille: number; organizationReputationPermille: number; knowledgePermille: number; persistencePermille: number; evidenceScorePermille: number; alternativeScores: { alternativeId: string; scorePermille: number }[] }
+export interface OrganizationDecisionAlternativeResult { alternativeId: string; finalScorePermille: number; probabilityPermille: number }
+export interface OrganizationDecisionResolution { sequence: number; proposalSequence: number; policyId: string; proposedTick: number; resolvedTick: number; participantIds: string[]; participantRoles: OrganizationDecisionParticipant[]; factors: OrganizationEvidenceFactorWeights; contributions: OrganizationDecisionContribution[]; alternatives: OrganizationDecisionAlternativeResult[]; rngStream: 'organization.decisions'; randomRollPermille: number; selectedAlternativeId: string; authorizedEffectIds: OrganizationDecisionEffectId[] }
+export interface OrganizationDecisionState { nextProposalSequence: number; pending: OrganizationDecisionProposal[]; latestResolutions: OrganizationDecisionResolution[] }
 export interface OrganizationMember { personId: string; role: OrganizationMemberRole }
 export type OrganizationMembershipChange = 'joined' | 'role-changed' | 'left'
 export type OrganizationLifecycleRejection = 'disabled' | 'insufficient-activity' | 'already-member' | 'no-relationship' | 'no-role' | 'probability' | 'invalid-transition'
@@ -64,6 +99,10 @@ export interface OrganizationState {
   assets?: OrganizationAssetAccount
   /** Explicit observer evidence, never a global score. */
   reputationLedger?: OrganizationReputationLedger
+  /** Explicit pack-authorized office, never inferred from membership alone. */
+  leadership?: OrganizationLeadershipState
+  /** Bounded proposals and resolutions; effects remain authorizations for owning subsystems. */
+  decisions?: OrganizationDecisionState
 }
 export type SchoolAttendanceReason = 'available' | 'no-route' | 'no-household-capacity' | 'too-distant' | 'capacity' | 'declined' | 'traveling'
 /** Latest explicit school access evaluation; it is evidence, not a settlement membership. */

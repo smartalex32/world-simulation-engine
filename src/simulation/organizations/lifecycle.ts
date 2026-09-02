@@ -13,6 +13,7 @@ import type {
   OrganizationState,
 } from './types'
 import { createOrganizationAssetAccount, createOrganizationReputationLedger } from './ledger'
+import { createOrganizationDecisionState, createOrganizationLeadershipState } from './governance'
 
 export const ORGANIZATION_LIFECYCLE_STREAM = 'organization.lifecycle' as const
 export const ORGANIZATION_LIFECYCLE_TRACE_LIMIT = 64
@@ -40,6 +41,8 @@ interface LifecycleInput {
   formationScopeByActivityLocation?: ReadonlyMap<string, string>
   /** Legacy snapshots preserve pre-account/evidence pack semantics. */
   assetAndReputationEnabled?: boolean
+  /** Legacy snapshots preserve pre-leadership/decision pack semantics. */
+  leadershipAndDecisionsEnabled?: boolean
 }
 
 /**
@@ -133,6 +136,8 @@ export function advanceOrganizationLifecycle(input: LifecycleInput): Organizatio
       const members = pair.map((person) => ({ personId: person.id, role: lifecycle.membership.defaultRoleId }))
       const assets = input.assetAndReputationEnabled ? createOrganizationAssetAccount(definition) : undefined
       const reputationLedger = input.assetAndReputationEnabled ? createOrganizationReputationLedger(definition) : undefined
+      const leadership = input.leadershipAndDecisionsEnabled ? createOrganizationLeadershipState(definition) : undefined
+      const decisions = input.leadershipAndDecisionsEnabled ? createOrganizationDecisionState(definition) : undefined
       const organization: OrganizationState = {
         id,
         name: `${definition.name} ${sequence}`,
@@ -144,6 +149,8 @@ export function advanceOrganizationLifecycle(input: LifecycleInput): Organizatio
         sharedRuleIds: [...definition.sharedRuleIds],
         ...(assets ? { assets } : {}),
         ...(reputationLedger ? { reputationLedger } : {}),
+        ...(leadership ? { leadership } : {}),
+        ...(decisions ? { decisions } : {}),
       }
       input.organizations.push(organization)
       organizationIds.add(id)

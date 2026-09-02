@@ -77,7 +77,7 @@ describe('canonical serialization', () => {
     await expect(validateSnapshot(impossibleTransition)).rejects.toThrow('Selected organization join was impossible')
   })
 
-  it('upgrades an authenticated schema-45 default-pack snapshot and continues deterministically', async () => {
+  it('rejects an authenticated schema-45 default-pack snapshot outside the compatibility window', async () => {
     const source = await SimulationEngine.create('schema-45-default-pack').snapshot()
     const legacy = structuredClone(source)
     legacy.schemaVersion = 45
@@ -91,14 +91,7 @@ describe('canonical serialization', () => {
     legacyState.organizationLifecycle = undefined
     legacy.digest = await stateDigest(legacy.state)
 
-    const migrated = await validateSnapshot(legacy)
-    expect(migrated.state.config.contentPackVersion).toBe('1.2.0')
-    expect(migrated.state.config.contentPackChecksum).not.toBe('0'.repeat(32))
-    const restored = await SimulationEngine.restore(migrated)
-    const control = await SimulationEngine.restore(migrated)
-    restored.advance(24, { clockEventHours: false })
-    control.advance(24, { clockEventHours: false })
-    expect(await restored.snapshot()).toEqual(await control.snapshot())
+    await expect(validateSnapshot(legacy)).rejects.toThrow('outside the current-plus-prior-two')
   })
 
   it('upgrades an authenticated schema-46 default-pack snapshot with its legacy pack reference', async () => {
@@ -113,7 +106,7 @@ describe('canonical serialization', () => {
     legacy.digest = await stateDigest(legacy.state)
 
     const migrated = await validateSnapshot(legacy)
-    expect(migrated.state.config).toMatchObject({ organizationModelVersion: 4, contentPackVersion: '1.2.0' })
+    expect(migrated.state.config).toMatchObject({ organizationModelVersion: 5, contentPackVersion: '1.2.0', organizationLeadershipDecisionModelVersion: 0 })
     expect(migrated.state.config.contentPackChecksum).not.toBe('0'.repeat(32))
     const restored = await SimulationEngine.restore(migrated)
     const control = await SimulationEngine.restore(migrated)

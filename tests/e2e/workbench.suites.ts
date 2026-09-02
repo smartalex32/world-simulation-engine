@@ -868,6 +868,34 @@ capabilityTest('inspection', 'shows the authoritative community influence in an 
   await expect(contribution).toContainText(/source \d+‰ · centered [+-]?\d+‰ · weight -?\d+‰/)
 })
 
+capabilityTest('inspection', 'inspects explicit organization leadership, pending decisions, and resolved history', async ({ page }) => {
+  const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+  pack.manifest = { ...pack.manifest, id: 'setting.e2e.organization-governance', version: '1.0.0', name: 'E2E organization governance' }
+  const factors = { relationshipSupportWeightPermille: 0, organizationReputationWeightPermille: 0, knowledgeWeightPermille: 0, persistenceWeightPermille: 1000 }
+  pack.organizationDefinitions = pack.organizationDefinitions.map((definition) => definition.id === 'school' ? { ...definition, leadership: { cadenceHours: 24, leaderRoleId: 'educator', eligibleMemberRoleIds: ['learner'], minimumAgeYears: 0, minimumScorePermille: 0, removalScorePermille: 0, maxCandidates: 8, factors }, decisionPolicies: [{ id: 'policy.school-priority', cadenceHours: 24, resolutionDelayHours: 24, participantRoleIds: ['learner'], maxParticipants: 8, factors, alternatives: [{ id: 'alternative.expand', baseScorePermille: 600, preference: 'higher-member-evidence' as const, authorizedEffectIds: ['organization.effect.none.v1' as const] }, { id: 'alternative.hold', baseScorePermille: 400, preference: 'lower-member-evidence' as const, authorizedEffectIds: ['organization.effect.none.v1' as const] }] }] } : definition)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'settings', exact: true }).click()
+  await page.getByLabel('Content pack JSON').fill(JSON.stringify(pack))
+  await expect(page.getByLabel('Content pack differences')).not.toContainText('0 field-level difference')
+  await page.getByRole('button', { name: 'Validate & save pack', exact: true }).click()
+  await expect(page.getByLabel('Saved content packs')).toContainText('1 saved pack version')
+  await page.getByLabel('Run content pack').selectOption(`${pack.manifest.id}@${pack.manifest.version}`)
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await setup.getByRole('button', { name: 'Commit & create world', exact: true }).click()
+  await expect(setup).toBeHidden()
+  for (let tick = 1; tick <= 24; tick += 1) await advanceOneHour(page, tick)
+  await page.getByRole('button', { name: 'entities', exact: true }).click()
+  const evidence = page.getByLabel('Organization evidence')
+  await expect(evidence).toContainText('leadership filled')
+  await expect(evidence).toContainText('decisions active (1 pending)')
+  for (let tick = 25; tick <= 48; tick += 1) await advanceOneHour(page, tick)
+  await expect(page.getByRole('button', { name: /Autosave Hour 48/ })).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('button', { name: 'history', exact: true }).click()
+  const resolvedEvent = page.locator('.history-event').filter({ hasText: 'ORGANIZATION DECISION RESOLVED' }).first()
+  await expect(resolvedEvent).toBeVisible()
+})
+
 async function hookPersonAtCurrentCell(page: import('@playwright/test').Page, person: PersonState): Promise<void> {
   const canvas = page.getByLabel('Hex world map')
   await expect.poll(async () => canvas.getAttribute('data-map-viewport')).not.toBeNull()
@@ -996,4 +1024,5 @@ function requiredDevelopmentPerson(peopleById: ReadonlyMap<string, PersonState>,
   if (!person) throw new Error(`Controlled UI development fixture missing ${id}`)
   return person
 }
+
 }

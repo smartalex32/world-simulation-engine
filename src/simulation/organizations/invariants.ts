@@ -3,6 +3,7 @@ import type { OrganizationDefinition, OrganizationMembershipTrace } from './type
 import { failCanonicalValidation as fail } from '../validation/error'
 import { ORGANIZATION_LIFECYCLE_STREAM, ORGANIZATION_LIFECYCLE_TRACE_LIMIT } from './lifecycle'
 import { ORGANIZATION_ASSET_TRACE_LIMIT, ORGANIZATION_REPUTATION_OBSERVATION_LIMIT, ORGANIZATION_REPUTATION_OBSERVER_LIMIT } from './ledger'
+import { ORGANIZATION_DECISION_HISTORY_LIMIT, ORGANIZATION_DECISION_STREAM, ORGANIZATION_LEADERSHIP_TRACE_LIMIT } from './governance'
 
 /** Canonical validation owned by the organization subsystem. */
 export function validateOrganizationState(state: SimulationState, definitions: ReadonlyMap<string, OrganizationDefinition>): void {
@@ -23,6 +24,9 @@ export function validateOrganizationState(state: SimulationState, definitions: R
     const assetAndReputationEnabled = state.config.organizationAssetReputationModelVersion === 1
     if (Boolean(organization.assets) !== (assetAndReputationEnabled && Boolean(definition.assets)) || organization.assets && !validAssetAccount(organization.assets, organization.id, ids, householdIds, marketIds)) fail('organizations', `state.organizations.${organization.id}.assets`, 'asset-account', `Organization ${organization.id} has an invalid owned asset account`)
     if (Boolean(organization.reputationLedger) !== (assetAndReputationEnabled && Boolean(definition.reputation?.enabled)) || organization.reputationLedger && (!Number.isSafeInteger(organization.reputationLedger.nextObservationSequence) || organization.reputationLedger.nextObservationSequence < 1 || organization.reputationLedger.observations.length > ORGANIZATION_REPUTATION_OBSERVATION_LIMIT || !validReputationLedger(organization.reputationLedger, personIds, ids))) fail('organizations', `state.organizations.${organization.id}.reputationLedger`, 'reputation-ledger', `Organization ${organization.id} has invalid reputation evidence`)
+    const governanceEnabled = state.config.organizationLeadershipDecisionModelVersion === 1
+    if (Boolean(organization.leadership) !== (governanceEnabled && Boolean(definition.leadership)) || organization.leadership && !validLeadership(organization, definition, personIds, state.tick)) fail('organizations', `state.organizations.${organization.id}.leadership`, 'leadership', `Organization ${organization.id} has invalid leadership state`)
+    if (Boolean(organization.decisions) !== (governanceEnabled && Boolean(definition.decisionPolicies?.length)) || organization.decisions && !validDecisions(organization, definition, personIds, state.tick)) fail('organizations', `state.organizations.${organization.id}.decisions`, 'decisions', `Organization ${organization.id} has invalid decision state`)
   }
   const lifecycle = state.organizationLifecycle
   if (!Number.isSafeInteger(lifecycle.nextOrganizationSequence) || lifecycle.nextOrganizationSequence < 1) fail('organizations', 'state.organizationLifecycle.nextOrganizationSequence', 'sequence', 'Organization lifecycle sequence is invalid')
@@ -49,6 +53,80 @@ export function validateOrganizationState(state: SimulationState, definitions: R
   }
   validateMembershipHistory(state.organizations, lifecycle.latestMembershipTraces)
 }
+
+function validLeadership(organization: SimulationState['organizations'][number], definition: OrganizationDefinition, personIds: ReadonlySet<string>, stateTick: number): boolean {
+  const state = organization.leadership
+  const policy = definition.leadership
+  if (!state || !policy || state.roleId !== policy.leaderRoleId || !Number.isSafeInteger(state.nextTraceSequence) || state.nextTraceSequence < 1 || state.latestTraces.length > ORGANIZATION_LEADERSHIP_TRACE_LIMIT) return false
+  if (state.leaderPersonId !== undefined && (!personIds.has(state.leaderPersonId) || !organization.members.some((member) => member.personId === state.leaderPersonId && policy.eligibleMemberRoleIds.includes(member.role)) || !Number.isSafeInteger(state.termStartedTick) || state.termStartedTick! < 0 || state.termStartedTick! > stateTick)) return false
+  if (state.leaderPersonId === undefined && state.termStartedTick !== undefined) return false
+  return state.latestTraces.every((trace, index) => Number.isSafeInteger(trace.sequence) && trace.sequence >= 1 && trace.sequence < state.nextTraceSequence && (index === 0 || state.latestTraces[index - 1]!.sequence < trace.sequence)
+    && Number.isSafeInteger(trace.tick) && trace.tick >= 0 && trace.tick <= stateTick && trace.roleId === policy.leaderRoleId && ['selected', 'removed', 'succeeded', 'no-eligible-leader'].includes(trace.outcome) && typeof trace.contested === 'boolean' && trace.reason.length > 0
+    && trace.candidates.length <= policy.maxCandidates && trace.candidates.every((candidate, candidateIndex) => personIds.has(candidate.personId) && policy.eligibleMemberRoleIds.includes(candidate.memberRoleId) && [candidate.relationshipSupportPermille, candidate.organizationReputationPermille, candidate.knowledgePermille, candidate.persistencePermille, candidate.finalScorePermille].every((value) => Number.isSafeInteger(value) && value >= 0 && value <= 1000) && (candidateIndex === 0 || trace.candidates[candidateIndex - 1]!.finalScorePermille > candidate.finalScorePermille || trace.candidates[candidateIndex - 1]!.finalScorePermille === candidate.finalScorePermille && trace.candidates[candidateIndex - 1]!.personId < candidate.personId))
+    && (trace.selectedLeaderPersonId === undefined || trace.candidates.some((candidate) => candidate.personId === trace.selectedLeaderPersonId)))
+}
+
+function validDecisions(organization: SimulationState['organizations'][number], definition: OrganizationDefinition, personIds: ReadonlySet<string>, stateTick: number): boolean {
+  const state = organization.decisions
+  const policies = definition.decisionPolicies
+  if (!state || !policies || !Number.isSafeInteger(state.nextProposalSequence) || state.nextProposalSequence < 1 || state.latestResolutions.length > ORGANIZATION_DECISION_HISTORY_LIMIT || state.pending.length > policies.length) return false
+  const policyById = new Map(policies.map((policy) => [policy.id, policy]))
+  const proposalSequences = [...state.pending.map((entry) => entry.sequence), ...state.latestResolutions.map((entry) => entry.proposalSequence)]
+  if (new Set(proposalSequences).size !== proposalSequences.length || proposalSequences.some((sequence) => !Number.isSafeInteger(sequence) || sequence < 1 || sequence >= state.nextProposalSequence)) return false
+  if (!state.pending.every((proposal, index) => {
+    const policy = policyById.get(proposal.policyId)
+    return policy && (index === 0 || state.pending[index - 1]!.resolvesAtTick < proposal.resolvesAtTick || state.pending[index - 1]!.resolvesAtTick === proposal.resolvesAtTick && state.pending[index - 1]!.sequence < proposal.sequence)
+      && Number.isSafeInteger(proposal.proposedTick) && Number.isSafeInteger(proposal.resolvesAtTick) && proposal.proposedTick >= 0 && proposal.proposedTick <= stateTick && proposal.resolvesAtTick === proposal.proposedTick + policy.resolutionDelayHours
+      && proposal.participantIds.length <= policy.maxParticipants && proposal.participantRoles.length === proposal.participantIds.length && proposal.participantIds.every((id, participantIndex) => personIds.has(id) && proposal.participantRoles[participantIndex]?.personId === id && policy.participantRoleIds.includes(proposal.participantRoles[participantIndex]!.memberRoleId) && (participantIndex === 0 || proposal.participantIds[participantIndex - 1]! < id))
+      && proposal.alternatives.length === policy.alternatives.length && proposal.alternatives.every((id, alternativeIndex) => id === policy.alternatives[alternativeIndex]!.id)
+  })) return false
+  return state.latestResolutions.every((resolution, index) => {
+    const policy = policyById.get(resolution.policyId)
+    return policy && (index === 0 || state.latestResolutions[index - 1]!.sequence < resolution.sequence) && validDecisionResolution(resolution, policy, personIds, stateTick)
+  })
+}
+
+function validDecisionResolution(resolution: NonNullable<SimulationState['organizations'][number]['decisions']>['latestResolutions'][number], policy: NonNullable<OrganizationDefinition['decisionPolicies']>[number], personIds: ReadonlySet<string>, stateTick: number): boolean {
+  if (!(matchesEvidenceFactors(resolution.factors, policy.factors)
+      && resolution.sequence === resolution.proposalSequence && Number.isSafeInteger(resolution.proposedTick) && Number.isSafeInteger(resolution.resolvedTick) && resolution.resolvedTick >= resolution.proposedTick + policy.resolutionDelayHours && resolution.resolvedTick <= stateTick
+      && resolution.rngStream === ORGANIZATION_DECISION_STREAM && Number.isSafeInteger(resolution.randomRollPermille) && resolution.randomRollPermille >= 0 && resolution.randomRollPermille < 1000
+      && resolution.participantIds.length <= policy.maxParticipants && resolution.participantRoles.length === resolution.participantIds.length && resolution.participantIds.every((id, participantIndex) => personIds.has(id) && resolution.participantRoles[participantIndex]?.personId === id && policy.participantRoleIds.includes(resolution.participantRoles[participantIndex]!.memberRoleId) && (participantIndex === 0 || resolution.participantIds[participantIndex - 1]! < id))
+      && resolution.contributions.length === resolution.participantIds.length)) return false
+  const totalWeight = policy.factors.relationshipSupportWeightPermille + policy.factors.organizationReputationWeightPermille + policy.factors.knowledgeWeightPermille + policy.factors.persistenceWeightPermille
+  if (!resolution.contributions.every((contribution, contributionIndex) => {
+    const values = [contribution.relationshipSupportPermille, contribution.organizationReputationPermille, contribution.knowledgePermille, contribution.persistencePermille, contribution.evidenceScorePermille]
+    const expectedEvidence = Math.floor((contribution.relationshipSupportPermille * policy.factors.relationshipSupportWeightPermille + contribution.organizationReputationPermille * policy.factors.organizationReputationWeightPermille + contribution.knowledgePermille * policy.factors.knowledgeWeightPermille + contribution.persistencePermille * policy.factors.persistenceWeightPermille) / totalWeight)
+    return contribution.participantId === resolution.participantIds[contributionIndex] && values.every(permille) && contribution.evidenceScorePermille === expectedEvidence
+      && contribution.alternativeScores.length === policy.alternatives.length
+      && contribution.alternativeScores.every((score, alternativeIndex) => {
+        const alternative = policy.alternatives[alternativeIndex]!
+        const preferred = alternative.preference === 'higher-member-evidence' ? expectedEvidence : alternative.preference === 'lower-member-evidence' ? 1000 - expectedEvidence : 500
+        return score.alternativeId === alternative.id && score.scorePermille === Math.floor((alternative.baseScorePermille + preferred) / 2)
+      })
+  })) return false
+  const expectedScores = policy.alternatives.map((alternative, alternativeIndex) => resolution.contributions.length === 0 ? alternative.baseScorePermille : Math.floor(resolution.contributions.reduce((sum, contribution) => sum + contribution.alternativeScores[alternativeIndex]!.scorePermille, 0) / resolution.contributions.length))
+  const expectedProbabilities = normalizedProbabilities(expectedScores)
+  if (resolution.alternatives.length !== policy.alternatives.length || !resolution.alternatives.every((alternative, index) => alternative.alternativeId === policy.alternatives[index]!.id && alternative.finalScorePermille === expectedScores[index] && alternative.probabilityPermille === expectedProbabilities[index])) return false
+  let cumulative = 0
+  const selectedIndex = expectedProbabilities.findIndex((probability) => { cumulative += probability; return resolution.randomRollPermille < cumulative })
+  const selected = policy.alternatives[Math.max(0, selectedIndex)]!
+  return resolution.selectedAlternativeId === selected.id && resolution.authorizedEffectIds.length === selected.authorizedEffectIds.length && resolution.authorizedEffectIds.every((effectId, index) => effectId === selected.authorizedEffectIds[index])
+}
+
+function matchesEvidenceFactors(actual: unknown, expected: NonNullable<OrganizationDefinition['leadership']>['factors']): boolean {
+  if (!actual || typeof actual !== 'object') return false
+  const value = actual as Record<string, unknown>
+  return value.relationshipSupportWeightPermille === expected.relationshipSupportWeightPermille && value.organizationReputationWeightPermille === expected.organizationReputationWeightPermille && value.knowledgeWeightPermille === expected.knowledgeWeightPermille && value.persistenceWeightPermille === expected.persistenceWeightPermille && value.knowledgeId === expected.knowledgeId
+}
+
+function normalizedProbabilities(scores: readonly number[]): number[] {
+  const total = scores.reduce((sum, score) => sum + score, 0)
+  if (total === 0) { const base = Math.floor(1000 / scores.length); return scores.map((_, index) => index === scores.length - 1 ? 1000 - base * (scores.length - 1) : base) }
+  let assigned = 0
+  return scores.map((score, index) => { const probability = index === scores.length - 1 ? 1000 - assigned : Math.floor(score * 1000 / total); assigned += probability; return probability })
+}
+
+function permille(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 1000 }
 
 function validAssetAccount(account: NonNullable<SimulationState['organizations'][number]['assets']>, organizationId: string, organizationIds: ReadonlySet<string>, householdIds: ReadonlySet<string>, marketIds: ReadonlySet<string>): boolean {
   const traces = account.latestTransferTraces

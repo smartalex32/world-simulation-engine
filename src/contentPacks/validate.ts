@@ -1,7 +1,8 @@
 import { canonicalStringify } from '../shared/canonicalJson'
 import { schema } from '../shared/schema'
 import { PERSON_VARIABLE_IDS } from '../simulation/variables/types'
-import { ORGANIZATION_PURPOSE_IDS, ORGANIZATION_SHARED_RULE_IDS, type OrganizationDefinition } from '../simulation/organizations/types'
+import { ORGANIZATION_DECISION_EFFECT_IDS, ORGANIZATION_PURPOSE_IDS, ORGANIZATION_SHARED_RULE_IDS, type OrganizationDecisionAlternativeDefinition, type OrganizationDecisionEffectId, type OrganizationDefinition, type OrganizationEvidenceFactorWeights } from '../simulation/organizations/types'
+import { KNOWLEDGE_IDS } from '../simulation/knowledge/model'
 import type { ContentPack, ContentPackDiagnostic, DeterministicCondition, DeterministicExpression, EconomyGoodDefinition, EconomyRecipeDefinition, FictionalPathogenDefinition, ValidatedContentPack } from './types'
 
 export const CONTENT_PACK_SCHEMA_VERSION = 1
@@ -96,6 +97,23 @@ function validateOrganizationDefinition(definition: OrganizationDefinition, path
   const hasAttendance = definition?.sharedRuleIds?.includes('organization.rule.attendance.v1') ?? false
   if (definition?.assets && (!Number.isSafeInteger(definition.assets.initialCurrencyUnits) || definition.assets.initialCurrencyUnits < 0 || !definition.assets.initialGoods || Object.entries(definition.assets.initialGoods).some(([id, amount]) => !stableId(id) || !Number.isSafeInteger(amount) || amount < 0))) diagnostics.push({ path: `${path}.assets`, message: 'Organization assets need non-negative integer balances keyed by stable good IDs' })
   if (definition?.reputation && definition.reputation.enabled !== true && definition.reputation.enabled !== false) diagnostics.push({ path: `${path}.reputation`, message: 'Organization reputation enablement must be explicit' })
+  const leadership = definition?.leadership
+  if (leadership) {
+    const rolesValid = definition.memberRoleIds.includes(leadership.leaderRoleId) && Array.isArray(leadership.eligibleMemberRoleIds) && leadership.eligibleMemberRoleIds.length > 0 && new Set(leadership.eligibleMemberRoleIds).size === leadership.eligibleMemberRoleIds.length && leadership.eligibleMemberRoleIds.every((role) => definition.memberRoleIds.includes(role))
+    const boundsValid = positiveDailyCadence(leadership.cadenceHours) && Number.isSafeInteger(leadership.minimumAgeYears) && leadership.minimumAgeYears >= 0 && permille(leadership.minimumScorePermille) && permille(leadership.removalScorePermille) && leadership.removalScorePermille <= leadership.minimumScorePermille && positiveInteger(leadership.maxCandidates) && leadership.maxCandidates <= 32
+    if (!rolesValid || !boundsValid || !validEvidenceWeights(leadership.factors)) diagnostics.push({ path: `${path}.leadership`, message: 'Leadership needs allowed roles, bounded candidates, daily cadence, coherent thresholds, and explicit evidence weights' })
+  }
+  const decisionPolicies = definition?.decisionPolicies
+  if (decisionPolicies !== undefined) {
+    if (!Array.isArray(decisionPolicies) || decisionPolicies.length === 0 || decisionPolicies.length > 8 || new Set(decisionPolicies.map((policy) => policy.id)).size !== decisionPolicies.length) diagnostics.push({ path: `${path}.decisionPolicies`, message: 'Decision policies must contain one to eight unique policies' })
+    for (const [policyIndex, policy] of (decisionPolicies ?? []).entries()) {
+      const policyPath = `${path}.decisionPolicies[${policyIndex}]`
+      const participantsValid = stableId(policy.id) && Array.isArray(policy.participantRoleIds) && policy.participantRoleIds.length > 0 && new Set(policy.participantRoleIds).size === policy.participantRoleIds.length && policy.participantRoleIds.every((role: string) => definition.memberRoleIds.includes(role))
+      const timingValid = positiveDailyCadence(policy.cadenceHours) && positiveDailyCadence(policy.resolutionDelayHours) && positiveInteger(policy.maxParticipants) && policy.maxParticipants <= 32
+      const alternativesValid = Array.isArray(policy.alternatives) && policy.alternatives.length >= 2 && policy.alternatives.length <= 8 && new Set(policy.alternatives.map((alternative: OrganizationDecisionAlternativeDefinition) => alternative.id)).size === policy.alternatives.length && policy.alternatives.every((alternative: OrganizationDecisionAlternativeDefinition) => stableId(alternative.id) && permille(alternative.baseScorePermille) && ['higher-member-evidence', 'lower-member-evidence', 'neutral'].includes(alternative.preference) && Array.isArray(alternative.authorizedEffectIds) && alternative.authorizedEffectIds.length > 0 && new Set(alternative.authorizedEffectIds).size === alternative.authorizedEffectIds.length && alternative.authorizedEffectIds.every((effectId: OrganizationDecisionEffectId) => ORGANIZATION_DECISION_EFFECT_IDS.includes(effectId)))
+      if (!participantsValid || !timingValid || !alternativesValid || !validEvidenceWeights(policy.factors)) diagnostics.push({ path: policyPath, message: 'Decision policy needs bounded participants, daily timing, allowed roles, explicit evidence weights, and safe typed alternatives' })
+    }
+  }
   if (definition?.id === 'school' && !definition.memberRoleIds.includes('learner')) diagnostics.push({ path: `${path}.memberRoleIds`, message: 'School definitions must allow the learner role' })
   if (definition?.id === 'school' && !hasAttendance) diagnostics.push({ path: `${path}.sharedRuleIds`, message: 'School definitions must include the attendance rule' })
   if (definition?.id !== 'school' && hasAttendance) diagnostics.push({ path: `${path}.sharedRuleIds`, message: 'The attendance rule is reserved for school definitions' })
@@ -117,6 +135,14 @@ function validateOrganizationDefinition(definition: OrganizationDefinition, path
     if (membership?.enabled && definition.memberRoleIds.length < 2 && membership.baseRoleChangeProbabilityPermille > 0) diagnostics.push({ path: `${path}.lifecycle.membership`, message: 'Role-change probability requires at least two allowed roles' })
   }
 }
+
+function validEvidenceWeights(weights: OrganizationEvidenceFactorWeights | undefined): boolean {
+  if (!weights) return false
+  const values = [weights.relationshipSupportWeightPermille, weights.organizationReputationWeightPermille, weights.knowledgeWeightPermille, weights.persistenceWeightPermille]
+  return values.every(permille) && values.reduce((sum, value) => sum + value, 0) > 0 && (weights.knowledgeWeightPermille === 0 || weights.knowledgeId !== undefined && KNOWLEDGE_IDS.includes(weights.knowledgeId))
+}
+
+function positiveDailyCadence(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) >= 24 && (value as number) % 24 === 0 }
 
 function validateEconomyGood(good: EconomyGoodDefinition, path: string, diagnostics: ContentPackDiagnostic[]): void {
   if (!good || !stableId(good.id) || typeof good.name !== 'string' || good.name.trim().length === 0 || !['food', 'material', 'tool'].includes(good.category) || !positiveInteger(good.basePriceUnits) || !permille(good.decayPermillePerDay)) diagnostics.push({ path, message: 'Good needs a stable ID, name, category, positive price, and decay permille' })

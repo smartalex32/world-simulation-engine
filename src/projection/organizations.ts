@@ -46,6 +46,10 @@ export function buildProjectedOrganizationProfiles(organizations: readonly Organ
       ownedResourcesStatus: organization.assets ? 'owned-account' : 'not-modeled',
       ...(organization.assets ? { ownedCurrencyUnits: organization.assets.currencyUnits, ownedGoods: { ...organization.assets.goods }, latestAssetTransferEvidence: organization.assets.latestTransferTraces.slice(-8).map((entry) => structuredClone(entry)) } : {}),
       ...(organization.reputationLedger ? { latestReputationEvidence: organization.reputationLedger.observations.slice(-8).map((entry) => structuredClone(entry)), reputationByObserver: organization.reputationLedger.currentByObserver.map((entry) => structuredClone(entry)) } : {}),
+      leadershipStatus: organization.leadership ? organization.leadership.leaderPersonId ? 'filled' : 'vacant' : 'not-modeled',
+      ...(organization.leadership ? { leaderRoleId: organization.leadership.roleId, ...(organization.leadership.leaderPersonId ? { leaderPersonId: organization.leadership.leaderPersonId, leadershipTermStartedTick: organization.leadership.termStartedTick } : {}), latestLeadershipEvidence: organization.leadership.latestTraces.slice(-8).map((entry) => structuredClone(entry)) } : {}),
+      decisionStatus: organization.decisions ? 'active' : 'not-modeled',
+      ...(organization.decisions ? { pendingDecisions: organization.decisions.pending.map((entry) => structuredClone(entry)), latestDecisionResolutions: organization.decisions.latestResolutions.slice(-8).map((entry) => structuredClone(entry)) } : {}),
     }
   })
 }

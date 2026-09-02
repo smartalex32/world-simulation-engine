@@ -18,8 +18,9 @@ interface SupportedSchema extends SnapshotSchemaCompatibility { readState(value:
 export const SUPPORTED_SNAPSHOT_SCHEMAS: readonly SnapshotSchemaCompatibility[] = Object.freeze([
   Object.freeze({ schemaVersion: 43, engineVersions: Object.freeze(['0.44.0']), disposition: 'rejected', reason: 'Engine 0.44.0 used locale-dependent ordering and cannot be resumed by a stable-order executor.' }),
   Object.freeze({ schemaVersion: 44, engineVersions: Object.freeze(['0.45.0']), disposition: 'rejected', reason: 'Schema 44 is outside the current-plus-prior-two compatibility window.' }),
-  Object.freeze({ schemaVersion: 45, engineVersions: Object.freeze(['0.46.0']), disposition: 'migratable', reason: 'Organization lifecycle state and its fixed RNG phase require an explicit schema-46 behavior upgrade.' }),
+  Object.freeze({ schemaVersion: 45, engineVersions: Object.freeze(['0.46.0']), disposition: 'rejected', reason: 'Schema 45 is outside the current-plus-prior-two compatibility window.' }),
   Object.freeze({ schemaVersion: 46, engineVersions: Object.freeze(['0.47.0']), disposition: 'migratable', reason: 'Organization-owned accounts and observer-specific reputation require an explicit schema-47 behavior upgrade.' }),
+  Object.freeze({ schemaVersion: 47, engineVersions: Object.freeze(['0.48.0']), disposition: 'migratable', reason: 'Organization leadership and bounded decisions require an explicit schema-48 behavior upgrade.' }),
   Object.freeze({ schemaVersion: SNAPSHOT_SCHEMA_VERSION, engineVersions: Object.freeze([ENGINE_VERSION]), disposition: 'directly-loadable', reason: 'Current envelope and behavioral contract.' }),
 ])
 
@@ -29,6 +30,7 @@ const supportedSchemas: readonly SupportedSchema[] = [
   { ...SUPPORTED_SNAPSHOT_SCHEMAS[2]!, readState: readSchema45State },
   { ...SUPPORTED_SNAPSHOT_SCHEMAS[3]!, readState: readSchema46State },
   { ...SUPPORTED_SNAPSHOT_SCHEMAS[4]!, readState: readSchema47State },
+  { ...SUPPORTED_SNAPSHOT_SCHEMAS[5]!, readState: readSchema48State },
 ]
 
 interface MigrationStep {
@@ -91,7 +93,7 @@ const migrationSteps = new Map<number, MigrationStep>([
     },
   }],
   [46, {
-    fromSchemaVersion: 46, toSchemaVersion: 47, kind: 'behavior-upgrade', sourceEngineVersion: '0.47.0', targetEngineVersion: ENGINE_VERSION,
+    fromSchemaVersion: 46, toSchemaVersion: 47, kind: 'behavior-upgrade', sourceEngineVersion: '0.47.0', targetEngineVersion: '0.48.0',
     upgrade: (snapshot) => {
       const state = requiredObject(snapshot.state, 'Schema-46 snapshot state is invalid')
       const config = requiredObject(state.config, 'Schema-46 snapshot configuration is invalid')
@@ -99,6 +101,15 @@ const migrationSteps = new Map<number, MigrationStep>([
       const resolved = createContentPackResolver([DEFAULT_PREINDUSTRIAL_PACK]).resolve(DEFAULT_PREINDUSTRIAL_PACK.manifest.id, DEFAULT_PREINDUSTRIAL_PACK.manifest.version)
       const isLegacyDefaultPreindustrial = config.contentPackId === DEFAULT_PREINDUSTRIAL_PACK.manifest.id && config.contentPackVersion === '1.1.0'
       return { ...state, config: { ...config, organizationModelVersion: 4, organizationAssetReputationModelVersion: 0, ...(isLegacyDefaultPreindustrial ? { contentPackVersion: resolved.pack.manifest.version, contentPackChecksum: resolved.checksum, contentPackDependencies: resolved.dependencies } : {}) }, organizations: organizations.map((entry) => { const organization = requiredObject(entry, 'Schema-46 organization is invalid'); return { ...organization } }) }
+    },
+  }],
+  [47, {
+    fromSchemaVersion: 47, toSchemaVersion: 48, kind: 'behavior-upgrade', sourceEngineVersion: '0.48.0', targetEngineVersion: ENGINE_VERSION,
+    upgrade: (snapshot) => {
+      const state = requiredObject(snapshot.state, 'Schema-47 snapshot state is invalid')
+      const config = requiredObject(state.config, 'Schema-47 snapshot configuration is invalid')
+      const organizations = requiredArray(state.organizations, 'Schema-47 organizations are invalid')
+      return { ...state, config: { ...config, contentPackModelVersion: 4, organizationModelVersion: 5, organizationLeadershipDecisionModelVersion: 0 }, organizations: organizations.map((entry) => ({ ...requiredObject(entry, 'Schema-47 organization is invalid') })) }
     },
   }],
 ])
@@ -197,6 +208,12 @@ function readSchema47State(value: unknown): SnapshotStateLike {
   const state = requiredObject(value, 'Schema-47 snapshot state is invalid')
   requiredObject(state.config, 'Schema-47 snapshot configuration is invalid')
   requiredObject(state.world, 'Schema-47 snapshot world is invalid')
+  return structuredClone(state)
+}
+function readSchema48State(value: unknown): SnapshotStateLike {
+  const state = requiredObject(value, 'Schema-48 snapshot state is invalid')
+  requiredObject(state.config, 'Schema-48 snapshot configuration is invalid')
+  requiredObject(state.world, 'Schema-48 snapshot world is invalid')
   return structuredClone(state)
 }
 function readHistoricalState(value: unknown, schemaVersion: number): SnapshotStateLike {
