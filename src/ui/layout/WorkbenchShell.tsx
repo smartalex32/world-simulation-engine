@@ -29,7 +29,7 @@ export function WorkbenchTopbar({ activeMode, onModeChange, seed, tick, engineVe
       <Fact label="ENGINE" value={`v${engineVersion ?? '—'}`} />
       <Fact label="SAVED HASH" value={digest?.slice(0, 10) ?? 'computing…'} mono />
     </div>
-    <div className={`status-pill ${status}`} role="status" aria-label={`Simulation ${status}`}><span />{status}</div>
+    <div className={`status-pill ${status}`} aria-live="polite" aria-label={`Simulation ${status}`}><span />{status}</div>
   </header>
 }
 
