@@ -604,7 +604,7 @@ export default function App() {
     <WorkbenchShell>
       <WorkbenchTopbar activeMode={activeMode} onModeChange={navigation.navigateWorkspace} seed={projection?.seed ?? '—'} tick={projection?.tick ?? 0} engineVersion={projection?.engineVersion} digest={projection?.digest} status={status} />
 
-      <div className="sr-only" role="status" aria-live="polite" data-navigation-revision={navigationState.revision}>{navigationState.announcement}</div>
+      <div className="sr-only" aria-live="polite" data-navigation-revision={navigationState.revision}>{navigationState.announcement}</div>
 
       <RunStatusStrip>
         <button className="secondary" onClick={() => { void openWorldSetup() }}>Create world</button>
