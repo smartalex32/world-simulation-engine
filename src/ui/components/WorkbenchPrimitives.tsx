@@ -8,8 +8,9 @@ export function PanelTitle({ title, subtitle, actions }: { title: string; subtit
   return <div className="panel-title"><div><h2>{title}</h2><span>{subtitle}</span></div>{actions}</div>
 }
 
-export function Metric({ label, value }: { label: string; value: string | number }) {
-  return <div className="metric"><span>{label}</span><strong>{value}</strong></div>
+export function Metric({ label, value, onOpen }: { label: string; value: string | number; onOpen?: () => void }) {
+  const content = <><span>{label}</span><strong>{value}</strong></>
+  return onOpen ? <button type="button" className="metric metric-link" onClick={onOpen} aria-label={`Explain ${label}`}>{content}</button> : <div className="metric">{content}</div>
 }
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {

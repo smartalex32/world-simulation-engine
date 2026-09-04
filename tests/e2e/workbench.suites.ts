@@ -181,6 +181,69 @@ capabilityTest('navigation', 'keeps real map tools and presentation diagnostics 
   await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', tick ?? '')
 })
 
+capabilityTest('navigation', 'restores typed selection and filters through cross-workspace browser history', async ({ page }) => {
+  await page.goto('/?workspace=world&entity=person%3Aperson-0001&focus=person%3Aperson-0001&overlay=food&annotations=households')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  await expect(page.getByText('Person inspector')).toBeVisible()
+  await expect(page.locator('.right-panel .panel-title').first().locator('span')).toHaveText('person-0001')
+  await expect(page.getByRole('button', { name: 'food', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Households', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  const tick = await page.locator('[data-simulation-tick]').getAttribute('data-simulation-tick')
+
+  await page.getByRole('button', { name: 'analytics', exact: true }).click()
+  await expect(page.locator('#workbench-primary')).toBeFocused()
+  await expect(page.locator('.right-panel .panel-title').first().locator('span')).toHaveText('person-0001')
+  await expect(page).toHaveURL(/workspace=analytics/)
+  await page.getByRole('button', { name: 'settings', exact: true }).click()
+  await expect(page).toHaveURL(/workspace=settings/)
+
+  await page.goBack()
+  await expect(page.getByRole('button', { name: 'analytics', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.locator('.right-panel .panel-title').first().locator('span')).toHaveText('person-0001')
+  await expect(page.locator('[data-navigation-revision]')).toContainText('Analytics workspace restored')
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', tick ?? '')
+
+  await page.goBack()
+  await expect(page.getByRole('button', { name: 'world', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('button', { name: 'food', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Households', exact: true })).toHaveAttribute('aria-pressed', 'true')
+})
+
+capabilityTest('navigation', 'cross-links a person to history without advancing simulation state', async ({ page }) => {
+  await page.goto('/?entity=person%3Aperson-0001&focus=person%3Aperson-0001')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  const tick = await page.locator('[data-simulation-tick]').getAttribute('data-simulation-tick')
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Recorded evidence over time' })).toBeVisible()
+  await expect(page.getByText('Timeline · person-0001')).toBeVisible()
+  await expect(page).toHaveURL(/workspace=history/)
+  await expect(page).toHaveURL(/detail=timeline/)
+  await expect(page.locator('#workbench-primary')).toBeFocused()
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', tick ?? '')
+})
+
+capabilityTest('navigation', 'announces malformed and not-yet-modeled deep-link targets accessibly', async ({ page }) => {
+  await page.goto('/?entity=person%3A%3Cscript%3E')
+  await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
+  await expect(page.locator('[data-unavailable-status="invalid"]')).toContainText('malformed')
+
+  await page.goto('/?workspace=entities&entity=region%3Afuture-region')
+  await expect(page.getByRole('button', { name: 'entities', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.locator('[data-unavailable-status="not-yet-modeled"]')).toContainText('not available yet')
+})
+
+capabilityTest('navigation', 'clears run-specific presentation context when a new world is committed', async ({ page }) => {
+  await page.goto('/?workspace=entities&entity=person%3Aperson-0001&focus=person%3Aperson-0001&overlay=food')
+  await expect(page.getByText('Person inspector')).toBeVisible()
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await setup.getByRole('button', { name: 'Commit & create world', exact: true }).click()
+  await expect(setup).toBeHidden()
+  await expect(page.getByText('No selection')).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.has('entity')).toBe(false)
+  await expect.poll(() => new URL(page.url()).searchParams.get('overlay')).toBe('food')
+})
+
 capabilityTest('navigation', 'keeps the map and controls usable at a constrained width', async ({ page }) => {
   await page.setViewportSize({ width: 640, height: 900 })
   await page.goto('/')
