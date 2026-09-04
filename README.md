@@ -124,7 +124,7 @@ resident, household, and food-store values. The History workspace compares
 only these retained observations; it does not replay or mutate a run to fill
 historical gaps.
 
-The workbench now provides coherent world, simulation, analytics, entities, history, tools, and settings navigation. Tools connect to the worker-owned world authoring flow; settings expose presentation diagnostics only. The map remains the primary surface, with existing level-of-detail behavior, live inspectors, controls, sampled aggregates, and responsive layouts. This presentation layer does not alter simulation state or consume simulation RNG.
+The workbench now provides coherent world, simulation, analytics, entities, history, tools, and settings navigation. One presentation-only navigation reducer owns the active workspace, typed entity selection and focus, comparison target, time range, map filters, detail surface, and return location. Valid context survives workspace changes; browser history and validated query parameters restore only presentation state. Projection and run reconciliation retains stale, offscreen, truncated, deleted, history-gap, invalid, and not-yet-modeled targets explicitly instead of substituting another entity. Tools connect to the worker-owned world authoring flow; settings expose presentation diagnostics only. The map remains the primary surface, with existing level-of-detail behavior, live inspectors, controls, sampled aggregates, and responsive layouts. This presentation layer does not alter simulation state, protect detailed people, or consume simulation RNG.
 
 The minimap is also keyboard accessible: Enter or Space recenters the map and
 its focus/assistive text describes it as a presentation-only navigation control.

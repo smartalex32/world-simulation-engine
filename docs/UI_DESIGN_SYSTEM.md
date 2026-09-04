@@ -16,6 +16,12 @@ metric, card, toolbar, tab, and availability-state vocabulary. State messages
 must say **Not modeled** or **Unavailable** for unsupported capabilities and
 must never invent projected data.
 
+`src/ui/controllers/useWorkbenchNavigation.ts` is the single owner of
+cross-workspace presentation context. Entity references and URL fields are
+validated before use, browser back/forward restores presentation state only,
+and run changes clear entity-specific context. Selection and bounded map focus
+remain distinct from authoritative protected-person commands.
+
 At desktop widths the workbench is controls, primary canvas, and inspector. At
 820px and below it stacks controls, primary, and inspector. This retains one
 coherent visual and keyboard reading order while avoiding page-level horizontal

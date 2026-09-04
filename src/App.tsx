@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchDatabase, type RunHistory, type SavedSnapshot, type StoredContentPack } from './persistence/database'
 import { HISTORY_METRICS } from './history/history'
-import type { CommunityVariableDefinition, CommunityVariableId } from './simulation/community/types'
+import type { CommunityVariableDefinition } from './simulation/community/types'
 import type { BroaderDevelopmentExperienceType, DevelopmentExperienceType, ElevationOverride, GeographicCell, HouseholdState, ParentChildLink, PersonState, RelationshipPerspective, RelationshipState, SimulationEvent, StatisticSample, Terrain, UtilityContribution, WorldCreationDraft, WorldCreationRequest, WorldDraftPreview, WorldDraftRecord } from './simulation/domain/types'
 import { hexNeighbors } from './simulation/spatial/hex'
 import { seasonAtTick } from './simulation/environment/season'
@@ -20,6 +20,7 @@ import { EMPTY_TELEMETRY_WATERMARK, type SimulationResponse, type TelemetryWater
 import { useSimulationSession } from './ui/controllers/useSimulationSession'
 import { useDraftController } from './ui/controllers/useDraftController'
 import { usePersistenceController } from './ui/controllers/usePersistenceController'
+import { availabilityLabel, buildWorkbenchAvailability, entityLabel, useWorkbenchNavigation, type WorkbenchDetailSurface, type WorkbenchEntityAvailability, type WorkbenchEntityRef, type WorkbenchTimeRange } from './ui/controllers/useWorkbenchNavigation'
 import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver, diffContentPacks, exportContentPack, importContentPack } from './contentPacks'
 import type { ContentPack, ResolvedContentPack } from './contentPacks'
 import { Metric, PanelTitle, StatePresentation } from './ui/components/WorkbenchPrimitives'
@@ -41,10 +42,11 @@ export default function App() {
   const session = useSimulationSession(client)
   const draftController = useDraftController()
   const persistenceController = usePersistenceController()
+  const navigation = useWorkbenchNavigation()
+  const { state: navigationState } = navigation
   const { projection, status, speed, events, statistics, processingMs } = session
   const [seed, setSeed] = useState('valley-001')
   const [setupOpen, setSetupOpen] = useState(false)
-  const [activeMode, setActiveMode] = useState<WorkbenchMode>('world')
   const [worldSetup, setWorldSetup] = useState<WorldSetupValues>({
     name: 'The Seeded Valley', seed: 'valley-001', width: 32, height: 24, hexRadiusMeters: 1000, population: 200,
     placements: [
@@ -69,13 +71,6 @@ export default function App() {
   const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
   const [history, setHistory] = useState<RunHistory>()
   const [historyLoading, setHistoryLoading] = useState(false)
-  const [selectedCellId, setSelectedCellId] = useState<string>()
-  const [selectedPersonId, setSelectedPersonId] = useState<string>()
-  const [selectedCommunityId, setSelectedCommunityId] = useState<string>()
-  const [overlay, setOverlay] = useState<MapOverlay>('terrain')
-  const [communityMeasureId, setCommunityMeasureId] = useState<CommunityVariableId>('community.emergent.socialTrust')
-  const [showActivityLocations, setShowActivityLocations] = useState(false)
-  const [showHouseholds, setShowHouseholds] = useState(false)
   const [snapshots, setSnapshots] = useState<SavedSnapshot[]>([])
   const [error, setError] = useState<string>()
   const [saveName, setSaveName] = useState('')
@@ -102,6 +97,17 @@ export default function App() {
   const statusRef = useRef<typeof status>('starting')
   const importRef = useRef<HTMLInputElement>(null)
   const requestViewport = session.requestViewport
+  const activeMode = navigationState.activeWorkspace
+  const selectedEntity = navigationState.selectedEntity
+  const selectedCellId = selectedEntity?.kind === 'map-cell' ? selectedEntity.id : undefined
+  const selectedPersonId = selectedEntity?.kind === 'person' ? selectedEntity.id : undefined
+  const selectedCommunityId = selectedEntity?.kind === 'region' ? selectedEntity.id : undefined
+  const focusedPersonId = navigationState.focusedEntity?.kind === 'person' ? navigationState.focusedEntity.id : undefined
+  const focusedCellId = navigationState.focusedEntity?.kind === 'map-cell' ? navigationState.focusedEntity.id : undefined
+  const overlay: MapOverlay = navigationState.filters.mapOverlay
+  const communityMeasureId = navigationState.filters.communityMeasureId
+  const showActivityLocations = navigationState.filters.mapAnnotations.includes('activity-locations')
+  const showHouseholds = navigationState.filters.mapAnnotations.includes('households')
 
   function setDraftOperationBusy(value: boolean) {
     draftBusyRef.current = value
@@ -200,9 +206,7 @@ export default function App() {
           session.clearTimeline()
           runCreationResetPending.current = true
           setHistory(undefined)
-          setSelectedCellId(undefined)
-          setSelectedPersonId(undefined)
-          setSelectedCommunityId(undefined)
+          navigation.resetForRun()
         } else if (response.action === 'committed' || response.action === 'discarded') {
           const discarded = response.draft
           setDraftOperationBusy(true)
@@ -389,9 +393,7 @@ export default function App() {
       setWorldSetup(setup)
       session.clearTimeline()
       setHistory(undefined)
-      setSelectedCellId(undefined)
-      setSelectedPersonId(undefined)
-      setSelectedCommunityId(undefined)
+      navigation.resetForRun()
       await refreshSnapshots(saved.runId)
     } catch (reason) { setError(`Import failed: ${messageOf(reason)}`) }
     if (importRef.current) importRef.current.value = ''
@@ -550,15 +552,22 @@ export default function App() {
   }
 
   function inspectPerson(personId: string) {
-    const person = projectionRef.current?.people.find((candidate) => candidate.id === personId)
-    if (person) setSelectedCellId(person.locationCellId)
-    setSelectedPersonId(personId)
-    setSelectedCommunityId(undefined)
+    navigation.selectEntity({ kind: 'person', id: personId }, { focus: true })
   }
 
   function inspectCommunity(communityId: string) {
     if (!projectionRef.current?.communities.some((community) => community.catchment.id === communityId)) return
-    setSelectedCommunityId(communityId)
+    navigation.selectEntity({ kind: 'region', id: communityId })
+  }
+
+  function inspectEvent(event: SimulationEvent) {
+    navigation.setTimeRange({ fromTick: event.tick, toTick: event.tick })
+    navigation.selectEntity({ kind: 'event', id: event.id }, { workspace: 'history', detailSurface: 'timeline' })
+  }
+
+  function toggleMapAnnotation(annotation: 'activity-locations' | 'households') {
+    const current = navigationState.filters.mapAnnotations
+    navigation.setFilter('mapAnnotations', current.includes(annotation) ? current.filter((entry) => entry !== annotation) : [...current, annotation].sort() as typeof current)
   }
 
   const tick = projection?.tick ?? 0
@@ -567,13 +576,35 @@ export default function App() {
   const recentMetrics = newestMetrics(statistics)
   const selectedPerson = projection?.people.find((person) => person.id === selectedPersonId)
   const selectedCommunity = projection?.communities.find((community) => community.catchment.id === selectedCommunityId)
+  const selectedSettlement = selectedEntity?.kind === 'settlement' ? projection?.settlements.find((settlement) => settlement.id === selectedEntity.id) : undefined
+  const selectedOrganization = selectedEntity?.kind === 'organization' ? projection?.organizationProfiles.find((organization) => organization.id === selectedEntity.id) : undefined
+  const selectedRelationship = selectedEntity?.kind === 'relationship' ? projection?.relationships.find((relationship) => relationship.id === selectedEntity.id) : undefined
+  const selectedEvent = selectedEntity?.kind === 'event' ? [...events, ...(history?.events ?? [])].find((event) => event.id === selectedEntity.id) : undefined
   const selectedRelationships = selectedPerson ? relationshipViews(selectedPerson.id, projection?.relationships ?? []) : []
   const settlementServiceById = new Map((projection?.settlementServices ?? []).map((service) => [service.settlementId, service]))
   const selected = selectedCellId ? projection?.map.exactCells.find((cell) => cell.id === selectedCellId) ?? (projection?.map.focusCell?.id === selectedCellId ? projection.map.focusCell : undefined) : undefined
+  const eventIds = useMemo(() => [...new Set([...events, ...(history?.events ?? [])].map((event) => event.id))], [events, history?.events])
+  const metricIds = useMemo(() => [...new Set([...HISTORY_METRICS, ...statistics.map((sample) => sample.metricId)])], [statistics])
+  const previousWorkspace = useRef(activeMode)
+
+  useEffect(() => {
+    if (!projection) return
+    navigation.reconcile(buildWorkbenchAvailability(projection, { eventIds, historyLoaded: history !== undefined, metricIds }))
+  }, [eventIds, history, metricIds, navigation.reconcile, navigationState.focusedEntity, navigationState.selectedEntity, projection])
+
+  useEffect(() => {
+    if (activeMode === 'history') void refreshHistory()
+    if (previousWorkspace.current !== activeMode) {
+      previousWorkspace.current = activeMode
+      window.requestAnimationFrame(() => document.getElementById('workbench-primary')?.focus())
+    }
+  }, [activeMode])
 
   return (
     <WorkbenchShell>
-      <WorkbenchTopbar activeMode={activeMode} onModeChange={(mode) => { setActiveMode(mode); if (mode === 'history') void refreshHistory() }} seed={projection?.seed ?? '—'} tick={projection?.tick ?? 0} engineVersion={projection?.engineVersion} digest={projection?.digest} status={status} />
+      <WorkbenchTopbar activeMode={activeMode} onModeChange={navigation.navigateWorkspace} seed={projection?.seed ?? '—'} tick={projection?.tick ?? 0} engineVersion={projection?.engineVersion} digest={projection?.digest} status={status} />
+
+      <div className="sr-only" role="status" aria-live="polite" data-navigation-revision={navigationState.revision}>{navigationState.announcement}</div>
 
       <RunStatusStrip>
         <button className="secondary" onClick={() => { void openWorldSetup() }}>Create world</button>
@@ -586,7 +617,7 @@ export default function App() {
         <select aria-label="Simulation speed" value={speed} onChange={(event) => session.changeSpeed(Number(event.target.value))}>
           {SPEEDS.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
         </select>
-        <button className="secondary" onClick={() => session.reset()}>Reset</button>
+        <button className="secondary" onClick={() => { navigation.resetForRun(); session.reset() }}>Reset</button>
         <div className="control-spacer" />
         <button className="secondary" onClick={() => importRef.current?.click()}>Import</button>
         <button className="secondary" onClick={() => void exportRun()}>Export</button>
@@ -599,25 +630,25 @@ export default function App() {
         left={<>
           {(activeMode === 'world') && <section className="world-overview"><span className="eyebrow">WORLD OVERVIEW</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{projection ? `${projection.world.width} × ${projection.world.height} hexes · ${projection.world.scale.hexRadiusMeters / 1000} km radius` : 'Awaiting authoritative world'}</small><div><span>People</span><b>{projection?.summary.populationCount ?? 0}</b><span>Households</span><b>{projection?.summary.householdCount ?? 0}</b><span>Food</span><b>{recentMetrics['resources.totalFood'] ?? '—'}</b><span>Season</span><b>{projection ? seasonAtTick(projection.tick).id : '—'}</b></div></section>}
           {(activeMode === 'history') && <section className="world-overview"><span className="eyebrow">RUN HISTORY</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{history ? `${history.events.length} bounded events · ${history.statistics.length} sampled metrics` : 'Load persisted local run evidence'}</small><div><span>Selected person</span><b>{selectedPersonId ?? 'None'}</b><span>Current tick</span><b>{projection?.tick ?? 0}</b></div></section>}
-          {(activeMode === 'tools') && <section className="workbench-tool-panel" aria-label="World tools"><span className="eyebrow">WORLD TOOLS</span><strong>Author and inspect</strong><p>Creation remains worker-owned. Map controls change only the presentation projection.</p><button className="primary" onClick={() => void openWorldSetup()}>Create or edit world</button><button onClick={() => setActiveMode('world')}>Return to world overview</button></section>}
+          {(activeMode === 'tools') && <section className="workbench-tool-panel" aria-label="World tools"><span className="eyebrow">WORLD TOOLS</span><strong>Author and inspect</strong><p>Creation remains worker-owned. Map controls change only the presentation projection.</p><button className="primary" onClick={() => void openWorldSetup()}>Create or edit world</button><button onClick={() => navigation.navigateWorkspace('world')}>Return to world overview</button></section>}
           {(activeMode === 'settings') && <section className="workbench-tool-panel" aria-label="Workbench settings"><span className="eyebrow">WORKBENCH SETTINGS</span><strong>Presentation diagnostics</strong><p>These controls do not affect simulation state, seeded outcomes, or canonical digests.</p><div className="setting-facts"><Metric label="Engine" value={`v${projection?.engineVersion ?? '—'}`} /><Metric label="Seed" value={projection?.seed ?? '—'} /><Metric label="Map detail" value={projection?.map.lod ?? '—'} /></div><PanelTitle title="Content pack" subtitle="Versioned authoritative setting" /><div className="setting-facts" aria-label="Content pack diagnostics"><Metric label="Pack" value={selectedContentPack().manifest.name} /><Metric label="ID" value={selectedContentPack().manifest.id} /><Metric label="Version" value={selectedContentPack().manifest.version} /><Metric label="Variables / edges" value={`${selectedContentPack().personVariables.length} / ${selectedContentPack().influences.length}`} /></div><label>Run content pack<select aria-label="Run content pack" value={selectedContentPackKey} onChange={(event) => setSelectedContentPackKey(event.target.value)}><option value={`${DEFAULT_PREINDUSTRIAL_PACK.manifest.id}@${DEFAULT_PREINDUSTRIAL_PACK.manifest.version}`}>{DEFAULT_PREINDUSTRIAL_PACK.manifest.name} ({DEFAULT_PREINDUSTRIAL_PACK.manifest.version})</option>{contentPacks.filter((entry) => `${entry.id}@${entry.version}` !== `${DEFAULT_PREINDUSTRIAL_PACK.manifest.id}@${DEFAULT_PREINDUSTRIAL_PACK.manifest.version}`).map((entry) => <option key={`${entry.id}@${entry.version}`} value={`${entry.id}@${entry.version}`}>{entry.pack.manifest.name} ({entry.version})</option>)}</select></label><label>Pack JSON<textarea aria-label="Content pack JSON" value={contentPackJson} onChange={(event) => setContentPackJson(event.target.value)} /></label><button onClick={() => void saveContentPackJson()}>Validate & save pack</button><small aria-label="Content pack differences">{contentPackDifference === undefined ? 'Fix JSON to inspect differences.' : `${contentPackDifference.length} field-level difference(s) from the selected pack.`}</small><small aria-label="Saved content packs">{contentPacks.length} saved pack version(s). The selected version is used only by the next world commit; existing runs retain their original reference.</small></section>}
-          {(activeMode === 'world' || activeMode === 'entities') && <section className="entity-catalog" aria-label="Entity categories"><span className="eyebrow">ENTITIES</span><button onClick={() => setActiveMode('entities')}>People <b>{projection?.summary.populationCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Households <b>{projection?.summary.householdCount ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Cohorts <b>{projection?.cohorts.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Organizations <b>{projection?.organizations.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Governance <b>{projection?.governanceProfiles.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Communities <b>{projection?.communities.length ?? 0}</b></button><button onClick={() => setActiveMode('entities')}>Settlements <b>{projection?.settlements.length ?? 0}</b></button>{projection && <><div className="settlement-list">{projection.settlements.map((settlement) => { const service = settlementServiceById.get(settlement.id); return <span key={settlement.id}>{settlement.name}<small>{settlement.scale} · {settlement.nearbyResidentCount} residents · {settlement.nearbyHouseholdCount} households · {settlement.householdFoodStoreUnits} food stores · {settlement.recordedRelocationArrivalCount} recorded moves</small><small>{settlement.catchmentCellCount} {settlement.catchmentSource} catchment cells · {settlement.currentVisitorCount} visitors · {settlement.scaleEvidence.direction} → {settlement.scaleEvidence.suggestedScale}</small><small>Scale evidence: {settlement.scaleEvidence.densityPerHomeCell.toFixed(1)} residents/home · {settlement.scaleEvidence.resourceUnitsPerResident.toFixed(1)} resources/resident · {Math.round(settlement.scaleEvidence.accessPermille / 10)}% water access</small><small>Infrastructure: {service?.marketCount ?? 0} markets · {service?.schoolCount ?? 0} schools ({service?.schoolCapacity ?? 0} seats) · {service?.roadCellCount ?? 0} road cells</small></span> })}</div><div className="organization-list" aria-label="Organization evidence">{projection.cohorts.map((cohort) => <span key={cohort.id}>Distant cohort · {cohort.sourceZoneId}<small>{cohort.populationCount.toLocaleString()} people · {cohort.householdCount.toLocaleString()} households · transition {cohort.transitionStatus}</small></span>)}{projection.organizationProfiles.slice(0, 6).map((organization) => <span key={organization.id}>{organization.name}<small>{organization.goal} · {organization.memberCount} members · {organization.roleCounts.learner ?? 0} learners · {organization.serviceCapacity} seats</small><small>{organization.internalRelationshipCount} internal relationships · {Math.round(organization.internalAverageFamiliarity / 10)}% familiarity · reputation {organization.reputationStatus} · resources {organization.ownedResourcesStatus} · leadership {organization.leadershipStatus}{organization.leaderPersonId ? ` (${organization.leaderRoleId}: ${organization.leaderPersonId})` : ''} · decisions {organization.decisionStatus}{organization.pendingDecisions?.length ? ` (${organization.pendingDecisions.length} pending)` : ''}</small></span>)}</div><div className="organization-list" aria-label="Governance evidence">{projection.governanceProfiles.map((governance) => <span key={governance.id}>{governance.catchmentName} local governance<small>{governance.catchmentCellCount} observed catchment cells · {governance.activeRepresentativeCount}/{governance.representativeIds.length} active representatives · legitimacy {(governance.legitimacyPermille / 10).toFixed(1)}%</small><small>Food-relief access {(governance.serviceAccessPermille / 10).toFixed(1)}% · contribution fairness {(governance.contributionFairnessPermille / 10).toFixed(1)}% · council {governance.councilOrganizationStatus}</small><small>Jurisdiction basis: geographic catchment · territory {governance.territoryStatus} · civic membership {governance.civicMembershipStatus}</small></span>)}</div></>}<small>Settlement scale and catchments are geographic home/location profiles, not membership. Communities are geographic exposure measures, not memberships.</small><small>Organization membership is explicit but does not itself create relationships, reputation, resources, or person effects. Governance evidence does not infer territory, civic membership, culture, or identity.</small></section>}
+          {(activeMode === 'world' || activeMode === 'entities') && <section className="entity-catalog" aria-label="Entity categories"><span className="eyebrow">ENTITIES</span><button onClick={() => navigation.navigateWorkspace('entities')}>People <b>{projection?.summary.populationCount ?? 0}</b></button><button onClick={() => navigation.navigateWorkspace('entities')}>Households <b>{projection?.summary.householdCount ?? 0}</b></button><button onClick={() => navigation.navigateWorkspace('entities')}>Cohorts <b>{projection?.cohorts.length ?? 0}</b></button><button onClick={() => navigation.navigateWorkspace('entities')}>Organizations <b>{projection?.organizations.length ?? 0}</b></button><button onClick={() => navigation.navigateWorkspace('entities')}>Governance <b>{projection?.governanceProfiles.length ?? 0}</b></button><button onClick={() => navigation.navigateWorkspace('entities')}>Communities <b>{projection?.communities.length ?? 0}</b></button><button onClick={() => navigation.navigateWorkspace('entities')}>Settlements <b>{projection?.settlements.length ?? 0}</b></button>{projection && <><div className="settlement-list">{projection.settlements.map((settlement) => { const service = settlementServiceById.get(settlement.id); return <button type="button" key={settlement.id} onClick={() => navigation.selectEntity({ kind: 'settlement', id: settlement.id })}>{settlement.name}<small>{settlement.scale} · {settlement.nearbyResidentCount} residents · {settlement.nearbyHouseholdCount} households · {settlement.householdFoodStoreUnits} food stores · {settlement.recordedRelocationArrivalCount} recorded moves</small><small>{settlement.catchmentCellCount} {settlement.catchmentSource} catchment cells · {settlement.currentVisitorCount} visitors · {settlement.scaleEvidence.direction} → {settlement.scaleEvidence.suggestedScale}</small><small>Scale evidence: {settlement.scaleEvidence.densityPerHomeCell.toFixed(1)} residents/home · {settlement.scaleEvidence.resourceUnitsPerResident.toFixed(1)} resources/resident · {Math.round(settlement.scaleEvidence.accessPermille / 10)}% water access</small><small>Infrastructure: {service?.marketCount ?? 0} markets · {service?.schoolCount ?? 0} schools ({service?.schoolCapacity ?? 0} seats) · {service?.roadCellCount ?? 0} road cells</small></button> })}</div><div className="organization-list" aria-label="Organization evidence">{projection.cohorts.map((cohort) => <span key={cohort.id}>Distant cohort · {cohort.sourceZoneId}<small>{cohort.populationCount.toLocaleString()} people · {cohort.householdCount.toLocaleString()} households · transition {cohort.transitionStatus}</small></span>)}{projection.organizationProfiles.slice(0, 6).map((organization) => <button type="button" key={organization.id} onClick={() => navigation.selectEntity({ kind: 'organization', id: organization.id })}>{organization.name}<small>{organization.goal} · {organization.memberCount} members · {organization.roleCounts.learner ?? 0} learners · {organization.serviceCapacity} seats</small><small>{organization.internalRelationshipCount} internal relationships · {Math.round(organization.internalAverageFamiliarity / 10)}% familiarity · reputation {organization.reputationStatus} · resources {organization.ownedResourcesStatus} · leadership {organization.leadershipStatus}{organization.leaderPersonId ? ` (${organization.leaderRoleId}: ${organization.leaderPersonId})` : ''} · decisions {organization.decisionStatus}{organization.pendingDecisions?.length ? ` (${organization.pendingDecisions.length} pending)` : ''}</small></button>)}</div><div className="organization-list" aria-label="Governance evidence">{projection.governanceProfiles.map((governance) => <span key={governance.id}>{governance.catchmentName} local governance<small>{governance.catchmentCellCount} observed catchment cells · {governance.activeRepresentativeCount}/{governance.representativeIds.length} active representatives · legitimacy {(governance.legitimacyPermille / 10).toFixed(1)}%</small><small>Food-relief access {(governance.serviceAccessPermille / 10).toFixed(1)}% · contribution fairness {(governance.contributionFairnessPermille / 10).toFixed(1)}% · council {governance.councilOrganizationStatus}</small><small>Jurisdiction basis: geographic catchment · territory {governance.territoryStatus} · civic membership {governance.civicMembershipStatus}</small></span>)}</div></>}<small>Settlement scale and catchments are geographic home/location profiles, not membership. Communities are geographic exposure measures, not memberships.</small><small>Organization membership is explicit but does not itself create relationships, reputation, resources, or person effects. Governance evidence does not infer territory, civic membership, culture, or identity.</small></section>}
           {(activeMode === 'world' || activeMode === 'simulation' || activeMode === 'tools' || activeMode === 'settings') && <><PanelTitle title="Map layers" subtitle={`${projection?.world.cellCount ?? 0} hex cells`} />
           <div className="overlay-list">
             {(['terrain', 'elevation', 'habitability', 'movement', 'food', 'population', 'community'] as MapOverlay[]).map((entry) => (
-              <button key={entry} aria-pressed={overlay === entry} className={overlay === entry ? 'active' : ''} onClick={() => setOverlay(entry)}><span className={`swatch ${entry}`} />{entry}</button>
+              <button key={entry} aria-pressed={overlay === entry} className={overlay === entry ? 'active' : ''} onClick={() => navigation.setFilter('mapOverlay', entry)}><span className={`swatch ${entry}`} />{entry}</button>
             ))}
           </div>
           {projection && <div className="map-annotation-toggles" aria-label="Map annotations">
-            <button aria-label="Activity locations" aria-pressed={showActivityLocations} className={showActivityLocations ? 'active' : ''} onClick={() => setShowActivityLocations((current) => !current)}>Activity locations</button>
-            <button aria-label="Households" aria-pressed={showHouseholds} className={showHouseholds ? 'active' : ''} onClick={() => setShowHouseholds((current) => !current)}>Households</button>
+            <button aria-label="Activity locations" aria-pressed={showActivityLocations} className={showActivityLocations ? 'active' : ''} onClick={() => toggleMapAnnotation('activity-locations')}>Activity locations</button>
+            <button aria-label="Households" aria-pressed={showHouseholds} className={showHouseholds ? 'active' : ''} onClick={() => toggleMapAnnotation('households')}>Households</button>
           </div>}</>}
           {(activeMode === 'simulation') && <section className="simulation-status-panel"><span className="eyebrow">SIMULATION</span><div className="metric-list"><Metric label="Status" value={status} /><Metric label="Speed" value={SPEEDS.find((entry) => entry.value === speed)?.label ?? `${speed} hours / batch`} /><Metric label="Current time" value={`Day ${day} · ${hour.toString().padStart(2, '0')}:00`} /><Metric label="Last batch" value={`${processingMs.toFixed(2)} ms`} /></div><p>Rendering is decoupled from simulation advancement.</p></section>}
           {(activeMode === 'world' || activeMode === 'analytics') && <><PanelTitle title="Daily samples" subtitle="Latest aggregates" />
           <div className="metric-list">
             <Metric label="Cells" value={recentMetrics['world.cellCount'] ?? projection?.world.cellCount ?? 0} />
             <Metric label="Habitable" value={recentMetrics['world.habitableCells'] ?? '—'} />
-            <Metric label="Population" value={recentMetrics['population.count'] ?? projection?.summary.populationCount ?? 0} />
+            <Metric label="Population" value={recentMetrics['population.count'] ?? projection?.summary.populationCount ?? 0} onOpen={() => navigation.selectEntity({ kind: 'metric', id: 'population.count' }, { workspace: 'analytics', detailSurface: 'explanation' })} />
             <Metric label="Living" value={recentMetrics['population.aliveCount'] ?? projection?.summary.populationCount ?? 0} />
             <Metric label="Births/day" value={recentMetrics['lifecycle.births'] ?? 0} />
             <Metric label="Deaths/day" value={recentMetrics['lifecycle.deaths'] ?? 0} />
@@ -674,34 +705,48 @@ export default function App() {
             communities={projection.communities}
             definitions={projection.communityVariableDefinitions}
             selectedMeasureId={communityMeasureId}
-            onSelectMeasure={(id) => { setCommunityMeasureId(id); setOverlay('community') }}
+            onSelectMeasure={(id) => { navigation.setFilter('communityMeasureId', id); navigation.setFilter('mapOverlay', 'community') }}
             onInspect={inspectCommunity}
           />}</>}
         </>}
 
         primary={<>
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {projection?.map.overlay ?? overlay}{projection && projection.map.overlay !== overlay ? ' · updating…' : ''}</span></div>
-          {projection ? <HexMap world={projection.world} settlements={projection.settlements} roads={projection.roads} settlementLinks={projection.settlementLinks} map={projection.map} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selectedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelectedCellId(cell.id); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onFocusCell={(cellId) => { setSelectedCellId(cellId); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onViewportRequest={requestViewport} /> : <StatePresentation state="loading">Starting simulation worker…</StatePresentation>}
+          {projection ? <HexMap world={projection.world} settlements={projection.settlements} roads={projection.roads} settlementLinks={projection.settlementLinks} map={projection.map} overlay={overlay} selectedCellId={selectedCellId ?? focusedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={focusedPersonId} onSelect={(cell) => navigation.selectEntity({ kind: 'map-cell', id: cell.id }, { focus: true })} onFocusCell={(cellId) => navigation.selectEntity({ kind: 'map-cell', id: cellId }, { focus: true })} onViewportRequest={requestViewport} /> : <StatePresentation state="loading">Starting simulation worker…</StatePresentation>}
         </>}
 
         right={<>
-          <PanelTitle title={selectedCommunity ? 'Community inspector' : selectedPerson ? 'Person inspector' : 'Cell inspector'} subtitle={selectedCommunity ? selectedCommunity.catchment.displayName : selectedPerson ? selectedPerson.id : selected ? `Cell ${selected.id}` : 'Select a cell'} />
-          {selectedCommunity
-            ? <CommunityInspector community={selectedCommunity} definitions={projection?.communityVariableDefinitions ?? []} hasHookedPerson={selectedPerson !== undefined} onReturnToPerson={() => setSelectedCommunityId(undefined)} />
+          <PanelTitle title={selectedCommunity ? 'Community inspector' : selectedPerson ? 'Person inspector' : selectedSettlement ? 'Settlement inspector' : selectedOrganization ? 'Organization inspector' : selectedRelationship ? 'Relationship inspector' : selectedEvent ? 'Event inspector' : selectedEntity?.kind === 'metric' ? 'Metric explanation' : 'Cell inspector'} subtitle={selectedCommunity ? selectedCommunity.catchment.displayName : selectedPerson ? selectedPerson.id : selectedEntity ? entityLabel(selectedEntity) : selected ? `Cell ${selected.id}` : 'Select a cell'} />
+          {selectedEntity && <WorkbenchCrossLinks entity={selectedEntity} projection={projection} tick={selectedEvent?.tick} onSelect={(entity, options) => navigation.selectEntity(entity, options)} onFocus={navigation.focusEntity} onTimeRange={navigation.setTimeRange} onReturn={navigationState.returnLocation ? navigation.returnToPrevious : undefined} />}
+          {navigationState.invalidTarget
+            ? <NavigationUnavailable target={navigationState.invalidTarget} status="invalid" />
+            : selectedEntity && navigationState.selectionStatus && navigationState.selectionStatus !== 'available'
+              ? <NavigationUnavailable target={entityLabel(selectedEntity)} status={navigationState.selectionStatus} />
+          : selectedCommunity
+            ? <CommunityInspector community={selectedCommunity} definitions={projection?.communityVariableDefinitions ?? []} hasHookedPerson={focusedPersonId !== undefined} onReturnToPerson={() => focusedPersonId && navigation.selectEntity({ kind: 'person', id: focusedPersonId })} />
             : selectedPerson
             ? <PersonInspector person={selectedPerson} tick={projection?.tick ?? 0} routeHome={projection?.routeHome?.personId === selectedPerson.id ? projection.routeHome : undefined} variableDefinitions={projection?.variableDefinitions ?? []} communityVariableDefinitions={projection?.communityVariableDefinitions ?? []} communities={projection?.communities ?? []} personCommunityId={projection?.personCommunityIds[selectedPerson.id]} relationships={selectedRelationships} households={projection?.households ?? []} parentChildLinks={projection?.parentChildLinks ?? []} people={projection?.people ?? []} onHookPerson={inspectPerson} onRelease={() => {
-                setSelectedCellId(selectedPerson.locationCellId)
-                setSelectedPersonId(undefined)
+                navigation.selectEntity({ kind: 'map-cell', id: selectedPerson.locationCellId }, { focus: true })
               }} />
+            : selectedSettlement
+              ? <EntitySummary title={selectedSettlement.name} facts={[['Scale', selectedSettlement.scale], ['Anchor cell', selectedSettlement.anchorCellId], ['Nearby residents', selectedSettlement.nearbyResidentCount]]} />
+            : selectedOrganization
+              ? <EntitySummary title={selectedOrganization.name} facts={[['Kind', selectedOrganization.kind], ['Members', selectedOrganization.memberCount], ['Location', selectedOrganization.locationCellId]]} />
+            : selectedRelationship
+              ? <EntitySummary title={selectedRelationship.id} facts={[['Person A', selectedRelationship.personAId], ['Person B', selectedRelationship.personBId], ['Familiarity', selectedRelationship.familiarity]]} />
+            : selectedEvent
+              ? <EntitySummary title={selectedEvent.type.replaceAll('_', ' ')} facts={[['Tick', selectedEvent.tick], ['Event ID', selectedEvent.id]]} />
+            : selectedEntity?.kind === 'metric'
+              ? <EntitySummary title={selectedEntity.id} facts={[['Current value', recentMetrics[selectedEntity.id] ?? 'No sample in the current bounded projection'], ['Source', 'Recorded simulation statistics']]} />
             : selected
-              ? <CellInspector cell={selected} people={projection?.people.filter((person) => person.locationCellId === selected.id) ?? []} onSelectPerson={setSelectedPersonId} detailsTruncated={projection?.detailBudget.peopleTruncated ?? false} />
+              ? <CellInspector cell={selected} people={projection?.people.filter((person) => person.locationCellId === selected.id) ?? []} onSelectPerson={inspectPerson} detailsTruncated={projection?.detailBudget.peopleTruncated ?? false} />
               : <StatePresentation state="empty" title="No selection">Choose a hex to inspect its authoritative spatial state.</StatePresentation>}
           <PanelTitle title="Snapshots" subtitle={`${snapshots.length} local saves`} />
           <div className="save-form"><input placeholder="Snapshot name" value={saveName} onChange={(event) => setSaveName(event.target.value)} /><button onClick={() => void saveNamed()} disabled={namedSavePending} aria-busy={namedSavePending}>Save</button>{lastNamedSave && <small role="status">Saved snapshot: {lastNamedSave}</small>}</div>
           <div className="snapshot-list">
             {snapshots.slice(0, 5).map((saved) => (
               <div key={saved.key} className="snapshot-row">
-                <button disabled={status === 'starting'} onClick={() => { void database.resolveSnapshotContentPack(saved.snapshot).then((pack) => { committedTelemetry.current = saved.telemetry?.through ?? { ...EMPTY_TELEMETRY_WATERMARK }; client.load(saved.snapshot, pack); setSeed(saved.snapshot.state.config.seed) }).catch((reason) => setError(`Snapshot load failed: ${messageOf(reason)}`)) }}><strong>{saved.name}</strong><span>Hour {saved.snapshot.state.tick}</span></button>
+                <button disabled={status === 'starting'} onClick={() => { navigation.resetForRun(); void database.resolveSnapshotContentPack(saved.snapshot).then((pack) => { committedTelemetry.current = saved.telemetry?.through ?? { ...EMPTY_TELEMETRY_WATERMARK }; client.load(saved.snapshot, pack); setSeed(saved.snapshot.state.config.seed) }).catch((reason) => setError(`Snapshot load failed: ${messageOf(reason)}`)) }}><strong>{saved.name}</strong><span>Hour {saved.snapshot.state.tick}</span></button>
                 {saved.kind === 'named' && <button className="delete" title="Delete snapshot" onClick={() => void database.deleteSnapshot(saved.key).then(() => refreshSnapshots())}>×</button>}
               </div>
             ))}
@@ -716,12 +761,57 @@ export default function App() {
         <div className="event-table" role="log">
           <div className="event-header"><span>Tick</span><span>Type</span><span>Details</span></div>
           {events.length === 0 && <div className="event-empty">No events recorded yet.</div>}
-          {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
+          {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><a href={`?workspace=history&entity=${encodeURIComponent(`event:${event.id}`)}&from=${event.tick}&to=${event.tick}&detail=timeline`} onClick={(click) => { click.preventDefault(); inspectEvent(event) }}>Open event</a> · <EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
       </section>}
       {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onUndo={undoWorldSetup} onRedo={redoWorldSetup} canUndo={(worldDraft?.undoStack.length ?? 0) > 0} canRedo={(worldDraft?.redoStack.length ?? 0) > 0} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={!draftBusy && acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} onElevationPaintCommit={paintDraftElevation} onResourcePaintCommit={paintDraftResources} onExportDraft={exportWorldSetupDraft} onImportDraft={importWorldSetupDraft} error={error} />}
     </WorkbenchShell>
   )
+}
+
+function WorkbenchCrossLinks({ entity, projection, tick, onSelect, onFocus, onTimeRange, onReturn }: {
+  entity: WorkbenchEntityRef
+  projection?: WorkbenchProjection
+  tick?: number
+  onSelect: (entity: WorkbenchEntityRef, options?: { focus?: boolean; workspace?: WorkbenchMode; detailSurface?: WorkbenchDetailSurface }) => void
+  onFocus: (entity?: WorkbenchEntityRef) => void
+  onTimeRange: (range?: WorkbenchTimeRange) => void
+  onReturn?: () => void
+}) {
+  const person = entity.kind === 'person' ? projection?.people.find((candidate) => candidate.id === entity.id) : undefined
+  const settlement = entity.kind === 'settlement' ? projection?.settlements.find((candidate) => candidate.id === entity.id) : undefined
+  const region = entity.kind === 'region' ? projection?.communities.find((candidate) => candidate.catchment.id === entity.id) : undefined
+  const organization = entity.kind === 'organization' ? projection?.organizationProfiles.find((candidate) => candidate.id === entity.id) : undefined
+  const locationCellId = person?.locationCellId ?? settlement?.anchorCellId ?? region?.catchment.anchorCellId ?? organization?.locationCellId
+  const showOnMap = () => {
+    if (locationCellId) onFocus({ kind: 'map-cell', id: locationCellId })
+    onSelect(entity, { workspace: 'world', detailSurface: 'map', focus: entity.kind === 'person' })
+  }
+  return <nav className="workbench-cross-links" aria-label="Selection destinations">
+    {onReturn && <button type="button" onClick={onReturn}>Return</button>}
+    {locationCellId && <button type="button" onClick={showOnMap}>Show on map</button>}
+    {entity.kind === 'person' && <button type="button" onClick={() => onSelect(entity, { workspace: 'entities', detailSurface: 'network', focus: true })}>Relationships</button>}
+    {entity.kind === 'person' && <button type="button" onClick={() => { onTimeRange({ fromTick: 0, toTick: projection?.tick ?? 0 }); onSelect(entity, { workspace: 'history', detailSurface: 'timeline', focus: true }) }}>Timeline</button>}
+    {(entity.kind === 'settlement' || entity.kind === 'region') && <button type="button" onClick={() => onSelect(entity, { workspace: 'analytics', detailSurface: 'analytics' })}>Open analytics</button>}
+    {entity.kind === 'event' && tick !== undefined && <button type="button" onClick={() => { onTimeRange({ fromTick: tick, toTick: tick }); onSelect(entity, { workspace: 'history', detailSurface: 'timeline' }) }}>Go to tick {tick}</button>}
+    {entity.kind === 'metric' && <button type="button" onClick={() => onSelect(entity, { workspace: 'analytics', detailSurface: 'explanation' })}>Explain metric</button>}
+  </nav>
+}
+
+function NavigationUnavailable({ target, status }: { target: string; status: Exclude<WorkbenchEntityAvailability, 'available'> }) {
+  const presentationState = status === 'stale' ? 'stale' : status === 'offscreen' || status === 'truncated' || status === 'history-gap' ? 'partial' : 'unavailable'
+  const explanation = status === 'invalid' ? 'The deep link or entity identifier is malformed and was not used.'
+    : status === 'stale' ? 'The current worker projection has not confirmed this target yet.'
+    : status === 'offscreen' ? 'The target is valid but outside the bounded map projection. A focus request has been sent.'
+    : status === 'truncated' ? 'The target is outside the bounded entity detail budget; no substitute entity was selected.'
+    : status === 'deleted' ? 'The target no longer exists in this run, or the person has died. The identifier remains visible for context.'
+    : status === 'history-gap' ? 'The retained history window does not currently contain this event.'
+    : 'This target type or identifier is valid, but its detail model is not available yet.'
+  return <StatePresentation state={presentationState} title={`${availabilityLabel(status)} target`}><span data-unavailable-status={status}>{target}: {explanation}</span></StatePresentation>
+}
+
+function EntitySummary({ title, facts }: { title: string; facts: readonly (readonly [string, string | number])[] }) {
+  return <section className="entity-summary" aria-label={`${title} details`}><strong>{title}</strong><div className="metric-list">{facts.map(([label, value]) => <Metric key={label} label={label} value={value} />)}</div><small>This is bounded projection data. Selection does not mutate or protect authoritative simulation state.</small></section>
 }
 
 function worldSetupFromCreation(creation: WorldCreationRequest): WorldSetupValues {
