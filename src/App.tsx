@@ -22,6 +22,8 @@ import { useDraftController } from './ui/controllers/useDraftController'
 import { usePersistenceController } from './ui/controllers/usePersistenceController'
 import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver, diffContentPacks, exportContentPack, importContentPack } from './contentPacks'
 import type { ContentPack, ResolvedContentPack } from './contentPacks'
+import { Metric, PanelTitle, StatePresentation } from './ui/components/WorkbenchPrimitives'
+import { RunStatusStrip, WorkbenchShell, WorkbenchTopbar, WorkbenchWorkspace, type WorkbenchMode } from './ui/layout/WorkbenchShell'
 
 const SPEEDS = [
   { value: 1, label: '1 hour / batch' },
@@ -42,7 +44,7 @@ export default function App() {
   const { projection, status, speed, events, statistics, processingMs } = session
   const [seed, setSeed] = useState('valley-001')
   const [setupOpen, setSetupOpen] = useState(false)
-  const [activeMode, setActiveMode] = useState<'world' | 'simulation' | 'analytics' | 'entities' | 'history' | 'tools' | 'settings'>('world')
+  const [activeMode, setActiveMode] = useState<WorkbenchMode>('world')
   const [worldSetup, setWorldSetup] = useState<WorldSetupValues>({
     name: 'The Seeded Valley', seed: 'valley-001', width: 32, height: 24, hexRadiusMeters: 1000, population: 200,
     placements: [
@@ -570,25 +572,10 @@ export default function App() {
   const selected = selectedCellId ? projection?.map.exactCells.find((cell) => cell.id === selectedCellId) ?? (projection?.map.focusCell?.id === selectedCellId ? projection.map.focusCell : undefined) : undefined
 
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <div className="brand-block">
-          <div className="mark" aria-hidden="true">⬡</div>
-          <div><h1>World Simulation</h1><span>deterministic engine workbench</span></div>
-        </div>
-        <nav className="mode-navigation" aria-label="Workbench modes">
-          {(['world', 'simulation', 'analytics', 'entities', 'history', 'tools', 'settings'] as const).map((mode) => <button key={mode} aria-current={activeMode === mode ? 'page' : undefined} className={activeMode === mode ? 'active' : ''} onClick={() => { setActiveMode(mode); if (mode === 'history') void refreshHistory() }}>{mode}</button>)}
-        </nav>
-        <div className="run-facts">
-          <Fact label="SEED" value={projection?.seed ?? '—'} />
-          <div className="fact" data-simulation-tick={projection?.tick ?? 0}><span>TIME</span><strong>{`Day ${day} · ${hour.toString().padStart(2, '0')}:00`}</strong></div>
-          <Fact label="ENGINE" value={`v${projection?.engineVersion ?? '—'}`} />
-          <Fact label="SAVED HASH" value={projection?.digest?.slice(0, 10) ?? 'computing…'} mono />
-        </div>
-        <div className={`status-pill ${status}`}><span />{status}</div>
-      </header>
+    <WorkbenchShell>
+      <WorkbenchTopbar activeMode={activeMode} onModeChange={(mode) => { setActiveMode(mode); if (mode === 'history') void refreshHistory() }} seed={projection?.seed ?? '—'} tick={projection?.tick ?? 0} engineVersion={projection?.engineVersion} digest={projection?.digest} status={status} />
 
-      <section className="controlbar" aria-label="Simulation controls">
+      <RunStatusStrip>
         <button className="secondary" onClick={() => { void openWorldSetup() }}>Create world</button>
         <span className="active-world-seed">Seed <strong>{projection?.seed ?? seed}</strong></span>
         <div className="divider" />
@@ -604,12 +591,12 @@ export default function App() {
         <button className="secondary" onClick={() => importRef.current?.click()}>Import</button>
         <button className="secondary" onClick={() => void exportRun()}>Export</button>
         <input ref={importRef} hidden type="file" accept="application/json,application/x-ndjson,.json,.ndjson" onChange={(event) => void importRun(event.target.files?.[0])} />
-      </section>
+      </RunStatusStrip>
 
       {(error ?? session.error) && <div className="error-banner"><strong>Workbench error</strong><span>{error ?? session.error}</span><button onClick={() => { setError(undefined); session.dismissError() }}>Dismiss</button></div>}
 
-      <section className="workspace">
-        <aside className="left-panel panel">
+      <WorkbenchWorkspace
+        left={<>
           {(activeMode === 'world') && <section className="world-overview"><span className="eyebrow">WORLD OVERVIEW</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{projection ? `${projection.world.width} × ${projection.world.height} hexes · ${projection.world.scale.hexRadiusMeters / 1000} km radius` : 'Awaiting authoritative world'}</small><div><span>People</span><b>{projection?.summary.populationCount ?? 0}</b><span>Households</span><b>{projection?.summary.householdCount ?? 0}</b><span>Food</span><b>{recentMetrics['resources.totalFood'] ?? '—'}</b><span>Season</span><b>{projection ? seasonAtTick(projection.tick).id : '—'}</b></div></section>}
           {(activeMode === 'history') && <section className="world-overview"><span className="eyebrow">RUN HISTORY</span><strong>{projection?.world.name ?? 'Preparing world'}</strong><small>{history ? `${history.events.length} bounded events · ${history.statistics.length} sampled metrics` : 'Load persisted local run evidence'}</small><div><span>Selected person</span><b>{selectedPersonId ?? 'None'}</b><span>Current tick</span><b>{projection?.tick ?? 0}</b></div></section>}
           {(activeMode === 'tools') && <section className="workbench-tool-panel" aria-label="World tools"><span className="eyebrow">WORLD TOOLS</span><strong>Author and inspect</strong><p>Creation remains worker-owned. Map controls change only the presentation projection.</p><button className="primary" onClick={() => void openWorldSetup()}>Create or edit world</button><button onClick={() => setActiveMode('world')}>Return to world overview</button></section>}
@@ -690,14 +677,14 @@ export default function App() {
             onSelectMeasure={(id) => { setCommunityMeasureId(id); setOverlay('community') }}
             onInspect={inspectCommunity}
           />}</>}
-        </aside>
+        </>}
 
-        <section className="map-panel panel">
+        primary={<>
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {projection?.map.overlay ?? overlay}{projection && projection.map.overlay !== overlay ? ' · updating…' : ''}</span></div>
-          {projection ? <HexMap world={projection.world} settlements={projection.settlements} roads={projection.roads} settlementLinks={projection.settlementLinks} map={projection.map} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selectedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelectedCellId(cell.id); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onFocusCell={(cellId) => { setSelectedCellId(cellId); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onViewportRequest={requestViewport} /> : <div className="loading">Starting simulation worker…</div>}
-        </section>
+          {projection ? <HexMap world={projection.world} settlements={projection.settlements} roads={projection.roads} settlementLinks={projection.settlementLinks} map={projection.map} overlay={overlay} selectedCellId={selectedPersonId ? undefined : selectedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={selectedPersonId} onSelect={(cell) => { setSelectedCellId(cell.id); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onFocusCell={(cellId) => { setSelectedCellId(cellId); setSelectedPersonId(undefined); setSelectedCommunityId(undefined) }} onViewportRequest={requestViewport} /> : <StatePresentation state="loading">Starting simulation worker…</StatePresentation>}
+        </>}
 
-        <aside className="right-panel panel">
+        right={<>
           <PanelTitle title={selectedCommunity ? 'Community inspector' : selectedPerson ? 'Person inspector' : 'Cell inspector'} subtitle={selectedCommunity ? selectedCommunity.catchment.displayName : selectedPerson ? selectedPerson.id : selected ? `Cell ${selected.id}` : 'Select a cell'} />
           {selectedCommunity
             ? <CommunityInspector community={selectedCommunity} definitions={projection?.communityVariableDefinitions ?? []} hasHookedPerson={selectedPerson !== undefined} onReturnToPerson={() => setSelectedCommunityId(undefined)} />
@@ -708,7 +695,7 @@ export default function App() {
               }} />
             : selected
               ? <CellInspector cell={selected} people={projection?.people.filter((person) => person.locationCellId === selected.id) ?? []} onSelectPerson={setSelectedPersonId} detailsTruncated={projection?.detailBudget.peopleTruncated ?? false} />
-              : <div className="empty-state"><span>⌖</span><p>Choose a hex to inspect its authoritative spatial state.</p></div>}
+              : <StatePresentation state="empty" title="No selection">Choose a hex to inspect its authoritative spatial state.</StatePresentation>}
           <PanelTitle title="Snapshots" subtitle={`${snapshots.length} local saves`} />
           <div className="save-form"><input placeholder="Snapshot name" value={saveName} onChange={(event) => setSaveName(event.target.value)} /><button onClick={() => void saveNamed()} disabled={namedSavePending} aria-busy={namedSavePending}>Save</button>{lastNamedSave && <small role="status">Saved snapshot: {lastNamedSave}</small>}</div>
           <div className="snapshot-list">
@@ -719,8 +706,8 @@ export default function App() {
               </div>
             ))}
           </div>
-        </aside>
-      </section>
+        </>}
+      />
 
       {activeMode === 'history'
         ? <HistoryPanel events={history?.events ?? []} statistics={history?.statistics ?? []} checkpoints={history?.checkpoints ?? []} telemetry={history?.telemetry} selectedPersonId={selectedPersonId} onInspectPerson={inspectPerson} onRefresh={() => void refreshHistory()} loading={historyLoading} />
@@ -733,13 +720,9 @@ export default function App() {
         </div>
       </section>}
       {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onUndo={undoWorldSetup} onRedo={redoWorldSetup} canUndo={(worldDraft?.undoStack.length ?? 0) > 0} canRedo={(worldDraft?.redoStack.length ?? 0) > 0} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={!draftBusy && acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} onElevationPaintCommit={paintDraftElevation} onResourcePaintCommit={paintDraftResources} onExportDraft={exportWorldSetupDraft} onImportDraft={importWorldSetupDraft} error={error} />}
-    </main>
+    </WorkbenchShell>
   )
 }
-
-function Fact({ label, value, mono }: { label: string; value: string; mono?: boolean }) { return <div className="fact"><span>{label}</span><strong className={mono ? 'mono' : ''}>{value}</strong></div> }
-function PanelTitle({ title, subtitle }: { title: string; subtitle: string }) { return <div className="panel-title"><div><h2>{title}</h2><span>{subtitle}</span></div></div> }
-function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 
 function worldSetupFromCreation(creation: WorldCreationRequest): WorldSetupValues {
   return {

@@ -868,6 +868,31 @@ capabilityTest('inspection', 'shows the authoritative community influence in an 
   await expect(contribution).toContainText(/source \d+‰ · centered [+-]?\d+‰ · weight -?\d+‰/)
 })
 
+capabilityTest('navigation', 'uses the responsive workbench shell without horizontal page overflow', async ({ page }) => {
+  for (const viewport of [{ width: 1024, height: 900 }, { width: 768, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    await page.goto('/')
+    await expect(page.getByRole('navigation', { name: 'Workbench modes' })).toBeVisible()
+    await expect(page.getByLabel('Simulation controls')).toBeVisible()
+    await expect(page.getByLabel('Hex world map')).toBeVisible()
+    const dimensions = await page.evaluate(() => ({ clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }))
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth)
+    if (viewport.width <= 768) {
+      const lastControl = page.locator('.left-panel button:not([disabled])').last()
+      await lastControl.focus()
+      await page.keyboard.press('Tab')
+      await expect(page.getByLabel('Hex world map')).toBeFocused()
+    }
+  }
+  // Verify the keyboard skip target directly; browser automation does not
+  // provide a consistent way to reset sequential focus in WebKit.
+  const skipLink = page.getByRole('link', { name: 'Skip to workspace' })
+  await skipLink.focus()
+  await expect(skipLink).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('#workbench-primary')).toBeFocused()
+})
+
 capabilityTest('inspection', 'inspects explicit organization leadership, pending decisions, and resolved history', async ({ page }) => {
   const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
   pack.manifest = { ...pack.manifest, id: 'setting.e2e.organization-governance', version: '1.0.0', name: 'E2E organization governance' }
