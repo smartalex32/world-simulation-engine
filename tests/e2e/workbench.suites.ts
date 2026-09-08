@@ -1,6 +1,9 @@
 import { expect } from '@playwright/test'
 import { DEFAULT_PREINDUSTRIAL_PACK, type ContentPack } from '../../src/contentPacks'
 import { WorkbenchProjectionBuilder } from '../../src/projection/buildMapProjection'
+import { MAX_PERSON_DETAILS, MAX_POPULATION_MARKERS, MAX_RELATIONSHIP_DETAILS, MAX_TERRAIN_PRIMITIVES } from '../../src/projection/types'
+import { VISUALIZATION_BUDGETS } from '../../src/ui/visualization'
+import { WORKBENCH_VISUAL_BASELINES } from './visualBaselines'
 import { createCommonsActivity, createHouseholdHomeActivity } from '../../src/simulation/activities/model'
 import { scheduleForAge } from '../../src/simulation/activities/config'
 import { createCommunityState, createDailyCommunityCounters, createTwoCatchmentGeography } from '../../src/simulation/community'
@@ -15,7 +18,7 @@ import { PERSON_VARIABLE_ID } from '../../src/simulation/variables/registry'
 import { setPersonVariable } from '../../src/simulation/variables/storage'
 
 
-export type WorkbenchCapability = 'authoring' | 'navigation' | 'reproducibility' | 'inspection'
+export type WorkbenchCapability = 'authoring' | 'navigation' | 'reproducibility' | 'inspection' | 'quality'
 export type WorkbenchTestBody = NonNullable<Parameters<typeof import('@playwright/test').test>[2]>
 
 export function registerWorkbenchTests(
@@ -982,6 +985,119 @@ capabilityTest('inspection', 'inspects explicit organization leadership, pending
   await page.getByRole('button', { name: 'history', exact: true }).click()
   const resolvedEvent = page.locator('.history-event').filter({ hasText: 'ORGANIZATION DECISION RESOLVED' }).first()
   await expect(resolvedEvent).toBeVisible()
+})
+
+capabilityTest('quality', '@critical traverses every analytical workspace with a keyboard-compatible fixed-seed context', async ({ page }) => {
+  await page.goto('/?workspace=entities&entity=person%3Aperson-0001&focus=person%3Aperson-0001')
+  await expect(page.getByRole('heading', { name: 'person-0001' })).toBeVisible()
+  const network = page.getByRole('button', { name: 'Relationship network' })
+  await network.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('heading', { name: /Relationships around person-0001/ })).toBeVisible()
+  const graphNode = page.locator('.graph-node').first()
+  await graphNode.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(graphNode).toBeFocused()
+  await page.getByRole('button', { name: 'Recorded history' }).click()
+  await expect(page.getByRole('heading', { name: 'Multi-lane recorded evidence' })).toBeVisible()
+  await page.getByRole('button', { name: 'Show on map' }).click()
+  await expect(page.getByRole('heading', { name: 'Seeded Valley' })).toBeVisible()
+  await page.getByRole('button', { name: 'analytics', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Conditions and retained trends' })).toBeVisible()
+  await page.getByLabel('Metric category').selectOption('social')
+  await expect(page).toHaveURL(/category=social/)
+  await page.getByRole('button', { name: 'simulation', exact: true }).click()
+  const simulation = page.getByRole('heading', { name: /Run run-/ })
+  await expect(simulation).toBeVisible()
+  await page.locator('#workbench-primary').getByRole('button', { name: 'Step 1 hour' }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '1')
+})
+
+capabilityTest('quality', '@critical exposes named controls, references, and non-color state across every top-level workspace', async ({ page }) => {
+  for (const workspace of ['world', 'simulation', 'analytics', 'entities', 'history', 'tools', 'settings']) {
+    await page.goto(`/?workspace=${workspace}`)
+    await expect(page.locator('.run-facts')).toContainText('v0.49.0')
+    await expect(page.getByRole('navigation', { name: 'Workbench modes' })).toBeVisible()
+    const violations = await page.evaluate(() => {
+      const visible = (element: Element) => {
+        const style = getComputedStyle(element)
+        return style.display !== 'none' && style.visibility !== 'hidden' && !(element as HTMLElement).hidden
+      }
+      const name = (element: Element) => element.getAttribute('aria-label')?.trim()
+        || element.getAttribute('aria-labelledby')?.split(/\s+/).map((id) => document.getElementById(id)?.textContent?.trim()).filter(Boolean).join(' ')
+        || element.closest('label')?.textContent?.trim()
+        || element.textContent?.trim()
+      const problems: string[] = []
+      const ids = [...document.querySelectorAll('[id]')].map((element) => element.id)
+      for (const id of new Set(ids)) if (ids.filter((candidate) => candidate === id).length > 1) problems.push(`duplicate id: ${id}`)
+      for (const element of document.querySelectorAll('button, a[href], input:not([type="hidden"]), select, textarea, canvas, svg[role]')) {
+        if (visible(element) && !name(element)) problems.push(`unnamed ${element.tagName.toLowerCase()}`)
+      }
+      for (const element of document.querySelectorAll('[aria-describedby]')) {
+        for (const id of element.getAttribute('aria-describedby')!.split(/\s+/)) if (!document.getElementById(id)) problems.push(`missing description: ${id}`)
+      }
+      if (!document.querySelector('h1')) problems.push('missing h1')
+      if (!document.querySelector('main')) problems.push('missing main landmark')
+      return problems
+    })
+    expect(violations, `${workspace} accessibility violations`).toEqual([])
+  }
+})
+
+capabilityTest('quality', 'reflows all primary workspaces at 320 CSS pixels without page-level horizontal overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 })
+  for (const path of ['/?workspace=world', '/?workspace=simulation', '/?workspace=analytics', '/?workspace=entities&entity=person%3Aperson-0001', '/?workspace=history']) {
+    await page.goto(path)
+    const dimensions = await page.evaluate(() => ({ clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }))
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth)
+    await expect(page.locator('#workbench-primary')).toBeVisible()
+  }
+})
+
+capabilityTest('quality', 'reports bounded render budgets without wall-clock assertions', async ({ page }) => {
+  await page.goto('/?workspace=world')
+  const map = page.getByLabel('Hex world map')
+  await waitForMapSettled(map)
+  const mapCounts = await map.evaluate((element) => ({
+    primitives: Number(element.dataset.mapPrimitiveCount),
+    markers: Number(element.dataset.mapPopulationMarkers),
+  }))
+  expect(mapCounts.primitives).toBeLessThanOrEqual(MAX_TERRAIN_PRIMITIVES)
+  expect(mapCounts.markers).toBeLessThanOrEqual(MAX_POPULATION_MARKERS)
+  await page.goto('/?workspace=entities&entity=person%3Aperson-0001&focus=person%3Aperson-0001&detail=network')
+  expect(await page.locator('.graph-node').count()).toBeLessThanOrEqual(VISUALIZATION_BUDGETS.graphNodes)
+  expect(await page.locator('.graph-edge').count()).toBeLessThanOrEqual(VISUALIZATION_BUDGETS.graphEdges)
+  await page.goto('/?workspace=analytics')
+  expect(await page.locator('.analytics-card').count()).toBeLessThanOrEqual(24)
+  await page.goto('/?workspace=history')
+  expect(await page.locator('.timeline-marker').count()).toBeLessThanOrEqual(200)
+  expect(MAX_PERSON_DETAILS).toBeLessThanOrEqual(2_000)
+  expect(MAX_RELATIONSHIP_DETAILS).toBeLessThanOrEqual(4_000)
+})
+
+capabilityTest('quality', 'preserves text and focus evidence with reduced motion and forced colors', async ({ page }, testInfo) => {
+  if (testInfo.project.name !== 'chromium') return
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce', forcedColors: 'active' })
+  await page.goto('/?workspace=analytics')
+  await expect(page.getByRole('heading', { name: 'Conditions and retained trends' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Organized warfare' }).locator('..')).toContainText('This evidence is unavailable')
+  const firstFilter = page.getByLabel('Metric category')
+  await firstFilter.focus()
+  await expect(firstFilter).toBeFocused()
+  expect(await page.evaluate(() => ({ reduced: matchMedia('(prefers-reduced-motion: reduce)').matches, forced: matchMedia('(forced-colors: active)').matches }))).toEqual({ reduced: true, forced: true })
+})
+
+capabilityTest('quality', 'captures the reviewed visual-state manifest as deterministic browser artifacts', async ({ page }, testInfo) => {
+  if (testInfo.project.name !== 'chromium') return
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  for (const baseline of WORKBENCH_VISUAL_BASELINES) {
+    await page.goto(baseline.path)
+    const anchor = baseline.anchorRole === 'heading' ? page.getByRole('heading', { name: baseline.anchorName }) : page.getByText(baseline.anchorName)
+    await expect(anchor.first()).toBeVisible()
+    const image = await page.screenshot({ path: testInfo.outputPath(`${baseline.id}.png`), fullPage: true, animations: 'disabled' })
+    expect(image.byteLength).toBeGreaterThan(1_000)
+  }
 })
 
 async function hookPersonAtCurrentCell(page: import('@playwright/test').Page, person: PersonState): Promise<void> {

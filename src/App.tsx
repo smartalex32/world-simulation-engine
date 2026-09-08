@@ -772,7 +772,7 @@ export default function App() {
               ? <CellInspector cell={selected} people={projection?.people.filter((person) => person.locationCellId === selected.id) ?? []} onSelectPerson={inspectPerson} detailsTruncated={projection?.detailBudget.peopleTruncated ?? false} />
               : <StatePresentation state="empty" title="No selection">Choose a hex to inspect its authoritative spatial state.</StatePresentation>}
           <PanelTitle title="Snapshots" subtitle={`${snapshots.length} local saves`} />
-          <div className="save-form"><input placeholder="Snapshot name" value={saveName} onChange={(event) => setSaveName(event.target.value)} /><button onClick={() => void saveNamed()} disabled={namedSavePending} aria-busy={namedSavePending}>Save</button>{lastNamedSave && <small role="status">Saved snapshot: {lastNamedSave}</small>}</div>
+          <div className="save-form"><input aria-label="Snapshot name" placeholder="Snapshot name" value={saveName} onChange={(event) => setSaveName(event.target.value)} /><button onClick={() => void saveNamed()} disabled={namedSavePending} aria-busy={namedSavePending}>Save</button>{lastNamedSave && <small role="status">Saved snapshot: {lastNamedSave}</small>}</div>
           <div className="snapshot-list">
             {snapshots.slice(0, 5).map((saved) => (
               <div key={saved.key} className="snapshot-row">
