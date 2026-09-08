@@ -65,18 +65,18 @@ describe('workbench navigation serialization', () => {
     const state: WorkbenchNavigationState = {
       ...initialWorkbenchNavigationState,
       activeWorkspace: 'history', selectedEntity: person, focusedEntity: person, comparisonEntity: { kind: 'settlement', id: 'west' },
-      timeRange: { fromTick: 2, toTick: 24 }, filters: { mapOverlay: 'community', communityMeasureId: 'community.emergent.socialTrust', mapAnnotations: ['households', 'activity-locations'] }, openDetailSurface: 'timeline',
+      timeRange: { fromTick: 2, toTick: 24 }, filters: { mapOverlay: 'community', communityMeasureId: 'community.emergent.socialTrust', mapAnnotations: ['households', 'activity-locations'], analyticsCategory: 'social', analyticsFidelity: 'cohort' }, openDetailSurface: 'timeline',
     }
     const encoded = serializeWorkbenchNavigation(state)
-    expect(encoded).toBe('workspace=history&entity=person%3Aperson-0001&focus=person%3Aperson-0001&compare=settlement%3Awest&from=2&to=24&overlay=community&annotations=activity-locations%2Chouseholds&detail=timeline')
+    expect(encoded).toBe('workspace=history&entity=person%3Aperson-0001&focus=person%3Aperson-0001&compare=settlement%3Awest&from=2&to=24&overlay=community&annotations=activity-locations%2Chouseholds&category=social&fidelity=cohort&detail=timeline')
     expect(parseWorkbenchNavigation(encoded)).toMatchObject({
       activeWorkspace: 'history', selectedEntity: person, focusedEntity: person, comparisonEntity: { kind: 'settlement', id: 'west' },
       selectionStatus: 'stale', timeRange: { fromTick: 2, toTick: 24 }, openDetailSurface: 'timeline',
-      filters: { mapOverlay: 'community', communityMeasureId: 'community.emergent.socialTrust', mapAnnotations: ['activity-locations', 'households'] },
+      filters: { mapOverlay: 'community', communityMeasureId: 'community.emergent.socialTrust', mapAnnotations: ['activity-locations', 'households'], analyticsCategory: 'social', analyticsFidelity: 'cohort' },
     })
   })
 
-  it.each(['?workspace=unknown', '?entity=person:', '?entity=map-cell:1,-2', '?from=4&to=2', '?overlay=secret', '?measure=unknown.metric', '?annotations=households,secret', '?detail=popup'])('rejects malformed deep-link state without throwing: %s', (search) => {
+  it.each(['?workspace=unknown', '?entity=person:', '?entity=map-cell:1,-2', '?from=4&to=2', '?overlay=secret', '?measure=unknown.metric', '?annotations=households,secret', '?category=secret', '?fidelity=synthetic', '?detail=popup'])('rejects malformed deep-link state without throwing: %s', (search) => {
     const state = parseWorkbenchNavigation(search)
     expect(state.selectionStatus).toBe('invalid')
     expect(state.invalidTarget).toBeDefined()

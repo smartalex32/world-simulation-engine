@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { COMMUNITY_EMERGENT_IDS, COMMUNITY_STRUCTURAL_FOOD_SECURITY_ID, type CommunityVariableId } from '../../simulation/community/types'
 import type { ProjectionOverlay, WorkbenchProjection } from '../../projection'
 import { WORKBENCH_MODES, type WorkbenchMode } from '../layout/WorkbenchShell'
+import type { AnalyticsFidelity, AnalyticsMetricCategory } from '../analytics/metricRegistry'
 
 export const WORKBENCH_ENTITY_KINDS = ['person', 'relationship', 'organization', 'settlement', 'region', 'event', 'map-cell', 'metric'] as const
 export type WorkbenchEntityKind = (typeof WORKBENCH_ENTITY_KINDS)[number]
@@ -15,6 +16,8 @@ export interface WorkbenchFilters {
   mapOverlay: ProjectionOverlay
   communityMeasureId: CommunityVariableId
   mapAnnotations: WorkbenchMapAnnotation[]
+  analyticsCategory: AnalyticsMetricCategory
+  analyticsFidelity: AnalyticsFidelity
 }
 export interface WorkbenchReturnLocation {
   workspace: WorkbenchMode
@@ -70,6 +73,8 @@ export const DEFAULT_WORKBENCH_FILTERS: WorkbenchFilters = {
   mapOverlay: 'terrain',
   communityMeasureId: 'community.emergent.socialTrust',
   mapAnnotations: [],
+  analyticsCategory: 'overview',
+  analyticsFidelity: 'all',
 }
 
 export const initialWorkbenchNavigationState: WorkbenchNavigationState = {
@@ -209,6 +214,8 @@ export function serializeWorkbenchNavigation(state: WorkbenchNavigationState): s
   if (state.filters.mapOverlay !== DEFAULT_WORKBENCH_FILTERS.mapOverlay) query.set('overlay', state.filters.mapOverlay)
   if (state.filters.communityMeasureId !== DEFAULT_WORKBENCH_FILTERS.communityMeasureId) query.set('measure', state.filters.communityMeasureId)
   if (state.filters.mapAnnotations.length > 0) query.set('annotations', [...state.filters.mapAnnotations].sort().join(','))
+  if (state.filters.analyticsCategory !== DEFAULT_WORKBENCH_FILTERS.analyticsCategory) query.set('category', state.filters.analyticsCategory)
+  if (state.filters.analyticsFidelity !== DEFAULT_WORKBENCH_FILTERS.analyticsFidelity) query.set('fidelity', state.filters.analyticsFidelity)
   if (state.openDetailSurface && state.openDetailSurface !== 'inspector') query.set('detail', state.openDetailSurface)
   return query.toString()
 }
@@ -227,6 +234,8 @@ export function parseWorkbenchNavigation(search: string): WorkbenchNavigationSta
   const communityMeasureId = parseCommunityMeasureId(query.get('measure'))
   if (query.has('measure') && !communityMeasureId) invalidTarget ??= `measure:${query.get('measure')}`
   const mapAnnotations = parseAnnotations(query.get('annotations'), () => { invalidTarget ??= `annotations:${query.get('annotations')}` })
+  const analyticsCategory = parseAnalyticsCategory(query.get('category'), () => { invalidTarget ??= `category:${query.get('category')}` })
+  const analyticsFidelity = parseAnalyticsFidelity(query.get('fidelity'), () => { invalidTarget ??= `fidelity:${query.get('fidelity')}` })
   const detail = query.get('detail')
   const openDetailSurface = isDetailSurface(detail) ? detail : selectedEntity ? 'inspector' : undefined
   if (detail !== null && !isDetailSurface(detail)) invalidTarget ??= `detail:${detail}`
@@ -242,6 +251,8 @@ export function parseWorkbenchNavigation(search: string): WorkbenchNavigationSta
       mapOverlay,
       communityMeasureId: communityMeasureId ?? DEFAULT_WORKBENCH_FILTERS.communityMeasureId,
       mapAnnotations,
+      analyticsCategory,
+      analyticsFidelity,
     },
     openDetailSurface,
     announcement: invalidTarget ? 'Invalid workbench navigation target' : `${workspaceLabel(activeWorkspace)} workspace restored`,
@@ -293,6 +304,21 @@ function parseAnnotations(value: string | null, invalid: () => void): WorkbenchM
   const annotations = [...new Set(value.split(','))]
   if (annotations.some((entry) => entry !== 'activity-locations' && entry !== 'households')) { invalid(); return [] }
   return annotations.sort() as WorkbenchMapAnnotation[]
+}
+
+function parseAnalyticsCategory(value: string | null, invalid: () => void): AnalyticsMetricCategory {
+  if (value === null) return DEFAULT_WORKBENCH_FILTERS.analyticsCategory
+  const categories: readonly AnalyticsMetricCategory[] = ['overview', 'population', 'resources', 'social', 'systems']
+  if (categories.includes(value as AnalyticsMetricCategory)) return value as AnalyticsMetricCategory
+  invalid()
+  return DEFAULT_WORKBENCH_FILTERS.analyticsCategory
+}
+
+function parseAnalyticsFidelity(value: string | null, invalid: () => void): AnalyticsFidelity {
+  if (value === null) return DEFAULT_WORKBENCH_FILTERS.analyticsFidelity
+  if (value === 'all' || value === 'detailed' || value === 'cohort') return value
+  invalid()
+  return DEFAULT_WORKBENCH_FILTERS.analyticsFidelity
 }
 
 function parseCommunityMeasureId(value: string | null): CommunityVariableId | undefined {

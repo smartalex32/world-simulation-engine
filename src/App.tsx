@@ -29,6 +29,7 @@ import { PersonWorkspace } from './ui/person/PersonWorkspace'
 import { RelationshipWorkspace } from './ui/relationships/RelationshipWorkspace'
 import { MapAnalysisWorkspace } from './ui/map/MapAnalysisWorkspace'
 import { SimulationWorkspace } from './ui/simulation/SimulationWorkspace'
+import { ANALYTICS_HISTORY_METRICS, AnalyticsWorkspace } from './ui/analytics'
 
 const SPEEDS = [
   { value: 1, label: '1 hour / batch' },
@@ -333,7 +334,7 @@ export default function App() {
     if (!runId) return
     setHistoryLoading(true)
     try {
-      setHistory(await database.readHistory(runId, { metricIds: HISTORY_METRICS, fromTick: range?.fromTick, toTick: range?.toTick }))
+      setHistory(await database.readHistory(runId, { metricIds: [...new Set([...HISTORY_METRICS, ...ANALYTICS_HISTORY_METRICS])], fromTick: range?.fromTick, toTick: range?.toTick }))
     } catch (reason) {
       setError(`History load failed: ${messageOf(reason)}`)
     } finally {
@@ -607,7 +608,7 @@ export default function App() {
   const settlementServiceById = new Map((projection?.settlementServices ?? []).map((service) => [service.settlementId, service]))
   const selected = selectedCellId ? projection?.map.exactCells.find((cell) => cell.id === selectedCellId) ?? (projection?.map.focusCell?.id === selectedCellId ? projection.map.focusCell : undefined) : undefined
   const eventIds = useMemo(() => [...new Set([...events, ...(history?.events ?? [])].map((event) => event.id))], [events, history?.events])
-  const metricIds = useMemo(() => [...new Set([...HISTORY_METRICS, ...statistics.map((sample) => sample.metricId)])], [statistics])
+  const metricIds = useMemo(() => [...new Set([...HISTORY_METRICS, ...ANALYTICS_HISTORY_METRICS, ...statistics.map((sample) => sample.metricId)])], [statistics])
   const previousWorkspace = useRef(activeMode)
 
   useEffect(() => {
@@ -616,7 +617,7 @@ export default function App() {
   }, [eventIds, history, metricIds, navigation.reconcile, navigationState.focusedEntity, navigationState.selectedEntity, projection])
 
   useEffect(() => {
-    if (activeMode === 'history') void refreshHistory()
+    if (activeMode === 'history' || activeMode === 'analytics') void refreshHistory()
     if (previousWorkspace.current !== activeMode) {
       previousWorkspace.current = activeMode
       window.requestAnimationFrame(() => document.getElementById('workbench-primary')?.focus())
@@ -737,6 +738,8 @@ export default function App() {
           ? <MapAnalysisWorkspace projection={projection} overlay={overlay} onOverlay={(value) => navigation.setFilter('mapOverlay', value)} activityLocations={showActivityLocations} households={showHouseholds} onActivityLocations={(enabled) => setMapAnnotation('activity-locations', enabled)} onHouseholds={(enabled) => setMapAnnotation('households', enabled)} renderMap={renderHexMap} />
           : activeMode === 'simulation' && projection
             ? <SimulationWorkspace projection={projection} status={status} speed={speed} processingMs={processingMs} telemetry={history?.telemetry} error={error ?? session.error} onPlay={session.play} onPause={session.pause} onStep={session.step} onSpeed={session.changeSpeed} onReset={async () => { navigation.resetForRun(); return session.reset() }} onCreateRun={openNewRunSetup} onSave={saveNamed} onLoad={async () => { importRef.current?.click(); return true }} onExport={exportRun} />
+          : activeMode === 'analytics' && projection
+            ? <AnalyticsWorkspace projection={projection} statistics={history?.statistics ?? statistics} events={history?.events ?? events} category={navigationState.filters.analyticsCategory} fidelity={navigationState.filters.analyticsFidelity} timeRange={navigationState.timeRange} selectedEntity={selectedEntity} comparisonEntity={navigationState.comparisonEntity} onCategory={(category) => navigation.setFilter('analyticsCategory', category)} onFidelity={(fidelity) => navigation.setFilter('analyticsFidelity', fidelity)} onTimeRange={navigation.setTimeRange} onSelectScope={(entity) => navigation.selectEntity(entity, { workspace: 'analytics', detailSurface: 'analytics' })} onCompareScope={navigation.compareEntity} onOpenMetric={(metricId) => navigation.selectEntity({ kind: 'metric', id: metricId }, { workspace: 'history', detailSurface: 'timeline' })} onOpenMap={(nextOverlay) => { navigation.setFilter('mapOverlay', nextOverlay); navigation.navigateWorkspace('world') }} onOpenEvent={(eventId) => navigation.selectEntity({ kind: 'event', id: eventId }, { workspace: 'history', detailSurface: 'timeline' })} />
           : activeMode === 'entities' && selectedPerson ? navigationState.openDetailSurface === 'network'
           ? <RelationshipWorkspace focusPersonId={selectedPerson.id} people={projection?.people ?? []} relationships={projection?.relationships ?? []} parentChildLinks={projection?.parentChildLinks ?? []} organizations={projection?.organizations ?? []} personCommunityIds={projection?.personCommunityIds ?? {}} relationshipsTruncated={projection?.detailBudget.relationshipsTruncated ?? false} onSelectPerson={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { focus: true, workspace: 'entities', detailSurface: 'inspector' })} onShowTimeline={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { workspace: 'history', detailSurface: 'timeline' })} onShowMap={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { focus: true, workspace: 'world', detailSurface: 'map' })} />
           : <PersonWorkspace person={selectedPerson} tick={projection?.tick ?? 0} relationships={projection?.relationships ?? []} parentChildLinks={projection?.parentChildLinks ?? []} details={personInspector} onShowMap={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { focus: true, workspace: 'world', detailSurface: 'map' })} onShowRelationships={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { focus: true, workspace: 'entities', detailSurface: 'network' })} onShowTimeline={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { workspace: 'history', detailSurface: 'timeline' })} /> : <>
