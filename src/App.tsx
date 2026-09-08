@@ -27,6 +27,7 @@ import { Metric, PanelTitle, StatePresentation } from './ui/components/Workbench
 import { RunStatusStrip, WorkbenchShell, WorkbenchTopbar, WorkbenchWorkspace, type WorkbenchMode } from './ui/layout/WorkbenchShell'
 import { PersonWorkspace } from './ui/person/PersonWorkspace'
 import { RelationshipWorkspace } from './ui/relationships/RelationshipWorkspace'
+import { MapAnalysisWorkspace } from './ui/map/MapAnalysisWorkspace'
 
 const SPEEDS = [
   { value: 1, label: '1 hour / batch' },
@@ -572,6 +573,11 @@ export default function App() {
     navigation.setFilter('mapAnnotations', current.includes(annotation) ? current.filter((entry) => entry !== annotation) : [...current, annotation].sort() as typeof current)
   }
 
+  function setMapAnnotation(annotation: 'activity-locations' | 'households', enabled: boolean) {
+    const current = navigationState.filters.mapAnnotations
+    navigation.setFilter('mapAnnotations', enabled ? [...new Set([...current, annotation])].sort() as typeof current : current.filter((entry) => entry !== annotation))
+  }
+
   const tick = projection?.tick ?? 0
   const day = Math.floor(tick / 24)
   const hour = tick % 24
@@ -584,6 +590,7 @@ export default function App() {
   const selectedEvent = selectedEntity?.kind === 'event' ? [...events, ...(history?.events ?? [])].find((event) => event.id === selectedEntity.id) : undefined
   const selectedRelationships = selectedPerson ? relationshipViews(selectedPerson.id, projection?.relationships ?? []) : []
   const personInspector = selectedPerson ? <PersonInspector person={selectedPerson} tick={projection?.tick ?? 0} routeHome={projection?.routeHome?.personId === selectedPerson.id ? projection.routeHome : undefined} variableDefinitions={projection?.variableDefinitions ?? []} communityVariableDefinitions={projection?.communityVariableDefinitions ?? []} communities={projection?.communities ?? []} personCommunityId={projection?.personCommunityIds[selectedPerson.id]} relationships={selectedRelationships} households={projection?.households ?? []} parentChildLinks={projection?.parentChildLinks ?? []} people={projection?.people ?? []} onHookPerson={inspectPerson} onRelease={() => navigation.selectEntity({ kind: 'map-cell', id: selectedPerson.locationCellId }, { focus: true })} /> : undefined
+  const renderHexMap = (overlayOpacity = 1) => projection ? <HexMap world={projection.world} settlements={projection.settlements} roads={projection.roads} settlementLinks={projection.settlementLinks} map={projection.map} overlay={overlay} overlayOpacity={overlayOpacity} selectedCellId={selectedCellId ?? focusedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={focusedPersonId} onSelect={(cell) => navigation.selectEntity({ kind: 'map-cell', id: cell.id }, { focus: true })} onFocusCell={(cellId) => navigation.selectEntity({ kind: 'map-cell', id: cellId }, { focus: true })} onViewportRequest={requestViewport} /> : <StatePresentation state="loading">Starting simulation worker…</StatePresentation>
   const settlementServiceById = new Map((projection?.settlementServices ?? []).map((service) => [service.settlementId, service]))
   const selected = selectedCellId ? projection?.map.exactCells.find((cell) => cell.id === selectedCellId) ?? (projection?.map.focusCell?.id === selectedCellId ? projection.map.focusCell : undefined) : undefined
   const eventIds = useMemo(() => [...new Set([...events, ...(history?.events ?? [])].map((event) => event.id))], [events, history?.events])
@@ -713,11 +720,13 @@ export default function App() {
           />}</>}
         </>}
 
-        primary={activeMode === 'entities' && selectedPerson ? navigationState.openDetailSurface === 'network'
+        primary={activeMode === 'world' && projection
+          ? <MapAnalysisWorkspace projection={projection} overlay={overlay} onOverlay={(value) => navigation.setFilter('mapOverlay', value)} activityLocations={showActivityLocations} households={showHouseholds} onActivityLocations={(enabled) => setMapAnnotation('activity-locations', enabled)} onHouseholds={(enabled) => setMapAnnotation('households', enabled)} renderMap={renderHexMap} />
+          : activeMode === 'entities' && selectedPerson ? navigationState.openDetailSurface === 'network'
           ? <RelationshipWorkspace focusPersonId={selectedPerson.id} people={projection?.people ?? []} relationships={projection?.relationships ?? []} parentChildLinks={projection?.parentChildLinks ?? []} organizations={projection?.organizations ?? []} personCommunityIds={projection?.personCommunityIds ?? {}} relationshipsTruncated={projection?.detailBudget.relationshipsTruncated ?? false} onSelectPerson={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { focus: true, workspace: 'entities', detailSurface: 'inspector' })} onShowTimeline={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { workspace: 'history', detailSurface: 'timeline' })} onShowMap={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { focus: true, workspace: 'world', detailSurface: 'map' })} />
           : <PersonWorkspace person={selectedPerson} tick={projection?.tick ?? 0} relationships={projection?.relationships ?? []} parentChildLinks={projection?.parentChildLinks ?? []} details={personInspector} onShowMap={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { focus: true, workspace: 'world', detailSurface: 'map' })} onShowRelationships={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { focus: true, workspace: 'entities', detailSurface: 'network' })} onShowTimeline={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { workspace: 'history', detailSurface: 'timeline' })} /> : <>
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {projection?.map.overlay ?? overlay}{projection && projection.map.overlay !== overlay ? ' · updating…' : ''}</span></div>
-          {projection ? <HexMap world={projection.world} settlements={projection.settlements} roads={projection.roads} settlementLinks={projection.settlementLinks} map={projection.map} overlay={overlay} selectedCellId={selectedCellId ?? focusedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={focusedPersonId} onSelect={(cell) => navigation.selectEntity({ kind: 'map-cell', id: cell.id }, { focus: true })} onFocusCell={(cellId) => navigation.selectEntity({ kind: 'map-cell', id: cellId }, { focus: true })} onViewportRequest={requestViewport} /> : <StatePresentation state="loading">Starting simulation worker…</StatePresentation>}
+          {renderHexMap()}
         </>}
 
         right={<>
