@@ -1,96 +1,70 @@
-import { HISTORY_METRICS, historicalHighlights, metricDelta, metricTimeline, personTimeline } from '../history/history'
-import { populationCheckpointTimeline, regionalChangeSummary, settlementChangeSummaries, type HistoricalCheckpoint } from '../history/checkpoints'
+import { useMemo, useState } from 'react'
 import { buildChronicle } from '../history/chronicle'
-import { useState } from 'react'
-import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
+import { HISTORY_METRICS } from '../history/history'
+import type { HistoricalCheckpoint } from '../history/checkpoints'
 import type { TelemetryIntegrity } from '../persistence/database'
+import type { SimulationEvent, StatisticSample } from '../simulation/domain/types'
+import type { WorkbenchTimeRange } from './controllers/useWorkbenchNavigation'
+import { buildEvidenceTimeline, eventEntityRefs } from './history/timelineViewModel'
+import { Sparkline } from './visualization'
 
 interface HistoryPanelProps {
   events: readonly SimulationEvent[]
   statistics: readonly StatisticSample[]
   checkpoints: readonly HistoricalCheckpoint[]
   telemetry?: TelemetryIntegrity
-  selectedPersonId?: string
+  selectedEntityId?: string
+  selectedEventId?: string
+  currentTick: number
+  timeRange?: WorkbenchTimeRange
+  onTimeRange: (range: WorkbenchTimeRange) => void
   onInspectPerson: (personId: string) => void
+  onInspectEntity: (kind: 'organization' | 'settlement' | 'region' | 'map-cell', id: string) => void
+  onInspectEvent: (event: SimulationEvent) => void
   onRefresh: () => void
   loading: boolean
 }
 
-export function HistoryPanel({ events, statistics, checkpoints, telemetry, selectedPersonId, onInspectPerson, onRefresh, loading }: HistoryPanelProps) {
+const RANGE_PRESETS = [{ label: 'Day', ticks: 24 }, { label: 'Week', ticks: 168 }, { label: 'Month', ticks: 720 }] as const
+
+export function HistoryPanel({ events, statistics, checkpoints, telemetry, selectedEntityId, selectedEventId, currentTick, timeRange, onTimeRange, onInspectPerson, onInspectEntity, onInspectEvent, onRefresh, loading }: HistoryPanelProps) {
   const [showChronicle, setShowChronicle] = useState(false)
-  const timeline = selectedPersonId ? personTimeline(events, selectedPersonId, 24) : []
-  const highlights = historicalHighlights(events, 12)
-  const chronicle = buildChronicle(events, 12)
-  const checkpointTimeline = populationCheckpointTimeline(checkpoints)
-  const settlementChanges = settlementChangeSummaries(checkpoints)
-  const regionalChange = regionalChangeSummary(checkpoints)
-  return <section className="history-panel" aria-label="Historical inspection">
+  const range = timeRange ?? { fromTick: Math.max(0, currentTick - 168), toTick: currentTick }
+  const view = useMemo(() => buildEvidenceTimeline({ events, statistics, metricIds: HISTORY_METRICS, fromTick: range.fromTick, toTick: range.toTick, selectedEntityId }), [events, range.fromTick, range.toTick, selectedEntityId, statistics])
+  const flatEvents = view.lanes.flatMap(([, laneEvents]) => laneEvents).slice().sort((a, b) => a.event.tick - b.event.tick || a.event.sequence - b.event.sequence)
+  const selectedIndex = Math.max(0, flatEvents.findIndex((entry) => entry.event.id === selectedEventId))
+  const selected = flatEvents.find((entry) => entry.event.id === selectedEventId)
+  const chronicle = buildChronicle(events.filter((event) => event.tick >= range.fromTick && event.tick <= range.toTick), 24)
+  const shiftRange = (delta: number) => onTimeRange({ fromTick: Math.max(0, range.fromTick + delta), toTick: Math.max(0, range.toTick + delta) })
+  return <section className="history-panel evidence-timeline" aria-label="Historical inspection">
     <header className="history-heading">
-      <div><span className="eyebrow">HISTORICAL INSPECTION</span><h2>Recorded evidence over time</h2><p>Events and sampled metrics are read from local run history; nothing is inferred.</p></div>
-      <div className="history-actions"><button onClick={() => setShowChronicle((value) => !value)} aria-pressed={showChronicle}>{showChronicle ? 'Evidence view' : 'Chronicle view'}</button><button onClick={onRefresh} disabled={loading}>{loading ? 'Loading…' : 'Refresh history'}</button></div>
+      <div><span className="eyebrow">HISTORICAL INSPECTION</span><h2>Multi-lane recorded evidence</h2><p>Scrubbing filters retained evidence; it never rewinds or mutates the simulation.</p></div>
+      <div className="history-actions"><button type="button" onClick={() => setShowChronicle((value) => !value)} aria-pressed={showChronicle}>{showChronicle ? 'Evidence lanes' : 'Chronicle view'}</button><button type="button" onClick={onRefresh} disabled={loading}>{loading ? 'Loading…' : 'Refresh history'}</button></div>
     </header>
-    {telemetry?.status === 'gapped' && <p className="error-banner" role="alert">Telemetry gap detected through sequence {telemetry.committed.eventSequence}: {telemetry.unexplainedSequenceGaps.map((range) => range.first === range.last ? range.first : `${range.first}–${range.last}`).join(', ')}</p>}
-    {telemetry?.status === 'uncheckpointed' && <p className="chronicle-note">This legacy run has no verified telemetry checkpoint watermark.</p>}
-    <div className="history-grid">
-      <section className="history-section">
-        <h3>Population and social trends</h3>
-        {HISTORY_METRICS.map((metricId) => {
-          const samples = metricTimeline(statistics, metricId)
-          const latest = samples.at(-1)
-          const delta = metricDelta(statistics, metricId)
-          return <div className="history-metric" key={metricId}><span>{historyMetricLabel(metricId)}</span><strong>{latest?.value ?? '—'}</strong><small>{latest ? `Tick ${latest.tick}${delta === undefined ? '' : ` · ${signed(delta)} since first sample`}` : 'No daily samples saved yet'}</small></div>
-        })}
-      </section>
-      <section className="history-section">
-        <h3>Retained population checkpoints</h3>
-        {checkpointTimeline.length === 0 && <p className="history-empty">No weekly checkpoints are retained yet.</p>}
-        <div className="history-event-list">{checkpointTimeline.map((checkpoint, index) => {
-          const previous = checkpointTimeline[index - 1]
-          const delta = previous ? checkpoint.populationCount - previous.populationCount : undefined
-          return <article className="history-event" key={checkpoint.tick}><span>Tick {checkpoint.tick}</span><strong>{checkpoint.populationCount} living people</strong>{delta !== undefined && <em>{signed(delta)} since prior checkpoint</em>}</article>
-        })}</div>
-      </section>
-      <section className="history-section">
-        <h3>{showChronicle ? 'Deterministic chronicle' : 'Major recorded events'}</h3>
-        {showChronicle
-          ? <><p className="chronicle-note">Fixed templates from recorded evidence; this never affects the simulation.</p>{chronicle.length === 0 && <p className="history-empty">No significant recorded events are available yet.</p>}<div className="history-event-list">{chronicle.map((entry) => <article className="history-event chronicle-entry" key={entry.id}><span>Tick {entry.tick}</span><strong>{entry.text}</strong><em>{entry.category}</em><small>Evidence: {entry.evidenceEventId}</small></article>)}</div></>
-          : <>{highlights.length === 0 && <p className="history-empty">No significant recorded events are available yet.</p>}<div className="history-event-list">{highlights.map(({ event, reason }) => <HistoryEvent key={event.id} event={event} label={reason.replace('-', ' ')} onInspectPerson={onInspectPerson} />)}</div></>}
-      </section>
-      <section className="history-section">
-        <h3>Settlement change</h3>
-        <p className="chronicle-note">Home catchments are measured at retained checkpoints; these are not settlement memberships.</p>
-        {settlementChanges.length === 0 && <p className="history-empty">No settlement checkpoint comparison is available yet.</p>}
-        <div className="history-event-list">{settlementChanges.map((settlement) => <article className="history-event" key={settlement.settlementId}><span>Ticks {settlement.firstTick}–{settlement.latestTick}</span><strong>{settlement.name} · {settlement.latestResidentCount} residents · {settlement.firstScale} → {settlement.latestScale}</strong><em>{signed(settlement.residentDelta)} residents · {signed(settlement.householdDelta)} households · {signed(settlement.foodStoreDelta)} food stores</em></article>)}</div>
-      </section>
-      <section className="history-section">
-        <h3>Regional change evidence</h3>
-        <p className="chronicle-note">Only retained checkpoint values are compared; no time-lapse replay is performed.</p>
-        {regionalChange ? <article className="history-event"><span>Ticks {regionalChange.firstTick}–{regionalChange.latestTick}</span><strong>{signed(regionalChange.detailedPopulationDelta)} detailed people · {signed(regionalChange.cohortPopulationDelta)} cohort people</strong><em>{signed(regionalChange.availableFoodDelta)} available food units</em></article> : <p className="history-empty">Two retained checkpoints are needed for a regional comparison.</p>}
-      </section>
-      <section className="history-section">
-        <h3>{selectedPersonId ? `Timeline · ${selectedPersonId}` : 'Person timeline'}</h3>
-        {selectedPersonId ? <>{timeline.length === 0 && <p className="history-empty">No recorded events explicitly involve this person yet.</p>}<div className="history-event-list">{timeline.map((event) => <HistoryEvent key={event.id} event={event} onInspectPerson={onInspectPerson} />)}</div></> : <p className="history-empty">Hook a person to see their exact recorded event timeline.</p>}
-      </section>
+    <div className="timeline-controls" role="toolbar" aria-label="Timeline range controls">
+      {RANGE_PRESETS.map((preset) => <button type="button" key={preset.label} onClick={() => onTimeRange({ fromTick: Math.max(0, currentTick - preset.ticks), toTick: currentTick })}>{preset.label}</button>)}
+      <label>From tick<input type="number" min="0" max={range.toTick} value={range.fromTick} onChange={(event) => onTimeRange({ fromTick: Math.max(0, Number(event.target.value)), toTick: range.toTick })} /></label>
+      <label>To tick<input type="number" min={range.fromTick} value={range.toTick} onChange={(event) => onTimeRange({ fromTick: range.fromTick, toTick: Math.max(range.fromTick, Number(event.target.value)) })} /></label>
+      <button type="button" onClick={() => shiftRange(-Math.max(1, range.toTick - range.fromTick))} aria-label="Pan timeline earlier">← Earlier</button>
+      <button type="button" onClick={() => shiftRange(Math.max(1, range.toTick - range.fromTick))} aria-label="Pan timeline later">Later →</button>
+      <button type="button" disabled={flatEvents.length === 0 || selectedIndex === 0} onClick={() => onInspectEvent(flatEvents[Math.max(0, selectedIndex - 1)]!.event)}>Previous event</button>
+      <button type="button" disabled={flatEvents.length === 0 || selectedIndex >= flatEvents.length - 1} onClick={() => onInspectEvent(flatEvents[Math.min(flatEvents.length - 1, selectedIndex + 1)]!.event)}>Next event</button>
+      <button type="button" onClick={() => onTimeRange({ fromTick: Math.max(0, currentTick - 168), toTick: currentTick })}>Return to current</button>
     </div>
+    {telemetry?.status === 'gapped' && <p className="error-banner" role="alert">Telemetry gap detected through sequence {telemetry.committed.eventSequence}: {telemetry.unexplainedSequenceGaps.map((gap) => gap.first === gap.last ? gap.first : `${gap.first}–${gap.last}`).join(', ')}</p>}
+    {telemetry?.status === 'uncheckpointed' && <p className="timeline-integrity-note">Legacy uncheckpointed evidence: this run has no verified telemetry watermark.</p>}
+    {view.truncated && <p className="timeline-integrity-note">The bounded result is truncated to the newest 200 events in this range.</p>}
+    {showChronicle ? <section className="chronicle-lane"><h3>Deterministic chronicle</h3><p>Fixed text templates from retained evidence; no narrative is generated.</p>{chronicle.length === 0 ? <p>No significant retained evidence in this range.</p> : <ol>{chronicle.map((entry) => <li key={entry.id}><time>Tick {entry.tick}</time><strong>{entry.text}</strong><small>{entry.category} · Evidence {entry.evidenceEventId}</small></li>)}</ol>}</section> : <>
+      <div className="timeline-lanes" aria-label="Evidence lanes">{view.lanes.map(([laneId, laneEvents]) => <section className="timeline-lane" key={laneId} aria-labelledby={`lane-${laneId}`}><h3 id={`lane-${laneId}`}>{laneId === 'world' ? 'World events' : laneId === 'community' ? 'Community, settlement, and organization' : `Selected entity · ${selectedEntityId ?? 'none'}`}</h3><div className="timeline-track">{laneEvents.map((entry) => <button type="button" key={entry.event.id} className={`timeline-marker ${entry.retention}`} style={{ left: `${timelinePercent(entry.event.tick, range)}%`, top: `${entry.stack * 17}px` }} aria-pressed={selectedEventId === entry.event.id} onClick={() => onInspectEvent(entry.event)} title={`${entry.event.type} at tick ${entry.event.tick}`}><span>{entry.event.type.replaceAll('_', ' ')}</span></button>)}{laneEvents.length === 0 && <span className="timeline-empty">No retained events</span>}</div></section>)}</div>
+      <div className="timeline-metrics" aria-label="Metric lanes">{view.series.map((series) => <section key={series.id}><h3>{series.label}</h3><Sparkline series={series} /></section>)}</div>
+    </>}
+    <aside className="timeline-detail" aria-label="Selected event evidence">{selected ? <><span className="eyebrow">CAUSAL EVENT DETAIL</span><h3>{selected.event.type.replaceAll('_', ' ')}</h3><p>Tick {selected.event.tick} · sequence {selected.event.sequence} · {selected.retention} retention · evidence {selected.event.id}</p><table><caption>Exact recorded payload</caption><tbody>{Object.entries(selected.event.payload).map(([key, value]) => <tr key={key}><th>{key}</th><td>{String(value)}</td></tr>)}</tbody></table><div className="event-evidence-links">{eventEntityRefs(selected.event).map((entity) => <button type="button" key={`${entity.kind}:${entity.id}`} onClick={() => entity.kind === 'person' ? onInspectPerson(entity.id) : onInspectEntity(entity.kind === 'community' ? 'region' : entity.kind === 'cell' ? 'map-cell' : entity.kind, entity.id)}>Open {entity.kind} {entity.id}</button>)}</div></> : <p>Select an event marker to inspect its exact retained payload and linked entities.</p>}</aside>
+    <p className="timeline-future-boundary"><strong>Replay, branch comparison, and time-lapse unavailable.</strong> These require authoritative historical-analysis contracts from #103.</p>
+    <small className="timeline-checkpoints">{checkpoints.length} bounded retained checkpoints contribute comparison evidence.</small>
   </section>
 }
 
-function HistoryEvent({ event, label, onInspectPerson }: { event: SimulationEvent; label?: string; onInspectPerson: (personId: string) => void }) {
-  const people = eventPeople(event)
-  return <article className="history-event"><span>Tick {event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong>{label && <em>{label}</em>}<div>{people.map((personId) => <button key={personId} onClick={() => onInspectPerson(personId)}>Inspect {personId}</button>)}</div></article>
+function timelinePercent(tick: number, range: WorkbenchTimeRange): number {
+  if (range.fromTick === range.toTick) return 50
+  return Math.max(0, Math.min(100, (tick - range.fromTick) / (range.toTick - range.fromTick) * 100))
 }
-
-function eventPeople(event: SimulationEvent): string[] {
-  const values = Object.entries(event.payload).flatMap(([key, value]) => {
-    if (typeof value !== 'string') return []
-    if (key === 'parentIds') return value.split(',').map((id) => id.trim()).filter(Boolean)
-    return key.endsWith('PersonId') || key === 'personId' || key === 'otherPersonId' ? [value] : []
-  })
-  return [...new Set(values)].sort()
-}
-
-function historyMetricLabel(metricId: string): string {
-  return metricId.replace(/^population\./, '').replace(/^resources\./, '').replace(/^social\./, '').replace(/([A-Z])/g, ' $1')
-}
-
-function signed(value: number): string { return value > 0 ? `+${value}` : String(value) }

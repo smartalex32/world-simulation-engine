@@ -327,11 +327,11 @@ export default function App() {
     try { setSnapshots(await database.listSnapshots()) } catch (reason) { setError(messageOf(reason)) }
   }
 
-  async function refreshHistory(runId = projectionRef.current?.runId) {
+  async function refreshHistory(runId = projectionRef.current?.runId, range = navigationState.timeRange) {
     if (!runId) return
     setHistoryLoading(true)
     try {
-      setHistory(await database.readHistory(runId, { metricIds: HISTORY_METRICS }))
+      setHistory(await database.readHistory(runId, { metricIds: HISTORY_METRICS, fromTick: range?.fromTick, toTick: range?.toTick }))
     } catch (reason) {
       setError(`History load failed: ${messageOf(reason)}`)
     } finally {
@@ -601,7 +601,7 @@ export default function App() {
       previousWorkspace.current = activeMode
       window.requestAnimationFrame(() => document.getElementById('workbench-primary')?.focus())
     }
-  }, [activeMode])
+  }, [activeMode, navigationState.timeRange?.fromTick, navigationState.timeRange?.toTick])
 
   return (
     <WorkbenchShell>
@@ -758,7 +758,7 @@ export default function App() {
       />
 
       {activeMode === 'history'
-        ? <HistoryPanel events={history?.events ?? []} statistics={history?.statistics ?? []} checkpoints={history?.checkpoints ?? []} telemetry={history?.telemetry} selectedPersonId={selectedPersonId} onInspectPerson={inspectPerson} onRefresh={() => void refreshHistory()} loading={historyLoading} />
+        ? <HistoryPanel events={history?.events ?? []} statistics={history?.statistics ?? []} checkpoints={history?.checkpoints ?? []} telemetry={history?.telemetry} selectedEntityId={selectedEntity && selectedEntity.kind !== 'event' ? selectedEntity.id : focusedPersonId} selectedEventId={selectedEntity?.kind === 'event' ? selectedEntity.id : undefined} currentTick={projection?.tick ?? 0} timeRange={navigationState.timeRange} onTimeRange={navigation.setTimeRange} onInspectPerson={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { workspace: 'entities', detailSurface: 'inspector', focus: true })} onInspectEntity={(kind, id) => navigation.selectEntity({ kind, id } as WorkbenchEntityRef, { workspace: kind === 'map-cell' || kind === 'region' ? 'world' : 'entities', detailSurface: kind === 'map-cell' ? 'map' : 'inspector', focus: kind === 'map-cell' })} onInspectEvent={inspectEvent} onRefresh={() => void refreshHistory()} loading={historyLoading} />
         : <section className="event-panel panel">
         <PanelTitle title="Simulation events" subtitle="Meaningful state transitions; calculations are intentionally omitted" />
         <div className="event-table" role="log">

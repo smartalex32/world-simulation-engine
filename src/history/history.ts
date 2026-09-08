@@ -31,13 +31,22 @@ const HIGHLIGHT_REASONS: Partial<Record<SimulationEvent['type'], HistoricalHighl
 
 /** Returns exact recorded participation, including comma-separated parent IDs. */
 export function eventInvolvesPerson(event: SimulationEvent, personId: string): boolean {
+  return eventInvolvesEntity(event, personId, 'person')
+}
+
+export function eventInvolvesEntity(event: SimulationEvent, entityId: string, kind?: 'person' | 'organization' | 'settlement' | 'community' | 'cell'): boolean {
   for (const [key, value] of Object.entries(event.payload)) {
     if (typeof value !== 'string') continue
-    if (key.endsWith('PersonId') || key === 'personId' || key === 'otherPersonId') {
-      if (value === personId) return true
+    if ((!kind || kind === 'person') && (key.endsWith('PersonId') || key === 'personId' || key === 'otherPersonId')) {
+      if (value === entityId) return true
     }
-    if (key === 'parentIds' && value.split(',').some((id) => id.trim() === personId)) return true
+    if ((!kind || kind === 'person') && (key === 'parentIds' || key === 'sourcePersonIds' || key === 'founderPersonIds' || key === 'participantIds') && value.split(',').some((id) => id.trim() === entityId)) return true
+    if ((!kind || kind === 'organization') && (key === 'organizationId' || key === 'councilOrganizationId') && value === entityId) return true
+    if ((!kind || kind === 'settlement') && key.endsWith('SettlementId') && value === entityId) return true
+    if ((!kind || kind === 'community') && key === 'communityId' && value === entityId) return true
+    if ((!kind || kind === 'cell') && (key === 'cellId' || key.endsWith('CellId')) && value === entityId) return true
   }
+  if ((!kind || kind === 'cell') && event.cellId === entityId) return true
   return false
 }
 

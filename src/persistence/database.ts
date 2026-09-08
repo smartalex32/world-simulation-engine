@@ -76,6 +76,10 @@ export interface RunHistoryQuery {
   /** World metrics to retrieve. Each metric receives its own bounded series. */
   metricIds: readonly WorldStatisticMetricId[]
   sampleLimit?: number
+  fromTick?: number
+  toTick?: number
+  eventTypes?: readonly SimulationEventType[]
+  entity?: { id: string; kind?: 'person' | 'organization' | 'settlement' | 'community' | 'cell' }
 }
 
 export interface RunHistory {
@@ -245,18 +249,22 @@ export class WorkbenchDatabase {
     const eventLimit = boundedHistoryLimit(query.eventLimit, DEFAULT_HISTORY_EVENT_LIMIT)
     const sampleLimit = boundedHistoryLimit(query.sampleLimit, DEFAULT_HISTORY_SAMPLE_LIMIT)
     const eventTransaction = database.transaction('events')
+    const fromTick = boundedHistoryTick(query.fromTick, 0)
+    const toTick = boundedHistoryTick(query.toTick, MAX_TICK)
+    const eventTypes = query.eventTypes ? new Set(query.eventTypes) : undefined
     const events = await cursorValues<StoredEvent>(
       eventTransaction.objectStore('events').index('runTick'),
-      IDBKeyRange.bound([runId, 0], [runId, MAX_TICK]),
+      IDBKeyRange.bound([runId, Math.min(fromTick, toTick)], [runId, Math.max(fromTick, toTick)]),
       'prev',
       eventLimit,
+      (event) => (!eventTypes || eventTypes.has(event.type)) && (!query.entity || eventMatchesEntity(event, query.entity)),
     )
     const statisticTransaction = database.transaction('statistics')
     const statistics = (await Promise.all([...query.metricIds]
       .sort()
       .map((metricId) => cursorValues<StoredStatistic>(
         statisticTransaction.objectStore('statistics').index('runMetricTick'),
-        IDBKeyRange.bound([runId, metricId, 0], [runId, metricId, MAX_TICK]),
+        IDBKeyRange.bound([runId, metricId, Math.min(fromTick, toTick)], [runId, metricId, Math.max(fromTick, toTick)]),
         'prev',
         sampleLimit,
       )))).flat()
@@ -553,7 +561,7 @@ function request<T>(operation: IDBRequest<T>): Promise<T> {
   })
 }
 
-function cursorValues<T>(index: IDBIndex, keyRange: IDBKeyRange, direction: IDBCursorDirection, limit: number): Promise<T[]> {
+function cursorValues<T>(index: IDBIndex, keyRange: IDBKeyRange, direction: IDBCursorDirection, limit: number, include: (value: T) => boolean = () => true): Promise<T[]> {
   return new Promise((resolve, reject) => {
     const values: T[] = []
     const operation = index.openCursor(keyRange, direction)
@@ -564,7 +572,8 @@ function cursorValues<T>(index: IDBIndex, keyRange: IDBKeyRange, direction: IDBC
         resolve(values)
         return
       }
-      values.push(cursor.value as T)
+      const value = cursor.value as T
+      if (include(value)) values.push(value)
       cursor.continue()
     }
   })
@@ -605,6 +614,26 @@ function deleteByIndex(index: IDBIndex, keyRange: IDBKeyRange): void {
 function boundedHistoryLimit(value: number | undefined, fallback: number): number {
   if (!Number.isSafeInteger(value) || value === undefined || value < 1) return fallback
   return Math.min(value, 5_000)
+}
+
+function boundedHistoryTick(value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback
+  if (!Number.isSafeInteger(value) || value < 0) return fallback
+  return value
+}
+
+function eventMatchesEntity(event: SimulationEvent, entity: NonNullable<RunHistoryQuery['entity']>): boolean {
+  if ((entity.kind === undefined || entity.kind === 'cell') && event.cellId === entity.id) return true
+  return Object.entries(event.payload).some(([key, value]) => {
+    if (typeof value !== 'string') return false
+    if ((entity.kind === undefined || entity.kind === 'person') && (key.endsWith('PersonId') || ['personId', 'otherPersonId'].includes(key)) && value === entity.id) return true
+    if ((entity.kind === undefined || entity.kind === 'person') && ['parentIds', 'sourcePersonIds', 'founderPersonIds', 'participantIds'].includes(key)) return value.split(',').some((id) => id.trim() === entity.id)
+    if ((entity.kind === undefined || entity.kind === 'organization') && ['organizationId', 'councilOrganizationId'].includes(key)) return value === entity.id
+    if ((entity.kind === undefined || entity.kind === 'settlement') && key.endsWith('SettlementId')) return value === entity.id
+    if ((entity.kind === undefined || entity.kind === 'community') && key === 'communityId') return value === entity.id
+    if ((entity.kind === undefined || entity.kind === 'cell') && (key === 'cellId' || key.endsWith('CellId'))) return value === entity.id
+    return false
+  })
 }
 
 
