@@ -20,6 +20,8 @@ describe('bounded workbench projection', () => {
     const builder = new WorkbenchProjectionBuilder(source)
     const projection = builder.build(source, request({ minQ: -50, maxQ: 4, minR: -20, maxR: 3 }, 12))
     expect(projection.projectionProtocolVersion).toBe(PROJECTION_PROTOCOL_VERSION)
+    expect(projection.effectiveConfiguration).toMatchObject({ snapshotSchemaVersion: 48, baseTickHours: 1 })
+    expect(projection.phaseManifest.length).toBeGreaterThan(0)
     expect(projection.map.lod).toBe('cell')
     expect(projection.map.exactCells).toHaveLength(20)
     expect(projection.map.exactCells.map(({ id }) => id)).toEqual([

@@ -5,7 +5,7 @@ import type { WorldChunkLayout } from '../simulation/spatial/worldChunks'
 import type { OrganizationAssetTransferTrace, OrganizationDecisionProposal, OrganizationDecisionResolution, OrganizationLeadershipTrace, OrganizationMembershipTrace, OrganizationReputationCurrent, OrganizationReputationObservation } from '../simulation/organizations/types'
 
 /** Incremented when the bounded worker-to-workbench projection shape changes. */
-export const PROJECTION_PROTOCOL_VERSION = 18
+export const PROJECTION_PROTOCOL_VERSION = 19
 /** Versioned independently so later cohort simulation cannot masquerade as this read-only map aggregation. */
 export const POPULATION_FIDELITY_VERSION = 1
 export const PROJECTION_CHUNK_SIZE = 32
@@ -271,6 +271,8 @@ export interface WorkbenchProjection {
   tick: number
   seed: string
   engineVersion: string
+  effectiveConfiguration: import('../simulation/projection/types').WorldProjection['effectiveConfiguration']
+  phaseManifest: import('../simulation/projection/types').WorldProjection['phaseManifest']
   world: WorldDescriptor
   settlements: ProjectedSettlement[]
   settlementLinks: ProjectedSettlementLink[]

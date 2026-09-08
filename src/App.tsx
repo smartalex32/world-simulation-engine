@@ -28,6 +28,7 @@ import { RunStatusStrip, WorkbenchShell, WorkbenchTopbar, WorkbenchWorkspace, ty
 import { PersonWorkspace } from './ui/person/PersonWorkspace'
 import { RelationshipWorkspace } from './ui/relationships/RelationshipWorkspace'
 import { MapAnalysisWorkspace } from './ui/map/MapAnalysisWorkspace'
+import { SimulationWorkspace } from './ui/simulation/SimulationWorkspace'
 
 const SPEEDS = [
   { value: 1, label: '1 hour / batch' },
@@ -340,7 +341,7 @@ export default function App() {
     }
   }
 
-  async function saveNamed() {
+  async function saveNamed(): Promise<boolean> {
     if (pausedAutosaveTimer.current !== undefined) {
       window.clearTimeout(pausedAutosaveTimer.current)
       pausedAutosaveTimer.current = undefined
@@ -358,14 +359,15 @@ export default function App() {
       setSaveName('')
       await refreshSnapshots(snapshot.state.runId)
       setLastNamedSave(saved.name)
-    } catch (reason) { setError(messageOf(reason)) }
+      return true
+    } catch (reason) { setError(messageOf(reason)); return false }
     finally {
       namedSavePendingRef.current = false
       setNamedSavePending(false)
     }
   }
 
-  async function exportRun() {
+  async function exportRun(): Promise<boolean> {
     try {
       const snapshot = await persistenceController.requestSnapshot(async () => {
         const checkpoint = await client.checkpoint(committedTelemetry.current)
@@ -380,7 +382,8 @@ export default function App() {
       link.download = `${snapshot.state.runId}-hour-${snapshot.state.tick}.world.ndjson`
       link.click()
       URL.revokeObjectURL(url)
-    } catch (reason) { setError(messageOf(reason)) }
+      return true
+    } catch (reason) { setError(messageOf(reason)); return false }
   }
 
   async function importRun(file?: File) {
@@ -402,8 +405,9 @@ export default function App() {
     if (importRef.current) importRef.current.value = ''
   }
 
-  async function openWorldSetup() {
-    worldSetupRef.current = worldSetup
+  async function openWorldSetup(nextSetup = worldSetup, restoreSaved = true): Promise<boolean> {
+    worldSetupRef.current = nextSetup
+    setWorldSetup(nextSetup)
     setSetupOpen(true)
     worldDraftRef.current = undefined
     setWorldDraft(undefined)
@@ -413,14 +417,23 @@ export default function App() {
     draftController.open()
     setDraftOperationBusy(true)
     try {
-      const saved = await database.loadWorldDraft(WORLD_SETUP_DRAFT_ID)
-      if (saved) client.hydrateDraft(saved)
-      else client.createDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(worldSetup))
+      const saved = restoreSaved ? await database.loadWorldDraft(WORLD_SETUP_DRAFT_ID) : undefined
+      if (saved) await client.hydrateDraft(saved)
+      else await client.createDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(nextSetup))
+      return true
     } catch (reason) {
       setDraftOperationBusy(false)
       setError(`Draft setup failed: ${messageOf(reason)}`)
       try { await database.deleteWorldDraft(WORLD_SETUP_DRAFT_ID) } catch { /* Preserve the original error when storage is unavailable. */ }
+      return false
     }
+  }
+
+  async function openNewRunSetup(nextSeed: string): Promise<boolean> {
+    const normalizedSeed = nextSeed.trim()
+    if (!normalizedSeed) return false
+    try { await database.deleteWorldDraft(WORLD_SETUP_DRAFT_ID) } catch { /* Worker validation remains the authority if local draft cleanup is unavailable. */ }
+    return openWorldSetup({ ...worldSetupRef.current, seed: normalizedSeed }, false)
   }
 
   function updateWorldSetup(update: WorldSetupValues | ((current: WorldSetupValues) => WorldSetupValues)) {
@@ -722,6 +735,8 @@ export default function App() {
 
         primary={activeMode === 'world' && projection
           ? <MapAnalysisWorkspace projection={projection} overlay={overlay} onOverlay={(value) => navigation.setFilter('mapOverlay', value)} activityLocations={showActivityLocations} households={showHouseholds} onActivityLocations={(enabled) => setMapAnnotation('activity-locations', enabled)} onHouseholds={(enabled) => setMapAnnotation('households', enabled)} renderMap={renderHexMap} />
+          : activeMode === 'simulation' && projection
+            ? <SimulationWorkspace projection={projection} status={status} speed={speed} processingMs={processingMs} telemetry={history?.telemetry} error={error ?? session.error} onPlay={session.play} onPause={session.pause} onStep={session.step} onSpeed={session.changeSpeed} onReset={async () => { navigation.resetForRun(); return session.reset() }} onCreateRun={openNewRunSetup} onSave={saveNamed} onLoad={async () => { importRef.current?.click(); return true }} onExport={exportRun} />
           : activeMode === 'entities' && selectedPerson ? navigationState.openDetailSurface === 'network'
           ? <RelationshipWorkspace focusPersonId={selectedPerson.id} people={projection?.people ?? []} relationships={projection?.relationships ?? []} parentChildLinks={projection?.parentChildLinks ?? []} organizations={projection?.organizations ?? []} personCommunityIds={projection?.personCommunityIds ?? {}} relationshipsTruncated={projection?.detailBudget.relationshipsTruncated ?? false} onSelectPerson={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { focus: true, workspace: 'entities', detailSurface: 'inspector' })} onShowTimeline={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { workspace: 'history', detailSurface: 'timeline' })} onShowMap={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { focus: true, workspace: 'world', detailSurface: 'map' })} />
           : <PersonWorkspace person={selectedPerson} tick={projection?.tick ?? 0} relationships={projection?.relationships ?? []} parentChildLinks={projection?.parentChildLinks ?? []} details={personInspector} onShowMap={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { focus: true, workspace: 'world', detailSurface: 'map' })} onShowRelationships={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { focus: true, workspace: 'entities', detailSurface: 'network' })} onShowTimeline={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { workspace: 'history', detailSurface: 'timeline' })} /> : <>

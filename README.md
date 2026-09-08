@@ -1277,6 +1277,14 @@ Hooking is presentation/inspection state rather than authoritative simulation st
 
 The worker owns simulation advancement.
 
+The simulation workspace consolidates typed play, pause, step, speed, reset,
+checkpoint, load, export, and new-run actions behind worker and persistence
+controllers. It also projects the immutable content-pack reference, version
+manifest, tick phase manifest, and explicitly noncanonical wall-clock batch
+timings. Unsupported cancellation and hosted-runtime health are shown as
+unavailable instead of being inferred, and a new seed always enters the
+validated draft/new-run flow rather than reseeding a live run.
+
 Long logical advances may yield periodically to preserve UI responsiveness.
 
 Simulation advancement and render-frame cadence are independent.

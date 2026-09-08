@@ -127,6 +127,8 @@ export class WorkbenchProjectionBuilder {
       tick: source.tick,
       seed: source.seed,
       engineVersion: source.engineVersion,
+      effectiveConfiguration: source.effectiveConfiguration,
+      phaseManifest: source.phaseManifest,
       world: { id: source.world.id, name: source.world.name, width: this.grid.width, height: this.grid.height, cellCount: this.grid.cells.length, chunkLayout: worldChunkLayout(this.grid.width, this.grid.height), scale: source.world.scale },
       settlements: buildProjectedSettlements(source.world.settlements, source.world.grid.cells, source.people, source.households),
       settlementLinks: buildProjectedSettlementLinks(source.world.settlements, source.world.grid.cells, source.world.roads),
