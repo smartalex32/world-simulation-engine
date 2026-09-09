@@ -39,7 +39,10 @@ const SPEEDS = [
 ]
 
 const WORLD_SETUP_DRAFT_ID = 'workbench-world-setup'
-const PAUSED_AUTOSAVE_DELAY_MS = 300
+// Leave a short priority window for an explicit user save after a paused
+// command.  A named save cancels this timer, so it cannot be trapped behind a
+// large automatic checkpoint on slower browser workers.
+const PAUSED_AUTOSAVE_DELAY_MS = 5_000
 
 export default function App() {
   const client = useMemo(() => new SimulationWorkerClient(), [])
@@ -76,6 +79,7 @@ export default function App() {
   const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
   const [history, setHistory] = useState<RunHistory>()
   const [historyLoading, setHistoryLoading] = useState(false)
+  const historyRequestRevision = useRef(0)
   const [snapshots, setSnapshots] = useState<SavedSnapshot[]>([])
   const [error, setError] = useState<string>()
   const [saveName, setSaveName] = useState('')
@@ -177,6 +181,9 @@ export default function App() {
               committedTelemetry.current = { ...EMPTY_TELEMETRY_WATERMARK }
               lastAutosavedTick.current = -1
               lastCheckpointTick.current = -1
+              historyRequestRevision.current += 1
+              setHistory(undefined)
+              setHistoryLoading(false)
             })
           } catch (reason) { if (telemetryEpoch.current === creationEpoch) setError(messageOf(reason)) }
         }
@@ -332,13 +339,16 @@ export default function App() {
 
   async function refreshHistory(runId = projectionRef.current?.runId, range = navigationState.timeRange) {
     if (!runId) return
+    const requestRevision = historyRequestRevision.current + 1
+    historyRequestRevision.current = requestRevision
     setHistoryLoading(true)
     try {
-      setHistory(await database.readHistory(runId, { metricIds: [...new Set([...HISTORY_METRICS, ...ANALYTICS_HISTORY_METRICS])], fromTick: range?.fromTick, toTick: range?.toTick }))
+      const result = await database.readHistory(runId, { metricIds: [...new Set([...HISTORY_METRICS, ...ANALYTICS_HISTORY_METRICS])], fromTick: range?.fromTick, toTick: range?.toTick })
+      if (historyRequestRevision.current === requestRevision) setHistory(result)
     } catch (reason) {
-      setError(`History load failed: ${messageOf(reason)}`)
+      if (historyRequestRevision.current === requestRevision) setError(`History load failed: ${messageOf(reason)}`)
     } finally {
-      setHistoryLoading(false)
+      if (historyRequestRevision.current === requestRevision) setHistoryLoading(false)
     }
   }
 
@@ -742,10 +752,10 @@ export default function App() {
             ? <AnalyticsWorkspace projection={projection} statistics={history?.statistics ?? statistics} events={history?.events ?? events} category={navigationState.filters.analyticsCategory} fidelity={navigationState.filters.analyticsFidelity} timeRange={navigationState.timeRange} selectedEntity={selectedEntity} comparisonEntity={navigationState.comparisonEntity} onCategory={(category) => navigation.setFilter('analyticsCategory', category)} onFidelity={(fidelity) => navigation.setFilter('analyticsFidelity', fidelity)} onTimeRange={navigation.setTimeRange} onSelectScope={(entity) => navigation.selectEntity(entity, { workspace: 'analytics', detailSurface: 'analytics' })} onCompareScope={navigation.compareEntity} onOpenMetric={(metricId) => navigation.selectEntity({ kind: 'metric', id: metricId }, { workspace: 'history', detailSurface: 'timeline' })} onOpenMap={(nextOverlay) => { navigation.setFilter('mapOverlay', nextOverlay); navigation.navigateWorkspace('world') }} onOpenEvent={(eventId) => navigation.selectEntity({ kind: 'event', id: eventId }, { workspace: 'history', detailSurface: 'timeline' })} />
           : activeMode === 'entities' && selectedPerson ? navigationState.openDetailSurface === 'network'
           ? <RelationshipWorkspace focusPersonId={selectedPerson.id} people={projection?.people ?? []} relationships={projection?.relationships ?? []} parentChildLinks={projection?.parentChildLinks ?? []} organizations={projection?.organizations ?? []} personCommunityIds={projection?.personCommunityIds ?? {}} relationshipsTruncated={projection?.detailBudget.relationshipsTruncated ?? false} onSelectPerson={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { focus: true, workspace: 'entities', detailSurface: 'inspector' })} onShowTimeline={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { workspace: 'history', detailSurface: 'timeline' })} onShowMap={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { focus: true, workspace: 'world', detailSurface: 'map' })} />
-          : <PersonWorkspace person={selectedPerson} tick={projection?.tick ?? 0} relationships={projection?.relationships ?? []} parentChildLinks={projection?.parentChildLinks ?? []} details={personInspector} onShowMap={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { focus: true, workspace: 'world', detailSurface: 'map' })} onShowRelationships={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { focus: true, workspace: 'entities', detailSurface: 'network' })} onShowTimeline={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { workspace: 'history', detailSurface: 'timeline' })} /> : <>
+          : <PersonWorkspace person={selectedPerson} tick={projection?.tick ?? 0} relationships={projection?.relationships ?? []} parentChildLinks={projection?.parentChildLinks ?? []} details={personInspector} onShowMap={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { focus: true, workspace: 'world', detailSurface: 'map' })} onShowRelationships={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { focus: true, workspace: 'entities', detailSurface: 'network' })} onShowTimeline={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { workspace: 'history', detailSurface: 'timeline' })} /> : <div className="map-panel">
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {projection?.map.overlay ?? overlay}{projection && projection.map.overlay !== overlay ? ' · updating…' : ''}</span></div>
           {renderHexMap()}
-        </>}
+        </div>}
 
         right={<>
           <PanelTitle title={selectedCommunity ? 'Community inspector' : selectedPerson ? 'Person inspector' : selectedSettlement ? 'Settlement inspector' : selectedOrganization ? 'Organization inspector' : selectedRelationship ? 'Relationship inspector' : selectedEvent ? 'Event inspector' : selectedEntity?.kind === 'metric' ? 'Metric explanation' : 'Cell inspector'} subtitle={selectedCommunity ? selectedCommunity.catchment.displayName : selectedPerson ? selectedPerson.id : selectedEntity ? entityLabel(selectedEntity) : selected ? `Cell ${selected.id}` : 'Select a cell'} />

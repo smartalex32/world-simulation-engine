@@ -732,6 +732,15 @@ and `src/ui/components`. Their documented responsive and accessibility contract 
 in [the UI design system](docs/UI_DESIGN_SYSTEM.md). They consume projections and
 controllers only; UI layout state is never canonical simulation state.
 
+Six integrated analytical surfaces now share that shell and typed navigation:
+the person workspace, bounded relationship explorer, multi-lane evidence
+timeline, layered spatial analysis, simulation/systems controls, and world
+analytics. Their capability ownership, direct test evidence, explicit future
+dependencies, and projection-version review are recorded in the
+[Epic #104 convergence audit](docs/EPIC_104_CONVERGENCE.md). Unsupported
+backend capabilities remain named unavailable states; the browser does not
+invent their entities, metrics, actions, or health.
+
 ---
 
 # Reproducibility Model

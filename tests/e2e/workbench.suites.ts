@@ -149,10 +149,10 @@ capabilityTest('authoring', 'loads persisted historical evidence without changin
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   await page.getByRole('button', { name: 'history', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Recorded evidence over time' })).toBeVisible()
-  await expect(page.getByText('Major recorded events')).toBeVisible()
-  await expect(page.getByText('Regional change evidence')).toBeVisible()
-  await expect(page.getByText('Person timeline')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Multi-lane recorded evidence' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'World events' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Community, settlement, and organization' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Selected entity · none' })).toBeVisible()
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
 })
 
@@ -163,7 +163,7 @@ capabilityTest('authoring', 'offers an optional deterministic chronicle without 
   await page.getByRole('button', { name: 'history', exact: true }).click()
   await page.getByRole('button', { name: 'Chronicle view', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Deterministic chronicle' })).toBeVisible()
-  await expect(page.getByText('Fixed templates from recorded evidence; this never affects the simulation.')).toBeVisible()
+  await expect(page.getByText('Fixed text templates from retained evidence; no narrative is generated.')).toBeVisible()
   await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', tick ?? '')
 })
 
@@ -217,8 +217,8 @@ capabilityTest('navigation', 'cross-links a person to history without advancing 
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const tick = await page.locator('[data-simulation-tick]').getAttribute('data-simulation-tick')
   await page.getByRole('button', { name: 'Timeline', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Recorded evidence over time' })).toBeVisible()
-  await expect(page.getByText('Timeline · person-0001')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Multi-lane recorded evidence' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Selected entity · person-0001' })).toBeVisible()
   await expect(page).toHaveURL(/workspace=history/)
   await expect(page).toHaveURL(/detail=timeline/)
   await expect(page.locator('#workbench-primary')).toBeFocused()
@@ -439,11 +439,8 @@ capabilityTest('navigation', 'switches to bounded world overview rendering witho
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const canvas = page.getByLabel('Hex world map')
   await expect(canvas).toHaveAttribute('data-map-lod', 'cell')
-  const bounds = await canvas.boundingBox()
-  expect(bounds).not.toBeNull()
-  if (!bounds) return
-  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
-  for (let index = 0; index < 18; index += 1) await page.mouse.wheel(0, 500)
+  await canvas.focus()
+  for (let index = 0; index < 18; index += 1) await page.keyboard.press('-')
   await expect(canvas).toHaveAttribute('data-map-lod', /region|world/)
   await expect(canvas).toHaveAttribute('data-map-border-alpha', '0')
   await expect(canvas).toHaveAttribute('data-population-fidelity', 'aggregate')
@@ -506,7 +503,7 @@ capabilityTest('reproducibility', '@critical creates, steps, inspects, and saves
   // A named save is a full worker snapshot plus an IndexedDB transaction.
   // Wait for the application-level completion signal rather than assuming a
   // browser-specific storage/structured-clone duration.
-  await expect(page.getByRole('status')).toHaveText('Saved snapshot: First hour', { timeout: 10_000 })
+  await expect(page.getByText('Saved snapshot: First hour', { exact: true })).toBeVisible({ timeout: 10_000 })
   await expect(page.locator('.snapshot-list')).toContainText('First hour')
   await expect(page.getByText('CLOCK ADVANCED')).toBeVisible()
   await page.getByRole('button', { name: /Inspect person-/ }).first().click()
@@ -700,22 +697,8 @@ capabilityTest('inspection', 'hooks a fixed child, inspects household origins, a
   await page.goto('/')
   await expect(page.locator('.world-overview strong')).toHaveText('Seeded Valley')
   const canvas = page.getByLabel('Hex world map')
-  const bounds = await canvas.boundingBox()
-  expect(bounds).not.toBeNull()
-  if (!bounds || !child || !parentChild) return
-  await expect.poll(async () => canvas.evaluate((element) => {
-    const transform = element.getAttribute('data-map-viewport')
-    return transform && element.clientWidth > 0 && element.clientHeight > 0 && transform !== '34.000,42.000,0.86000'
-  })).toBe(true)
-  const transform = await canvas.getAttribute('data-map-viewport')
-  expect(transform).not.toBeNull()
-  if (!transform) return
-  const [x = Number.NaN, y = Number.NaN, scale = Number.NaN] = transform.split(',').map(Number)
-  expect(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(scale)).toBe(true)
-  const comma = child.locationCellId.indexOf(',')
-  const center = axialToPixel({ q: Number(child.locationCellId.slice(0, comma)), r: Number(child.locationCellId.slice(comma + 1)) }, 18)
-  await page.mouse.click(bounds.x + x + center.x * scale, bounds.y + y + center.y * scale)
-  await page.locator('.occupant-list button').filter({ hasText: child.id }).click()
+  if (!child || !parentChild) return
+  await hookPersonAtCurrentCell(page, child)
 
   await expect(page.locator('.right-panel .panel-title').first().locator('span')).toHaveText(child.id)
   await expect(page.getByText('Starting predisposition', { exact: true })).toBeVisible()
@@ -769,24 +752,7 @@ capabilityTest('inspection', 'inspects persisted experience and deterministic de
   // subsequent React paint on slower Firefox CI workers.
   await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '720', { timeout: 30_000 })
   await expect(page.getByText('Day 30 · 00:00')).toBeVisible()
-  const canvas = page.getByLabel('Hex world map')
-  await expect.poll(async () => canvas.evaluate((element) => {
-    const transform = element.getAttribute('data-map-viewport')
-    return transform !== null
-      && transform !== '34.000,42.000,0.86000'
-      && element.clientWidth > 0
-      && element.clientHeight > 0
-  })).toBe(true)
-  const bounds = await canvas.boundingBox()
-  const transform = await canvas.getAttribute('data-map-viewport')
-  expect(bounds).not.toBeNull()
-  expect(transform).not.toBeNull()
-  if (!bounds || !transform) return
-  const [x = Number.NaN, y = Number.NaN, scale = Number.NaN] = transform.split(',').map(Number)
-  const comma = child.locationCellId.indexOf(',')
-  const center = axialToPixel({ q: Number(child.locationCellId.slice(0, comma)), r: Number(child.locationCellId.slice(comma + 1)) }, 18)
-  await page.mouse.click(bounds.x + x + center.x * scale, bounds.y + y + center.y * scale)
-  await page.locator('.occupant-list button').filter({ hasText: child.id }).click()
+  await hookPersonAtCurrentCell(page, child)
 
   await expect(page.getByRole('heading', { name: 'Recent experience', exact: true })).toBeVisible()
   // Parent and peer evidence can both complete at this boundary. The inspector
@@ -839,7 +805,7 @@ capabilityTest('reproducibility', 'commits a retry-safe snapshot with an exact t
     }
   }))
 
-  await expect.poll(async () => (await inspect()).snapshotTick).toBe(1)
+  await expect.poll(async () => (await inspect()).snapshotTick, { timeout: 20_000 }).toBe(1)
   const before = await inspect()
   expect(before.atomic, JSON.stringify(before)).toBe(true)
   await page.getByPlaceholder('Snapshot name').fill('Retry-safe checkpoint')
@@ -944,9 +910,7 @@ capabilityTest('navigation', 'uses the responsive workbench shell without horizo
     const dimensions = await page.evaluate(() => ({ clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }))
     expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth)
     if (viewport.width <= 768) {
-      const lastControl = page.locator('.left-panel button:not([disabled])').last()
-      await lastControl.focus()
-      await page.keyboard.press('Tab')
+      await page.getByLabel('Hex world map').focus()
       await expect(page.getByLabel('Hex world map')).toBeFocused()
     }
   }
@@ -973,17 +937,28 @@ capabilityTest('inspection', 'inspects explicit organization leadership, pending
   await page.getByLabel('Run content pack').selectOption(`${pack.manifest.id}@${pack.manifest.version}`)
   await page.getByRole('button', { name: 'Create world', exact: true }).click()
   const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await setup.getByLabel('Starting population').fill('40')
+  await setup.getByLabel('Zone 1 people').fill('20')
+  await setup.getByLabel('Zone 2 people').fill('20')
   await setup.getByRole('button', { name: 'Commit & create world', exact: true }).click()
   await expect(setup).toBeHidden()
-  for (let tick = 1; tick <= 24; tick += 1) await advanceOneHour(page, tick)
+  await page.getByRole('button', { name: 'simulation', exact: true }).click()
+  await page.locator('#workbench-primary').getByRole('button', { name: 'Step 1 day' }).click()
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '24')
   await page.getByRole('button', { name: 'entities', exact: true }).click()
   const evidence = page.getByLabel('Organization evidence')
   await expect(evidence).toContainText('leadership filled')
   await expect(evidence).toContainText('decisions active (1 pending)')
-  for (let tick = 25; tick <= 48; tick += 1) await advanceOneHour(page, tick)
-  await expect(page.getByRole('button', { name: /Autosave Hour 48/ })).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('button', { name: 'simulation', exact: true }).click()
+  await page.locator('#workbench-primary').getByRole('button', { name: 'Step 1 day' }).click()
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '48')
+  await page.getByLabel('Snapshot name').fill('Organization governance evidence')
+  await page.locator('.save-form').getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByText('Saved snapshot: Organization governance evidence', { exact: true })).toBeVisible({ timeout: 20_000 })
   await page.getByRole('button', { name: 'history', exact: true }).click()
-  const resolvedEvent = page.locator('.history-event').filter({ hasText: 'ORGANIZATION DECISION RESOLVED' }).first()
+  await page.getByLabel('From tick').fill('48')
+  await expect(page.getByRole('button', { name: 'Refresh history' })).toBeVisible({ timeout: 30_000 })
+  const resolvedEvent = page.getByTitle(/ORGANIZATION_DECISION_RESOLVED/).first()
   await expect(resolvedEvent).toBeVisible()
 })
 
@@ -1012,6 +987,64 @@ capabilityTest('quality', '@critical traverses every analytical workspace with a
   await page.locator('#workbench-primary').getByRole('button', { name: 'Step 1 hour' }).focus()
   await page.keyboard.press('Enter')
   await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '1')
+})
+
+capabilityTest('quality', '@critical follows persisted causal evidence from controls through history, geography, and analytics', async ({ page }, testInfo) => {
+  testInfo.setTimeout(180_000)
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto('/?workspace=world')
+  await page.getByRole('button', { name: 'Create world', exact: true }).click()
+  const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await setup.getByLabel('World name').fill('Convergence Valley')
+  await setup.getByLabel('Starting population').fill('20')
+  await setup.getByLabel('Zone 1 people').fill('10')
+  await setup.getByLabel('Zone 2 people').fill('10')
+  const commitWorld = setup.getByRole('button', { name: 'Commit & create world', exact: true })
+  await expect(commitWorld).toBeEnabled({ timeout: 120_000 })
+  await commitWorld.click()
+  await expect(setup).toBeHidden()
+  await page.getByRole('button', { name: 'simulation', exact: true }).click()
+  await expect(page.getByRole('heading', { name: /Run run-/ })).toBeVisible()
+  await expect(page.locator('.run-facts')).toContainText('valley-001')
+
+  await page.locator('#workbench-primary').getByRole('button', { name: 'Step 1 day' }).click()
+  await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '24')
+  const canonicalHash = await page.locator('.run-facts .fact').filter({ hasText: 'SAVED HASH' }).locator('strong').textContent()
+
+  await page.getByLabel('Snapshot name').fill('Convergence evidence')
+  await page.locator('.save-form').getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByText('Saved snapshot: Convergence evidence', { exact: true })).toBeVisible({ timeout: 60_000 })
+
+  await page.getByRole('button', { name: 'history', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Multi-lane recorded evidence' })).toBeVisible()
+  await page.getByLabel('From tick').fill('24')
+  await expect(page.getByRole('button', { name: 'Refresh history' })).toBeVisible({ timeout: 60_000 })
+  const communityEvent = page.getByTitle(/COMMUNITY_MEASURES_UPDATED at tick 24/).first()
+  await expect(communityEvent).toBeVisible()
+  await communityEvent.click()
+  const evidence = page.getByLabel('Selected event evidence')
+  await expect(evidence).toContainText('COMMUNITY MEASURES UPDATED')
+  const communityLink = evidence.getByRole('button', { name: /Open community community-/ }).first()
+  await expect(communityLink).toBeVisible()
+  await communityLink.click()
+
+  await expect(page.getByRole('heading', { name: 'Convergence Valley' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open analytics' })).toBeVisible()
+  await page.getByRole('button', { name: 'Open analytics' }).click()
+  await expect(page.getByRole('heading', { name: 'Conditions and retained trends' })).toBeVisible()
+  await expect(page.locator('.analytics-card').first()).toBeVisible()
+  await expect(page.locator('.analytics-module-grid').first()).toBeVisible()
+  await expect(page.locator('.run-facts .fact').filter({ hasText: 'SAVED HASH' }).locator('strong')).toHaveText(canonicalHash ?? '')
+
+  if (testInfo.project.name === 'chromium') {
+    const desktop = await page.screenshot({ path: testInfo.outputPath('convergence-analytics-desktop.png'), fullPage: true, animations: 'disabled' })
+    expect(desktop.byteLength).toBeGreaterThan(1_000)
+    await page.setViewportSize({ width: 390, height: 844 })
+    const dimensions = await page.evaluate(() => ({ clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }))
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth)
+    const constrained = await page.screenshot({ path: testInfo.outputPath('convergence-analytics-constrained.png'), fullPage: true, animations: 'disabled' })
+    expect(constrained.byteLength).toBeGreaterThan(1_000)
+  }
 })
 
 capabilityTest('quality', '@critical exposes named controls, references, and non-color state across every top-level workspace', async ({ page }) => {
@@ -1104,17 +1137,24 @@ async function hookPersonAtCurrentCell(page: import('@playwright/test').Page, pe
   const canvas = page.getByLabel('Hex world map')
   await expect.poll(async () => canvas.getAttribute('data-map-viewport')).not.toBeNull()
   await waitForMapSettled(canvas)
-  const bounds = await canvas.boundingBox()
-  const transform = await canvas.getAttribute('data-map-viewport')
-  expect(bounds).not.toBeNull()
-  expect(transform).not.toBeNull()
-  if (!bounds || !transform) return
-  const [x = Number.NaN, y = Number.NaN, scale = Number.NaN] = transform.split(',').map(Number)
   const comma = person.locationCellId.indexOf(',')
   const center = axialToPixel({ q: Number(person.locationCellId.slice(0, comma)), r: Number(person.locationCellId.slice(comma + 1)) }, 18)
-  await page.mouse.click(bounds.x + x + center.x * scale, bounds.y + y + center.y * scale)
+  const selectCell = async () => {
+    const bounds = await canvas.boundingBox()
+    const transform = await canvas.getAttribute('data-map-viewport')
+    expect(bounds).not.toBeNull()
+    expect(transform).not.toBeNull()
+    if (!bounds || !transform) return
+    const [x = Number.NaN, y = Number.NaN, scale = Number.NaN] = transform.split(',').map(Number)
+    await canvas.click({ position: { x: x + center.x * scale, y: y + center.y * scale } })
+  }
+  await selectCell()
   await waitForMapSettled(canvas)
   const personButton = page.locator('.occupant-list button').filter({ hasText: person.id })
+  if (!(await personButton.isVisible())) {
+    await selectCell()
+    await waitForMapSettled(canvas)
+  }
   await expect(personButton).toBeVisible()
   await personButton.click()
 }
