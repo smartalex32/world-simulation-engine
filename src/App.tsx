@@ -624,7 +624,7 @@ export default function App() {
   useEffect(() => {
     if (!projection) return
     navigation.reconcile(buildWorkbenchAvailability(projection, { eventIds, historyLoaded: history !== undefined, metricIds }))
-  }, [eventIds, history, metricIds, navigation.reconcile, navigationState.focusedEntity, navigationState.selectedEntity, projection])
+  }, [eventIds, history, metricIds, navigation.reconcile, navigationState.focusedEntity, navigationState.selectedEntity, navigationState.selectionStatus, projection])
 
   useEffect(() => {
     if (activeMode === 'history' || activeMode === 'analytics') void refreshHistory()
