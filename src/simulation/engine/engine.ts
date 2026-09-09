@@ -1,5 +1,6 @@
 import {
   BASE_TICK_HOURS,
+  CURRENT_MODEL_VERSIONS,
   ACTIVITY_REGISTRY_VERSION,
   COMMUNITY_REGISTRY_VERSION,
   CONTENT_PACK_MODEL_VERSION,
@@ -712,6 +713,16 @@ export class SimulationEngine {
       tick: this.state.tick,
       seed: this.state.config.seed,
       engineVersion: ENGINE_VERSION,
+      effectiveConfiguration: {
+        snapshotSchemaVersion: CURRENT_MODEL_VERSIONS.snapshotSchema,
+        baseTickHours: this.state.config.baseTickHours,
+        contentPackId: this.state.config.contentPackId,
+        contentPackVersion: this.state.config.contentPackVersion,
+        contentPackChecksum: this.state.config.contentPackChecksum,
+        contentPackDependencies: this.state.config.contentPackDependencies ?? [],
+        modelVersions: Object.fromEntries(Object.entries(CURRENT_MODEL_VERSIONS).filter(([, value]) => typeof value === 'number').sort(([left], [right]) => compareStableText(left, right))) as Record<string, number>,
+      },
+      phaseManifest: TICK_PHASE_MANIFEST,
       world: this.state.world,
       populationZones: this.state.config.worldCreation.populationZones,
       people: this.state.people,

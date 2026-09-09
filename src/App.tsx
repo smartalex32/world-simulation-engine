@@ -25,6 +25,11 @@ import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver, diffContentPacks
 import type { ContentPack, ResolvedContentPack } from './contentPacks'
 import { Metric, PanelTitle, StatePresentation } from './ui/components/WorkbenchPrimitives'
 import { RunStatusStrip, WorkbenchShell, WorkbenchTopbar, WorkbenchWorkspace, type WorkbenchMode } from './ui/layout/WorkbenchShell'
+import { PersonWorkspace } from './ui/person/PersonWorkspace'
+import { RelationshipWorkspace } from './ui/relationships/RelationshipWorkspace'
+import { MapAnalysisWorkspace } from './ui/map/MapAnalysisWorkspace'
+import { SimulationWorkspace } from './ui/simulation/SimulationWorkspace'
+import { ANALYTICS_HISTORY_METRICS, AnalyticsWorkspace } from './ui/analytics'
 
 const SPEEDS = [
   { value: 1, label: '1 hour / batch' },
@@ -34,7 +39,10 @@ const SPEEDS = [
 ]
 
 const WORLD_SETUP_DRAFT_ID = 'workbench-world-setup'
-const PAUSED_AUTOSAVE_DELAY_MS = 300
+// Leave a short priority window for an explicit user save after a paused
+// command.  A named save cancels this timer, so it cannot be trapped behind a
+// large automatic checkpoint on slower browser workers.
+const PAUSED_AUTOSAVE_DELAY_MS = 5_000
 
 export default function App() {
   const client = useMemo(() => new SimulationWorkerClient(), [])
@@ -71,6 +79,7 @@ export default function App() {
   const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
   const [history, setHistory] = useState<RunHistory>()
   const [historyLoading, setHistoryLoading] = useState(false)
+  const historyRequestRevision = useRef(0)
   const [snapshots, setSnapshots] = useState<SavedSnapshot[]>([])
   const [error, setError] = useState<string>()
   const [saveName, setSaveName] = useState('')
@@ -172,6 +181,9 @@ export default function App() {
               committedTelemetry.current = { ...EMPTY_TELEMETRY_WATERMARK }
               lastAutosavedTick.current = -1
               lastCheckpointTick.current = -1
+              historyRequestRevision.current += 1
+              setHistory(undefined)
+              setHistoryLoading(false)
             })
           } catch (reason) { if (telemetryEpoch.current === creationEpoch) setError(messageOf(reason)) }
         }
@@ -325,19 +337,22 @@ export default function App() {
     try { setSnapshots(await database.listSnapshots()) } catch (reason) { setError(messageOf(reason)) }
   }
 
-  async function refreshHistory(runId = projectionRef.current?.runId) {
+  async function refreshHistory(runId = projectionRef.current?.runId, range = navigationState.timeRange) {
     if (!runId) return
+    const requestRevision = historyRequestRevision.current + 1
+    historyRequestRevision.current = requestRevision
     setHistoryLoading(true)
     try {
-      setHistory(await database.readHistory(runId, { metricIds: HISTORY_METRICS }))
+      const result = await database.readHistory(runId, { metricIds: [...new Set([...HISTORY_METRICS, ...ANALYTICS_HISTORY_METRICS])], fromTick: range?.fromTick, toTick: range?.toTick })
+      if (historyRequestRevision.current === requestRevision) setHistory(result)
     } catch (reason) {
-      setError(`History load failed: ${messageOf(reason)}`)
+      if (historyRequestRevision.current === requestRevision) setError(`History load failed: ${messageOf(reason)}`)
     } finally {
-      setHistoryLoading(false)
+      if (historyRequestRevision.current === requestRevision) setHistoryLoading(false)
     }
   }
 
-  async function saveNamed() {
+  async function saveNamed(): Promise<boolean> {
     if (pausedAutosaveTimer.current !== undefined) {
       window.clearTimeout(pausedAutosaveTimer.current)
       pausedAutosaveTimer.current = undefined
@@ -355,14 +370,15 @@ export default function App() {
       setSaveName('')
       await refreshSnapshots(snapshot.state.runId)
       setLastNamedSave(saved.name)
-    } catch (reason) { setError(messageOf(reason)) }
+      return true
+    } catch (reason) { setError(messageOf(reason)); return false }
     finally {
       namedSavePendingRef.current = false
       setNamedSavePending(false)
     }
   }
 
-  async function exportRun() {
+  async function exportRun(): Promise<boolean> {
     try {
       const snapshot = await persistenceController.requestSnapshot(async () => {
         const checkpoint = await client.checkpoint(committedTelemetry.current)
@@ -377,7 +393,8 @@ export default function App() {
       link.download = `${snapshot.state.runId}-hour-${snapshot.state.tick}.world.ndjson`
       link.click()
       URL.revokeObjectURL(url)
-    } catch (reason) { setError(messageOf(reason)) }
+      return true
+    } catch (reason) { setError(messageOf(reason)); return false }
   }
 
   async function importRun(file?: File) {
@@ -399,8 +416,9 @@ export default function App() {
     if (importRef.current) importRef.current.value = ''
   }
 
-  async function openWorldSetup() {
-    worldSetupRef.current = worldSetup
+  async function openWorldSetup(nextSetup = worldSetup, restoreSaved = true): Promise<boolean> {
+    worldSetupRef.current = nextSetup
+    setWorldSetup(nextSetup)
     setSetupOpen(true)
     worldDraftRef.current = undefined
     setWorldDraft(undefined)
@@ -410,14 +428,23 @@ export default function App() {
     draftController.open()
     setDraftOperationBusy(true)
     try {
-      const saved = await database.loadWorldDraft(WORLD_SETUP_DRAFT_ID)
-      if (saved) client.hydrateDraft(saved)
-      else client.createDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(worldSetup))
+      const saved = restoreSaved ? await database.loadWorldDraft(WORLD_SETUP_DRAFT_ID) : undefined
+      if (saved) await client.hydrateDraft(saved)
+      else await client.createDraft(WORLD_SETUP_DRAFT_ID, creationDraftFromSetup(nextSetup))
+      return true
     } catch (reason) {
       setDraftOperationBusy(false)
       setError(`Draft setup failed: ${messageOf(reason)}`)
       try { await database.deleteWorldDraft(WORLD_SETUP_DRAFT_ID) } catch { /* Preserve the original error when storage is unavailable. */ }
+      return false
     }
+  }
+
+  async function openNewRunSetup(nextSeed: string): Promise<boolean> {
+    const normalizedSeed = nextSeed.trim()
+    if (!normalizedSeed) return false
+    try { await database.deleteWorldDraft(WORLD_SETUP_DRAFT_ID) } catch { /* Worker validation remains the authority if local draft cleanup is unavailable. */ }
+    return openWorldSetup({ ...worldSetupRef.current, seed: normalizedSeed }, false)
   }
 
   function updateWorldSetup(update: WorldSetupValues | ((current: WorldSetupValues) => WorldSetupValues)) {
@@ -570,6 +597,11 @@ export default function App() {
     navigation.setFilter('mapAnnotations', current.includes(annotation) ? current.filter((entry) => entry !== annotation) : [...current, annotation].sort() as typeof current)
   }
 
+  function setMapAnnotation(annotation: 'activity-locations' | 'households', enabled: boolean) {
+    const current = navigationState.filters.mapAnnotations
+    navigation.setFilter('mapAnnotations', enabled ? [...new Set([...current, annotation])].sort() as typeof current : current.filter((entry) => entry !== annotation))
+  }
+
   const tick = projection?.tick ?? 0
   const day = Math.floor(tick / 24)
   const hour = tick % 24
@@ -581,24 +613,26 @@ export default function App() {
   const selectedRelationship = selectedEntity?.kind === 'relationship' ? projection?.relationships.find((relationship) => relationship.id === selectedEntity.id) : undefined
   const selectedEvent = selectedEntity?.kind === 'event' ? [...events, ...(history?.events ?? [])].find((event) => event.id === selectedEntity.id) : undefined
   const selectedRelationships = selectedPerson ? relationshipViews(selectedPerson.id, projection?.relationships ?? []) : []
+  const personInspector = selectedPerson ? <PersonInspector person={selectedPerson} tick={projection?.tick ?? 0} routeHome={projection?.routeHome?.personId === selectedPerson.id ? projection.routeHome : undefined} variableDefinitions={projection?.variableDefinitions ?? []} communityVariableDefinitions={projection?.communityVariableDefinitions ?? []} communities={projection?.communities ?? []} personCommunityId={projection?.personCommunityIds[selectedPerson.id]} relationships={selectedRelationships} households={projection?.households ?? []} parentChildLinks={projection?.parentChildLinks ?? []} people={projection?.people ?? []} onHookPerson={inspectPerson} onRelease={() => navigation.selectEntity({ kind: 'map-cell', id: selectedPerson.locationCellId }, { focus: true })} /> : undefined
+  const renderHexMap = (overlayOpacity = 1) => projection ? <HexMap world={projection.world} settlements={projection.settlements} roads={projection.roads} settlementLinks={projection.settlementLinks} map={projection.map} overlay={overlay} overlayOpacity={overlayOpacity} selectedCellId={selectedCellId ?? focusedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={focusedPersonId} onSelect={(cell) => navigation.selectEntity({ kind: 'map-cell', id: cell.id }, { focus: true })} onFocusCell={(cellId) => navigation.selectEntity({ kind: 'map-cell', id: cellId }, { focus: true })} onViewportRequest={requestViewport} /> : <StatePresentation state="loading">Starting simulation worker…</StatePresentation>
   const settlementServiceById = new Map((projection?.settlementServices ?? []).map((service) => [service.settlementId, service]))
   const selected = selectedCellId ? projection?.map.exactCells.find((cell) => cell.id === selectedCellId) ?? (projection?.map.focusCell?.id === selectedCellId ? projection.map.focusCell : undefined) : undefined
   const eventIds = useMemo(() => [...new Set([...events, ...(history?.events ?? [])].map((event) => event.id))], [events, history?.events])
-  const metricIds = useMemo(() => [...new Set([...HISTORY_METRICS, ...statistics.map((sample) => sample.metricId)])], [statistics])
+  const metricIds = useMemo(() => [...new Set([...HISTORY_METRICS, ...ANALYTICS_HISTORY_METRICS, ...statistics.map((sample) => sample.metricId)])], [statistics])
   const previousWorkspace = useRef(activeMode)
 
   useEffect(() => {
     if (!projection) return
     navigation.reconcile(buildWorkbenchAvailability(projection, { eventIds, historyLoaded: history !== undefined, metricIds }))
-  }, [eventIds, history, metricIds, navigation.reconcile, navigationState.focusedEntity, navigationState.selectedEntity, projection])
+  }, [eventIds, history, metricIds, navigation.reconcile, navigationState.focusedEntity, navigationState.selectedEntity, navigationState.selectionStatus, projection])
 
   useEffect(() => {
-    if (activeMode === 'history') void refreshHistory()
+    if (activeMode === 'history' || activeMode === 'analytics') void refreshHistory()
     if (previousWorkspace.current !== activeMode) {
       previousWorkspace.current = activeMode
       window.requestAnimationFrame(() => document.getElementById('workbench-primary')?.focus())
     }
-  }, [activeMode])
+  }, [activeMode, navigationState.timeRange?.fromTick, navigationState.timeRange?.toTick])
 
   return (
     <WorkbenchShell>
@@ -710,10 +744,18 @@ export default function App() {
           />}</>}
         </>}
 
-        primary={<>
+        primary={activeMode === 'world' && projection
+          ? <MapAnalysisWorkspace projection={projection} overlay={overlay} onOverlay={(value) => navigation.setFilter('mapOverlay', value)} activityLocations={showActivityLocations} households={showHouseholds} onActivityLocations={(enabled) => setMapAnnotation('activity-locations', enabled)} onHouseholds={(enabled) => setMapAnnotation('households', enabled)} renderMap={renderHexMap} />
+          : activeMode === 'simulation' && projection
+            ? <SimulationWorkspace projection={projection} status={status} speed={speed} processingMs={processingMs} telemetry={history?.telemetry} error={error ?? session.error} onPlay={session.play} onPause={session.pause} onStep={session.step} onSpeed={session.changeSpeed} onReset={async () => { navigation.resetForRun(); return session.reset() }} onCreateRun={openNewRunSetup} onSave={saveNamed} onLoad={async () => { importRef.current?.click(); return true }} onExport={exportRun} />
+          : activeMode === 'analytics' && projection
+            ? <AnalyticsWorkspace projection={projection} statistics={history?.statistics ?? statistics} events={history?.events ?? events} category={navigationState.filters.analyticsCategory} fidelity={navigationState.filters.analyticsFidelity} timeRange={navigationState.timeRange} selectedEntity={selectedEntity} comparisonEntity={navigationState.comparisonEntity} onCategory={(category) => navigation.setFilter('analyticsCategory', category)} onFidelity={(fidelity) => navigation.setFilter('analyticsFidelity', fidelity)} onTimeRange={navigation.setTimeRange} onSelectScope={(entity) => navigation.selectEntity(entity, { workspace: 'analytics', detailSurface: 'analytics' })} onCompareScope={navigation.compareEntity} onOpenMetric={(metricId) => navigation.selectEntity({ kind: 'metric', id: metricId }, { workspace: 'history', detailSurface: 'timeline' })} onOpenMap={(nextOverlay) => { navigation.setFilter('mapOverlay', nextOverlay); navigation.navigateWorkspace('world') }} onOpenEvent={(eventId) => navigation.selectEntity({ kind: 'event', id: eventId }, { workspace: 'history', detailSurface: 'timeline' })} />
+          : activeMode === 'entities' && selectedPerson ? navigationState.openDetailSurface === 'network'
+          ? <RelationshipWorkspace focusPersonId={selectedPerson.id} people={projection?.people ?? []} relationships={projection?.relationships ?? []} parentChildLinks={projection?.parentChildLinks ?? []} organizations={projection?.organizations ?? []} personCommunityIds={projection?.personCommunityIds ?? {}} relationshipsTruncated={projection?.detailBudget.relationshipsTruncated ?? false} onSelectPerson={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { focus: true, workspace: 'entities', detailSurface: 'inspector' })} onShowTimeline={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { workspace: 'history', detailSurface: 'timeline' })} onShowMap={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { focus: true, workspace: 'world', detailSurface: 'map' })} />
+          : <PersonWorkspace person={selectedPerson} tick={projection?.tick ?? 0} relationships={projection?.relationships ?? []} parentChildLinks={projection?.parentChildLinks ?? []} details={personInspector} onShowMap={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { focus: true, workspace: 'world', detailSurface: 'map' })} onShowRelationships={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { focus: true, workspace: 'entities', detailSurface: 'network' })} onShowTimeline={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { workspace: 'history', detailSurface: 'timeline' })} /> : <div className="map-panel">
           <div className="map-toolbar"><span>{projection?.world.name ?? 'Loading world…'}</span><span>Axial hex · {projection?.map.overlay ?? overlay}{projection && projection.map.overlay !== overlay ? ' · updating…' : ''}</span></div>
-          {projection ? <HexMap world={projection.world} settlements={projection.settlements} roads={projection.roads} settlementLinks={projection.settlementLinks} map={projection.map} overlay={overlay} selectedCellId={selectedCellId ?? focusedCellId} communities={projection.communities} communityVariableDefinitions={projection.communityVariableDefinitions} communityMeasureId={communityMeasureId} selectedCommunityId={selectedCommunityId} showActivityLocations={showActivityLocations} showHouseholds={showHouseholds} selectedPersonId={focusedPersonId} onSelect={(cell) => navigation.selectEntity({ kind: 'map-cell', id: cell.id }, { focus: true })} onFocusCell={(cellId) => navigation.selectEntity({ kind: 'map-cell', id: cellId }, { focus: true })} onViewportRequest={requestViewport} /> : <StatePresentation state="loading">Starting simulation worker…</StatePresentation>}
-        </>}
+          {renderHexMap()}
+        </div>}
 
         right={<>
           <PanelTitle title={selectedCommunity ? 'Community inspector' : selectedPerson ? 'Person inspector' : selectedSettlement ? 'Settlement inspector' : selectedOrganization ? 'Organization inspector' : selectedRelationship ? 'Relationship inspector' : selectedEvent ? 'Event inspector' : selectedEntity?.kind === 'metric' ? 'Metric explanation' : 'Cell inspector'} subtitle={selectedCommunity ? selectedCommunity.catchment.displayName : selectedPerson ? selectedPerson.id : selectedEntity ? entityLabel(selectedEntity) : selected ? `Cell ${selected.id}` : 'Select a cell'} />
@@ -725,9 +767,7 @@ export default function App() {
           : selectedCommunity
             ? <CommunityInspector community={selectedCommunity} definitions={projection?.communityVariableDefinitions ?? []} hasHookedPerson={focusedPersonId !== undefined} onReturnToPerson={() => focusedPersonId && navigation.selectEntity({ kind: 'person', id: focusedPersonId })} />
             : selectedPerson
-            ? <PersonInspector person={selectedPerson} tick={projection?.tick ?? 0} routeHome={projection?.routeHome?.personId === selectedPerson.id ? projection.routeHome : undefined} variableDefinitions={projection?.variableDefinitions ?? []} communityVariableDefinitions={projection?.communityVariableDefinitions ?? []} communities={projection?.communities ?? []} personCommunityId={projection?.personCommunityIds[selectedPerson.id]} relationships={selectedRelationships} households={projection?.households ?? []} parentChildLinks={projection?.parentChildLinks ?? []} people={projection?.people ?? []} onHookPerson={inspectPerson} onRelease={() => {
-                navigation.selectEntity({ kind: 'map-cell', id: selectedPerson.locationCellId }, { focus: true })
-              }} />
+            ? activeMode === 'entities' ? <EntitySummary title={selectedPerson.id} facts={[['Workspace', 'Comprehensive person evidence'], ['Current cell', selectedPerson.locationCellId], ['Activity', selectedPerson.currentActivity.kind]]} /> : personInspector
             : selectedSettlement
               ? <EntitySummary title={selectedSettlement.name} facts={[['Scale', selectedSettlement.scale], ['Anchor cell', selectedSettlement.anchorCellId], ['Nearby residents', selectedSettlement.nearbyResidentCount]]} />
             : selectedOrganization
@@ -742,7 +782,7 @@ export default function App() {
               ? <CellInspector cell={selected} people={projection?.people.filter((person) => person.locationCellId === selected.id) ?? []} onSelectPerson={inspectPerson} detailsTruncated={projection?.detailBudget.peopleTruncated ?? false} />
               : <StatePresentation state="empty" title="No selection">Choose a hex to inspect its authoritative spatial state.</StatePresentation>}
           <PanelTitle title="Snapshots" subtitle={`${snapshots.length} local saves`} />
-          <div className="save-form"><input placeholder="Snapshot name" value={saveName} onChange={(event) => setSaveName(event.target.value)} /><button onClick={() => void saveNamed()} disabled={namedSavePending} aria-busy={namedSavePending}>Save</button>{lastNamedSave && <small role="status">Saved snapshot: {lastNamedSave}</small>}</div>
+          <div className="save-form"><input aria-label="Snapshot name" placeholder="Snapshot name" value={saveName} onChange={(event) => setSaveName(event.target.value)} /><button onClick={() => void saveNamed()} disabled={namedSavePending} aria-busy={namedSavePending}>Save</button>{lastNamedSave && <small role="status">Saved snapshot: {lastNamedSave}</small>}</div>
           <div className="snapshot-list">
             {snapshots.slice(0, 5).map((saved) => (
               <div key={saved.key} className="snapshot-row">
@@ -755,7 +795,7 @@ export default function App() {
       />
 
       {activeMode === 'history'
-        ? <HistoryPanel events={history?.events ?? []} statistics={history?.statistics ?? []} checkpoints={history?.checkpoints ?? []} telemetry={history?.telemetry} selectedPersonId={selectedPersonId} onInspectPerson={inspectPerson} onRefresh={() => void refreshHistory()} loading={historyLoading} />
+        ? <HistoryPanel events={history?.events ?? []} statistics={history?.statistics ?? []} checkpoints={history?.checkpoints ?? []} telemetry={history?.telemetry} selectedEntityId={selectedEntity && selectedEntity.kind !== 'event' ? selectedEntity.id : focusedPersonId} selectedEventId={selectedEntity?.kind === 'event' ? selectedEntity.id : undefined} currentTick={projection?.tick ?? 0} timeRange={navigationState.timeRange} onTimeRange={navigation.setTimeRange} onInspectPerson={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { workspace: 'entities', detailSurface: 'inspector', focus: true })} onInspectEntity={(kind, id) => navigation.selectEntity({ kind, id } as WorkbenchEntityRef, { workspace: kind === 'map-cell' || kind === 'region' ? 'world' : 'entities', detailSurface: kind === 'map-cell' ? 'map' : 'inspector', focus: kind === 'map-cell' })} onInspectEvent={inspectEvent} onRefresh={() => void refreshHistory()} loading={historyLoading} />
         : <section className="event-panel panel">
         <PanelTitle title="Simulation events" subtitle="Meaningful state transitions; calculations are intentionally omitted" />
         <div className="event-table" role="log">

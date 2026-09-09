@@ -48,7 +48,9 @@ export function simulationSessionReducer(state: SimulationSessionState, action: 
 export function useSimulationSession(client: SimulationSessionPort, initialSeed = 'valley-001') {
   const [state, dispatch] = useReducer(simulationSessionReducer, initialSimulationSessionState)
   const seedRef = useRef(initialSeed)
-  const command = useCallback((operation: Promise<unknown>) => { void operation.catch((reason) => dispatch({ type: 'response', response: { type: 'ERROR', message: messageOf(reason) } })) }, [])
+  const command = useCallback(async (operation: Promise<unknown>): Promise<boolean> => {
+    try { await operation; return true } catch (reason) { dispatch({ type: 'response', response: { type: 'ERROR', message: messageOf(reason) } }); return false }
+  }, [])
 
   useEffect(() => {
     const unsubscribe = client.subscribe((response) => {

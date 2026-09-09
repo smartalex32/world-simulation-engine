@@ -14,6 +14,16 @@ export interface WorldProjection {
   tick: number
   seed: string
   engineVersion: string
+  effectiveConfiguration: {
+    snapshotSchemaVersion: number
+    baseTickHours: number
+    contentPackId: string
+    contentPackVersion: string
+    contentPackChecksum?: string
+    contentPackDependencies: readonly { id: string; version: string; checksum: string }[]
+    modelVersions: Readonly<Record<string, number>>
+  }
+  phaseManifest: readonly { id: string; cadence: 'hourly' | 'daily' | 'monthly' | 'annual'; rngStreams: readonly string[] }[]
   world: WorldState
   populationZones: PopulationPlacementZone[]
   people: PersonState[]

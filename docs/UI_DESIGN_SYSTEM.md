@@ -27,3 +27,41 @@ At desktop widths the workbench is controls, primary canvas, and inspector. At
 coherent visual and keyboard reading order while avoiding page-level horizontal
 scrolling. The skip link, landmarks, visible focus ring, labels, headings, and
 polite status messages are part of the shell contract.
+
+## Visualization layer
+
+`src/ui/visualization` is a dependency-free presentation layer. It consumes
+typed projection and retained-history values only; it does not import engine
+state or perform authoritative aggregation. Keeping it dependency-free avoids
+additional bundle, license, maintenance, SSR, and tree-shaking risk while the
+required SVG and bounded HTML interactions remain small.
+
+The layer centralizes unit formatting, numeric domains, gaps, stable keys,
+deterministic presentation layout, accessible text/table alternatives, and the
+shared available/empty/partial/gapped/stale/unavailable vocabulary. Absence is
+never formatted as zero. Colors are supplemented by labels, patterns, signs,
+or text.
+
+Browser rendering budgets are 64 sparkline points, 256 line-series points, 80
+graph nodes, 240 graph edges, and 24 categorical bars. Adapters expose original
+counts and visible sampled/truncated evidence. These are rendering limits, not
+authoritative world or history query limits. Stable graph layout is derived
+from sorted IDs and never consumes simulation RNG.
+
+## Analytics dashboard
+
+`src/ui/analytics/metricRegistry.ts` is the default dashboard contract. Each
+card declares a stable ID, category, unit, directionality, cadence,
+aggregation level, source capability, and caveat. Supported cards cover
+population, hunger, life-cycle counts, resource and household-food evidence,
+relationships, community measures, infrastructure, organizations, governance,
+knowledge, language observation, local contention, and retained generational
+evidence. Aggregate health burden and organized warfare remain visible as
+unavailable cards until bounded backend contracts exist.
+
+Dashboard trends use persisted samples only. Projection fallbacks provide a
+current value but never manufacture a historical trend. Detailed-person and
+cohort age bands render separately, and settlement population is labeled as a
+geographic nearby-home catchment rather than membership. Comparisons require
+matching settlement or community-catchment scopes; incompatible scopes and
+missing values remain explicit.

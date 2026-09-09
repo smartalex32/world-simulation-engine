@@ -280,6 +280,13 @@ sufficient. Complete a row only when its listed acceptance boundary is met.
 | 17 | [Complete world-builder and analysis workbench](https://github.com/smartalex32/world-simulation-engine/issues/104) | Completes 22, 38, 60 after authoritative types: cohesive map-first authoring/packs/collaboration/control/navigation/history/comparison/analytics/export/admin; all inspectors/cross-links/recovery/responsive keyboard/WCAG 2.2 AA/cross-browser visual baselines; no direct UI authority mutation. |
 | 18 | [Stable 1.0 completion audit](https://github.com/smartalex32/world-simulation-engine/issues/105) | Completes 70 only after 1–17: clean install, two-schema PostgreSQL migrations with verified backups/restores, interrupted jobs/corrupt input/account+lease recovery/import+export/branch reproducibility; documented 8-core/32-GB/local-SSD 100k mixed-fidelity/200-year run under 24h, p95 bounded reads <2s, cancellation <5s; scenario investigation and complete technical/operator documentation before 1.0 tag. |
 
+Capability 17 reference-GUI status: the six analytical workspaces and their
+shared navigation, accessibility, bounded rendering, cross-browser visual
+evidence, and worker-owned control surface are implemented in PR #164 and
+audited in `docs/EPIC_104_CONVERGENCE.md`. The capability and Epic #104 remain
+open until #103 and the other named authoritative capability dependencies can
+back the currently explicit unavailable states.
+
 ### 1.0 public contracts
 
 Increment engine, snapshot, world-generator, and registry/model versions only

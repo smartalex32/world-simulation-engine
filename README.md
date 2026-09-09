@@ -732,6 +732,15 @@ and `src/ui/components`. Their documented responsive and accessibility contract 
 in [the UI design system](docs/UI_DESIGN_SYSTEM.md). They consume projections and
 controllers only; UI layout state is never canonical simulation state.
 
+Six integrated analytical surfaces now share that shell and typed navigation:
+the person workspace, bounded relationship explorer, multi-lane evidence
+timeline, layered spatial analysis, simulation/systems controls, and world
+analytics. Their capability ownership, direct test evidence, explicit future
+dependencies, and projection-version review are recorded in the
+[Epic #104 convergence audit](docs/EPIC_104_CONVERGENCE.md). Unsupported
+backend capabilities remain named unavailable states; the browser does not
+invent their entities, metrics, actions, or health.
+
 ---
 
 # Reproducibility Model
@@ -1276,6 +1285,14 @@ Hooking is presentation/inspection state rather than authoritative simulation st
 # Worker Execution
 
 The worker owns simulation advancement.
+
+The simulation workspace consolidates typed play, pause, step, speed, reset,
+checkpoint, load, export, and new-run actions behind worker and persistence
+controllers. It also projects the immutable content-pack reference, version
+manifest, tick phase manifest, and explicitly noncanonical wall-clock batch
+timings. Unsupported cancellation and hosted-runtime health are shown as
+unavailable instead of being inferred, and a new seed always enters the
+validated draft/new-run flow rather than reseeding a live run.
 
 Long logical advances may yield periodically to preserve UI responsiveness.
 

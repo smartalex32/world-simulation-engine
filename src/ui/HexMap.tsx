@@ -22,6 +22,7 @@ interface HexMapProps {
   showActivityLocations: boolean
   showHouseholds: boolean
   selectedPersonId?: string
+  overlayOpacity?: number
   onSelect: (cell: GeographicCell) => void
   onFocusCell: (cellId: string) => void
   onViewportRequest: (request: ReturnType<typeof mapProjectionRequest>) => void
@@ -29,7 +30,7 @@ interface HexMapProps {
 
 const HEX_SIZE = 18
 
-export function HexMap({ world, settlements = [], roads = [], settlementLinks = [], map, overlay, communityMeasureId, communities, communityVariableDefinitions, selectedCellId, selectedCommunityId, showActivityLocations, showHouseholds, selectedPersonId, onSelect, onFocusCell, onViewportRequest }: HexMapProps) {
+export function HexMap({ world, settlements = [], roads = [], settlementLinks = [], map, overlay, communityMeasureId, communities, communityVariableDefinitions, selectedCellId, selectedCommunityId, showActivityLocations, showHouseholds, selectedPersonId, overlayOpacity = 1, onSelect, onFocusCell, onViewportRequest }: HexMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState<MapViewportState>({ width: 0, height: 0, scale: 0.86, x: 34, y: 42 })
@@ -96,9 +97,12 @@ export function HexMap({ world, settlements = [], roads = [], settlementLinks = 
     context.translate(viewport.x, viewport.y)
     context.scale(viewport.scale, viewport.scale)
     const appliedMeasureId = map.communityMeasureId ?? communityMeasureId
+    context.save()
+    context.globalAlpha = Math.max(0.25, Math.min(1, overlayOpacity))
     if (map.lod === 'cell') for (const cell of map.exactCells) drawCell(context, cell, map.overlay, cell.id === selectedCellId, HEX_SIZE, map.borderAlpha, appliedMeasureId)
     else for (const region of map.regions) drawRegion(context, region, map.overlay, appliedMeasureId)
     if (selectedCell && !map.exactCells.some((cell) => cell.id === selectedCell.id)) drawCell(context, selectedCell, map.overlay, true, HEX_SIZE, 1, appliedMeasureId)
+    context.restore()
     drawRoads(context, roads, map.exactCells, viewport.scale)
     drawSettlementLinks(context, settlementLinks, viewport.scale)
     drawRelationships(context, map, viewport.scale)
@@ -107,7 +111,7 @@ export function HexMap({ world, settlements = [], roads = [], settlementLinks = 
     if (showHouseholds) drawLocationMarkers(context, map.householdMarkers, viewport.scale, 'household')
     drawSettlementMarkers(context, settlements, viewport, HEX_SIZE)
     context.restore()
-  }, [communityMeasureId, map, overlay, roads, selectedCell, selectedCellId, settlementLinks, settlements, showActivityLocations, showHouseholds, viewport])
+  }, [communityMeasureId, map, overlay, overlayOpacity, roads, selectedCell, selectedCellId, settlementLinks, settlements, showActivityLocations, showHouseholds, viewport])
 
   function focusAt(clientX: number, clientY: number): void {
     const bounds = canvasRef.current?.getBoundingClientRect()
