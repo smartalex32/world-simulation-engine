@@ -35,8 +35,9 @@ The fixed-seed browser gates exercise the reference surfaces as one product:
 - invalid, missing, empty, partial, stale, truncated, history-gap, and unavailable
   states with named accessible output.
 
-Desktop and constrained-width screenshots are captured as test artifacts from
-the fixed-seed convergence journey. Review-only images are not committed.
+Desktop and constrained-width screenshots are captured from the fixed-seed
+convergence journey under `docs/screenshots/epic-104` and embedded in PR #164
+for review.
 
 ## Authority and capability matrix
 
