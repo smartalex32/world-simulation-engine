@@ -80,6 +80,7 @@ export default function App() {
   const [draftBusy, setDraftBusy] = useState(false)
   const worldDraftRef = useRef<WorldDraftRecord | undefined>(undefined)
   const draftBusyRef = useRef(false)
+  const draftViewportRequestRevision = useRef(0)
   const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
   const [history, setHistory] = useState<RunHistory>()
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -477,8 +478,9 @@ export default function App() {
 
   const requestDraftViewport = useCallback((viewport: DraftZoneViewportRequest) => {
     if (!worldDraftRef.current || draftBusyRef.current) return
-    draftController.requestViewport(viewport.revision)
-    client.requestDraftViewport(WORLD_SETUP_DRAFT_ID, viewport)
+    const request = { ...viewport, revision: ++draftViewportRequestRevision.current }
+    draftController.requestViewport(request.revision)
+    client.requestDraftViewport(WORLD_SETUP_DRAFT_ID, request)
   }, [client, draftController])
 
   const updateDraftZoneCells = useCallback((zoneId: string, cellIds: readonly string[]) => {
