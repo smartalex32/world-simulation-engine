@@ -10,3 +10,14 @@ coverage/
 !.env.example
 *.tsbuildinfo
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# Codex runtime state.
+.codex/auth.json
+.codex/history.jsonl
+.codex/sessions/
+.codex/archived_sessions/
+.codex/log/
+.codex/tmp/
+.codex/*.sqlite*
