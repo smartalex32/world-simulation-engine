@@ -20,6 +20,9 @@ Generative AI is not part of authoritative simulation behavior.
 Content packs define versioned person variables, sparse influences, and safe
 declarative formulas. See [content-pack authoring](docs/CONTENT_PACKS.md).
 
+To operate the browser workbench, see the illustrated
+[user guide](docs/USER_GUIDE.md).
+
 ---
 
 # Current Status
