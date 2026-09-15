@@ -4,6 +4,8 @@ import type { GeographicCell } from '../simulation/domain/types'
 import type { MapProjection, ProjectedMapCell, ProjectedRoad, ProjectedSettlement, ProjectedSettlementLink, ProjectionOverlay, ProjectedCommunityState, WorldDescriptor } from '../projection'
 import { axialToPixel, pixelToAxial } from '../simulation/spatial/hex'
 import { aggregateRegionPolygon, fitWorld, mapProjectionRequest, type MapViewportState } from './mapViewport'
+import { drawTerrainIllustration, terrainFill } from './map/terrainIllustration'
+import { mapScaleBar } from './map/mapScale'
 
 export type MapOverlay = ProjectionOverlay
 
@@ -99,9 +101,9 @@ export function HexMap({ world, settlements = [], roads = [], settlementLinks = 
     const appliedMeasureId = map.communityMeasureId ?? communityMeasureId
     context.save()
     context.globalAlpha = Math.max(0.25, Math.min(1, overlayOpacity))
-    if (map.lod === 'cell') for (const cell of map.exactCells) drawCell(context, cell, map.overlay, cell.id === selectedCellId, HEX_SIZE, map.borderAlpha, appliedMeasureId)
+    if (map.lod === 'cell') for (const cell of map.exactCells) drawCell(context, cell, map.overlay, cell.id === selectedCellId, HEX_SIZE, map.borderAlpha, appliedMeasureId, viewport.scale)
     else for (const region of map.regions) drawRegion(context, region, map.overlay, appliedMeasureId)
-    if (selectedCell && !map.exactCells.some((cell) => cell.id === selectedCell.id)) drawCell(context, selectedCell, map.overlay, true, HEX_SIZE, 1, appliedMeasureId)
+    if (selectedCell && !map.exactCells.some((cell) => cell.id === selectedCell.id)) drawCell(context, selectedCell, map.overlay, true, HEX_SIZE, 1, appliedMeasureId, viewport.scale)
     context.restore()
     drawRoads(context, roads, map.exactCells, viewport.scale)
     drawSettlementLinks(context, settlementLinks, viewport.scale)
@@ -133,6 +135,16 @@ export function HexMap({ world, settlements = [], roads = [], settlementLinks = 
   const worldPixelHeight = 1.5 * HEX_SIZE * (world.height + 1)
   const minimapScale = Math.min(minimapWidth / worldPixelWidth, minimapHeight / worldPixelHeight)
   const minimapViewport = { x: Math.max(0, -viewport.x / viewport.scale * minimapScale), y: Math.max(0, -viewport.y / viewport.scale * minimapScale), width: Math.min(minimapWidth, viewport.width / viewport.scale * minimapScale), height: Math.min(minimapHeight, viewport.height / viewport.scale * minimapScale) }
+  const scaleBar = mapScaleBar(world.scale.hexRadiusMeters, HEX_SIZE, viewport.scale)
+  function zoomFromCenter(factor: number): void {
+    setViewport((view) => {
+      const nextScale = Math.max(1e-6, Math.min(4, view.scale * factor))
+      const ratio = nextScale / view.scale
+      const centerX = view.width / 2
+      const centerY = view.height / 2
+      return { ...view, scale: nextScale, x: centerX - (centerX - view.x) * ratio, y: centerY - (centerY - view.y) * ratio }
+    })
+  }
   function recenterFromMinimap(x: number, y: number): void {
     setViewport((view) => ({ ...view, x: view.width / 2 - x / minimapScale * view.scale, y: view.height / 2 - y / minimapScale * view.scale }))
   }
@@ -186,7 +198,11 @@ export function HexMap({ world, settlements = [], roads = [], settlementLinks = 
         if (delta) { const [deltaX = 0, deltaY = 0] = delta; event.preventDefault(); setViewport((view) => ({ ...view, x: view.x + deltaX, y: view.y + deltaY })) }
       }}
     />
-    <button className="map-fit" onClick={() => setViewport(fitWorld(world, viewport.width, viewport.height, HEX_SIZE))}>Fit world</button>
+    <div style={{ position: 'absolute', right: 12, top: 12, display: 'grid', gap: 4 }} aria-label="Map controls">
+      <button type="button" aria-label="Zoom in" onClick={() => zoomFromCenter(1.2)}>+</button>
+      <button type="button" aria-label="Zoom out" onClick={() => zoomFromCenter(1 / 1.2)}>−</button>
+      <button type="button" style={{ position: 'static' }} onClick={() => setViewport(fitWorld(world, viewport.width, viewport.height, HEX_SIZE))}>Fit world</button>
+    </div>
     <svg className="map-minimap" aria-label="World minimap" aria-describedby="map-minimap-help" role="button" tabIndex={0} viewBox={`0 0 ${minimapWidth} ${minimapHeight}`} onPointerDown={(event) => {
       const bounds = event.currentTarget.getBoundingClientRect(); const x = (event.clientX - bounds.left) * minimapWidth / bounds.width; const y = (event.clientY - bounds.top) * minimapHeight / bounds.height
       recenterFromMinimap(x, y)
@@ -203,16 +219,20 @@ export function HexMap({ world, settlements = [], roads = [], settlementLinks = 
     <span id="map-minimap-help" className="sr-only">Click a location to recenter the map. Press Enter or Space to recenter on the world.</span>
     {map.overlay === 'community' && <CommunityLegend communities={communities} definitions={communityVariableDefinitions} measureId={map.communityMeasureId ?? communityMeasureId} selectedCommunityId={selectedCommunityId} />}
     <div id="map-render-status" className="map-lod" aria-live="polite">{map.lod === 'cell' ? (map.borderAlpha > 0 ? 'hex detail' : 'terrain overview') : map.lod === 'region' ? 'regional overview' : 'world overview'} · {(map.exactCells.length + map.regions.length).toLocaleString()} primitives · {map.populationFidelity.mode === 'detailed' ? 'detailed population' : 'exact aggregate population'} {map.populationFidelity.visiblePopulationCount.toLocaleString()}{map.populationFidelity.hookedPersonPreserved ? ' · hooked person preserved' : ''}{hookedOffscreen ? ' · hooked person outside view' : ''}</div>
+    <div style={{ position: 'absolute', left: 12, bottom: 44, width: Math.max(1, scaleBar.pixelWidth), borderTop: '2px solid #e8ddd0', color: '#e8ddd0', fontSize: 10, paddingTop: 3, background: 'rgba(10, 15, 13, .74)', pointerEvents: 'none', whiteSpace: 'nowrap' }} aria-label={`Map distance scale: ${scaleBar.label}`}>{scaleBar.label}</div>
     <div className="map-help">Drag or arrows/WASD to pan · Wheel or +/- to zoom · F to fit · Click to inspect</div>
   </div>
 }
 
-function drawCell(context: CanvasRenderingContext2D, cell: ProjectedMapCell, overlay: MapOverlay, selected: boolean, radius: number, borderAlpha: number, communityMeasureId: CommunityVariableId): void {
+function drawCell(context: CanvasRenderingContext2D, cell: ProjectedMapCell, overlay: MapOverlay, selected: boolean, radius: number, borderAlpha: number, communityMeasureId: CommunityVariableId, scale: number): void {
   const { x, y } = axialToPixel(cell, HEX_SIZE)
   hexPath(context, x, y, radius)
-  context.fillStyle = cellColor(cell, overlay, cell.communityValuePermille, communityMeasureId)
+  context.fillStyle = terrainFill(cell, overlay, cellColor(cell, overlay, cell.communityValuePermille, communityMeasureId))
   context.fill()
+  if (overlay === 'terrain') drawTerrainIllustration(context, cell, x, y, radius, scale)
   if (selected || borderAlpha > 0) {
+    // Canvas save/restore does not restore the current path after illustration.
+    hexPath(context, x, y, radius)
     context.strokeStyle = selected ? '#f2c94c' : `rgba(9, 17, 14, ${borderAlpha})`
     context.lineWidth = selected ? 3 : .8
     context.stroke()
@@ -243,9 +263,13 @@ function drawMarker(context: CanvasRenderingContext2D, q: number, r: number, cou
   const pixels = selected ? 7 : Math.max(2, Math.min(8, 2 + Math.sqrt(count) * 1.15))
   context.beginPath()
   context.arc(center.x, center.y, pixels / Math.max(scale, .001), 0, Math.PI * 2)
-  context.fillStyle = selected ? '#fff2ad' : 'rgba(238, 197, 82, .78)'
+  context.fillStyle = selected ? '#79e0d4' : 'rgba(238, 197, 82, .78)'
   context.fill()
-  if (selected) { context.strokeStyle = '#362b12'; context.lineWidth = 1.3 / Math.max(scale, .001); context.stroke() }
+  if (selected) {
+    context.strokeStyle = '#e2fff6'; context.lineWidth = 1.3 / Math.max(scale, .001); context.stroke()
+    context.beginPath(); context.arc(center.x, center.y, (pixels + 5) / Math.max(scale, .001), 0, Math.PI * 2)
+    context.strokeStyle = 'rgba(108, 229, 215, .72)'; context.lineWidth = 1.1 / Math.max(scale, .001); context.stroke()
+  }
 }
 
 function drawLocationMarkers(context: CanvasRenderingContext2D, markers: readonly MapProjection['activityMarkers'][number][], scale: number, kind: 'activity' | 'household'): void {

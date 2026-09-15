@@ -12,14 +12,21 @@ type TopbarProps = {
   engineVersion?: string
   digest?: string
   status: string
+  onBuild: () => void
+  onPopulate: () => void
 }
 
-export function WorkbenchTopbar({ activeMode, onModeChange, seed, tick, engineVersion, digest, status }: TopbarProps) {
+export function WorkbenchTopbar({ activeMode, onModeChange, seed, tick, engineVersion, digest, status, onBuild, onPopulate }: TopbarProps) {
   const day = Math.floor(tick / 24)
   const hour = tick % 24
   return <header className="topbar">
     <a className="skip-link" href="#workbench-primary">Skip to workspace</a>
-    <div className="brand-block"><div className="mark" aria-hidden="true">⬡</div><div><h1>World Simulation</h1><span>deterministic engine workbench</span></div></div>
+    <div className="brand-block"><div className="mark" aria-hidden="true">⬡</div><div><h1>World Simulation</h1><span>Build a place. Seed a population. Discover its history.</span></div></div>
+    <nav className="worldbuilder-stages" aria-label="Worldbuilding workflow">
+      <button aria-label="Build" onClick={(event) => { event.currentTarget.focus(); onBuild() }}><span>01</span> Build</button>
+      <button aria-label="Populate" onClick={(event) => { event.currentTarget.focus(); onPopulate() }}><span>02</span> Populate</button>
+      <button className="active" aria-current="step" onClick={() => onModeChange('world')}><span>03</span> Simulate & explore</button>
+    </nav>
     <nav className="mode-navigation" aria-label="Workbench modes">
       {WORKBENCH_MODES.map((mode) => <button key={mode} aria-current={activeMode === mode ? 'page' : undefined} className={activeMode === mode ? 'active' : ''} onClick={() => onModeChange(mode)}>{mode}</button>)}
     </nav>
@@ -46,6 +53,6 @@ export function WorkbenchWorkspace({ left, primary, right }: { left: ReactNode; 
 }
 
 /** Shared landmark container. App supplies projection-backed workspace slots. */
-export function WorkbenchShell({ children }: { children: ReactNode }) {
-  return <main className="app-shell">{children}</main>
+export function WorkbenchShell({ children, mode }: { children: ReactNode; mode?: WorkbenchMode }) {
+  return <main className="app-shell" data-workspace={mode}>{children}</main>
 }

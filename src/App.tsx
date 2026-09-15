@@ -25,6 +25,8 @@ import { DEFAULT_PREINDUSTRIAL_PACK, createContentPackResolver, diffContentPacks
 import type { ContentPack, ResolvedContentPack } from './contentPacks'
 import { Metric, PanelTitle, StatePresentation } from './ui/components/WorkbenchPrimitives'
 import { RunStatusStrip, WorkbenchShell, WorkbenchTopbar, WorkbenchWorkspace, type WorkbenchMode } from './ui/layout/WorkbenchShell'
+import { PersonOverview } from './ui/person/PersonOverview'
+import { PopulationTimeline } from './ui/simulation/PopulationTimeline'
 import { PersonWorkspace } from './ui/person/PersonWorkspace'
 import { RelationshipWorkspace } from './ui/relationships/RelationshipWorkspace'
 import { MapAnalysisWorkspace } from './ui/map/MapAnalysisWorkspace'
@@ -56,6 +58,7 @@ export default function App() {
   const { projection, status, speed, events, statistics, processingMs } = session
   const [seed, setSeed] = useState('valley-001')
   const [setupOpen, setSetupOpen] = useState(false)
+  const [setupStage, setSetupStage] = useState<'build' | 'populate'>('build')
   const [worldSetup, setWorldSetup] = useState<WorldSetupValues>({
     name: 'The Seeded Valley', seed: 'valley-001', width: 32, height: 24, hexRadiusMeters: 1000, population: 200,
     placements: [
@@ -77,6 +80,7 @@ export default function App() {
   const [draftBusy, setDraftBusy] = useState(false)
   const worldDraftRef = useRef<WorldDraftRecord | undefined>(undefined)
   const draftBusyRef = useRef(false)
+  const draftViewportRequestRevision = useRef(0)
   const projectionRef = useRef<WorkbenchProjection | undefined>(undefined)
   const [history, setHistory] = useState<RunHistory>()
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -417,7 +421,8 @@ export default function App() {
     if (importRef.current) importRef.current.value = ''
   }
 
-  async function openWorldSetup(nextSetup = worldSetup, restoreSaved = true): Promise<boolean> {
+  async function openWorldSetup(nextSetup = worldSetup, restoreSaved = true, initialStage: 'build' | 'populate' = 'build'): Promise<boolean> {
+    setSetupStage(initialStage)
     worldSetupRef.current = nextSetup
     setWorldSetup(nextSetup)
     setSetupOpen(true)
@@ -473,8 +478,9 @@ export default function App() {
 
   const requestDraftViewport = useCallback((viewport: DraftZoneViewportRequest) => {
     if (!worldDraftRef.current || draftBusyRef.current) return
-    draftController.requestViewport(viewport.revision)
-    client.requestDraftViewport(WORLD_SETUP_DRAFT_ID, viewport)
+    const request = { ...viewport, revision: ++draftViewportRequestRevision.current }
+    draftController.requestViewport(request.revision)
+    client.requestDraftViewport(WORLD_SETUP_DRAFT_ID, request)
   }, [client, draftController])
 
   const updateDraftZoneCells = useCallback((zoneId: string, cellIds: readonly string[]) => {
@@ -636,13 +642,13 @@ export default function App() {
   }, [activeMode, navigationState.timeRange?.fromTick, navigationState.timeRange?.toTick])
 
   return (
-    <WorkbenchShell>
-      <WorkbenchTopbar activeMode={activeMode} onModeChange={navigation.navigateWorkspace} seed={projection?.seed ?? '—'} tick={projection?.tick ?? 0} engineVersion={projection?.engineVersion} digest={projection?.digest} status={status} />
+    <WorkbenchShell mode={activeMode}>
+      <WorkbenchTopbar onBuild={() => { void openWorldSetup() }} onPopulate={() => { void openWorldSetup(worldSetup, true, 'populate') }} activeMode={activeMode} onModeChange={navigation.navigateWorkspace} seed={projection?.seed ?? '—'} tick={projection?.tick ?? 0} engineVersion={projection?.engineVersion} digest={projection?.digest} status={status} />
 
       <div className="sr-only" aria-live="polite" data-navigation-revision={navigationState.revision}>{navigationState.announcement}</div>
 
       <RunStatusStrip>
-        <button className="secondary" onClick={() => { void openWorldSetup() }}>Create world</button>
+        <button className="secondary" onClick={() => { setSetupStage('build'); void openWorldSetup() }}>Create world</button>
         <span className="active-world-seed">Seed <strong>{projection?.seed ?? seed}</strong></span>
         <div className="divider" />
         <button className="icon-button" onClick={() => session.step()} disabled={status === 'playing'} title="Advance one hour">Step +1h</button>
@@ -679,7 +685,7 @@ export default function App() {
             <button aria-label="Households" aria-pressed={showHouseholds} className={showHouseholds ? 'active' : ''} onClick={() => toggleMapAnnotation('households')}>Households</button>
           </div>}</>}
           {(activeMode === 'simulation') && <section className="simulation-status-panel"><span className="eyebrow">SIMULATION</span><div className="metric-list"><Metric label="Status" value={status} /><Metric label="Speed" value={SPEEDS.find((entry) => entry.value === speed)?.label ?? `${speed} hours / batch`} /><Metric label="Current time" value={`Day ${day} · ${hour.toString().padStart(2, '0')}:00`} /><Metric label="Last batch" value={`${processingMs.toFixed(2)} ms`} /></div><p>Rendering is decoupled from simulation advancement.</p></section>}
-          {(activeMode === 'world' || activeMode === 'analytics') && <><PanelTitle title="Daily samples" subtitle="Latest aggregates" />
+          {(activeMode === 'analytics') && <><PanelTitle title="Daily samples" subtitle="Latest aggregates" />
           <div className="metric-list">
             <Metric label="Cells" value={recentMetrics['world.cellCount'] ?? projection?.world.cellCount ?? 0} />
             <Metric label="Habitable" value={recentMetrics['world.habitableCells'] ?? '—'} />
@@ -743,6 +749,13 @@ export default function App() {
             onSelectMeasure={(id) => { navigation.setFilter('communityMeasureId', id); navigation.setFilter('mapOverlay', 'community') }}
             onInspect={inspectCommunity}
           />}</>}
+          {activeMode === 'world' && projection && <CommunitySignals
+            communities={projection.communities}
+            definitions={projection.communityVariableDefinitions}
+            selectedMeasureId={communityMeasureId}
+            onSelectMeasure={(id) => { navigation.setFilter('communityMeasureId', id); navigation.setFilter('mapOverlay', 'community') }}
+            onInspect={inspectCommunity}
+          />}
         </>}
 
         primary={activeMode === 'world' && projection
@@ -768,7 +781,7 @@ export default function App() {
           : selectedCommunity
             ? <CommunityInspector community={selectedCommunity} definitions={projection?.communityVariableDefinitions ?? []} hasHookedPerson={focusedPersonId !== undefined} onReturnToPerson={() => focusedPersonId && navigation.selectEntity({ kind: 'person', id: focusedPersonId })} />
             : selectedPerson
-            ? activeMode === 'entities' ? <EntitySummary title={selectedPerson.id} facts={[['Workspace', 'Comprehensive person evidence'], ['Current cell', selectedPerson.locationCellId], ['Activity', selectedPerson.currentActivity.kind]]} /> : personInspector
+            ? activeMode === 'entities' ? <EntitySummary title={selectedPerson.id} facts={[['Workspace', 'Comprehensive person evidence'], ['Current cell', selectedPerson.locationCellId], ['Activity', selectedPerson.currentActivity.kind]]} /> : <PersonOverview key={selectedPerson.id} person={selectedPerson} tick={projection?.tick ?? 0} definitions={projection?.variableDefinitions ?? []} relationships={projection?.relationships ?? []} parentChildLinks={projection?.parentChildLinks ?? []} events={events} details={personInspector} onPerson={inspectPerson} onDetails={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { workspace: 'entities', detailSurface: 'inspector' })} onRelationships={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { workspace: 'entities', detailSurface: 'network' })} onHistory={() => navigation.selectEntity({ kind: 'person', id: selectedPerson.id }, { workspace: 'history', detailSurface: 'timeline' })} />
             : selectedSettlement
               ? <EntitySummary title={selectedSettlement.name} facts={[['Scale', selectedSettlement.scale], ['Anchor cell', selectedSettlement.anchorCellId], ['Nearby residents', selectedSettlement.nearbyResidentCount]]} />
             : selectedOrganization
@@ -798,14 +811,14 @@ export default function App() {
       {activeMode === 'history'
         ? <HistoryPanel events={history?.events ?? []} statistics={history?.statistics ?? []} checkpoints={history?.checkpoints ?? []} telemetry={history?.telemetry} selectedEntityId={selectedEntity && selectedEntity.kind !== 'event' ? selectedEntity.id : focusedPersonId} selectedEventId={selectedEntity?.kind === 'event' ? selectedEntity.id : undefined} currentTick={projection?.tick ?? 0} timeRange={navigationState.timeRange} onTimeRange={navigation.setTimeRange} onInspectPerson={(personId) => navigation.selectEntity({ kind: 'person', id: personId }, { workspace: 'entities', detailSurface: 'inspector', focus: true })} onInspectEntity={(kind, id) => navigation.selectEntity({ kind, id } as WorkbenchEntityRef, { workspace: kind === 'map-cell' || kind === 'region' ? 'world' : 'entities', detailSurface: kind === 'map-cell' ? 'map' : 'inspector', focus: kind === 'map-cell' })} onInspectEvent={inspectEvent} onRefresh={() => void refreshHistory()} loading={historyLoading} />
         : <section className="event-panel panel">
-        <PanelTitle title="Simulation events" subtitle="Meaningful state transitions; calculations are intentionally omitted" />
+        <PopulationTimeline statistics={statistics} tick={projection?.tick ?? 0} population={projection?.summary.populationCount ?? 0} onHistory={() => navigation.navigateWorkspace('history')} />
         <div className="event-table" role="log">
           <div className="event-header"><span>Tick</span><span>Type</span><span>Details</span></div>
           {events.length === 0 && <div className="event-empty">No events recorded yet.</div>}
           {events.slice(0, 12).map((event) => <div className="event-row" key={event.id}><span>{event.tick}</span><strong>{event.type.replaceAll('_', ' ')}</strong><span><a href={`?workspace=history&entity=${encodeURIComponent(`event:${event.id}`)}&from=${event.tick}&to=${event.tick}&detail=timeline`} onClick={(click) => { click.preventDefault(); inspectEvent(event) }}>Open event</a> · <EventParticipants event={event} onInspect={inspectPerson} onInspectCommunity={inspectCommunity} /></span></div>)}
         </div>
       </section>}
-      {setupOpen && <WorldSetup value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onUndo={undoWorldSetup} onRedo={redoWorldSetup} canUndo={(worldDraft?.undoStack.length ?? 0) > 0} canRedo={(worldDraft?.redoStack.length ?? 0) > 0} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={!draftBusy && acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} onElevationPaintCommit={paintDraftElevation} onResourcePaintCommit={paintDraftResources} onExportDraft={exportWorldSetupDraft} onImportDraft={importWorldSetupDraft} error={error} />}
+      {setupOpen && <WorldSetup initialStage={setupStage} value={worldSetup} onChange={updateWorldSetup} onCancel={discardWorldSetup} onReset={resetWorldSetup} onUndo={undoWorldSetup} onRedo={redoWorldSetup} canUndo={(worldDraft?.undoStack.length ?? 0) > 0} canRedo={(worldDraft?.redoStack.length ?? 0) > 0} onCommit={commitWorldSetup} draftRevision={worldDraft?.revision} preview={draftPreview} previewCurrent={!draftBusy && acceptedDraftSignature === worldSetupSignature(worldSetup)} busy={draftBusy} draftViewport={draftViewport} onDraftViewportRequest={requestDraftViewport} onZoneCellsCommit={updateDraftZoneCells} onTerrainPaintCommit={paintDraftTerrain} onElevationPaintCommit={paintDraftElevation} onResourcePaintCommit={paintDraftResources} onExportDraft={exportWorldSetupDraft} onImportDraft={importWorldSetupDraft} error={error} />}
     </WorkbenchShell>
   )
 }
