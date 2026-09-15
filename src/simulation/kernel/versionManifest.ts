@@ -1,9 +1,9 @@
 // Stable text tie-breaks replace locale-dependent ordering. Snapshots from
 // earlier engines are rejected rather than resumed under changed semantics.
-export const ENGINE_VERSION = '0.49.0'
-export const SNAPSHOT_SCHEMA_VERSION = 48
+export const ENGINE_VERSION = '0.50.0'
+export const SNAPSHOT_SCHEMA_VERSION = 49
 /** Versioned content-pack selection is authoritative configuration, not UI state. */
-export const CONTENT_PACK_MODEL_VERSION = 4
+export const CONTENT_PACK_MODEL_VERSION = 5
 export const BASE_TICK_HOURS = 1
 export const VARIABLE_REGISTRY_VERSION = 2
 export const INFLUENCE_REGISTRY_VERSION = 1
@@ -17,11 +17,13 @@ export const ENVIRONMENT_MODEL_VERSION = 3
 export const LIFE_CYCLE_MODEL_VERSION = 1
 /** Versioned, non-monetary household food production and sharing rules. */
 export const ECONOMY_MODEL_VERSION = 3
-export const ORGANIZATION_MODEL_VERSION = 5
+export const ORGANIZATION_MODEL_VERSION = 6
 /** Separates legacy packs that ignored account/evidence fields from new opt-in semantics. */
 export const ORGANIZATION_ASSET_REPUTATION_MODEL_VERSION = 1
 /** Separates legacy packs that ignored leadership/decision fields from current opt-in semantics. */
 export const ORGANIZATION_LEADERSHIP_DECISION_MODEL_VERSION = 1
+/** Separates pre-#143 snapshots from opt-in structural organization evolution. */
+export const ORGANIZATION_EVOLUTION_MODEL_VERSION = 1
 export const CULTURE_MODEL_VERSION = 1
 export const LANGUAGE_MODEL_VERSION = 1
 export const GOVERNANCE_MODEL_VERSION = 2
@@ -53,6 +55,7 @@ export const CURRENT_MODEL_VERSIONS = Object.freeze({
   organization: ORGANIZATION_MODEL_VERSION,
   organizationAssetsAndReputation: ORGANIZATION_ASSET_REPUTATION_MODEL_VERSION,
   organizationLeadershipAndDecisions: ORGANIZATION_LEADERSHIP_DECISION_MODEL_VERSION,
+  organizationEvolution: ORGANIZATION_EVOLUTION_MODEL_VERSION,
   culture: CULTURE_MODEL_VERSION,
   language: LANGUAGE_MODEL_VERSION,
   governance: GOVERNANCE_MODEL_VERSION,

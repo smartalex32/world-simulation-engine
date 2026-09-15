@@ -2,6 +2,7 @@ import type { OrganizationState, RelationshipState } from '../simulation/domain/
 import type { ProjectedOrganizationProfile } from './types'
 import { compareStableText } from '../shared/stableOrder'
 import type { OrganizationDefinition, OrganizationLifecycleState } from '../simulation/organizations/types'
+import { ORGANIZATION_EVOLUTION_MEMBER_LIMIT } from '../simulation/organizations/evolution'
 
 /**
  * Read-only group evidence. Membership alone creates neither a relationship,
@@ -28,6 +29,14 @@ export function buildProjectedOrganizationProfiles(organizations: readonly Organ
     return {
       id: organization.id,
       name: organization.name,
+      specialization: organization.specialization ?? 'institution',
+      status: organization.status ?? 'active',
+      ...(definition?.lifecycle?.evolution ? { structuralLimitReason: organization.members.length > ORGANIZATION_EVOLUTION_MEMBER_LIMIT ? 'member-limit' as const : Object.keys(organization.assets?.goods ?? {}).length > 128 ? 'goods-limit' as const : undefined } : {}),
+      ...(organization.closedMembership ? { closedMembership: structuredClone(organization.closedMembership) } : {}),
+      ...(organization.lineage ? { lineage: structuredClone(organization.lineage) } : {}),
+      latestTransitionEvidence: (lifecycle?.latestTransitionTraces ?? [])
+        .filter((trace) => trace.sourceOrganizationIds.includes(organization.id) || trace.resultOrganizationIds.includes(organization.id))
+        .slice(-8).map((trace) => structuredClone(trace)),
       kind: organization.kind,
       definitionName: definition?.name ?? organization.kind,
       purposeIds: [...(definition?.purposeIds ?? [])].sort(compareStableText),

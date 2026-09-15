@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SimulationEngine } from '../engine/engine'
 import { WorkbenchProjectionBuilder } from '../../projection/buildMapProjection'
+import { stateDigest } from '../serialization/digest'
 
 function created() {
   const cells = SimulationEngine.create('capability-five-fidelity', 16, 12).project().world.grid.cells.filter((cell) => cell.movementCost > 0 && cell.habitability >= 500).map((cell) => cell.id)
@@ -14,6 +15,19 @@ function created() {
 }
 
 describe('authoritative population fidelity transitions', () => {
+  it('preserves detailed identities referenced by a dissolved organization archive', async () => {
+    const engine = created()
+    engine.materializeCohort('cohort:distant', 3)
+    const snapshot = await engine.snapshot()
+    const personIds = snapshot.state.populationFidelity.transitions[0]!.personIds
+    const location = snapshot.state.activityLocations.find((entry) => entry.kind === 'commons')!
+    snapshot.state.organizations.push({ id: 'organization.archived-circle', name: 'Archived circle', kind: 'study-circle', specialization: 'institution', status: 'dissolved', lineage: { origin: 'initial', parentOrganizationIds: [], formedTick: 0 }, locationCellId: location.cellId, activityLocationId: location.id, members: [], closedMembership: { tick: 0, members: personIds.map((personId) => ({ personId, role: 'member' })) }, serviceCapacity: 8, sharedRuleIds: [] })
+    snapshot.digest = await stateDigest(snapshot.state)
+    const restored = await SimulationEngine.restore(snapshot)
+    const before = await restored.snapshot()
+    expect(() => restored.dematerializePeople(personIds)).toThrow('retained organization history')
+    expect(await restored.snapshot()).toEqual(before)
+  })
   it('materializes and restores exact population while retaining conversion evidence', async () => {
     const engine = created()
     const event = engine.materializeCohort('cohort:distant', 12)

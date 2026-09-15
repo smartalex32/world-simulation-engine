@@ -133,7 +133,16 @@ function validateOrganizationDefinition(definition: OrganizationDefinition, path
       && permille(membership.roleChangeInterestThresholdPermille)
     if (!validCadence || !validFormation || !validMembership) diagnostics.push({ path: `${path}.lifecycle`, message: 'Lifecycle needs a daily cadence, explicit enablement, permille probabilities, and an allowed default role' })
     if (membership?.enabled && definition.memberRoleIds.length < 2 && membership.baseRoleChangeProbabilityPermille > 0) diagnostics.push({ path: `${path}.lifecycle.membership`, message: 'Role-change probability requires at least two allowed roles' })
+    const evolution = lifecycle.evolution
+    if (evolution !== undefined) {
+      const validEvolution = [evolution.minimumRelationshipPermille, evolution.minimumExposurePermille, evolution.minimumConflictPermille].every((value) => value === undefined || permille(value)) && positiveDailyCadence(evolution.cadenceHours) && positiveInteger(evolution.maxTransitionsPerCadence) && evolution.maxTransitionsPerCadence <= 8
+        && (evolution.schism === undefined || typeof evolution.schism.enabled === 'boolean' && positiveInteger(evolution.schism.minimumMembers) && permille(evolution.schism.splitPermille) && evolution.schism.splitPermille > 0 && evolution.schism.splitPermille < 1000)
+        && (evolution.merger === undefined || typeof evolution.merger.enabled === 'boolean' && positiveInteger(evolution.merger.minimumSharedMembers))
+        && (evolution.dissolution === undefined || typeof evolution.dissolution.enabled === 'boolean' && Number.isSafeInteger(evolution.dissolution.maximumLivingMembers) && evolution.dissolution.maximumLivingMembers >= 0)
+      if (!validEvolution || definition.specialization === undefined) diagnostics.push({ path: `${path}.lifecycle.evolution`, message: 'Evolution needs an explicit specialization, daily bounded cadence, and coherent transition thresholds' })
+    }
   }
+  if (definition?.specialization !== undefined && !['institution', 'informal-group', 'faction'].includes(definition.specialization)) diagnostics.push({ path: `${path}.specialization`, message: 'Organization specialization must be institution, informal-group, or faction' })
 }
 
 function validEvidenceWeights(weights: OrganizationEvidenceFactorWeights | undefined): boolean {

@@ -19,8 +19,9 @@ export const SUPPORTED_SNAPSHOT_SCHEMAS: readonly SnapshotSchemaCompatibility[] 
   Object.freeze({ schemaVersion: 43, engineVersions: Object.freeze(['0.44.0']), disposition: 'rejected', reason: 'Engine 0.44.0 used locale-dependent ordering and cannot be resumed by a stable-order executor.' }),
   Object.freeze({ schemaVersion: 44, engineVersions: Object.freeze(['0.45.0']), disposition: 'rejected', reason: 'Schema 44 is outside the current-plus-prior-two compatibility window.' }),
   Object.freeze({ schemaVersion: 45, engineVersions: Object.freeze(['0.46.0']), disposition: 'rejected', reason: 'Schema 45 is outside the current-plus-prior-two compatibility window.' }),
-  Object.freeze({ schemaVersion: 46, engineVersions: Object.freeze(['0.47.0']), disposition: 'migratable', reason: 'Organization-owned accounts and observer-specific reputation require an explicit schema-47 behavior upgrade.' }),
+  Object.freeze({ schemaVersion: 46, engineVersions: Object.freeze(['0.47.0']), disposition: 'rejected', reason: 'Schema 46 is outside the current-plus-prior-two compatibility window.' }),
   Object.freeze({ schemaVersion: 47, engineVersions: Object.freeze(['0.48.0']), disposition: 'migratable', reason: 'Organization leadership and bounded decisions require an explicit schema-48 behavior upgrade.' }),
+  Object.freeze({ schemaVersion: 48, engineVersions: Object.freeze(['0.49.0']), disposition: 'migratable', reason: 'Explicit organization specialization and lineage require a schema-49 behavior upgrade.' }),
   Object.freeze({ schemaVersion: SNAPSHOT_SCHEMA_VERSION, engineVersions: Object.freeze([ENGINE_VERSION]), disposition: 'directly-loadable', reason: 'Current envelope and behavioral contract.' }),
 ])
 
@@ -31,6 +32,7 @@ const supportedSchemas: readonly SupportedSchema[] = [
   { ...SUPPORTED_SNAPSHOT_SCHEMAS[3]!, readState: readSchema46State },
   { ...SUPPORTED_SNAPSHOT_SCHEMAS[4]!, readState: readSchema47State },
   { ...SUPPORTED_SNAPSHOT_SCHEMAS[5]!, readState: readSchema48State },
+  { ...SUPPORTED_SNAPSHOT_SCHEMAS[6]!, readState: readSchema48State },
 ]
 
 interface MigrationStep {
@@ -104,12 +106,23 @@ const migrationSteps = new Map<number, MigrationStep>([
     },
   }],
   [47, {
-    fromSchemaVersion: 47, toSchemaVersion: 48, kind: 'behavior-upgrade', sourceEngineVersion: '0.48.0', targetEngineVersion: ENGINE_VERSION,
+    fromSchemaVersion: 47, toSchemaVersion: 48, kind: 'behavior-upgrade', sourceEngineVersion: '0.48.0', targetEngineVersion: '0.49.0',
     upgrade: (snapshot) => {
       const state = requiredObject(snapshot.state, 'Schema-47 snapshot state is invalid')
       const config = requiredObject(state.config, 'Schema-47 snapshot configuration is invalid')
       const organizations = requiredArray(state.organizations, 'Schema-47 organizations are invalid')
-      return { ...state, config: { ...config, contentPackModelVersion: 4, organizationModelVersion: 5, organizationLeadershipDecisionModelVersion: 0 }, organizations: organizations.map((entry) => ({ ...requiredObject(entry, 'Schema-47 organization is invalid') })) }
+      return { ...state, config: { ...config, contentPackModelVersion: 4, organizationModelVersion: 5, organizationLeadershipDecisionModelVersion: 0, organizationEvolutionModelVersion: 0 }, organizations: organizations.map((entry) => ({ ...requiredObject(entry, 'Schema-47 organization is invalid') })) }
+    },
+  }],
+  [48, {
+    fromSchemaVersion: 48, toSchemaVersion: 49, kind: 'behavior-upgrade', sourceEngineVersion: '0.49.0', targetEngineVersion: ENGINE_VERSION,
+    upgrade: (snapshot) => {
+      const state = requiredObject(snapshot.state, 'Schema-48 snapshot state is invalid')
+      const config = requiredObject(state.config, 'Schema-48 snapshot configuration is invalid')
+      const organizations = requiredArray(state.organizations, 'Schema-48 organizations are invalid')
+      // Legacy records did not retain complete formation provenance. Do not
+      // invent a tick-zero origin for groups formed later in their run.
+      return { ...state, config: { ...config, contentPackModelVersion: 5, organizationModelVersion: 6, organizationEvolutionModelVersion: 0 }, organizationLifecycle: { ...requiredObject(state.organizationLifecycle, 'Schema-48 lifecycle is invalid'), latestTransitionTraces: [] }, organizations: organizations.map((entry) => ({ ...requiredObject(entry, 'Schema-48 organization is invalid'), specialization: 'institution', status: 'active' })) }
     },
   }],
 ])

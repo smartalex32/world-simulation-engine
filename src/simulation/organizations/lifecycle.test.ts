@@ -113,7 +113,7 @@ describe('organization lifecycle', () => {
       formationScopeByActivityLocation: new Map([['activity.commons.1,1', 'settlement-a'], ['activity.commons.2,2', 'settlement-a']]),
       nextPermille: () => 0,
     })
-    expect(result).toEqual({ formations: 0, memberships: 0, formationTraces: [], membershipTraces: [] })
+    expect(result).toEqual({ formations: 0, memberships: 0, formationTraces: [], membershipTraces: [], transitionTraces: [] })
   })
 
   it('isolates activity, proximity, relationship, interest, and exposure contributions', () => {
@@ -201,7 +201,7 @@ describe('organization lifecycle', () => {
     const schoolDefinition = { ...definition, id: 'school', lifecycle: undefined }
     const school = { ...organization(), id: 'organization.school.001', kind: 'school', members: [] }
     const result = advanceOrganizationLifecycle({ tick: 24, definitions: [schoolDefinition], people: [person('a'), person('b')] as never, organizations: [school], relationships: [{ id: 'a|b' }] as never, lifecycle: lifecycleState(), nextPermille: () => 0 })
-    expect(result).toEqual({ formations: 0, memberships: 0, formationTraces: [], membershipTraces: [] })
+    expect(result).toEqual({ formations: 0, memberships: 0, formationTraces: [], membershipTraces: [], transitionTraces: [] })
     expect(school.members).toEqual([])
   })
 
@@ -234,7 +234,16 @@ describe('organization lifecycle', () => {
       expect(event.payload).toMatchObject({ traceSequence: expect.any(Number), baseProbabilityPermille: expect.any(Number), activityPermille: expect.any(Number), proximityPermille: expect.any(Number), relationshipPermille: expect.any(Number), interestPermille: expect.any(Number), exposurePermille: expect.any(Number), probabilityPermille: expect.any(Number), randomRollPermille: expect.any(Number) })
       if (event.type === 'ORGANIZATION_MEMBERSHIP_CHANGED' && event.payload.change === 'left') expect(event.payload.previousRoleId).toEqual(expect.any(String))
     }
-    expect(snapshot.digest).toBe('5d0496a787feb6dccb0476785495708c998f291169fc4115dd6d9daabb92f16e')
+    // Only schema/model metadata and explicit lineage changed for this opt-out
+    // pack. Removing those additions must recover the exact previous digest.
+    const previousShape = structuredClone(snapshot.state)
+    previousShape.config.organizationModelVersion = 5
+    previousShape.config.contentPackModelVersion = 4
+    delete previousShape.config.organizationEvolutionModelVersion
+    delete previousShape.organizationLifecycle.latestTransitionTraces
+    for (const organization of previousShape.organizations) { delete organization.specialization; delete organization.status; delete organization.lineage }
+    expect(await canonicalDigest(previousShape)).toBe('5d0496a787feb6dccb0476785495708c998f291169fc4115dd6d9daabb92f16e')
+    expect(snapshot.digest).toBe('e403f21a2d598b2c54ca9ce9d86044b3735ec780d9828e57f2ea62c643c53cac')
     expect(await canonicalDigest(snapshot.state.randomStreams)).toBe('50632f5cbbe1c091927fe35992d1e4a5b1aa1a11436a72f6ef7efb7b7b3f8507')
     expect(await canonicalDigest(result.events)).toBe('0d37321015b37db507a7cfcac12ff917db16337eb51dfe862d6a691f3c4be4f3')
 

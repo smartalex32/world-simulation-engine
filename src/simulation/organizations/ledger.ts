@@ -20,6 +20,7 @@ export function createOrganizationReputationLedger(definition: { reputation?: { 
 
 /** Moves one existing fixed-point unit balance with no implicit member ownership. */
 export function transferOrganizationAsset(input: { tick: number; from: OrganizationAssetParty; to: OrganizationAssetParty; asset: 'currency' | 'good'; goodId?: string; amount: number; reason: string; organizations: OrganizationState[]; households: HouseholdState[]; markets: readonly MarketState[]; economy: EconomyState }): OrganizationAssetTransferTrace {
+  if ([input.from, input.to].some((party) => party.kind === 'organization' && input.organizations.find((organization) => organization.id === party.id)?.status === 'dissolved')) throw new Error('Dissolved organization estate accounts cannot transfer assets')
   if (!Number.isSafeInteger(input.tick) || input.tick < 0 || !Number.isSafeInteger(input.amount) || input.amount < 1 || !input.reason) throw new Error('Organization asset transfer is invalid')
   if (input.asset === 'good' && !input.goodId) throw new Error('Organization good transfer requires a good ID')
   if (input.asset === 'currency' && input.goodId !== undefined) throw new Error('Organization currency transfer cannot name a good')
@@ -48,6 +49,7 @@ export function transferOrganizationAsset(input: { tick: number; from: Organizat
 
 /** Records bounded, causal observer evidence. It deliberately does not average observers. */
 export function observeOrganizationReputation(input: { organization: OrganizationState; observer: OrganizationReputationObserver; source: OrganizationReputationSource; causalEventId: string; tick: number; deltaPermille: number }): OrganizationReputationObservation {
+  if (input.organization.status === 'dissolved') throw new Error('Dissolved organizations cannot receive new reputation observations')
   const ledger = input.organization.reputationLedger
   if (!ledger || !input.observer.id || !['person', 'organization'].includes(input.observer.kind) || !['service', 'exchange', 'member-conduct', 'relationship'].includes(input.source) || !input.causalEventId || !Number.isSafeInteger(input.tick) || input.tick < 0 || !Number.isSafeInteger(input.deltaPermille) || input.deltaPermille < -1000 || input.deltaPermille > 1000) throw new Error('Organization reputation observation is invalid')
   const current = ledger.currentByObserver.find((entry) => entry.observer.kind === input.observer.kind && entry.observer.id === input.observer.id)

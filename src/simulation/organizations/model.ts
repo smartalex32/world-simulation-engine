@@ -15,7 +15,7 @@ export function createInitialSchools(people: readonly PersonState[], anchorCellI
     const reputationLedger = createOrganizationReputationLedger(definition)
     const leadership = createOrganizationLeadershipState(definition)
     const decisions = createOrganizationDecisionState(definition)
-    return { id, name: `School ${index + 1}`, kind: definition.id, locationCellId: cellId, activityLocationId: `activity.commons.${cellId}`, members, serviceCapacity: definition.initialService.serviceCapacity, sharedRuleIds: [...definition.sharedRuleIds], ...(assets ? { assets } : {}), ...(reputationLedger ? { reputationLedger } : {}), ...(leadership ? { leadership } : {}), ...(decisions ? { decisions } : {}) }
+    return { id, name: `School ${index + 1}`, kind: definition.id, specialization: definition.specialization ?? 'institution', status: 'active', lineage: { origin: 'initial', parentOrganizationIds: [], formedTick: 0 }, locationCellId: cellId, activityLocationId: `activity.commons.${cellId}`, members, serviceCapacity: definition.initialService.serviceCapacity, sharedRuleIds: [...definition.sharedRuleIds], ...(assets ? { assets } : {}), ...(reputationLedger ? { reputationLedger } : {}), ...(leadership ? { leadership } : {}), ...(decisions ? { decisions } : {}) }
   })
   return schools
 }

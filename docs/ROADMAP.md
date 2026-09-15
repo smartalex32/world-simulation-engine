@@ -287,6 +287,11 @@ audited in `docs/EPIC_104_CONVERGENCE.md`. The capability and Epic #104 remain
 open until #103 and the other named authoritative capability dependencies can
 back the currently explicit unavailable states.
 
+Current completion work and its remaining acceptance gates are tracked in
+`docs/COMPLETION_STATUS.md`. Organization structural evolution and its inspector
+are implemented on the completion branch; the capability integration audit and
+the later capability epics remain open.
+
 ### 1.0 public contracts
 
 Increment engine, snapshot, world-generator, and registry/model versions only

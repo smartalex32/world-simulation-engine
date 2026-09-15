@@ -26,6 +26,12 @@ describe('historical evidence views', () => {
     ])
   })
 
+  it('retains organization lifecycle transitions as discoverable historical highlights', () => {
+    const transition = event('structure', 24, 'ORGANIZATION_STRUCTURE_CHANGED', { sourceOrganizationIds: 'group.1', resultOrganizationIds: 'group.2', memberPersonIds: 'person.1', transitionKind: 'merger', traceSequence: 1, livingMemberCount: 1, sharedMemberCount: 1, relationshipEvidenceCount: 1, reason: 'recorded evidence' })
+    expect(historicalHighlights([transition])).toEqual([{ event: transition, reason: 'organization-change' }])
+    expect(personTimeline([transition], 'person.1')).toEqual([transition])
+  })
+
   it('keeps world metric trends chronological and scope-safe', () => {
     const samples: StatisticSample[] = [
       { runId: 'run-history', tick: 48, metricVersion: 1, metricId: 'population.count', scope: 'world', value: 12 },

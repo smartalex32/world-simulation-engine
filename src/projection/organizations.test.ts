@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { buildProjectedOrganizationProfiles } from './organizations'
 
 describe('organization projection', () => {
+  it('keeps dissolved identities and detached lineage available for historical inspection', () => {
+    const lineage = { origin: 'merger' as const, parentOrganizationIds: ['group.a', 'group.b'], formedTick: 24 }
+    const [profile] = buildProjectedOrganizationProfiles([{ id: 'group.c', name: 'Recorded group', kind: 'circle', specialization: 'faction', status: 'dissolved', lineage, locationCellId: '0,0', activityLocationId: 'activity.commons.0,0', members: [], serviceCapacity: 4, sharedRuleIds: [] }], [])
+    expect(profile).toMatchObject({ specialization: 'faction', status: 'dissolved', memberCount: 0, lineage })
+    profile!.lineage!.parentOrganizationIds.push('mutated')
+    expect(lineage.parentOrganizationIds).toEqual(['group.a', 'group.b'])
+  })
+
   it('shows explicit membership roles and only relationships that actually exist between members', () => {
     const profiles = buildProjectedOrganizationProfiles([
       { id: 'school-2', name: 'Second School', kind: 'school', locationCellId: '2,0', activityLocationId: 'activity.commons.2,0', members: [], serviceCapacity: 24, sharedRuleIds: [] },

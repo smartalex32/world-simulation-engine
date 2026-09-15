@@ -48,7 +48,7 @@ describe('canonical serialization', () => {
     const location = snapshot.state.activityLocations.find((candidate) => candidate.kind === 'commons')
     if (!person || !location) throw new Error('Expected default person and commons location')
     const malformed = structuredClone(snapshot)
-    malformed.state.organizations.push({ id: 'organization.school.trace-test', name: 'Trace test school', kind: 'school', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 1, sharedRuleIds: ['organization.rule.attendance.v1'] })
+    malformed.state.organizations.push({ specialization: 'institution', status: 'active', lineage: { origin: 'initial', parentOrganizationIds: [], formedTick: 0 }, id: 'organization.school.trace-test', name: 'Trace test school', kind: 'school', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 1, sharedRuleIds: ['organization.rule.attendance.v1'] })
     const organization = malformed.state.organizations[0]!
     malformed.state.organizationLifecycle.nextTraceSequence = 2
     malformed.state.organizationLifecycle.latestMembershipTraces.push({ sequence: 1, tick: 0, organizationId: organization.id, personId: person.id, change: 'joined', nextRoleId: 'not-a-defined-role', baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1000, relationshipPermille: 1000, interestPermille: 1000, exposurePermille: 1000 }, finalProbabilityPermille: 1, rngStream: 'organization.lifecycle', randomRollPermille: 0, selected: true })
@@ -62,14 +62,14 @@ describe('canonical serialization', () => {
     await expect(validateSnapshot(corruptFactor)).rejects.toThrow('Organization formation traces are invalid')
 
     const impossibleOutcome = structuredClone(snapshot)
-    impossibleOutcome.state.organizations.push({ id: 'organization.school.trace-test', name: 'Trace test school', kind: 'school', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 1, sharedRuleIds: ['organization.rule.attendance.v1'] })
+    impossibleOutcome.state.organizations.push({ specialization: 'institution', status: 'active', lineage: { origin: 'initial', parentOrganizationIds: [], formedTick: 0 }, id: 'organization.school.trace-test', name: 'Trace test school', kind: 'school', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 1, sharedRuleIds: ['organization.rule.attendance.v1'] })
     impossibleOutcome.state.organizationLifecycle.nextTraceSequence = 2
     impossibleOutcome.state.organizationLifecycle.latestMembershipTraces.push({ sequence: 1, tick: 0, organizationId: 'organization.school.trace-test', personId: person.id, change: 'joined', nextRoleId: 'learner', baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1000, relationshipPermille: 1000, interestPermille: 1000, exposurePermille: 1000 }, finalProbabilityPermille: 1, rngStream: 'wrong-stream', randomRollPermille: 999, selected: true, rejectionReason: 'probability' } as never)
     impossibleOutcome.digest = await stateDigest(impossibleOutcome.state)
     await expect(validateSnapshot(impossibleOutcome)).rejects.toThrow('Organization membership trace is invalid')
 
     const impossibleTransition = structuredClone(snapshot)
-    impossibleTransition.state.organizations.push({ id: 'organization.study-circle.trace-test', name: 'Trace test circle', kind: 'study-circle', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 8, sharedRuleIds: [] })
+    impossibleTransition.state.organizations.push({ specialization: 'institution', status: 'active', lineage: { origin: 'initial', parentOrganizationIds: [], formedTick: 0 }, id: 'organization.study-circle.trace-test', name: 'Trace test circle', kind: 'study-circle', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 8, sharedRuleIds: [] })
     impossibleTransition.state.organizations.sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
     impossibleTransition.state.organizationLifecycle.nextTraceSequence = 2
     impossibleTransition.state.organizationLifecycle.latestMembershipTraces.push({ sequence: 1, tick: 0, organizationId: 'organization.study-circle.trace-test', personId: person.id, change: 'joined', nextRoleId: 'member', baseProbabilityPermille: 1, factors: { activityPermille: 1000, proximityPermille: 1000, relationshipPermille: 0, interestPermille: 500, exposurePermille: 0 }, finalProbabilityPermille: 1, rngStream: 'organization.lifecycle', randomRollPermille: 0, selected: true })
@@ -94,7 +94,7 @@ describe('canonical serialization', () => {
     await expect(validateSnapshot(legacy)).rejects.toThrow('outside the current-plus-prior-two')
   })
 
-  it('upgrades an authenticated schema-46 default-pack snapshot with its legacy pack reference', async () => {
+  it('rejects an authenticated schema-46 default-pack snapshot outside the compatibility window', async () => {
     const source = await SimulationEngine.create('schema-46-default-pack').snapshot()
     const legacy = structuredClone(source)
     legacy.schemaVersion = 46
@@ -105,16 +105,10 @@ describe('canonical serialization', () => {
     legacy.state.config.contentPackDependencies = []
     legacy.digest = await stateDigest(legacy.state)
 
-    const migrated = await validateSnapshot(legacy)
-    expect(migrated.state.config).toMatchObject({ organizationModelVersion: 5, contentPackVersion: '1.2.0', organizationLeadershipDecisionModelVersion: 0 })
-    expect(migrated.state.config.contentPackChecksum).not.toBe('0'.repeat(32))
-    const restored = await SimulationEngine.restore(migrated)
-    const control = await SimulationEngine.restore(migrated)
-    restored.advance(24, { clockEventHours: false }); control.advance(24, { clockEventHours: false })
-    expect(await restored.snapshot()).toEqual(await control.snapshot())
+    await expect(validateSnapshot(legacy)).rejects.toThrow('outside the current-plus-prior-two')
   })
 
-  it('preserves legacy custom-pack opt-out semantics when schema-46 ignored future account fields', async () => {
+  it('rejects legacy custom-pack schema-46 snapshots outside the compatibility window', async () => {
     const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
     pack.manifest = { ...pack.manifest, id: 'setting.schema-46-legacy-fields', version: '1.0.0', name: 'Schema-46 legacy fields' }
     pack.organizationDefinitions = pack.organizationDefinitions.map((definition) => definition.id === 'school' ? { ...definition, assets: { initialCurrencyUnits: 9, initialGoods: { 'good.food': 3 } }, reputation: { enabled: true } } : definition)
@@ -125,10 +119,7 @@ describe('canonical serialization', () => {
     for (const organization of legacy.state.organizations) { delete organization.assets; delete organization.reputationLedger }
     legacy.digest = await stateDigest(legacy.state)
 
-    const migrated = await validateSnapshot(legacy, pack)
-    expect(migrated.state.config.organizationAssetReputationModelVersion).toBe(0)
-    expect(migrated.state.organizations.every((organization) => organization.assets === undefined && organization.reputationLedger === undefined)).toBe(true)
-    await expect(SimulationEngine.restore(migrated, pack)).resolves.toBeInstanceOf(SimulationEngine)
+    await expect(validateSnapshot(legacy, pack)).rejects.toThrow('outside the current-plus-prior-two')
   })
 
   it('rejects schema-44 creation input outside the compatibility window', async () => {

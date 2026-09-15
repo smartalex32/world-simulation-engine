@@ -34,7 +34,7 @@ export function reconcileSettlementRegions(input: { settlements: SettlementState
     const cohortResidentPopulationCount = (input.cohorts ?? []).reduce((total, cohort) => total + cohort.cellAllocations.filter((allocation) => extent.has(allocation.cellId) && ownerForCell(allocation.cellId) === settlement.id).reduce((allocationTotal, allocation) => allocationTotal + allocation.populationCount, 0), 0)
     const residentPopulationCount = detailedResidentPopulationCount + cohortResidentPopulationCount
     const marketIds = input.markets.filter((market) => extent.has(market.cellId)).map((market) => market.id).sort()
-    const organizationIds = input.organizations.filter((organization) => extent.has(organization.locationCellId)).map((organization) => organization.id).sort()
+    const organizationIds = input.organizations.filter((organization) => organization.status !== 'dissolved' && extent.has(organization.locationCellId)).map((organization) => organization.id).sort()
     const food = residents.reduce((total, household) => total + (household.inventory?.food ?? 0), 0)
     const tools = residents.reduce((total, household) => total + (household.inventory?.tools ?? 0), 0)
     const foodCapacity = extentCellIds.reduce((total, id) => total + (cells.get(id)?.resourceCapacity ?? 0), 0)

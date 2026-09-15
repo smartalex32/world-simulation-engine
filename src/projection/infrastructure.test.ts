@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { buildProjectedSettlementServices } from './infrastructure'
 
 describe('settlement infrastructure evidence', () => {
+  it('excludes archived schools from current service capacity', () => {
+    const services = buildProjectedSettlementServices([{ id: 's', name: 'S', anchorCellId: '0,0', catchmentCellIds: ['0,0'] }], [], [], [{ id: 'closed', name: 'Closed school', kind: 'school', status: 'dissolved', locationCellId: '0,0', activityLocationId: 'activity.commons.0,0', members: [], serviceCapacity: 24, sharedRuleIds: [] }])
+    expect(services[0]).toMatchObject({ schoolCount: 0, schoolCapacity: 0 })
+  })
   it('counts only real markets, schools, and road cells inside the geographic catchment', () => {
     const cells = [
       { id: '0,0', q: 0, r: 0, terrain: 'plain' as const, elevation: 0, resourceCapacity: 1, foodAmount: 0, foodRegenerationPerDay: 0, habitability: 1, movementCost: 1 },

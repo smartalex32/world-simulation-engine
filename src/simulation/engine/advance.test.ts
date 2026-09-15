@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { defaultWorldCreationRequest } from '../domain/worldCreation'
 import { canonicalDigest } from '../serialization/digest'
+import type { SimulationState } from '../kernel/types'
 import { SimulationEngine, TICK_PHASE_MANIFEST } from './engine'
 
 function createBoundaryEngine(seed: string) {
@@ -8,6 +9,22 @@ function createBoundaryEngine(seed: string) {
     ...defaultWorldCreationRequest(seed, 8, 8),
     initialPopulationCount: 1,
   })
+}
+
+async function previousModelDigest(state: SimulationState) {
+  // Opt-out packs must preserve the previous simulation exactly. Strip only
+  // schema/model additions so the old fixture still detects behavior changes.
+  const previous = structuredClone(state)
+  previous.config.organizationModelVersion = 5
+  previous.config.contentPackModelVersion = 4
+  delete previous.config.organizationEvolutionModelVersion
+  delete previous.organizationLifecycle.latestTransitionTraces
+  for (const organization of previous.organizations) {
+    delete organization.specialization
+    delete organization.status
+    delete organization.lineage
+  }
+  return canonicalDigest(previous)
 }
 
 describe('projection-free engine advance', () => {
@@ -50,6 +67,7 @@ describe('projection-free engine advance', () => {
   it.each([
     {
       boundary: 1,
+      currentDigest: '11528d103fd6daeef1f2c2260ac99690a94876c9122322d9fe3a8978421fc4f2',
       digest: '61bdbad128182b4c88de65502b74538eec0aa11d42c9a6df21d14eea60680cd8',
       randomStreams: '29ecdd00e858eb8b6361ff9e6b5143ddbaf84099931a4758889f8bb6e0aabb97',
       events: '367d7ed0a630c026450f0445c4dfa403a5d5229bede3aa60fed478664c06f0b9',
@@ -57,6 +75,7 @@ describe('projection-free engine advance', () => {
     },
     {
       boundary: 24,
+      currentDigest: 'd9de1da39ce11b9bb1791015183e4cfcc30d7e34fd6eceb72243d17d841e3605',
       digest: 'bca05fb200be0828c51a932d18c1a50898c53a45c2ada97ec2b47a2242c290dd',
       randomStreams: '257981ba63a7fce051914fba6fe6d3bdaa39cea9cb6f199b85fc63558345e39e',
       events: 'b3eb4651adec5951caad3e9dfe1396d2447cb84e29642f76213d0d077a5040c4',
@@ -64,6 +83,7 @@ describe('projection-free engine advance', () => {
     },
     {
       boundary: 720,
+      currentDigest: 'bb886e4ac401ae5b9f43ea7ef0b8b1126fa7c2c99388d45f16d0dc2ae02026cf',
       digest: 'd327a9efad6bbc477e2f6181c75231684de2ae167a2baf05226ae9c442ee10aa',
       randomStreams: 'd19bf8d30008e3d6fa225ec73d9fe37065f1a21bf6af0abf37841eb7700e3aae',
       events: '989c4d2502b6fc9677cf100b57ce157cdca587763bd317def131f7fd52ce5208',
@@ -71,17 +91,19 @@ describe('projection-free engine advance', () => {
     },
     {
       boundary: 8760,
+      currentDigest: 'fffa8eaa69909305854902a1709309a1d3f8708c567059118bf4f3b2eef22547',
       digest: 'd528420014504de6299ae04db6f7918972d576cf5bfcd6381b7b492d26202aa6',
       randomStreams: '09c2c5bed0559fab768a6c03ed7782fd41f6776fed6e3b900a399911bca730bc',
       events: 'b54854f144a53a66f61815129511976e555da3af186380adf356661d11979676',
       statistics: '3093c47dcb6e1bbe637a9ab6367cd1732857425423c2285fe1b5e48038d8e35d',
     },
-  ])('matches the versioned canonical contract at the $boundary-hour boundary', async ({ boundary, digest, randomStreams, events, statistics }) => {
+  ])('matches the versioned canonical contract at the $boundary-hour boundary', async ({ boundary, digest, currentDigest, randomStreams, events, statistics }) => {
     // Fixed digests record the versioned lifecycle contract.
     const engine = createBoundaryEngine(`phase-compat-${boundary}`)
     const result = engine.advance(boundary, { clockEventHours: false })
     const snapshot = await engine.snapshot()
-    expect(snapshot.digest).toBe(digest)
+    expect(await previousModelDigest(snapshot.state)).toBe(digest)
+    expect(snapshot.digest).toBe(currentDigest)
     expect(await canonicalDigest(snapshot.state.randomStreams)).toBe(randomStreams)
     expect(await canonicalDigest(result.events)).toBe(events)
     expect(await canonicalDigest(result.statistics)).toBe(statistics)
@@ -91,7 +113,8 @@ describe('projection-free engine advance', () => {
     const engine = SimulationEngine.create('phase-compat-full')
     const result = engine.advance(48, { clockEventHours: false })
     const snapshot = await engine.snapshot()
-    expect(snapshot.digest).toBe('f49e627e5cdb087ce4f085ab28d50cfa386f3f2427c410d3d18a68173f818949')
+    expect(await previousModelDigest(snapshot.state)).toBe('f49e627e5cdb087ce4f085ab28d50cfa386f3f2427c410d3d18a68173f818949')
+    expect(snapshot.digest).toBe('40a6bea91278527fbc352dacf5acc32083a2b4ede3204d994cb0fa32c4dd9741')
     expect(await canonicalDigest(snapshot.state.randomStreams)).toBe('34771d9e3fbb2bca8a5a646dc073e9a6623aade43bfe34bb17d06be9f14ec597')
     expect(await canonicalDigest(result.events)).toBe('6d079c128d3f03107aa5007e5201e0c4c70836143ca114561fb64046d1e261d3')
     expect(await canonicalDigest(result.statistics)).toBe('a58dda13775abebd3a99e0d76e92cb1f5a894c668c02c55415aa4bc18312f636')

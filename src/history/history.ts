@@ -1,3 +1,4 @@
+import { eventEntityRefs } from './entityReferences'
 import type { SimulationEvent, StatisticSample, WorldStatisticMetricId } from '../simulation/domain/types'
 import { compareStableText } from '../shared/stableOrder'
 
@@ -24,6 +25,9 @@ const HIGHLIGHT_REASONS: Partial<Record<SimulationEvent['type'], HistoricalHighl
   PARTNERSHIP_FORMED: 'relationship',
   PERSON_KNOWLEDGE_DISCOVERED: 'knowledge',
   COMMUNITY_MEASURES_UPDATED: 'community-change',
+  ORGANIZATION_FORMED: 'organization-change',
+  ORGANIZATION_MEMBERSHIP_CHANGED: 'organization-change',
+  ORGANIZATION_STRUCTURE_CHANGED: 'organization-change',
   ORGANIZATION_LEADERSHIP_CHANGED: 'organization-change',
   ORGANIZATION_DECISION_RESOLVED: 'organization-change',
   ERROR: 'error',
@@ -35,19 +39,7 @@ export function eventInvolvesPerson(event: SimulationEvent, personId: string): b
 }
 
 export function eventInvolvesEntity(event: SimulationEvent, entityId: string, kind?: 'person' | 'organization' | 'settlement' | 'community' | 'cell'): boolean {
-  for (const [key, value] of Object.entries(event.payload)) {
-    if (typeof value !== 'string') continue
-    if ((!kind || kind === 'person') && (key.endsWith('PersonId') || key === 'personId' || key === 'otherPersonId')) {
-      if (value === entityId) return true
-    }
-    if ((!kind || kind === 'person') && (key === 'parentIds' || key === 'sourcePersonIds' || key === 'founderPersonIds' || key === 'participantIds') && value.split(',').some((id) => id.trim() === entityId)) return true
-    if ((!kind || kind === 'organization') && (key === 'organizationId' || key === 'councilOrganizationId') && value === entityId) return true
-    if ((!kind || kind === 'settlement') && key.endsWith('SettlementId') && value === entityId) return true
-    if ((!kind || kind === 'community') && key === 'communityId' && value === entityId) return true
-    if ((!kind || kind === 'cell') && (key === 'cellId' || key.endsWith('CellId')) && value === entityId) return true
-  }
-  if ((!kind || kind === 'cell') && event.cellId === entityId) return true
-  return false
+  return eventEntityRefs(event).some((ref) => ref.id === entityId && (!kind || ref.kind === kind))
 }
 
 /** Newest first, with a stable ID tie-breaker for events sharing a tick. */

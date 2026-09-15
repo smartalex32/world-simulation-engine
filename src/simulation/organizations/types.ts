@@ -3,6 +3,8 @@ import type { ActivityLocationId } from '../households/types'
 export type OrganizationId = string
 export type OrganizationKind = string
 export type OrganizationMemberRole = string
+/** A group category is explicit state; it is never inferred from a social graph. */
+export type OrganizationSpecialization = 'institution' | 'informal-group' | 'faction'
 /** Engine-owned rules may be referenced by setting packs; they are not pack code. */
 export const ORGANIZATION_SHARED_RULE_IDS = ['organization.rule.attendance.v1'] as const
 export type OrganizationSharedRuleId = typeof ORGANIZATION_SHARED_RULE_IDS[number]
@@ -25,6 +27,8 @@ export interface OrganizationDefinition {
   memberRoleIds: readonly OrganizationMemberRole[]
   sharedRuleIds: readonly string[]
   initialService: { location: 'settlement-anchor'; activityLocation: 'commons'; serviceCapacity: number }
+  /** Defaults to institution for established packs. */
+  specialization?: OrganizationSpecialization
   /** Omitted definitions never form or alter membership autonomously. */
   lifecycle?: {
     cadenceHours: number
@@ -36,6 +40,18 @@ export interface OrganizationDefinition {
       baseRoleChangeProbabilityPermille: number
       baseLeaveProbabilityPermille: number
       roleChangeInterestThresholdPermille: number
+    }
+    /** Opt-in, bounded structural changes. No implicit faction clustering occurs. */
+    evolution?: {
+      cadenceHours: number
+      maxTransitionsPerCadence: number
+      /** Deterministic evidence thresholds; omitted values use conservative defaults. */
+      minimumRelationshipPermille?: number
+      minimumExposurePermille?: number
+      minimumConflictPermille?: number
+      schism?: { enabled: boolean; minimumMembers: number; splitPermille: number }
+      merger?: { enabled: boolean; minimumSharedMembers: number }
+      dissolution?: { enabled: boolean; maximumLivingMembers: number }
     }
   }
   /** Opt-in institutional property; omitted definitions retain no asset account. */
@@ -83,12 +99,28 @@ export type OrganizationLifecycleRejection = 'disabled' | 'insufficient-activity
 export interface OrganizationLifecycleFactors { activityPermille: number; proximityPermille: number; relationshipPermille: number; interestPermille: number; exposurePermille: number }
 export interface OrganizationFormationTrace { sequence: number; tick: number; kindId: string; candidatePersonIds: string[]; locationCellId: string; baseProbabilityPermille: number; factors: OrganizationLifecycleFactors; finalProbabilityPermille: number; rngStream?: string; randomRollPermille?: number; formed: boolean; rejectionReason?: OrganizationLifecycleRejection; organizationId?: string }
 export interface OrganizationMembershipTrace { sequence: number; tick: number; organizationId: string; personId: string; change: OrganizationMembershipChange; previousRoleId?: string; nextRoleId?: string; baseProbabilityPermille: number; factors: OrganizationLifecycleFactors; finalProbabilityPermille: number; rngStream?: string; randomRollPermille?: number; selected: boolean; rejectionReason?: OrganizationLifecycleRejection }
-export interface OrganizationLifecycleState { nextOrganizationSequence: number; nextTraceSequence: number; latestFormationTraces: OrganizationFormationTrace[]; latestMembershipTraces: OrganizationMembershipTrace[] }
+export type OrganizationTransitionKind = 'schism' | 'merger' | 'dissolution'
+export interface OrganizationResourceReconciliation { organizationId: string; currencyUnits: number; goods: Record<string, number> }
+export interface OrganizationMembershipReconciliation { organizationId: string; members: OrganizationMember[] }
+/** Exact bounded evidence; absence of a modeled identity is never a membership-derived identity. */
+export interface OrganizationTransitionTrace {
+  sequence: number; tick: number; kind: OrganizationTransitionKind; selected: boolean
+  sourceOrganizationIds: string[]; resultOrganizationIds: string[]; memberIds: string[]
+  evidence: { livingMemberCount: number; sharedMemberCount: number; relationshipEvidenceCount: number; relationshipPermille: number; exposurePermille: number; interestPermille: number; reputationPermille?: number; conflictPermille: number; resourcePressurePermille: number; decisionSequence?: number }
+  membershipsBefore: OrganizationMembershipReconciliation[]; membershipsAfter: OrganizationMembershipReconciliation[]
+  resourcesBefore: OrganizationResourceReconciliation[]; resourceReconciliation: OrganizationResourceReconciliation[]
+  reason: string
+}
+export interface OrganizationLifecycleState { nextOrganizationSequence: number; nextTraceSequence: number; latestFormationTraces: OrganizationFormationTrace[]; latestMembershipTraces: OrganizationMembershipTrace[]; /** Absent only in pre-#143 fixtures; restored snapshots are upgraded. */ latestTransitionTraces?: OrganizationTransitionTrace[] }
 /** Persistent coordinated group; membership is not a trait, belief, or attitude assignment. */
 export interface OrganizationState {
   id: OrganizationId
   name: string
   kind: OrganizationKind
+  specialization?: OrganizationSpecialization
+  status?: 'active' | 'dissolved'
+  closedMembership?: { tick: number; members: OrganizationMember[] }
+  lineage?: { origin: 'initial' | 'formation' | 'schism' | 'merger'; parentOrganizationIds: string[]; formedTick: number }
   locationCellId: string
   activityLocationId: ActivityLocationId
   members: OrganizationMember[]

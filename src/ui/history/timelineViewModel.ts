@@ -1,3 +1,5 @@
+import { eventEntityRefs } from '../../history/entityReferences'
+export { eventEntityRefs } from '../../history/entityReferences'
 import { EVENT_CATALOG, type EventRetentionClass } from '../../simulation/events/catalog'
 import type { SimulationEvent, StatisticSample, WorldStatisticMetricId } from '../../simulation/domain/types'
 import { compareStableText } from '../../shared/stableOrder'
@@ -61,21 +63,6 @@ function eventLane(event: SimulationEvent, selectedEntityId?: string): EvidenceL
   const involved = eventEntityRefs(event)
   if (selectedEntityId && involved.some((entity) => entity.id === selectedEntityId)) return 'entity'
   return involved.some((entity) => entity.kind === 'community' || entity.kind === 'settlement' || entity.kind === 'organization') ? 'community' : 'world'
-}
-
-export function eventEntityRefs(event: SimulationEvent): readonly { kind: 'person' | 'organization' | 'settlement' | 'community' | 'cell'; id: string }[] {
-  const refs: { kind: 'person' | 'organization' | 'settlement' | 'community' | 'cell'; id: string }[] = []
-  if (event.cellId) refs.push({ kind: 'cell', id: event.cellId })
-  for (const [key, value] of Object.entries(event.payload)) {
-    if (typeof value !== 'string' || value.length === 0) continue
-    if (key.endsWith('PersonId') || ['personId', 'otherPersonId'].includes(key)) refs.push({ kind: 'person', id: value })
-    else if (['parentIds', 'sourcePersonIds', 'founderPersonIds', 'participantIds'].includes(key)) value.split(',').map((id) => id.trim()).filter(Boolean).forEach((id) => refs.push({ kind: 'person', id }))
-    else if (key === 'organizationId' || key === 'councilOrganizationId') refs.push({ kind: 'organization', id: value })
-    else if (key.endsWith('SettlementId')) refs.push({ kind: 'settlement', id: value })
-    else if (key === 'communityId') refs.push({ kind: 'community', id: value })
-    else if (key === 'cellId' || key.endsWith('CellId')) refs.push({ kind: 'cell', id: value })
-  }
-  return [...new Map(refs.map((ref) => [`${ref.kind}:${ref.id}`, ref])).values()].sort((a, b) => compareStableText(`${a.kind}:${a.id}`, `${b.kind}:${b.id}`))
 }
 
 function metricLabel(metricId: WorldStatisticMetricId): string {

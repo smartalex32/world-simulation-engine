@@ -44,6 +44,72 @@ The runtime still uses the root pack's registries: dependencies are retained as
 independent authored artifacts rather than silently merged into a different
 semantic owner.
 
+## Organization evolution
+
+Content-pack model 5 supports explicit `specialization` values: `institution`,
+`informal-group`, and `faction`. These labels never assign personal identity,
+culture, or beliefs. Omission defaults to institution; an evolution policy
+requires the author to choose a specialization explicitly.
+
+Within an existing `lifecycle` definition, the optional `evolution` object has
+its own cadence (a positive multiple of 24 hours), a rotating opportunity budget
+`maxTransitionsPerCadence` (1–8), and independently enabled methods. For example:
+
+```json
+{
+  "cadenceHours": 24,
+  "maxTransitionsPerCadence": 2,
+  "minimumRelationshipPermille": 250,
+  "minimumExposurePermille": 500,
+  "minimumConflictPermille": 250,
+  "schism": { "enabled": true, "minimumMembers": 4, "splitPermille": 500 },
+  "merger": { "enabled": true, "minimumSharedMembers": 2 },
+  "dissolution": { "enabled": true, "maximumLivingMembers": 0 }
+}
+```
+
+This fragment configures evolution only; the containing lifecycle must still
+provide valid formation and membership policies. Methods run in dissolution,
+schism, merger order until a source accepts one. Sources rotate by tick and
+stable ID; at most 16 same-kind/activity merger candidates are inspected per
+source. Structural reconciliation supports rosters of at most 128 members and
+source accounts with at most 128 distinct goods. Existing larger organizations
+remain valid but are outside these structural execution limits.
+
+Schism requires recent decision dissent and at least two dissenting members
+supported by real local encounters and recorded familiarity. Only the configured
+fraction can move. Merger requires the same kind, location, activity, compatible
+roles, overlapping living membership, contact and familiarity; retained dissent
+or negative observed reputation blocks it. Curiosity and resource pressure are
+recorded explanatory inputs, not additional structural trigger conditions.
+These structural methods consume no random draws. Existing formation and
+membership continue using their named lifecycle stream.
+
+Schism preserves the parent ID and creates a child; merger creates a child and
+archives both parents. Lineage, before/after rosters, and integer resource
+reconciliation remain inspectable. Split amounts round down proportionally and
+leave the remainder with the parent; mergers sum existing holdings and never
+grant definition initial assets again. Dissolution retains remaining funds and
+goods in a frozen estate account. Archived organizations retain their closing
+roster and pending proposals as history but stop service and governance execution.
+Selected structural changes emit durable history events; bounded recent evidence
+also includes rejected opportunities.
+
+Physical service assets retain their IDs when reassigned after merger. Schism
+divides existing capacity and maintenance units proportionally, preserving
+condition and disruption; it does not construct extra buildings. Dissolution
+decommissions the assets, so they provide no access and receive no maintenance.
+For evolution-enabled schools, attendance is capped by both configured capacity
+and effective physical service capacity. These effects emit infrastructure
+history events. People referenced by retained organization records remain
+detailed when cohort conversion would otherwise remove their identities.
+
+Schema 49 / engine 0.50.0 uses organization model 6 and evolution model 1 for new
+runs. Authenticated schemas 47 and 48 migrate with evolution model 0, preserving
+their previous behavior. Packs omitting evolution also preserve their previous
+event and random-draw contracts. No older formation provenance is invented
+during migration.
+
 ## Formula DSL
 
 The formula format is a data-only AST: constants, variable references,

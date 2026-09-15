@@ -1,3 +1,4 @@
+import { advanceOrganizationEvolution } from './evolution'
 import type { PersonState, RelationshipState } from '../domain/types'
 import { PERSON_VARIABLE_ID } from '../variables/registry'
 import { getPersonVariable } from '../variables/storage'
@@ -11,6 +12,7 @@ import type {
   OrganizationMembershipChange,
   OrganizationMembershipTrace,
   OrganizationState,
+  OrganizationTransitionTrace,
 } from './types'
 import { createOrganizationAssetAccount, createOrganizationReputationLedger } from './ledger'
 import { createOrganizationDecisionState, createOrganizationLeadershipState } from './governance'
@@ -27,6 +29,7 @@ export interface OrganizationLifecycleOutcome {
   memberships: number
   formationTraces: OrganizationFormationTrace[]
   membershipTraces: OrganizationMembershipTrace[]
+  transitionTraces: OrganizationTransitionTrace[]
 }
 
 interface LifecycleInput {
@@ -43,6 +46,7 @@ interface LifecycleInput {
   assetAndReputationEnabled?: boolean
   /** Legacy snapshots preserve pre-leadership/decision pack semantics. */
   leadershipAndDecisionsEnabled?: boolean
+  evolutionEnabled?: boolean
 }
 
 /**
@@ -51,23 +55,29 @@ interface LifecycleInput {
  * a bounded rotating window of current members and local non-members.
  */
 export function advanceOrganizationLifecycle(input: LifecycleInput): OrganizationLifecycleOutcome {
+  // Existing packs retain their schema-48 lifecycle exactly. The new retained
+  // ledger is materialized only when a pack explicitly opts into evolution.
+  const evolutionEnabled = input.evolutionEnabled === true && input.definitions.some((definition) => definition.lifecycle?.evolution !== undefined)
+  if (evolutionEnabled) input.lifecycle.latestTransitionTraces ??= []
   const definitions = [...input.definitions]
     .filter((definition) => definition.lifecycle && input.tick % definition.lifecycle.cadenceHours === 0)
     .sort((first, second) => compareStableText(first.id, second.id))
-  if (definitions.length === 0) return emptyOutcome()
+  const evolutionDefinitions = input.definitions.filter((definition) => definition.lifecycle?.evolution && input.tick % definition.lifecycle.evolution.cadenceHours === 0)
+  if (definitions.length === 0 && evolutionDefinitions.length === 0) return emptyOutcome()
 
   const peopleByActivity = indexPeopleByActivity(input.people)
   const peopleById = new Map(input.people.map((person) => [person.id, person]))
   const relationshipIds = new Set(input.relationships.map((relationship) => relationship.id))
   const relationshipPeers = indexRelationshipPeers(input.relationships)
   const organizationIds = new Set(input.organizations.map((organization) => organization.id))
-  const organizationScopeKeys = new Set(input.organizations.map((organization) => organizationScopeKey(
+  const organizationScopeKeys = new Set(input.organizations.filter((organization) => organization.status !== 'dissolved').map((organization) => organizationScopeKey(
     organization.kind,
     input.formationScopeByActivityLocation?.get(organization.activityLocationId) ?? organization.activityLocationId,
   )))
   const formedMemberIds = new Map<string, ReadonlySet<string>>()
   const formationTraces: OrganizationFormationTrace[] = []
   const membershipTraces: OrganizationMembershipTrace[] = []
+  const transitionTraces: OrganizationTransitionTrace[] = []
   let formations = 0
   let memberships = 0
 
@@ -142,6 +152,9 @@ export function advanceOrganizationLifecycle(input: LifecycleInput): Organizatio
         id,
         name: `${definition.name} ${sequence}`,
         kind: definition.id,
+        specialization: definition.specialization ?? 'institution',
+        status: 'active',
+        lineage: { origin: 'formation', parentOrganizationIds: [], formedTick: input.tick },
         locationCellId: pair[0].locationCellId,
         activityLocationId,
         members,
@@ -175,6 +188,7 @@ export function advanceOrganizationLifecycle(input: LifecycleInput): Organizatio
 
   const definitionById = new Map(definitions.map((definition) => [definition.id, definition]))
   for (const organization of [...input.organizations].sort((first, second) => compareStableText(first.id, second.id))) {
+    if (organization.status === 'dissolved') continue
     const definition = definitionById.get(organization.kind)
     const lifecycle = definition?.lifecycle
     if (!definition || !lifecycle?.membership.enabled) continue
@@ -247,9 +261,20 @@ export function advanceOrganizationLifecycle(input: LifecycleInput): Organizatio
     }
   }
 
+  const transitionResult = evolutionEnabled && evolutionDefinitions.length > 0 ? advanceOrganizationEvolution(input) : []
+  transitionTraces.push(...transitionResult)
+  // Keep one contiguous shared-sequence suffix so reverse membership validation
+  // cannot cross a discarded structural transition.
+  if (evolutionEnabled) {
+    const sequences = [...input.lifecycle.latestFormationTraces, ...input.lifecycle.latestMembershipTraces, ...(input.lifecycle.latestTransitionTraces ?? [])].map((trace) => trace.sequence).sort((a, b) => b - a)
+    const oldest = sequences[ORGANIZATION_LIFECYCLE_TRACE_LIMIT - 1] ?? 0
+    input.lifecycle.latestFormationTraces = input.lifecycle.latestFormationTraces.filter((trace) => trace.sequence >= oldest)
+    input.lifecycle.latestMembershipTraces = input.lifecycle.latestMembershipTraces.filter((trace) => trace.sequence >= oldest)
+    input.lifecycle.latestTransitionTraces = (input.lifecycle.latestTransitionTraces ?? []).filter((trace) => trace.sequence >= oldest)
+  }
   input.organizations.sort((first, second) => compareStableText(first.id, second.id))
   for (const organization of input.organizations) organization.members.sort((first, second) => compareStableText(first.personId, second.personId))
-  return { formations, memberships, formationTraces, membershipTraces }
+  return { formations, memberships, formationTraces, membershipTraces, transitionTraces }
 }
 
 /** Positive evidence raises formation/join/role-change odds; its absence raises leave odds. */
@@ -279,7 +304,7 @@ export function applyOrganizationMembershipChange(organization: OrganizationStat
 }
 
 function emptyOutcome(): OrganizationLifecycleOutcome {
-  return { formations: 0, memberships: 0, formationTraces: [], membershipTraces: [] }
+  return { formations: 0, memberships: 0, formationTraces: [], membershipTraces: [], transitionTraces: [] }
 }
 
 function evaluateChance(probability: number, nextPermille: () => number): Pick<OrganizationMembershipTrace, 'selected' | 'rngStream' | 'randomRollPermille' | 'rejectionReason'> {

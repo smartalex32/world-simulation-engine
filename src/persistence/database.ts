@@ -1,3 +1,4 @@
+import { eventInvolvesEntity } from '../history/history'
 import type { SimulationEvent, StatisticSample, WorldDraftRecord, WorldStatisticMetricId } from '../simulation/domain/types'
 import { summarizeCheckpoint, type HistoricalCheckpoint } from '../history/checkpoints'
 import { validateWorldDraftRecord } from '../simulation/domain/worldDraft'
@@ -623,17 +624,7 @@ function boundedHistoryTick(value: number | undefined, fallback: number): number
 }
 
 function eventMatchesEntity(event: SimulationEvent, entity: NonNullable<RunHistoryQuery['entity']>): boolean {
-  if ((entity.kind === undefined || entity.kind === 'cell') && event.cellId === entity.id) return true
-  return Object.entries(event.payload).some(([key, value]) => {
-    if (typeof value !== 'string') return false
-    if ((entity.kind === undefined || entity.kind === 'person') && (key.endsWith('PersonId') || ['personId', 'otherPersonId'].includes(key)) && value === entity.id) return true
-    if ((entity.kind === undefined || entity.kind === 'person') && ['parentIds', 'sourcePersonIds', 'founderPersonIds', 'participantIds'].includes(key)) return value.split(',').some((id) => id.trim() === entity.id)
-    if ((entity.kind === undefined || entity.kind === 'organization') && ['organizationId', 'councilOrganizationId'].includes(key)) return value === entity.id
-    if ((entity.kind === undefined || entity.kind === 'settlement') && key.endsWith('SettlementId')) return value === entity.id
-    if ((entity.kind === undefined || entity.kind === 'community') && key === 'communityId') return value === entity.id
-    if ((entity.kind === undefined || entity.kind === 'cell') && (key === 'cellId' || key.endsWith('CellId'))) return value === entity.id
-    return false
-  })
+  return eventInvolvesEntity(event, entity.id, entity.kind)
 }
 
 

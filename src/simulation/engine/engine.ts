@@ -12,6 +12,7 @@ import {
   ORGANIZATION_MODEL_VERSION,
   ORGANIZATION_ASSET_REPUTATION_MODEL_VERSION,
   ORGANIZATION_LEADERSHIP_DECISION_MODEL_VERSION,
+  ORGANIZATION_EVOLUTION_MODEL_VERSION,
   CULTURE_MODEL_VERSION,
   LANGUAGE_MODEL_VERSION,
   GOVERNANCE_MODEL_VERSION,
@@ -91,6 +92,7 @@ import { annualMortalityPermille, birthEligible, lifeStageForAge, LIFE_CYCLE_STR
 import { createInitialMarkets, resolveFoodShares, resolveToolExchanges } from '../economy/model'
 import { clearMarkets, createEconomyState, decayGoods, distributeMarketWages, initializeGoods, produceMonthlyGoods } from '../economy/stockFlow'
 import { createInitialSchools } from '../organizations/model'
+import { organizationPersonReferences } from '../organizations/personReferences'
 import { advanceOrganizationLifecycle, ORGANIZATION_LIFECYCLE_STREAM } from '../organizations/lifecycle'
 import { evaluateSchoolAttendance, SCHOOL_ATTENDANCE, SCHOOL_ATTENDANCE_STREAM, schoolAttendanceTrace, schoolTravelCost } from '../organizations/attendance'
 import { observeOrganizationReputation, ORGANIZATION_SERVICE_REPUTATION_DELTA_PERMILLE } from '../organizations/ledger'
@@ -108,7 +110,7 @@ import { materializeCohortPeople, materializationStreamName } from '../cohorts/m
 import { applyCohortMaterialization, planCohortMaterialization } from '../cohorts/transitions'
 import { initializeSettlementScales, updateSettlementScales } from '../settlements/growth'
 import { migrateCohortsBetweenSettlements, reconcileSettlementRegions, settlementMigrationTrace } from '../settlements/regional'
-import { allocateInfrastructureMaintenance, createInfrastructureAssets, maintainInfrastructure } from '../infrastructure/model'
+import { allocateInfrastructureMaintenance, createInfrastructureAssets, effectiveCapacity, maintainInfrastructure, reconcileOrganizationServiceInfrastructure, serviceOperatorOrganizationId } from '../infrastructure/model'
 import { infrastructureAccessAcrossCells, infrastructureAccessAtCell } from '../infrastructure/access'
 import { compareStableText } from '../../shared/stableOrder'
 import { runSimulationTickPipeline, TICK_PHASE_MANIFEST, type SimulationPhaseOperations, type SimulationTickContext } from './phasePipeline'
@@ -275,6 +277,7 @@ export class SimulationEngine {
         organizationModelVersion: ORGANIZATION_MODEL_VERSION,
         organizationAssetReputationModelVersion: ORGANIZATION_ASSET_REPUTATION_MODEL_VERSION,
         organizationLeadershipDecisionModelVersion: ORGANIZATION_LEADERSHIP_DECISION_MODEL_VERSION,
+        organizationEvolutionModelVersion: ORGANIZATION_EVOLUTION_MODEL_VERSION,
         cultureModelVersion: CULTURE_MODEL_VERSION,
         languageModelVersion: LANGUAGE_MODEL_VERSION,
         governanceModelVersion: GOVERNANCE_MODEL_VERSION,
@@ -292,7 +295,7 @@ export class SimulationEngine {
       households: generatedPopulation.households,
       markets,
       organizations,
-      organizationLifecycle: { nextOrganizationSequence: 1, nextTraceSequence: 1, latestFormationTraces: [], latestMembershipTraces: [] },
+      organizationLifecycle: { nextOrganizationSequence: 1, nextTraceSequence: 1, latestFormationTraces: [], latestMembershipTraces: [], latestTransitionTraces: [] },
       infrastructure,
       economy,
       governance,
@@ -507,6 +510,7 @@ export class SimulationEngine {
       lifecycle,
       assetAndReputationEnabled: this.state.config.organizationAssetReputationModelVersion === 1,
       leadershipAndDecisionsEnabled: this.state.config.organizationLeadershipDecisionModelVersion === 1,
+      evolutionEnabled: this.state.config.organizationModelVersion === 6 && this.state.config.organizationEvolutionModelVersion === 1,
       formationScopeByActivityLocation: new Map([
         ...this.state.communities.flatMap((community) => community.catchment.cellIds.map((cellId) => [`activity.commons.${cellId}`, `community:${community.catchment.id}`] as const)),
         ...this.state.world.settlements.flatMap((settlement) => {
@@ -545,13 +549,20 @@ export class SimulationEngine {
         randomRollPermille: trace.randomRollPermille,
       }))
     }
+    for (const trace of outcome.transitionTraces.filter((entry) => entry.selected)) pushEvent(this.event('ORGANIZATION_STRUCTURE_CHANGED', {
+      reconciliationJson: JSON.stringify(trace),
+      traceSequence: trace.sequence, transitionKind: trace.kind,
+      sourceOrganizationIds: trace.sourceOrganizationIds.join(','), resultOrganizationIds: trace.resultOrganizationIds.join(','), memberPersonIds: trace.memberIds.join(','),
+      livingMemberCount: trace.evidence.livingMemberCount, sharedMemberCount: trace.evidence.sharedMemberCount, relationshipEvidenceCount: trace.evidence.relationshipEvidenceCount, reason: trace.reason,
+    }))
+    for (const asset of reconcileOrganizationServiceInfrastructure(this.state.infrastructure, this.state.organizations, outcome.transitionTraces, this.state.tick)) pushEvent(this.event('INFRASTRUCTURE_UPDATED', { assetId: asset.id, kind: asset.lastTrace?.kind ?? 'organization-reconciled', capacity: effectiveCapacity(asset), conditionPermille: asset.conditionPermille, disruptionPermille: asset.disruptionPermille, reason: asset.lastTrace?.reason ?? 'organization structural transition' }))
     const governance = this.state.config.organizationLeadershipDecisionModelVersion === 1
       ? advanceOrganizationGovernance({ tick: this.state.tick, organizations: this.state.organizations, definitions: this.contentPackRuntime.organizationDefinitions, people: this.state.people, relationships: this.state.relationships, nextDecisionPermille: () => this.random.stream(ORGANIZATION_DECISION_STREAM).nextInt(1000) })
       : { leadershipTraces: [], proposals: [], resolutions: [] }
     for (const { organizationId, trace } of governance.leadershipTraces) pushEvent(this.event('ORGANIZATION_LEADERSHIP_CHANGED', { traceSequence: trace.sequence, organizationId, roleId: trace.roleId, outcome: trace.outcome, previousLeaderPersonId: trace.previousLeaderPersonId, selectedLeaderPersonId: trace.selectedLeaderPersonId, contested: trace.contested, reason: trace.reason }))
     for (const { organizationId, proposal } of governance.proposals) pushEvent(this.event('ORGANIZATION_DECISION_PROPOSED', { proposalSequence: proposal.sequence, organizationId, policyId: proposal.policyId, resolvesAtTick: proposal.resolvesAtTick, participantIds: proposal.participantIds.join(','), participantRoles: proposal.participantRoles.map((participant) => `${participant.personId}:${participant.memberRoleId}`).join(','), alternativeIds: proposal.alternatives.join(',') }))
     for (const { organizationId, resolution } of governance.resolutions) pushEvent(this.event('ORGANIZATION_DECISION_RESOLVED', { proposalSequence: resolution.proposalSequence, organizationId, policyId: resolution.policyId, participantIds: resolution.participantIds.join(','), participantRoles: resolution.participantRoles.map((participant) => `${participant.personId}:${participant.memberRoleId}`).join(','), factorWeightsPermille: [resolution.factors.relationshipSupportWeightPermille, resolution.factors.organizationReputationWeightPermille, resolution.factors.knowledgeWeightPermille, resolution.factors.persistenceWeightPermille].join(','), knowledgeId: resolution.factors.knowledgeId ?? '', alternativeIds: resolution.alternatives.map((alternative) => alternative.alternativeId).join(','), finalScoresPermille: resolution.alternatives.map((alternative) => alternative.finalScorePermille).join(','), probabilitiesPermille: resolution.alternatives.map((alternative) => alternative.probabilityPermille).join(','), rngStream: resolution.rngStream, randomRollPermille: resolution.randomRollPermille, selectedAlternativeId: resolution.selectedAlternativeId, authorizedEffectIds: resolution.authorizedEffectIds.join(',') }))
-    return outcome.formations + outcome.memberships + governance.leadershipTraces.length + governance.proposals.length + governance.resolutions.length
+    return outcome.formations + outcome.memberships + outcome.transitionTraces.length + governance.leadershipTraces.length + governance.proposals.length + governance.resolutions.length
   }
 
   private runMonthlyProcessing(pushEvent: (event: SimulationEvent) => void, changeCategories: Set<AuthoritativeChangeSet['categories'][number]>, changedCellIds: Set<string>, relocationDiagnostics: { indexBuilds: number; pathExpansions: number }): void {
@@ -673,6 +684,8 @@ export class SimulationEngine {
     if (selected.length === 0) throw new RangeError('Dematerialization requires at least one person')
     const protectedIds = new Set(this.state.populationFidelity.protectedPersonIds)
     if (selected.some((id) => protectedIds.has(id))) throw new Error('Protected people cannot be dematerialized')
+    const organizationReferences = organizationPersonReferences(this.state.organizations, this.state.organizationLifecycle)
+    if (selected.some((id) => organizationReferences.has(id))) throw new Error('People referenced by retained organization history cannot be dematerialized')
     const latestMaterialization = new Map<string, string>()
     for (const transition of this.state.populationFidelity.transitions) if (transition.kind === 'materialized') for (const id of transition.personIds) latestMaterialization.set(id, transition.cohortId)
     const selectedPeople = selected.map((id) => this.personById.get(id))
@@ -1111,8 +1124,10 @@ export class SimulationEngine {
     if (this.state.organizations.length === 0) return
     const roadCellIds = new Set((this.state.world.roads ?? []).flatMap((road) => road.cellIds))
     const stream = this.random.stream(SCHOOL_ATTENDANCE_STREAM)
-    for (const school of [...this.state.organizations].filter((organization) => organization.sharedRuleIds.includes('organization.rule.attendance.v1')).sort((first, second) => compareIds(first.id, second.id))) {
+    for (const school of [...this.state.organizations].filter((organization) => organization.status !== 'dissolved' && organization.sharedRuleIds.includes('organization.rule.attendance.v1')).sort((first, second) => compareIds(first.id, second.id))) {
       let occupiedSeats = 0
+      const structuralServices = this.state.config.organizationEvolutionModelVersion === 1 && this.contentPackRuntime.organizationDefinitionById.get(school.kind)?.lifecycle?.evolution !== undefined
+      const serviceCapacity = structuralServices ? Math.min(school.serviceCapacity, this.state.infrastructure.filter((asset) => serviceOperatorOrganizationId(asset, [school]) === school.id).reduce((sum, asset) => sum + effectiveCapacity(asset), 0)) : school.serviceCapacity
       const learners = school.members.map((member) => this.personById.get(member.personId))
         .filter((person): person is SimulationState['people'][number] => person !== undefined && person.lifeStatus !== 'dead')
         .sort((first, second) => compareIds(first.id, second.id))
@@ -1125,8 +1140,8 @@ export class SimulationEngine {
           continue
         }
         const evaluation = evaluateSchoolAttendance({ school, person, household, peopleById: this.personById, cells: this.state.world.grid.cells, roadCellIds, travelCost: this.cachedSchoolTravelCost(person.homeCellId, school.id, school.locationCellId, roadCellIds) })
-        const attended = evaluation.reason === 'available' && occupiedSeats < school.serviceCapacity && roll < evaluation.probabilityPermille
-        const reason = attended ? 'available' : evaluation.reason === 'available' && occupiedSeats >= school.serviceCapacity ? 'capacity' : evaluation.reason === 'available' ? 'declined' : evaluation.reason
+        const attended = evaluation.reason === 'available' && occupiedSeats < serviceCapacity && roll < evaluation.probabilityPermille
+        const reason = attended ? 'available' : evaluation.reason === 'available' && occupiedSeats >= serviceCapacity ? 'capacity' : evaluation.reason === 'available' ? 'declined' : evaluation.reason
         const trace = schoolAttendanceTrace(evaluation, this.state.tick, roll, attended, reason)
         person.lastSchoolAttendance = trace
         if (!attended) {

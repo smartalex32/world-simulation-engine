@@ -33,7 +33,7 @@ export const MAP_LAYER_REGISTRY: readonly MapLayerDefinition[] = [
   { id: 'markets', label: 'Markets', kind: 'context', unit: 'count', palette: 'context marker', domain: 'settlement service evidence', blend: 'overlay', source: 'settlement service projection', cadence: 'projection update', description: 'Current market service evidence; no inferred trade territory.' },
   { id: 'organizations', label: 'Organizations', kind: 'context', unit: 'count', palette: 'context marker', domain: 'organization locations', blend: 'overlay', source: 'organization projection', cadence: 'projection update', description: 'Explicit organization locations and membership evidence.' },
   { id: 'governance', label: 'Governance catchments', kind: 'context', unit: 'count', palette: 'dashed context boundary', domain: 'geographic catchment only', blend: 'overlay', source: 'governance projection', cadence: 'scheduled update', description: 'Observed catchments, not legal territory or civic membership.' },
-  { id: 'culture', label: 'Collective culture identity', kind: 'future', unit: 'text', palette: 'none', domain: 'unavailable', blend: 'overlay', source: 'not modeled', cadence: 'unavailable', description: 'No authoritative identity regions exist.', dependency: 'Capability 12 / Epic #99' },
+  { id: 'culture', label: 'Collective culture identity', kind: 'future', unit: 'text', palette: 'none', domain: 'unavailable', blend: 'overlay', source: 'not modeled', cadence: 'unavailable', description: 'No authoritative identity regions exist.', dependency: 'Capability 11 / Epic #98' },
   { id: 'warfare', label: 'War and occupation', kind: 'future', unit: 'text', palette: 'none', domain: 'unavailable', blend: 'overlay', source: 'not modeled', cadence: 'unavailable', description: 'Local contention is not warfare.', dependency: 'Capability 14 / Epic #101' },
 ] as const
 
@@ -46,7 +46,7 @@ export interface VisibleAreaStatistics {
   unit: MetricUnit
   scope: 'cell' | 'aggregate-region'
   lod: MapProjection['lod']
-  primitiveCount: number
+  primitiveBudget: number
 }
 
 export function visibleAreaStatistics(map: MapProjection, overlay: ProjectionOverlay): VisibleAreaStatistics {
@@ -55,14 +55,16 @@ export function visibleAreaStatistics(map: MapProjection, overlay: ProjectionOve
   const values = source.map((entry) => overlayValue(entry, overlay)).filter((value): value is number => value !== undefined && Number.isFinite(value))
   return {
     count: source.length,
-    missing: source.length - values.length,
+    missing: overlay === 'terrain'
+      ? source.filter((entry) => !('terrain' in entry ? entry.terrain : entry.dominantTerrain)).length
+      : source.length - values.length,
     minimum: values.length ? Math.min(...values) : undefined,
     mean: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined,
     maximum: values.length ? Math.max(...values) : undefined,
     unit: definition.unit,
     scope: map.lod === 'cell' ? 'cell' : 'aggregate-region',
     lod: map.lod,
-    primitiveCount: map.primitiveBudget,
+    primitiveBudget: map.primitiveBudget,
   }
 }
 

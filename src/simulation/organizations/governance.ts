@@ -49,6 +49,7 @@ export function advanceOrganizationGovernance(input: {
   const definitionsById = new Map(input.definitions.map((definition) => [definition.id, definition]))
   const result: OrganizationGovernanceOutcome = { leadershipTraces: [], proposals: [], resolutions: [] }
   for (const organization of [...input.organizations].sort((a, b) => compareStableText(a.id, b.id))) {
+    if (organization.status === 'dissolved') continue
     const definition = definitionsById.get(organization.kind)
     if (!definition) continue
     if (definition.leadership && organization.leadership && input.tick % definition.leadership.cadenceHours === 0) {

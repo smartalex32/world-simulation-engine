@@ -12,6 +12,15 @@ function organization(id: string): OrganizationState {
 }
 
 describe('organization-owned assets and observer reputation', () => {
+  it('keeps dissolved estate balances and reputation immutable', () => {
+    const active = organization('active'); const closed = organization('closed'); closed.status = 'dissolved'
+    const before = structuredClone([active, closed])
+    for (const [from, to] of [[active, closed], [closed, active]] as const) {
+      expect(() => transferOrganizationAsset({ tick: 24, from: { kind: 'organization', id: from.id }, to: { kind: 'organization', id: to.id }, asset: 'currency', amount: 1, reason: 'transfer', organizations: [active, closed], households: [], markets: [], economy: {} as EconomyState })).toThrow('estate accounts cannot transfer')
+    }
+    expect(() => observeOrganizationReputation({ organization: closed, observer: { kind: 'person', id: 'p' }, source: 'service', causalEventId: 'e', tick: 24, deltaPermille: 10 })).toThrow('cannot receive new reputation')
+    expect([active, closed]).toEqual(before)
+  })
   it('conserves fixed-point goods and currency through household, market, and organization transfers', () => {
     const org = organization('organization.club.001')
     const household: HouseholdState = { id: 'household.001', homeCellId: '0,0', homeActivityLocationId: 'activity.home.household.001', memberIds: [], inventory: initializeGoods({ food: 2, tools: 0, currencyUnits: 7, goods: { 'good.food': 2, 'good.tool': 0, 'good.wood': 0 } }) }

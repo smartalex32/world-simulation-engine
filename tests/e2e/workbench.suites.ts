@@ -923,7 +923,7 @@ capabilityTest('navigation', 'uses the responsive workbench shell without horizo
   await expect(page.locator('#workbench-primary')).toBeFocused()
 })
 
-capabilityTest('inspection', 'inspects explicit organization leadership, pending decisions, and resolved history', async ({ page }) => {
+capabilityTest('inspection', 'inspects explicit organization leadership, pending decisions, and resolved history', async ({ page }, testInfo) => {
   const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
   pack.manifest = { ...pack.manifest, id: 'setting.e2e.organization-governance', version: '1.0.0', name: 'E2E organization governance' }
   const factors = { relationshipSupportWeightPermille: 0, organizationReputationWeightPermille: 0, knowledgeWeightPermille: 0, persistenceWeightPermille: 1000 }
@@ -949,6 +949,14 @@ capabilityTest('inspection', 'inspects explicit organization leadership, pending
   const evidence = page.getByLabel('Organization evidence')
   await expect(evidence).toContainText('leadership filled')
   await expect(evidence).toContainText('decisions active (1 pending)')
+  await evidence.getByRole('button').first().click()
+  const inspector = page.getByRole('complementary', { name: 'Workspace inspector' })
+  await expect(inspector.getByRole('heading', { name: 'Leadership and succession', exact: true })).toBeVisible()
+  await expect(inspector.getByText('policy.school-priority', { exact: false }).first()).toBeVisible()
+  await inspector.getByText('Proposal 1 · policy policy.school-priority', { exact: true }).click()
+  await expect(inspector.locator('details[open] pre')).toContainText('"resolvesAtTick": 48')
+  await expect(inspector.getByRole('button', { name: 'Show location', exact: true })).toBeEnabled()
+  await page.screenshot({ path: testInfo.outputPath('organization-inspector.png'), fullPage: true })
   await page.getByRole('button', { name: 'simulation', exact: true }).click()
   await page.locator('#workbench-primary').getByRole('button', { name: 'Step 1 day' }).click()
   await expect(page.locator('[data-simulation-tick]')).toHaveAttribute('data-simulation-tick', '48')
@@ -1039,7 +1047,7 @@ capabilityTest('quality', '@critical follows persisted causal evidence from cont
 capabilityTest('quality', '@critical exposes named controls, references, and non-color state across every top-level workspace', async ({ page }) => {
   for (const workspace of ['world', 'simulation', 'analytics', 'entities', 'history', 'tools', 'settings']) {
     await page.goto(`/?workspace=${workspace}`)
-    await expect(page.locator('.run-facts')).toContainText('v0.49.0')
+    await expect(page.locator('.run-facts')).toContainText('v0.50.0')
     await expect(page.getByRole('navigation', { name: 'Workbench modes' })).toBeVisible()
     const violations = await page.evaluate(() => {
       const visible = (element: Element) => {

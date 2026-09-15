@@ -25,9 +25,10 @@ export interface RelationshipNetworkViewModel {
   graph: GraphViewModel
   edgeEvidence: ReadonlyMap<string, RelationshipEdgeEvidence>
   focusPersonId: string
-  organizationContexts: readonly { id: string; name: string; memberIds: readonly string[] }[]
+  organizationContexts: readonly { id: string; name: string; specialization: OrganizationState['specialization']; memberIds: readonly string[] }[]
   communityContexts: readonly { id: string; memberIds: readonly string[] }[]
-  factionStatus: 'not-yet-modeled'
+  factionStatus: 'available' | 'empty'
+  organizationContextCount: number
 }
 
 export function buildRelationshipNetworkViewModel(input: {
@@ -81,13 +82,18 @@ export function buildRelationshipNetworkViewModel(input: {
     }
   })
   const graph = buildGraphViewModel({ nodes, edges, provenance: { source: 'bounded hooked-person relationship projection' } })
+  const visibleNodeIds = new Set(graph.nodes.map((node) => node.id))
+  const contexts = input.organizations.filter((organization) => organization.status !== 'dissolved' && organization.members.some((member) => visibleNodeIds.has(member.personId)))
+    .map((organization) => ({ id: organization.id, name: organization.name, specialization: organization.specialization, memberIds: organization.members.map((member) => member.personId).filter((id) => visibleNodeIds.has(id)).sort(compareStableText) }))
+    .sort((a, b) => compareStableText(a.id, b.id))
   return {
     graph: { ...graph, edgesTruncated: graph.edgesTruncated || input.relationshipsTruncated },
     edgeEvidence,
     focusPersonId: input.focusPersonId,
-    organizationContexts: input.filters.showOrganizations ? input.organizations.filter((organization) => organization.members.some((member) => nodeIds.has(member.personId))).map((organization) => ({ id: organization.id, name: organization.name, memberIds: organization.members.map((member) => member.personId).filter((id) => nodeIds.has(id)).sort(compareStableText) })).sort((a, b) => compareStableText(a.id, b.id)) : [],
+    organizationContexts: input.filters.showOrganizations ? contexts.slice(0, 16) : [],
+    organizationContextCount: contexts.length,
     communityContexts: input.filters.showCommunities ? [...new Set([...nodeIds].map((id) => input.personCommunityIds[id]).filter((id): id is string => id !== undefined))].sort(compareStableText).map((id) => ({ id, memberIds: [...nodeIds].filter((personId) => input.personCommunityIds[personId] === id).sort(compareStableText) })) : [],
-    factionStatus: 'not-yet-modeled',
+    factionStatus: contexts.some((context) => context.specialization === 'faction') ? 'available' : 'empty',
   }
 }
 

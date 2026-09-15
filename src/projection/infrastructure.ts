@@ -18,7 +18,7 @@ export function buildProjectedSettlementServices(settlements: readonly Settlemen
     const anchor = cellsById.get(settlement.anchorCellId)
     const catchmentIds = settlement.catchmentCellIds ?? (anchor ? cells.filter((cell) => hexDistance(anchor, cell) <= SETTLEMENT_SERVICE_RADIUS_CELLS).map((cell) => cell.id) : [])
     const catchment = new Set(catchmentIds)
-    const schools = organizations.filter((organization) => organization.kind === 'school' && catchment.has(organization.locationCellId))
+    const schools = organizations.filter((organization) => organization.status !== 'dissolved' && organization.kind === 'school' && catchment.has(organization.locationCellId))
     const assets = infrastructure.filter((asset) => asset.ownerSettlementId === settlement.id || asset.cellIds.some((cellId) => catchment.has(cellId)))
     return {
       settlementId: settlement.id,

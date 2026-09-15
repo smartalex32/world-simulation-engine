@@ -4,6 +4,21 @@ import { SimulationEngine } from '../simulation/engine/engine'
 import { validateCanonicalSimulationState } from '../simulation/validation/canonicalState'
 
 describe('content packs', () => {
+  it('round-trips explicit faction evolution and rejects unbounded or incoherent policies', () => {
+    const pack = structuredClone(DEFAULT_PREINDUSTRIAL_PACK)
+    const group = pack.organizationDefinitions.find((entry) => entry.lifecycle)!
+    group.specialization = 'faction'
+    group.lifecycle!.evolution = { cadenceHours: 24, maxTransitionsPerCadence: 2, schism: { enabled: true, minimumMembers: 4, splitPermille: 500 } }
+    expect(importContentPack(exportContentPack(pack))).toEqual(pack)
+    for (const invalid of [{ cadenceHours: 1 }, { maxTransitionsPerCadence: 9 }, { minimumConflictPermille: 1001 }, { schism: { enabled: true, minimumMembers: 4, splitPermille: 1000 } }]) {
+      const changed = structuredClone(pack)
+      const changedGroup = changed.organizationDefinitions.find((entry) => entry.lifecycle)!
+      changedGroup.lifecycle!.evolution = { ...changedGroup.lifecycle!.evolution!, ...invalid }
+      expect(() => importContentPack(JSON.stringify(changed))).toThrow('Evolution needs')
+    }
+    delete group.specialization
+    expect(() => importContentPack(JSON.stringify(pack))).toThrow('Evolution needs')
+  })
   it('round-trips the default setting through canonical export', () => {
     const restored = importContentPack(exportContentPack(DEFAULT_PREINDUSTRIAL_PACK))
     expect(restored).toEqual(DEFAULT_PREINDUSTRIAL_PACK)
@@ -81,7 +96,7 @@ describe('content packs', () => {
     expect(runtime.organizationDefinitionById.get('archive')?.memberRoleIds).toEqual(['curator'])
     const snapshot = await SimulationEngine.create('organization-fixture', 32, 24, pack).snapshot()
     const location = snapshot.state.activityLocations.find((entry) => entry.kind === 'commons')!
-    snapshot.state.organizations.push({ id: 'organization.archive.001', name: 'Archive 1', kind: 'archive', locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 4, sharedRuleIds: [] })
+    snapshot.state.organizations.push({ id: 'organization.archive.001', name: 'Archive 1', kind: 'archive', specialization: 'institution', status: 'active', lineage: { origin: 'initial', parentOrganizationIds: [], formedTick: 0 }, locationCellId: location.cellId, activityLocationId: location.id, members: [], serviceCapacity: 4, sharedRuleIds: [] })
     snapshot.state.organizations.sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
     expect(() => validateCanonicalSimulationState(snapshot.state, runtime)).not.toThrow()
     const invalid = structuredClone(pack)
