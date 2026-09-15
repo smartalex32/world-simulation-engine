@@ -1,117 +1,71 @@
 # Agent Guide
 
-## Project Context
+## Context and scope
 
-If `AGENTS_PROJECT_REFERENCE.md` exists, read it before substantial work. It defines project-specific architecture, constraints, terminology, validation requirements, and canonical documentation.
+- Read `AGENTS_PROJECT_REFERENCE.md` before substantial work when it exists, then
+  only relevant documentation. Follow applicable nested guidance.
+- Complete the user's authorized task. Planning-only requests produce a plan
+  without implementation. Avoid unrelated refactors and speculative features.
+- Infer routine decisions from the repository. Ask only for missing information
+  that materially affects the result and cannot reasonably be inferred.
 
-Project-specific guidance supplements this file. The user's current explicit instructions take priority.
+## Execution
 
-Read only the project documentation relevant to the current task.
+1. Check repository status and inspect the affected implementation and tests.
+2. Choose the smallest complete change that follows established project patterns.
+3. Implement the requested behavior and necessary tests or documentation.
+4. Validate proportionally, inspect the final diff, and fix issues caused by the change.
 
-## Working Principles
+Preserve existing behavior outside the request. Avoid unnecessary dependencies and
+placeholder implementations. Search before opening large files; summarize evidence
+instead of dumping logs.
 
-* Understand the requested outcome before editing.
-* Inspect existing code, tests, and conventions before choosing an implementation.
-* Prefer established project patterns over introducing new ones.
-* Implement the complete requested behavior and the support necessary for it to work correctly.
-* Do not expand scope into unrelated refactors, migrations, cleanup, or speculative future work.
-* Preserve existing behavior unless the requested change intentionally modifies it.
-* Keep changes scoped, understandable, and reviewable.
-* Resolve routine engineering decisions independently when the repository provides enough context.
-* Ask the user only when a decision cannot reasonably be inferred and materially affects the result.
+## Delegation
 
-## Workflow
+Handle small tasks directly. Delegate when the user requests it or when a
+substantial independent subtask would materially improve progress or confidence.
+In that case, use the least expensive capable configured role.
 
-For non-trivial work:
-
-1. Check repository status and preserve existing user changes.
-2. Locate and understand the affected implementation, tests, and interfaces.
-3. Determine the implementation approach and relevant risks.
-4. Implement the requested behavior through completion.
-5. Add or update tests where appropriate.
-6. Run targeted validation while iterating.
-7. Broaden validation according to regression risk.
-8. Review the final diff for correctness, scope, and unintended changes.
-9. Update documentation when behavior, architecture, interfaces, or project status changed.
-
-Do not stop at an intermediate implementation when the requested task can reasonably be completed.
-
-If the user requests planning only, do not implement.
-
-## Context Efficiency
-
-Protect the primary context.
-
-* Search before opening large files.
-* Read nearby implementation and tests before broad documentation.
-* Do not automatically read the entire repository or large documents.
-* Avoid rereading files already understood.
-* Prefer relevant failure output over complete logs.
-* Delegate repository investigation only when it is substantial enough to benefit.
-
-## Subagents
-
-Do not spawn subagents by default.
-
-Use them only when delegation provides meaningful leverage, such as:
-
-* Substantial independent investigation
-* Clearly separable implementation work
-* Complex failure analysis
-* High-risk independent review
-* Difficult architectural or correctness analysis
-
-Avoid overlapping file ownership, duplicate investigations, unnecessary agent trees, or delegation of trivial work.
-
-Use the least expensive capable agent defined in the available agent configuration. The primary agent remains responsible for integration and final correctness.
+- Give each subagent a concrete outcome, relevant context, owned files or subsystem,
+  acceptance criteria, validation expectations, and concise return format.
+- Keep file ownership separate and avoid duplicate investigation. Subagents do not
+  delegate further; the primary agent owns coordination and integration.
+- Select specialists using descriptions in `.codex/agents/`. Reserve `architect`
+  for difficult decisions or unresolved problems.
+- Use `tester` for execution and basic triage, `debugger` for nontrivial diagnosis,
+  and `worker` for fixes and complex test implementation. Pass existing evidence
+  between them instead of restarting investigation.
+- Route high-risk security, data-loss, or cross-system correctness questions to
+  `architect` directly when the scope warrants it. Cheap-first is not mandatory.
+- Use `escalation-advisor` (Astra/high) for exceptional complexity or costly
+  correctness risks, or when focused debugger/architect work remains unresolved.
+  Direct use is appropriate when the difficulty is already clear. Give it one
+  bounded question and prior evidence; do not make it a routine review stage.
+- If attempts stop producing useful evidence, narrow or escalate the task instead
+  of repeating equivalent runs. Do not invoke every role as a routine checklist.
+- Verify delegated results, resolve integration issues, and wait for necessary
+  work before reporting completion. Concurrency limits are ceilings, not targets.
 
 ## Validation
 
-Validation should be proportional to the change.
+- Use project commands from `AGENTS_PROJECT_REFERENCE.md` when available.
+- Start with focused checks; broaden according to regression risk.
+- Add meaningful behavioral tests when appropriate. Avoid tests that repeat the
+  implementation or add no confidence to a low-impact documentation edit.
+- Investigate failures before changing code or expectations. Never weaken checks
+  solely to obtain a pass. Distinguish new, pre-existing, and unclassified failures.
+- Report what actually ran and any relevant checks that could not run.
 
-* Run focused tests during implementation.
-* Run type checking, linting, builds, or broader tests when relevant to the project and risk.
-* Test externally visible behavior rather than implementation details where practical.
-* Reproduce failures narrowly before attempting fixes.
-* Fix root causes rather than weakening tests or increasing timeouts without justification.
-* Do not regenerate fixtures or expected outputs merely to make tests pass without understanding the change.
+## Change safety
 
-Project-specific validation requirements belong in `AGENTS_PROJECT_REFERENCE.md`.
+- Preserve user modifications and concurrent work; do not discard unrelated changes.
+- Do not rewrite history, force push, or commit or push unless the user requests it.
+- Keep secrets, machine-specific paths, runtime state, and generated outputs out of
+  shared configuration. Respect active permissions and external-action authorization.
 
-## Git Safety
+## Completion
 
-Treat existing modifications as intentional user work.
-
-Do not:
-
-* Discard unrelated changes.
-* Reset or overwrite user modifications.
-* Rewrite history.
-* Force push.
-* Commit or push unless requested.
-
-Keep repository changes scoped to the requested work.
-
-## Definition of Done
-
-A task is complete when:
-
-* The requested behavior is implemented.
-* Necessary supporting changes are included.
-* Relevant tests are added or updated.
-* Appropriate validation passes.
-* The final diff has been reviewed.
-* No known regression caused by the change remains.
-* Documentation is updated where necessary.
-* Unrelated changes are excluded.
-
-## Final Handoff
-
-Keep the final report concise. Include:
-
-* What changed
-* Important implementation decisions
-* Validation performed
-* Known limitations, risks, or pre-existing failures
-
-Do not narrate routine searches, file reads, commands, or raw test output.
+Finish when the requested outcome is implemented, appropriate checks pass, the diff
+is reviewed, and necessary documentation is current. State remaining blockers
+accurately. Keep the handoff concise: outcome, important decisions, validation,
+and material limitations.
