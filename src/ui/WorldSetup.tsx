@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { ElevationOverride, ResourceCapacityOverride, Terrain, TerrainTypeOverride, WorldDraftPreview, WorldPlacementPreset, WorldTerrainBase } from '../simulation/domain/types'
 import { SETTLEMENT_TEMPLATES, type SettlementTemplateId } from '../simulation/spatial/settlementTemplates'
 import { DraftZoneMap, type DraftZoneViewport, type DraftZoneViewportRequest } from './DraftZoneMap'
@@ -78,6 +78,8 @@ interface WorldSetupProps {
   onExportDraft?: () => void
   onImportDraft?: (file: File | undefined) => void
   error?: string
+  /** Lets a caller resume a saved draft in either authoring step. */
+  initialStage?: 'build' | 'populate'
 }
 
 const DIMENSIONS = [
@@ -115,16 +117,33 @@ export function isWorldSetupGeometryValid(value: Pick<WorldSetupValues, 'placeme
     && presetZonesDoNotOverlap(value.placements, value.width)
 }
 
-export function WorldSetup({ value, onChange, onCancel, onReset, onUndo, onRedo, canUndo = false, canRedo = false, onCommit, draftRevision, preview, previewCurrent = false, busy = false, draftViewport, onDraftViewportRequest, onZoneCellsCommit, onTerrainPaintCommit, onElevationPaintCommit, onResourcePaintCommit, onExportDraft, onImportDraft, error }: WorldSetupProps) {
+export function WorldSetup({ value, onChange, onCancel, onReset, onUndo, onRedo, canUndo = false, canRedo = false, onCommit, draftRevision, preview, previewCurrent = false, busy = false, draftViewport, onDraftViewportRequest, onZoneCellsCommit, onTerrainPaintCommit, onElevationPaintCommit, onResourcePaintCommit, onExportDraft, onImportDraft, error, initialStage = 'build' }: WorldSetupProps) {
   const importRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
   const editablePlacements = value.placements.filter((placement) => placement.settlementId === undefined)
   const [selectedZoneId, setSelectedZoneId] = useState<string>()
+  const [previewZoneId, setPreviewZoneId] = useState<string>()
+  const activePreviewZoneId = value.placements.find((placement) => placement.id === previewZoneId)?.id ?? value.placements[0]?.id
   const [terrainPaint, setTerrainPaint] = useState<Terrain>('plain')
   const [elevationPaint, setElevationPaint] = useState(300)
   const [resourcePaint, setResourcePaint] = useState(100)
   const [selectedSettlementId, setSelectedSettlementId] = useState<string>()
-  const [authoringLayer, setAuthoringLayer] = useState<'zones' | 'terrain' | 'elevation' | 'resources' | 'settlements' | 'catchments' | 'roads'>('zones')
+  const [authoringLayer, setAuthoringLayer] = useState<'zones' | 'terrain' | 'elevation' | 'resources' | 'settlements' | 'catchments' | 'roads'>(initialStage === 'build' ? 'terrain' : 'zones')
   const [selectedRoadId, setSelectedRoadId] = useState<string>()
+  const [stage, setStage] = useState<'build' | 'populate'>(initialStage)
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    return () => {
+      const previousFocus = previousFocusRef.current
+      if (previousFocus?.isConnected) previousFocus.focus()
+    }
+  }, [])
+  useEffect(() => {
+    const dialog = dialogRef.current
+    const target = dialog?.querySelector<HTMLElement>(stage === 'build' ? '[aria-label="World name"]' : '[aria-label="Starting population"]')
+    target?.focus()
+  }, [stage])
   useEffect(() => {
     if (!editablePlacements.some((placement) => placement.id === selectedZoneId)) setSelectedZoneId(editablePlacements[0]?.id)
   }, [editablePlacements, selectedZoneId])
@@ -173,22 +192,56 @@ export function WorldSetup({ value, onChange, onCancel, onReset, onUndo, onRedo,
   const previewSummary = previewReady && preview
     ? <small className="draft-preview" aria-live="polite">Draft preview · {preview.cellCount.toLocaleString()} cells · {preview.passableCellCount.toLocaleString()} passable · {preview.terrainCounts.water.toLocaleString()} water</small>
     : <small className="draft-preview stale" aria-live="polite">Preview is stale while this draft is edited; commit is unavailable until this exact valid draft is accepted.</small>
-  return <div className="setup-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape' && !busy) onCancel() }}>
-    <section className="world-setup" role="dialog" aria-modal="true" aria-labelledby="world-setup-title">
+  const moveToStage = (nextStage: 'build' | 'populate') => {
+    setStage(nextStage)
+    setAuthoringLayer(nextStage === 'build' ? 'terrain' : 'zones')
+  }
+  const handleDialogKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape' && !busy) {
+      event.preventDefault()
+      onCancel()
+      return
+    }
+    if (event.key !== 'Tab') return
+    const dialog = dialogRef.current
+    if (!dialog) return
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+      .filter((element) => !element.matches(':disabled, .visually-hidden, [aria-hidden="true"]') && element.getClientRects().length > 0)
+    const first = focusable[0]
+    const last = focusable.at(-1)
+    if (!first || !last) return
+    if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+  return <div className="setup-backdrop" role="presentation">
+    <section ref={dialogRef} className="world-setup" role="dialog" aria-modal="true" aria-labelledby="world-setup-title" onKeyDown={handleDialogKeyDown}>
       <header><div><span className="eyebrow">WORLD DRAFT</span><h2 id="world-setup-title">Shape a new world</h2><p>This is a detached draft. Your active simulation remains unchanged until you commit it.</p></div><button className="setup-close" aria-label="Discard world draft" disabled={busy} onClick={onCancel}>×</button></header>
-      <fieldset className="setup-fields">
+      <nav className="world-setup-steps" aria-label="World setup steps">
+        <button type="button" aria-current={stage === 'build' ? 'step' : undefined} className={stage === 'build' ? 'active' : ''} onClick={() => moveToStage('build')}><span>1</span> Build the world</button>
+        <button type="button" aria-current={stage === 'populate' ? 'step' : undefined} className={stage === 'populate' ? 'active' : ''} onClick={() => moveToStage('populate')}><span>2</span> Set starting populations</button>
+      </nav>
+      <div className="setup-fields">
         {error && <p className="draft-rejection" role="alert">Draft update rejected: {error}</p>}
-        <div className="setup-grid">
-          <label><span>World name</span><input autoFocus aria-label="World name" maxLength={80} value={value.name} onChange={(event) => update('name', event.target.value)} /></label>
+        {stage === 'build' && <><div className="world-setup-intro"><span className="eyebrow">BUILD</span><h3>Make a place worth inhabiting</h3><p>Choose the world’s scale, then shape terrain and geographic features directly on the hex map.</p></div><div className="setup-grid">
+          <label><span>World name</span><input aria-label="World name" maxLength={80} value={value.name} onChange={(event) => update('name', event.target.value)} /></label>
           <label><span>Seed</span><input aria-label="World seed" maxLength={160} value={value.seed} onChange={(event) => update('seed', event.target.value)} /></label>
           <label><span>Map scale</span><select aria-label="Map scale" value={`${value.width}x${value.height}`} onChange={(event) => { const dimension = dimensions.find((entry) => `${entry.width}x${entry.height}` === event.target.value); if (dimension) onChange((current) => ({ ...current, width: dimension.width, height: dimension.height })) }}>{dimensions.map((dimension) => <option key={dimension.label} value={`${dimension.width}x${dimension.height}`}>{dimension.label}</option>)}</select></label>
           <label><span>Physical hex radius</span><select aria-label="Physical hex radius" value={value.hexRadiusMeters} onChange={(event) => update('hexRadiusMeters', Number(event.target.value))}>{[100, 250, 500, 1000, 2500, 5000, 10000].map((radius) => <option key={radius} value={radius}>{radius >= 1000 ? `${radius / 1000} km` : `${radius} m`}</option>)}</select></label>
           <label><span>Terrain baseline</span><select aria-label="Terrain baseline" value={value.terrainBase} onChange={(event) => { const terrainBase = event.target.value as WorldTerrainBase; onChange((current) => ({ ...current, terrainBase, terrainOverrides: [], elevationOverrides: [], resourceCapacityOverrides: [] })) }}><option value="seeded-valley">Seeded valley</option><option value="blank-land">Blank land canvas</option></select></label>
           <label><span>Starting population</span><input aria-label="Starting population" type="number" min={1} max={500} value={value.population} onChange={(event) => update('population', Math.min(500, Math.max(1, Number(event.target.value) || 1)))} /></label>
         </div>
-        {value.terrainBase === 'blank-land' && <small className="draft-baseline-note">Blank land begins as passable plain terrain. Use the Terrain editor to paint water around your intended landmass; changing the baseline clears existing terrain, elevation, and resource edits.</small>}
-        <section className="placement-section" aria-labelledby="placement-title"><div className="placement-heading"><span className="eyebrow">INITIAL PLACEMENT</span><h3 id="placement-title">Population placement zones</h3><p>Zones resolve from deterministic presets for now. They are not communities, governance, or permanent membership.</p></div>
-          <div className="placement-list">
+        {value.terrainBase === 'blank-land' && <small className="draft-baseline-note">Blank land begins as passable plain terrain. Use the Terrain editor to paint water around your intended landmass; changing the baseline clears existing terrain, elevation, and resource edits.</small>}</>}
+        <section className={`placement-section setup-stage-${stage}`} aria-labelledby="placement-title"><div className="placement-heading"><span className="eyebrow">{stage === 'build' ? 'MAP AUTHORING' : 'INITIAL PLACEMENT'}</span><h3 id="placement-title">{stage === 'build' ? 'Shape the hex world' : 'Place the first people'}</h3><p>{stage === 'build' ? 'Paint terrain, establish settlements, and trace roads. These edits remain a detached draft until you start the simulation.' : 'Allocate detailed people to starting zones. Zones resolve from deterministic presets and do not create communities or memberships.'}</p></div>
+          {stage === 'populate' && <label className="population-total"><span>Starting population</span><input aria-label="Starting population" type="number" min={1} max={500} value={value.population} onChange={(event) => update('population', Math.min(500, Math.max(1, Number(event.target.value) || 1)))} /></label>}
+          {stage === 'populate' && editablePlacements.length === 0 && <aside className="population-map-preview" aria-label="Starting geography preview"><label><span>Highlight starting zone</span><select aria-label="Preview population zone" value={activePreviewZoneId ?? ''} onChange={(event) => setPreviewZoneId(event.target.value)}>{value.placements.map((placement) => <option key={placement.id} value={placement.id}>{placement.name} · {placement.allocation} people</option>)}</select></label>{draftRevision !== undefined && onDraftViewportRequest
+            ? <DraftZoneMap world={{ width: value.width, height: value.height }} viewport={draftViewport} draftRevision={draftRevision} selectedZoneId={activePreviewZoneId} disabled={busy} readOnly onViewportRequest={onDraftViewportRequest} onSelectionCommit={() => {}} />
+            : <small className="drawing-unavailable">Preparing the worker-owned draft map…</small>}</aside>}
+          {stage === 'populate' && <><div className="placement-list">
             {value.placements.map((placement, index) => <section className="placement-card" key={placement.id} aria-label={`Placement zone ${index + 1}`}>
               <div className="placement-card-heading"><strong>Zone {index + 1}</strong><code>{placement.id}</code><button type="button" className="zone-remove" aria-label={`Remove zone ${index + 1}`} onClick={() => removePlacement(placement.id)}>Remove</button></div>
               <div className="placement-row placement-row-main"><label><span>Zone name</span><input aria-label={`Zone ${index + 1} name`} maxLength={80} value={placement.name} onChange={(event) => updatePlacement(placement.id, { name: event.target.value })} /></label>{placement.cellIds === undefined && <label><span>Region preset</span><select aria-label={`Zone ${index + 1} region`} value={placement.region} onChange={(event) => { const region = event.target.value as PlacementRegion; onChange((current) => ({ ...current, placements: current.placements.map((candidate) => candidate.id === placement.id ? { ...candidate, region, preset: region } : candidate), settlements: current.settlements.map((settlement) => settlement.id === placement.settlementId && settlement.anchorCellId === undefined ? { ...settlement, preset: region } : settlement) })) }}>{PRESETS.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}</select></label>}<label><span>Detailed people</span><input aria-label={`Zone ${index + 1} people`} type="number" min={0} max={500} value={placement.allocation} onChange={(event) => updatePlacement(placement.id, { allocation: Math.min(500, Math.max(0, Number(event.target.value) || 0)) })} /></label><label><span>Distant cohort people</span><input aria-label={`Zone ${index + 1} distant cohort people`} type="number" min={0} max={1000000000} value={placement.cohortAllocation ?? 0} onChange={(event) => updatePlacement(placement.id, { cohortAllocation: Math.min(1000000000, Math.max(0, Number(event.target.value) || 0)) })} /></label></div>
@@ -202,9 +255,9 @@ export function WorldSetup({ value, onChange, onCancel, onReset, onUndo, onRedo,
             </section>)}
           </div>
           <div className="placement-template-list" aria-label="Placement templates">{value.placements.map((placement, index) => <label key={placement.id}><span>Zone {index + 1} starting profile</span><select aria-label={`Zone ${index + 1} starting profile`} value={placement.template ?? ''} onChange={(event) => applyTemplate(placement, event.target.value === '' ? undefined : event.target.value as SettlementTemplateId)}><option value="">Custom placement</option>{SETTLEMENT_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.label}</option>)}</select></label>)}</div>
-          <button type="button" className="secondary add-zone" onClick={addPlacement}>Add placement zone</button>
-          <div className="authoring-layer-toggle" role="group" aria-label="Draft map editor"><button type="button" className={authoringLayer === 'zones' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('zones')}>Placement zones</button><button type="button" className={authoringLayer === 'settlements' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('settlements')}>Settlements</button><button type="button" className={authoringLayer === 'catchments' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('catchments')}>Catchments</button><button type="button" className={authoringLayer === 'roads' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('roads')}>Roads</button><button type="button" className={authoringLayer === 'terrain' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('terrain')}>Terrain</button><button type="button" className={authoringLayer === 'elevation' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('elevation')}>Elevation</button><button type="button" className={authoringLayer === 'resources' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('resources')}>Resources</button></div>
-          {authoringLayer === 'zones' && <section className="placement-drawing" aria-labelledby="zone-drawing-title">
+          <button type="button" className="secondary add-zone" onClick={addPlacement}>Add placement zone</button></>}
+          <div className="authoring-layer-toggle" role="group" aria-label="Draft map editor">{stage === 'populate' ? <button type="button" className={authoringLayer === 'zones' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('zones')}>Placement zones</button> : <><button type="button" className={authoringLayer === 'terrain' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('terrain')}>Terrain</button><button type="button" className={authoringLayer === 'settlements' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('settlements')}>Settlements</button><button type="button" className={authoringLayer === 'catchments' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('catchments')}>Catchments</button><button type="button" className={authoringLayer === 'roads' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('roads')}>Roads</button><button type="button" className={authoringLayer === 'elevation' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('elevation')}>Elevation</button><button type="button" className={authoringLayer === 'resources' ? 'secondary active' : 'secondary'} onClick={() => setAuthoringLayer('resources')}>Resources</button></>}</div>
+          {stage === 'populate' && authoringLayer === 'zones' && editablePlacements.length > 0 && <section className="placement-drawing" aria-labelledby="zone-drawing-title">
             <div><span className="eyebrow">OPTIONAL DIRECT PLACEMENT</span><h3 id="zone-drawing-title">Draw a population zone</h3><p>Only zones without settlement markers can be drawn. Drawing replaces that zone’s preset with explicit generated cell IDs after worker validation.</p></div>
             {editablePlacements.length === 0 ? <small className="drawing-unavailable">Disable a settlement marker on a placement zone to draw it directly.</small> : <>
               <label><span>Zone to draw</span><select aria-label="Zone to draw" value={selectedZoneId ?? ''} onChange={(event) => setSelectedZoneId(event.target.value)}>{editablePlacements.map((placement) => <option key={placement.id} value={placement.id}>{placement.name || placement.id}</option>)}</select></label>
@@ -243,10 +296,10 @@ export function WorldSetup({ value, onChange, onCancel, onReset, onUndo, onRedo,
             {draftRevision !== undefined && onDraftViewportRequest && onZoneCellsCommit && onResourcePaintCommit ? <DraftZoneMap world={{ width: value.width, height: value.height }} viewport={draftViewport} draftRevision={draftRevision} disabled={busy} onViewportRequest={onDraftViewportRequest} onSelectionCommit={onZoneCellsCommit} resourcePaint={resourcePaint} onResourcePaintCommit={onResourcePaintCommit} /> : <small className="drawing-unavailable">Preparing the worker-owned draft…</small>}
             <small className="placement-meta">{value.resourceCapacityOverrides.length} active resource override{value.resourceCapacityOverrides.length === 1 ? '' : 's'}</small>
           </section>}
-          <div className={canCommit ? 'allocation valid' : 'allocation'}><span>Allocated</span><strong>{allocated} / {value.population}</strong>{allocated !== value.population && <small>Adjust zone allocations to match the starting population exactly.</small>}{value.placements.length === 0 && <small>Add at least one placement zone.</small>}{!namesValid && <small>Name the world, each zone, and every enabled settlement marker.</small>}{!zonesValid && <small>Zone radii must be whole values from 0 through 32.</small>}{zonesValid && !geometryValid && <small>Preset zones overlap. Choose different regions or smaller radii.</small>}</div>
+          {stage === 'populate' && <div className={canCommit ? 'allocation valid' : 'allocation'}><span>Allocated</span><strong>{allocated} / {value.population}</strong>{allocated !== value.population && <small>Adjust zone allocations to match the starting population exactly.</small>}{value.placements.length === 0 && <small>Add at least one placement zone.</small>}{!namesValid && <small>Name the world, each zone, and every enabled settlement marker.</small>}{!zonesValid && <small>Zone radii must be whole values from 0 through 32.</small>}{zonesValid && !geometryValid && <small>Preset zones overlap. Choose different regions or smaller radii.</small>}</div>}
         </section>
-      </fieldset>
-      <footer><span>Terrain baseline: <strong>{value.terrainBase === 'blank-land' ? 'Blank land canvas' : 'Seeded Valley'}</strong><small>{value.hexRadiusMeters >= 1000 ? `${value.hexRadiusMeters / 1000} km` : `${value.hexRadiusMeters} m`} hex radius · max 128 × 128</small>{previewSummary}</span><div>{onImportDraft && <><input ref={importRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={(event) => { onImportDraft(event.target.files?.[0]); event.target.value = '' }} /><button className="secondary" disabled={busy} onClick={() => importRef.current?.click()}>Import draft</button></>}{onExportDraft && <button className="secondary" disabled={busy || draftRevision === undefined} onClick={onExportDraft}>Export draft</button>}<button className="secondary" disabled={busy || !canUndo} onClick={onUndo}>Undo</button><button className="secondary" disabled={busy || !canRedo} onClick={onRedo}>Redo</button><button className="secondary" disabled={busy} onClick={onCancel}>Discard draft</button><button className="secondary" disabled={busy || draftRevision === undefined} onClick={onReset}>Reset draft</button><button className="primary" disabled={busy || !canCommit || !previewReady} onClick={onCommit}>Commit &amp; create world</button></div></footer>
+      </div>
+      <footer><span>Terrain baseline: <strong>{value.terrainBase === 'blank-land' ? 'Blank land canvas' : 'Seeded Valley'}</strong><small>{value.hexRadiusMeters >= 1000 ? `${value.hexRadiusMeters / 1000} km` : `${value.hexRadiusMeters} m`} hex radius · max 128 × 128</small>{previewSummary}</span><div>{onImportDraft && <><input ref={importRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={(event) => { onImportDraft(event.target.files?.[0]); event.target.value = '' }} /><button className="secondary" disabled={busy} onClick={() => importRef.current?.click()}>Import draft</button></>}{onExportDraft && <button className="secondary" disabled={busy || draftRevision === undefined} onClick={onExportDraft}>Export draft</button>}<button className="secondary" disabled={busy || !canUndo} onClick={onUndo}>Undo</button><button className="secondary" disabled={busy || !canRedo} onClick={onRedo}>Redo</button><button className="secondary" disabled={busy} onClick={onCancel}>Discard draft</button><button className="secondary" disabled={busy || draftRevision === undefined} onClick={onReset}>Reset draft</button>{stage === 'build' ? <button type="button" className="primary" disabled={busy} onClick={() => moveToStage('populate')}>Next: Population</button> : <><button type="button" className="secondary" disabled={busy} onClick={() => moveToStage('build')}>Back to map</button><button className="primary" aria-label="Commit world" title="Commit world and start simulation" disabled={busy || !canCommit || !previewReady} onClick={onCommit}>Start simulation</button></>}</div></footer>
     </section>
   </div>
 }

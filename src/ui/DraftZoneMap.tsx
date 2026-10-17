@@ -18,6 +18,8 @@ interface DraftZoneMapProps {
   selectedSettlementId?: string
   settlementAnchorCellId?: string
   disabled?: boolean
+  /** Keeps map navigation available while preventing any draft mutation. */
+  readOnly?: boolean
   onViewportRequest: (request: DraftZoneViewportRequest) => void
   onSelectionCommit: (zoneId: string, cellIds: readonly string[]) => void
   onSettlementAnchorCommit?: (settlementId: string, cellId: string) => void
@@ -35,7 +37,7 @@ interface DraftZoneMapProps {
   onResourcePaintCommit?: (resourceCapacity: number, cellIds: readonly string[]) => void
 }
 
-export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, selectedSettlementId, settlementAnchorCellId, selectedSettlementCatchmentId, settlementCatchmentCellIds, selectedRoadId, roadCellIds, disabled = false, onViewportRequest, onSelectionCommit, onSettlementAnchorCommit, onSettlementCatchmentCommit, onRoadCellsCommit, terrainPaint, onTerrainPaintCommit, elevationPaint, onElevationPaintCommit, resourcePaint, onResourcePaintCommit }: DraftZoneMapProps) {
+export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, selectedSettlementId, settlementAnchorCellId, selectedSettlementCatchmentId, settlementCatchmentCellIds, selectedRoadId, roadCellIds, disabled = false, readOnly = false, onViewportRequest, onSelectionCommit, onSettlementAnchorCommit, onSettlementCatchmentCommit, onRoadCellsCommit, terrainPaint, onTerrainPaintCommit, elevationPaint, onElevationPaintCommit, resourcePaint, onResourcePaintCommit }: DraftZoneMapProps) {
   const terrainMode = terrainPaint !== undefined && onTerrainPaintCommit !== undefined
   const elevationMode = elevationPaint !== undefined && onElevationPaintCommit !== undefined
   const resourceMode = resourcePaint !== undefined && onResourcePaintCommit !== undefined
@@ -104,7 +106,7 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, s
   }, [currentViewport, roadCellIds, roadMode])
 
   useEffect(() => {
-    if (!camera.width || !camera.height || (!paintMode && !selectedZoneId && !settlementMode && !catchmentMode && !roadMode) || disabled) return
+    if (!camera.width || !camera.height || (!readOnly && !paintMode && !selectedZoneId && !settlementMode && !catchmentMode && !roadMode) || disabled) return
     if (requestFrame.current !== undefined) cancelAnimationFrame(requestFrame.current)
     requestFrame.current = requestAnimationFrame(() => {
       revision.current += 1
@@ -113,14 +115,15 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, s
       requestFrame.current = undefined
     })
     return () => { if (requestFrame.current !== undefined) cancelAnimationFrame(requestFrame.current) }
-  }, [camera, disabled, draftRevision, onViewportRequest, selectedZoneId, world.height, world.width])
+  }, [camera, disabled, draftRevision, onViewportRequest, readOnly, selectedZoneId, world.height, world.width])
 
   useEffect(() => {
     const pending = pendingSelectionCommit.current
+    if (readOnly) { pendingSelectionCommit.current = undefined; return }
     if (disabled || !pending) return
     pendingSelectionCommit.current = undefined
     onSelectionCommit(pending.zoneId, pending.cellIds)
-  }, [disabled, onSelectionCommit])
+  }, [disabled, onSelectionCommit, readOnly])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -150,6 +153,7 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, s
   }
 
   function paint(clientX: number, clientY: number): boolean {
+    if (readOnly) return false
     const cell = cellAt(clientX, clientY)
     if (!cell || ((settlementMode || catchmentMode || roadMode) ? cell.movementCost <= 0 : !paintMode && !isEligibleHomeCell(cell))) return false
     const current = drag.current
@@ -176,6 +180,7 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, s
   }
 
   function commitSelection(): void {
+    if (readOnly) return
     if (!paintMode && !selectedZoneId && !settlementMode && !catchmentMode && !roadMode) return
     const cellIds = [...selection.current].sort()
     const signature = cellIds.join(',')
@@ -204,13 +209,13 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, s
     else if (selectedZoneId) onSelectionCommit(selectedZoneId, cellIds)
   }
 
-  return <section className="draft-zone-map" aria-label={paintMode ? 'Paint draft terrain' : settlementMode ? 'Place settlement marker' : catchmentMode ? 'Draw settlement catchment' : roadMode ? 'Draw draft road' : 'Draw placement zone'}>
-    <div className="draft-zone-map-heading"><div><span className="eyebrow">{resourceMode ? 'RESOURCE PAINTING' : elevationMode ? 'ELEVATION PAINTING' : terrainMode ? 'TERRAIN PAINTING' : settlementMode ? 'SETTLEMENT PLACEMENT' : catchmentMode ? 'SETTLEMENT CATCHMENT' : roadMode ? 'ROAD DRAWING' : 'DIRECT ZONE DRAWING'}</span><h4>{paintMode ? paintLabel : settlementMode ? 'Choose one passable anchor cell' : catchmentMode ? 'Choose passable catchment cells' : roadMode ? 'Draw a contiguous passable segment' : 'Habitable cells only'}</h4></div><small>{selection.current.size} selected</small></div>
-    <p>{paintMode ? 'Drag across up to 512 generated cells, then apply this deterministic draft-only terrain edit.' : settlementMode ? 'Click a passable cell, then apply this geographic settlement anchor. Worker validation preserves linked-zone constraints.' : catchmentMode ? 'Toggle passable cells, including the settlement anchor, then apply this bounded geographic catchment. It does not assign residents membership.' : roadMode ? 'Drag across adjoining passable cells, then apply the ordered road segment. Roads currently provide explicit map structure only; transport behavior remains deferred.' : 'Drag across habitable cells to toggle this non-settlement zone. Terrain and settlement anchors are read-only.'}</p>
+  return <section className="draft-zone-map" aria-label={readOnly ? 'Draft world preview' : paintMode ? 'Paint draft terrain' : settlementMode ? 'Place settlement marker' : catchmentMode ? 'Draw settlement catchment' : roadMode ? 'Draw draft road' : 'Draw placement zone'}>
+    <div className="draft-zone-map-heading"><div><span className="eyebrow">{readOnly ? 'DRAFT WORLD PREVIEW' : resourceMode ? 'RESOURCE PAINTING' : elevationMode ? 'ELEVATION PAINTING' : terrainMode ? 'TERRAIN PAINTING' : settlementMode ? 'SETTLEMENT PLACEMENT' : catchmentMode ? 'SETTLEMENT CATCHMENT' : roadMode ? 'ROAD DRAWING' : 'DIRECT ZONE DRAWING'}</span><h4>{readOnly ? 'Starting geography' : paintMode ? paintLabel : settlementMode ? 'Choose one passable anchor cell' : catchmentMode ? 'Choose passable catchment cells' : roadMode ? 'Draw a contiguous passable segment' : 'Habitable cells only'}</h4></div><small>{readOnly ? 'view only' : `${selection.current.size} selected`}</small></div>
+    <p>{readOnly ? 'Pan, zoom, or fit the generated draft map while allocating starting people.' : paintMode ? 'Drag across up to 512 generated cells, then apply this deterministic draft-only terrain edit.' : settlementMode ? 'Click a passable cell, then apply this geographic settlement anchor. Worker validation preserves linked-zone constraints.' : catchmentMode ? 'Toggle passable cells, including the settlement anchor, then apply this bounded geographic catchment. It does not assign residents membership.' : roadMode ? 'Drag across adjoining passable cells, then apply the ordered road segment. Roads currently provide explicit map structure only; transport behavior remains deferred.' : 'Drag across habitable cells to toggle this non-settlement zone. Terrain and settlement anchors are read-only.'}</p>
     <div className="draft-zone-canvas-wrap" ref={containerRef}>
       <canvas
         ref={canvasRef}
-        aria-label={paintMode ? 'Draft terrain paint map' : settlementMode ? 'Draft settlement placement map' : catchmentMode ? 'Draft settlement catchment map' : roadMode ? 'Draft road map' : 'Draft placement zone map'}
+        aria-label={readOnly ? 'Draft world preview map' : paintMode ? 'Draft terrain paint map' : settlementMode ? 'Draft settlement placement map' : catchmentMode ? 'Draft settlement catchment map' : roadMode ? 'Draft road map' : 'Draft placement zone map'}
         tabIndex={0}
         data-draft-map-revision={currentViewport?.revision}
         data-draft-map-cell-count={currentViewport?.cells.length}
@@ -221,7 +226,7 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, s
         onPointerDown={(event) => {
           if (disabled) return
           event.currentTarget.setPointerCapture(event.pointerId)
-          drag.current = { x: event.clientX, y: event.clientY, originX: camera.x, originY: camera.y, panning: event.button !== 0 || event.shiftKey, changed: false, selected: new Set() }
+          drag.current = { x: event.clientX, y: event.clientY, originX: camera.x, originY: camera.y, panning: readOnly || event.button !== 0 || event.shiftKey, changed: false, selected: new Set() }
           if (!drag.current.panning && !paint(event.clientX, event.clientY)) drag.current.panning = true
         }}
         onPointerMove={(event) => {
@@ -254,7 +259,7 @@ export function DraftZoneMap({ world, viewport, draftRevision, selectedZoneId, s
       {!currentViewport && <span className="draft-map-loading">Loading generated terrain…</span>}
     </div>
     <small className="draft-map-key"><i className="plain" /> plain <i className="hill" /> hill <i className="water" /> water / blocked <i className="selected" /> selected</small>
-    <button type="button" className="secondary draft-zone-apply" disabled={disabled || selection.current.size === 0 || (roadMode && selection.current.size < 2)} onClick={commitSelection}>{paintMode ? paintLabel : settlementMode ? 'Place settlement' : catchmentMode ? 'Apply settlement catchment' : roadMode ? 'Apply road segment' : 'Apply drawn cells'}</button>
+    {!readOnly && <button type="button" className="secondary draft-zone-apply" disabled={disabled || selection.current.size === 0 || (roadMode && selection.current.size < 2)} onClick={commitSelection}>{paintMode ? paintLabel : settlementMode ? 'Place settlement' : catchmentMode ? 'Apply settlement catchment' : roadMode ? 'Apply road segment' : 'Apply drawn cells'}</button>}
   </section>
 }
 

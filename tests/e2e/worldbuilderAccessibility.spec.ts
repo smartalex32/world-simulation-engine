@@ -1,0 +1,41 @@
+import { expect, test } from '@playwright/test'
+
+test('worldbuilder setup keeps keyboard focus inside each stage and restores its trigger', async ({ page }) => {
+  await page.goto('/')
+
+  const populateTrigger = page.getByRole('button', { name: 'Populate', exact: true })
+  await populateTrigger.focus()
+  await populateTrigger.click()
+  const setup = page.getByRole('dialog', { name: 'Shape a new world' })
+  await expect(setup.getByLabel('Starting population')).toBeFocused()
+
+  const commit = setup.getByRole('button', { name: 'Commit world', exact: true })
+  await expect(commit).toBeEnabled()
+  await commit.focus()
+  await page.keyboard.press('Tab')
+  await expect(setup.getByLabel('Discard world draft')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(setup).toBeHidden()
+  await expect(populateTrigger).toBeFocused()
+
+  await page.getByRole('button', { name: 'tools', exact: true }).click()
+  const createOrEdit = page.getByRole('button', { name: 'Create or edit world', exact: true })
+  await createOrEdit.click()
+  await expect(setup.getByLabel('World name')).toBeFocused()
+  await expect(setup.getByLabel('Discard world draft')).toBeEnabled()
+  await page.keyboard.press('Escape')
+  await expect(setup).toBeHidden()
+
+  const buildTrigger = page.getByRole('button', { name: 'Build', exact: true })
+  await buildTrigger.focus()
+  await buildTrigger.click()
+  await expect(setup.getByLabel('World name')).toBeFocused()
+  await setup.getByRole('button', { name: 'Next: Population', exact: true }).click()
+  await expect(setup.getByLabel('Starting population')).toBeFocused()
+  await setup.getByRole('button', { name: 'Back to map', exact: true }).click()
+  await expect(setup.getByLabel('World name')).toBeFocused()
+  await expect(setup.getByLabel('Discard world draft')).toBeEnabled()
+  await page.keyboard.press('Escape')
+  await expect(setup).toBeHidden()
+  await expect(buildTrigger).toBeFocused()
+})

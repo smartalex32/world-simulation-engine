@@ -1,0 +1,34 @@
+.map-workbench { background: #101814; }
+.map-workbench__header { min-height: 70px !important; flex-wrap: wrap; padding: 11px 14px !important; }
+.map-workbench__header > div:first-child { min-width: 160px; }
+.map-workbench__header .eyebrow { color: #8aa797; font-size: 8px; letter-spacing: .14em; }
+.map-workbench__header h2 { margin: 2px 0 3px !important; color: #f1ede2; font-family: Georgia, serif; font-size: 20px !important; font-weight: 500; }
+.map-workbench__header p { margin: 0; max-width: 360px; color: #82958b; font-size: 9px !important; text-transform: none; }
+.map-workbench__summary { display: flex; flex: 1; justify-content: center; gap: 0; margin: 0; }
+.map-workbench__summary div { min-width: 86px; padding: 0 13px; border-left: 1px solid #2a3a32; }
+.map-workbench__summary div:last-child { border-right: 1px solid #2a3a32; }
+.map-workbench__summary dt { color: #819287; font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
+.map-workbench__summary dd { margin: 3px 0 0; color: #eee7d8; font-family: Georgia, serif; font-size: 16px; }
+.map-workbench__canvas { background: #101814; }
+.map-workbench .map-analysis-body.catalog-closed { grid-template-columns: minmax(0, 1fr); }
+.map-workbench .map-analysis-body.catalog-closed .map-analysis-evidence { display: none; }
+.map-workbench .map-analysis-canvas > .map-container { min-height: 0; }
+.map-workbench__toolbar { min-height: 42px; padding: 6px 10px !important; }
+.map-workbench__chips { display: flex; gap: 5px; }
+.map-workbench__chips button { padding: 5px 9px; border-color: #35483e; background: #14221c; color: #9eb9a6; font-size: 9px; }
+.map-workbench__chips button[aria-pressed='true'] { border-color: #d4b258; background: #45391e; color: #fff0bd; }
+.map-workbench__opacity { display: flex; align-items: center; gap: 5px; margin-left: auto; color: #83948b; font-size: 8px; }
+.map-workbench__opacity input { width: 72px; }
+.map-workbench__toolbar > span { color: #718279; font-size: 8px; }
+@media (max-width: 860px) {
+  .map-workbench__header { align-items: flex-start !important; }
+  .map-workbench__summary { justify-content: flex-end; }
+  .map-workbench__summary div { min-width: 0; padding: 0 7px; }
+  .map-workbench__header p, .map-workbench__toolbar > span { display: none; }
+  .map-workbench__opacity { display: none; }
+}
+@media (max-width: 1120px) {
+  .map-workbench__header p { display: none; }
+  .map-workbench__summary { justify-content: flex-end; }
+  .map-workbench__summary div { min-width: 0; padding: 0 9px; }
+}

@@ -1,0 +1,55 @@
+/* Build → populate presentation for the worker-owned draft editor. */
+.world-setup { width: min(1150px, calc(100vw - 32px)); max-height: calc(100vh - 24px); }
+.world-setup > header, .world-setup > footer { gap: 12px; padding: 11px 18px; }
+.world-setup > header h2 { margin-top: 2px; font-size: 20px; }
+.world-setup > header p { margin-top: 3px; }
+.world-setup-steps { display: flex; gap: 0; padding: 0 18px; border-bottom: 1px solid #2a3931; background: #111b16; }
+.world-setup-steps button { display: inline-flex; align-items: center; gap: 7px; min-height: 42px; padding: 0 13px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: #809287; font-size: 10px; }
+.world-setup-steps button span { display: grid; width: 17px; height: 17px; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-family: ui-monospace, monospace; font-size: 8px; }
+.world-setup-steps button.active { border-bottom-color: #dcb65d; color: #e6d39b; background: #18251d; }
+.world-setup-intro { margin: 12px 18px 0; padding: 10px 12px; border: 1px solid #33483b; border-radius: 5px; background: linear-gradient(115deg, #172a20, #101a14); }
+.world-setup-intro h3 { margin: 4px 0 0; }
+.world-setup-intro p { display: none; }
+.setup-stage-build { min-height: 0; }
+.setup-stage-populate .authoring-layer-toggle { margin-top: 14px; }
+.population-total { width: min(240px, 100%); margin-top: 12px; }
+.world-setup > footer > div { flex-wrap: wrap; justify-content: flex-end; }
+.world-setup > footer { margin-top: 0; background: #15221d; pointer-events: auto; }
+@media (min-width: 681px) {
+  .setup-stage-populate { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); grid-auto-rows: min-content; column-gap: 16px; align-content: start; }
+  .setup-stage-populate > .placement-heading, .setup-stage-populate > .population-total, .setup-stage-populate > .placement-list, .setup-stage-populate > .placement-template-list, .setup-stage-populate > .add-zone, .setup-stage-populate > .allocation { grid-column: 1; }
+  .setup-stage-populate > .placement-list { max-height: min(345px, calc(100vh - 325px)); overflow: auto; padding-right: 5px; }
+  .setup-stage-populate > .authoring-layer-toggle { grid-column: 2; grid-row: 1; margin: 0; }
+  .setup-stage-populate > .placement-drawing, .setup-stage-populate > .population-map-preview { grid-column: 2; grid-row: 2 / span 6; min-height: 0; margin-top: 8px; }
+  .setup-stage-populate > .placement-drawing { display: flex; flex-direction: column; }
+  .setup-stage-populate > .placement-drawing .draft-zone-map, .population-map-preview .draft-zone-map { display: flex; flex-direction: column; min-height: 0; }
+  .setup-stage-populate > .placement-drawing .draft-zone-canvas-wrap, .population-map-preview .draft-zone-canvas-wrap { height: clamp(220px, calc(100vh - 350px), 360px); flex: 1 1 auto; }
+  .setup-stage-populate > .population-map-preview { margin: 0; grid-row: 1 / span 7; }
+  .setup-stage-populate:has(.population-map-preview) > .authoring-layer-toggle { display: none; }
+  .setup-stage-populate .placement-row-main { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+  .setup-stage-populate .placement-row-main > label:first-child { grid-column: 1 / -1; }
+  .setup-stage-populate .placement-row-detail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .setup-stage-populate .placement-row-detail > label:last-child { grid-column: 1 / -1; }
+  .setup-stage-populate .placement-row-main label > span { font-size: 8px; }
+}
+@supports selector(:has(*)) {
+  .setup-fields:has(.setup-stage-build) { display: grid; grid-template-columns: 258px minmax(0, 1fr); grid-template-rows: auto 1fr; align-content: stretch; min-height: 0; }
+  .setup-fields:has(.setup-stage-build) > .world-setup-intro { grid-column: 1; grid-row: 1; margin-right: 0; }
+  .setup-fields:has(.setup-stage-build) > .setup-grid { grid-column: 1; grid-row: 2; grid-template-columns: 1fr; gap: 9px; padding: 12px 18px 16px; align-content: start; }
+  .setup-fields:has(.setup-stage-build) > .setup-grid label:nth-child(6) { display: none; }
+  .setup-fields:has(.setup-stage-build) > .draft-baseline-note { grid-column: 1; }
+  .setup-fields:has(.setup-stage-build) > .setup-stage-build { display: flex; flex-direction: column; grid-column: 2; grid-row: 1 / span 2; margin: 12px 18px 16px 12px; min-height: 0; }
+  .setup-stage-build .placement-heading p { display: none; }
+  .setup-stage-build .authoring-layer-toggle { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  .setup-stage-build .authoring-layer-toggle button { padding: 5px 7px; font-size: 9px; }
+  .setup-stage-build .placement-drawing { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; margin-top: 9px; padding-top: 9px; }
+  .setup-stage-build .placement-drawing > div:first-child p { display: none; }
+  .setup-stage-build .placement-drawing > label { margin-top: 7px; }
+  .setup-stage-build .draft-zone-map { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; margin-top: 8px; padding: 8px; }
+  .setup-stage-build .draft-zone-canvas-wrap { height: clamp(180px, calc(100vh - 440px), 360px); min-height: 180px; flex: 1 1 auto; }
+  .setup-stage-build .draft-zone-map > p { margin-block: 3px; font-size: 9px; }
+  .setup-stage-build .placement-drawing > div:first-child { display: none; }
+}
+@media (max-width: 680px) { .world-setup { width: calc(100vw - 16px); max-height: calc(100vh - 16px); }.world-setup-steps { padding: 0 14px; overflow-x: auto; }.world-setup-steps button { flex: 0 0 auto; padding-inline: 9px; }.world-setup-intro { margin-inline: 14px; }.setup-stage-build { min-height: 0; } }
+@media (max-width: 680px) { .setup-fields:has(.setup-stage-build) { display: block; }.setup-fields:has(.setup-stage-build) > .setup-stage-build { margin: 0 14px; } }
+@media (max-width: 360px) { .world-setup > footer { align-items: stretch; flex-direction: column; }.world-setup > footer > div { justify-content: flex-start; }.world-setup-steps button { font-size: 9px; } }
